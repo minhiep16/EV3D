@@ -1,14 +1,16 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { EVShareWorld } from '../components/three/EVShareWorld';
-import { SpatialOverviewButton } from '../components/three/SpatialOverviewButton';
 import { useAuthStore } from '../store/authStore';
+import { useWorldStore } from '../store/worldStore';
 import { logoutApi } from '../services/authApi';
-import { LogOut, Warehouse } from 'lucide-react';
+import { LogOut, Warehouse, ArrowLeft } from 'lucide-react';
 
 export const GarageScene: React.FC = () => {
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
+  const vehicleCoOwnershipMode = useWorldStore((state) => state.vehicleCoOwnershipMode);
+  const exitVehicleCoOwnershipMode = useWorldStore((state) => state.exitVehicleCoOwnershipMode);
 
   const handleLogout = async () => {
     await logoutApi();
@@ -20,10 +22,58 @@ export const GarageScene: React.FC = () => {
       {/* Pure 3D Virtual Garage World */}
       <EVShareWorld />
 
-      {/* Spatial Action: Return to Garage Overview */}
-      <SpatialOverviewButton />
+      {/* Screen-space Utility Control: Top-Left [ ← QUAY LẠI XE ] in Co-ownership Mode */}
+      {vehicleCoOwnershipMode && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '20px',
+            left: '24px',
+            zIndex: 10,
+            pointerEvents: 'auto',
+          }}
+        >
+          <button
+            type="button"
+            onClick={exitVehicleCoOwnershipMode}
+            title="Quay lại xe điện EV01"
+            style={{
+              background: 'rgba(10, 15, 29, 0.82)',
+              backdropFilter: 'blur(12px)',
+              border: '1px solid rgba(168, 85, 247, 0.5)',
+              borderRadius: '9999px',
+              padding: '7px 16px',
+              color: '#f3e8ff',
+              fontSize: '12px',
+              fontWeight: 700,
+              letterSpacing: '0.04em',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '7px',
+              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.6), 0 0 12px rgba(168, 85, 247, 0.25)',
+              transition: 'all 0.2s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(168, 85, 247, 0.22)';
+              e.currentTarget.style.borderColor = '#c084fc';
+              e.currentTarget.style.boxShadow = '0 6px 20px rgba(168, 85, 247, 0.5)';
+              e.currentTarget.style.transform = 'translateY(-1px)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(10, 15, 29, 0.82)';
+              e.currentTarget.style.borderColor = 'rgba(168, 85, 247, 0.5)';
+              e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.6), 0 0 12px rgba(168, 85, 247, 0.25)';
+              e.currentTarget.style.transform = 'none';
+            }}
+          >
+            <ArrowLeft size={14} color="#c084fc" />
+            <span>QUAY LẠI XE</span>
+          </button>
+        </div>
+      )}
 
-      {/* Non-intrusive Top Corner Status Bar */}
+      {/* Screen-space User / Profile / Logout Utility Control */}
       <div
         style={{
           position: 'absolute',

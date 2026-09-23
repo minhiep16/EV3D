@@ -1,6 +1,6 @@
 import React, { Suspense } from 'react';
 import { ThreeEvent } from '@react-three/fiber';
-import { Html } from '@react-three/drei';
+import { Html, Billboard } from '@react-three/drei';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../../../store/authStore';
 import { useWorldStore, VEHICLE_STATUS_LABELS } from '../../../store/worldStore';
@@ -11,6 +11,9 @@ import { VehicleStatusLabel } from './VehicleStatusLabel';
 import { VehicleSelectionEffect } from './VehicleSelectionEffect';
 import { VehicleInspectionGuide } from './VehicleInspectionGuide';
 import { SpatialVehiclePartPanel } from './SpatialVehiclePartPanel';
+import { SpatialDataLink } from '../SpatialDataLink';
+import { HolographicPanelFrame3D } from '../HolographicPanelFrame3D';
+import { VehicleCoOwnershipWorld } from '../ownership/VehicleCoOwnershipWorld';
 import { getPartById } from '../../../data/vehicleParts';
 import {
   Car,
@@ -18,6 +21,7 @@ import {
   Battery,
   Gauge,
   Wrench,
+  Users,
   X,
   Sparkles,
   AlertTriangle,
@@ -37,6 +41,9 @@ export const VehicleDigitalTwin: React.FC = () => {
   const vehicleInspectionMode = useWorldStore(
     (state) => state.vehicleInspectionMode
   );
+  const vehicleCoOwnershipMode = useWorldStore(
+    (state) => state.vehicleCoOwnershipMode
+  );
   const selectedVehiclePartId = useWorldStore(
     (state) => state.selectedVehiclePartId
   );
@@ -45,6 +52,9 @@ export const VehicleDigitalTwin: React.FC = () => {
   const clearSelection = useWorldStore((state) => state.clearSelection);
   const enterVehicleInspectionMode = useWorldStore(
     (state) => state.enterVehicleInspectionMode
+  );
+  const enterVehicleCoOwnershipMode = useWorldStore(
+    (state) => state.enterVehicleCoOwnershipMode
   );
 
   // TanStack Query: Fetch vehicles from Spring Boot API / MySQL
@@ -221,14 +231,14 @@ export const VehicleDigitalTwin: React.FC = () => {
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
-    if (!vehicleInspectionMode) {
+    if (!vehicleInspectionMode && !vehicleCoOwnershipMode) {
       selectVehicle(vehicle.id);
     }
   };
 
   const handlePointerOver = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
-    if (!vehicleInspectionMode) {
+    if (!vehicleInspectionMode && !vehicleCoOwnershipMode) {
       hoverVehicle(vehicle.id);
       document.body.style.cursor = 'pointer';
     }
@@ -236,7 +246,7 @@ export const VehicleDigitalTwin: React.FC = () => {
 
   const handlePointerOut = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
-    if (!vehicleInspectionMode) {
+    if (!vehicleInspectionMode && !vehicleCoOwnershipMode) {
       if (hoveredVehicleId === vehicle.id || hoveredVehicleId === displayCode) {
         hoverVehicle(null);
       }
@@ -266,7 +276,7 @@ export const VehicleDigitalTwin: React.FC = () => {
       </Suspense>
 
       {/* 3. Floating 3D Status Pill Indicator (shown only before vehicle is selected) */}
-      {!isSelected && !vehicleInspectionMode && (
+      {!isSelected && !vehicleInspectionMode && !vehicleCoOwnershipMode && (
         <VehicleStatusLabel
           id={displayCode}
           name={vehicle.name}
@@ -277,14 +287,24 @@ export const VehicleDigitalTwin: React.FC = () => {
         />
       )}
 
-      {/* 4. World-Space Spatial Vehicle Information Card (Displayed on selection, hidden in inspection mode) */}
-      {isSelected && !vehicleInspectionMode && (
-        <Html
-          position={[2.5, 1.25, 0]}
-          center
-          distanceFactor={8.5}
-          style={{ pointerEvents: 'auto', userSelect: 'none' }}
-        >
+      {/* 4. World-Space Spatial Vehicle Information Card with 3D Holographic Frame & Connector */}
+      {isSelected && !vehicleInspectionMode && !vehicleCoOwnershipMode && (
+        <>
+          {/* Visible 3D Laser Connector linking EV01 to detailed panel */}
+          <SpatialDataLink
+            start={[0, 0.7, 0]}
+            end={[2.6 - 0.45, 1.35, 0]}
+            color="#00f2fe"
+          />
+
+          <group position={[2.6, 1.35, 0]}>
+            <Billboard follow={true}>
+              <HolographicPanelFrame3D width={2.45} height={3.2} color="#00f2fe" />
+              <Html
+                center
+                distanceFactor={8.8}
+                style={{ pointerEvents: 'auto', userSelect: 'none' }}
+              >
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
@@ -512,45 +532,86 @@ export const VehicleDigitalTwin: React.FC = () => {
               </div>
             </div>
 
-            {/* Inspection Action Button (Enters Phase 06 Vehicle Part Inspection Mode) */}
-            <button
-              type="button"
-              onClick={() => enterVehicleInspectionMode()}
-              style={{
-                width: '100%',
-                padding: '11px',
-                background: 'linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)',
-                border: 'none',
-                borderRadius: '10px',
-                color: '#ffffff',
-                fontFamily: 'inherit',
-                fontSize: '12px',
-                fontWeight: 700,
-                letterSpacing: '0.06em',
-                textTransform: 'uppercase',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                boxShadow: '0 4px 15px rgba(0, 242, 254, 0.35)',
-                transition: 'all 0.2s ease',
-              }}
-              onMouseOver={(e) => {
-                e.currentTarget.style.boxShadow = '0 6px 20px rgba(0, 242, 254, 0.55)';
-                e.currentTarget.style.transform = 'translateY(-1px)';
-              }}
-              onMouseOut={(e) => {
-                e.currentTarget.style.boxShadow = '0 4px 15px rgba(0, 242, 254, 0.35)';
-                e.currentTarget.style.transform = 'none';
-              }}
-            >
-              <Wrench size={14} />
-              KIỂM TRA BỘ PHẬN
-            </button>
+            {/* Action Buttons: Co-ownership & Inspection */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => enterVehicleCoOwnershipMode()}
+                style={{
+                  width: '100%',
+                  padding: '11px',
+                  background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+                  border: 'none',
+                  borderRadius: '10px',
+                  color: '#ffffff',
+                  fontFamily: 'inherit',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  boxShadow: '0 4px 15px rgba(168, 85, 247, 0.35)',
+                  transition: 'all 0.2s ease',
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.boxShadow = '0 6px 20px rgba(168, 85, 247, 0.55)';
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.boxShadow = '0 4px 15px rgba(168, 85, 247, 0.35)';
+                  e.currentTarget.style.transform = 'none';
+                }}
+              >
+                <Users size={14} />
+                ĐỒNG SỞ HỮU
+              </button>
+
+              <button
+                type="button"
+                onClick={() => enterVehicleInspectionMode()}
+                style={{
+                  width: '100%',
+                  padding: '9px',
+                  background: 'rgba(2, 132, 199, 0.2)',
+                  border: '1px solid rgba(0, 242, 254, 0.4)',
+                  borderRadius: '10px',
+                  color: '#38bdf8',
+                  fontFamily: 'inherit',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  boxShadow: '0 4px 12px rgba(0, 242, 254, 0.15)',
+                  transition: 'all 0.2s ease',
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.boxShadow = '0 6px 16px rgba(0, 242, 254, 0.35)';
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 242, 254, 0.15)';
+                  e.currentTarget.style.transform = 'none';
+                }}
+              >
+                <Wrench size={13} />
+                KIỂM TRA BỘ PHẬN
+              </button>
+            </div>
           </div>
         </Html>
-      )}
+      </Billboard>
+    </group>
+  </>
+)}
 
       {/* 5. Vehicle Inspection Mode: Floating Instruction Guide */}
       {vehicleInspectionMode && !selectedVehiclePartId && (
@@ -560,6 +621,11 @@ export const VehicleDigitalTwin: React.FC = () => {
       {/* 6. Vehicle Inspection Mode: Detailed Spatial Vehicle Part Panel */}
       {vehicleInspectionMode && selectedPart && (
         <SpatialVehiclePartPanel part={selectedPart} />
+      )}
+
+      {/* 7. Phase 07: Vehicle 3D Co-Ownership View */}
+      {vehicleCoOwnershipMode && (
+        <VehicleCoOwnershipWorld vehicle={vehicle} />
       )}
     </group>
   );

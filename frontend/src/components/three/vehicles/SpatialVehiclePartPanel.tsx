@@ -1,5 +1,7 @@
 import React from 'react';
-import { Html } from '@react-three/drei';
+import { Html, Billboard } from '@react-three/drei';
+import { SpatialDataLink } from '../SpatialDataLink';
+import { HolographicPanelFrame3D } from '../HolographicPanelFrame3D';
 import {
   Wrench,
   CheckCircle2,
@@ -32,12 +34,23 @@ export const SpatialVehiclePartPanel: React.FC<SpatialVehiclePartPanelProps> = (
     PART_STATUS_CONFIG[part.status] || PART_STATUS_CONFIG.NORMAL;
 
   return (
-    <Html
-      position={part.panelPosition}
-      center
-      distanceFactor={8.5}
-      style={{ pointerEvents: 'auto', userSelect: 'none' }}
-    >
+    <>
+      {/* 1. Dynamic 3D Spatial Connector Beam from actual selected part mesh center to panel */}
+      <SpatialDataLink
+        start={part.localCenter}
+        end={part.panelPosition}
+        color="#00f2fe"
+      />
+
+      {/* 2. Holographic Panel Frame & Spatial HTML Specs */}
+      <group position={part.panelPosition}>
+        <Billboard follow={true}>
+          <HolographicPanelFrame3D width={2.45} height={3.1} color="#00f2fe" />
+          <Html
+            center
+            distanceFactor={9.4}
+            style={{ pointerEvents: 'auto', userSelect: 'none' }}
+          >
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
@@ -319,5 +332,8 @@ export const SpatialVehiclePartPanel: React.FC<SpatialVehiclePartPanelProps> = (
         </div>
       </div>
     </Html>
-  );
+  </Billboard>
+</group>
+</>
+);
 };

@@ -56,10 +56,10 @@ export const VEHICLE_PARTS: Record<VehiclePartId, VehiclePartConfig> = {
     ],
     localCenter: [-0.92, 0.36, 1.35],
     cameraPreset: {
-      target: [-8.4, 0.5, 5.2],
-      position: [-11.2, 1.8, 8.2],
+      target: [-8.3, 0.55, 5.2],
+      position: [-13.5, 3.1, 10.9],
     },
-    panelPosition: [1.0, 1.15, 3.0],
+    panelPosition: [1.3, 1.3, 2.6],
   },
 
   WHEEL_FR: {
@@ -77,10 +77,10 @@ export const VEHICLE_PARTS: Record<VehiclePartId, VehiclePartConfig> = {
     ],
     localCenter: [0.92, 0.36, 1.35],
     cameraPreset: {
-      target: [-6.8, 0.5, 5.2],
-      position: [-4.8, 1.8, 8.2],
+      target: [-6.9, 0.55, 5.2],
+      position: [-3.0, 3.1, 10.8],
     },
-    panelPosition: [2.5, 1.15, 0.8],
+    panelPosition: [2.6, 1.3, 0.6],
   },
 
   WHEEL_RL: {
@@ -98,10 +98,10 @@ export const VEHICLE_PARTS: Record<VehiclePartId, VehiclePartConfig> = {
     ],
     localCenter: [-0.92, 0.36, -1.35],
     cameraPreset: {
-      target: [-8.4, 0.5, 2.8],
-      position: [-11.2, 1.8, 0.0],
+      target: [-8.4, 0.55, 2.8],
+      position: [-13.6, 3.1, -2.5],
     },
-    panelPosition: [1.0, 1.15, -0.6],
+    panelPosition: [-1.9, 1.3, 0.2],
   },
 
   WHEEL_RR: {
@@ -119,10 +119,10 @@ export const VEHICLE_PARTS: Record<VehiclePartId, VehiclePartConfig> = {
     ],
     localCenter: [0.92, 0.36, -1.35],
     cameraPreset: {
-      target: [-6.8, 0.5, 2.8],
-      position: [-4.8, 1.8, 0.0],
+      target: [-6.9, 0.55, 2.8],
+      position: [-3.06, 3.1, -2.5],
     },
-    panelPosition: [2.5, 1.15, -2.4],
+    panelPosition: [1.3, 1.3, -2.8],
   },
 
   HOOD: {
@@ -140,10 +140,10 @@ export const VEHICLE_PARTS: Record<VehiclePartId, VehiclePartConfig> = {
     ],
     localCenter: [0, 0.55, 2.05],
     cameraPreset: {
-      target: [-7.2, 0.7, 5.8],
-      position: [-7.2, 2.6, 9.6],
+      target: [-7.2, 0.75, 5.8],
+      position: [-7.2, 4.3, 13.0],
     },
-    panelPosition: [2.5, 1.25, 2.0],
+    panelPosition: [2.6, 1.35, 2.0],
   },
 
   HEADLIGHTS: {
@@ -161,10 +161,10 @@ export const VEHICLE_PARTS: Record<VehiclePartId, VehiclePartConfig> = {
     ],
     localCenter: [0, 0.55, 2.12],
     cameraPreset: {
-      target: [-7.2, 0.7, 6.0],
-      position: [-7.2, 1.8, 9.6],
+      target: [-7.2, 0.75, 6.0],
+      position: [-7.2, 3.0, 12.8],
     },
-    panelPosition: [2.5, 1.2, 2.1],
+    panelPosition: [2.6, 1.3, 2.1],
   },
 
   WINDSHIELD: {
@@ -182,10 +182,10 @@ export const VEHICLE_PARTS: Record<VehiclePartId, VehiclePartConfig> = {
     ],
     localCenter: [0, 0.9, -0.2],
     cameraPreset: {
-      target: [-7.0, 1.1, 4.0],
-      position: [-7.0, 2.8, 7.8],
+      target: [-7.0, 1.15, 4.0],
+      position: [-7.0, 4.45, 11.15],
     },
-    panelPosition: [2.5, 1.35, 0.0],
+    panelPosition: [2.6, 1.45, 0.0],
   },
 
   ROOF: {
@@ -202,10 +202,10 @@ export const VEHICLE_PARTS: Record<VehiclePartId, VehiclePartConfig> = {
     ],
     localCenter: [0, 1.15, -0.2],
     cameraPreset: {
-      target: [-7.0, 1.2, 3.8],
-      position: [-7.0, 3.8, 7.2],
+      target: [-7.0, 1.25, 3.8],
+      position: [-7.0, 6.25, 10.15],
     },
-    panelPosition: [2.5, 1.45, -0.2],
+    panelPosition: [2.6, 1.55, -0.2],
   },
 
   TAILLIGHTS: {
@@ -222,10 +222,10 @@ export const VEHICLE_PARTS: Record<VehiclePartId, VehiclePartConfig> = {
     ],
     localCenter: [0, 0.62, -2.12],
     cameraPreset: {
-      target: [-8.8, 0.76, 1.9],
-      position: [-8.8, 2.0, -1.8],
+      target: [-8.8, 0.8, 1.9],
+      position: [-8.8, 3.25, -5.05],
     },
-    panelPosition: [1.2, 1.2, -2.0],
+    panelPosition: [-1.9, 1.3, -2.0],
   },
 
   DIFFUSER: {
@@ -242,10 +242,10 @@ export const VEHICLE_PARTS: Record<VehiclePartId, VehiclePartConfig> = {
     ],
     localCenter: [0, 0.25, -2.05],
     cameraPreset: {
-      target: [-8.8, 0.45, 2.0],
-      position: [-8.8, 1.6, -1.8],
+      target: [-8.8, 0.5, 2.0],
+      position: [-8.8, 2.75, -5.15],
     },
-    panelPosition: [1.2, 1.1, -2.0],
+    panelPosition: [-1.9, 1.25, -2.0],
   },
 
   BATTERY: {
@@ -263,10 +263,10 @@ export const VEHICLE_PARTS: Record<VehiclePartId, VehiclePartConfig> = {
     ],
     localCenter: [0, 0.22, 0],
     cameraPreset: {
-      target: [-8.5, 0.32, 4.0],
-      position: [-11.5, 1.4, 5.8],
+      target: [-8.5, 0.35, 4.0],
+      position: [-14.15, 2.5, 7.45],
     },
-    panelPosition: [1.0, 1.15, 1.0],
+    panelPosition: [1.3, 1.3, 2.2],
   },
 
   CHARGING_PORT: {
@@ -284,10 +284,10 @@ export const VEHICLE_PARTS: Record<VehiclePartId, VehiclePartConfig> = {
     ],
     localCenter: [-0.93, 0.65, -1.6],
     cameraPreset: {
-      target: [-9.2, 0.8, 2.5],
-      position: [-11.8, 1.8, 3.4],
+      target: [-9.1, 0.8, 2.5],
+      position: [-14.15, 2.8, 4.3],
     },
-    panelPosition: [0.2, 1.25, -1.2],
+    panelPosition: [0.9, 1.3, 0.8],
   },
 
   BODY: {
@@ -306,9 +306,9 @@ export const VEHICLE_PARTS: Record<VehiclePartId, VehiclePartConfig> = {
     localCenter: [0, 0.6, 0],
     cameraPreset: {
       target: [-7.1, 0.8, 4.0],
-      position: [-7.1, 2.8, 9.2],
+      position: [-7.1, 4.3, 13.1],
     },
-    panelPosition: [2.5, 1.25, 0.0],
+    panelPosition: [2.6, 1.4, 0.0],
   },
 };
 

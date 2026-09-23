@@ -9,7 +9,12 @@ import { GarageStructure } from './GarageStructure';
 import { GarageCamera } from './GarageCamera';
 import { GarageZoneObject, ZONE_CONFIGS } from './GarageZoneObject';
 import { VehicleDigitalTwin } from './vehicles/VehicleDigitalTwin';
+import { SpatialOverviewControl } from './SpatialOverviewControl';
 import { GarageZone } from '../../store/worldStore';
+import {
+  GlobalInteractionManager,
+  handleNeutralSceneClick,
+} from './GlobalInteractionManager';
 
 const ALL_ZONES: GarageZone[] = [
   'VEHICLE',
@@ -30,7 +35,11 @@ export const EVShareWorld: React.FC = () => {
           camera={{ position: [0, 16, 24], fov: 45 }}
           gl={{ antialias: true, alpha: false }}
           style={{ width: '100%', height: '100%' }}
+          onPointerMissed={handleNeutralSceneClick}
         >
+          {/* Centralized Global Pointer Interaction Manager */}
+          <GlobalInteractionManager />
+
           <Suspense fallback={<WorldLoader />}>
             {/* Atmosphere & Fog */}
             <WorldEnvironment />
@@ -52,6 +61,9 @@ export const EVShareWorld: React.FC = () => {
 
             {/* EV01 Digital Twin positioned in VEHICLE ZONE */}
             <VehicleDigitalTwin />
+
+            {/* Real-time World-Space Spatial Overview Camera Reset Control */}
+            <SpatialOverviewControl />
           </Suspense>
         </Canvas>
       </div>

@@ -1,17 +1,7 @@
 import React from 'react';
 import { Grid } from '@react-three/drei';
-import { useWorldStore } from '../../store/worldStore';
-import { ThreeEvent } from '@react-three/fiber';
 
 export const GarageFloor: React.FC = () => {
-  const clearSelection = useWorldStore((state) => state.clearSelection);
-
-  const handleFloorClick = (e: ThreeEvent<MouseEvent>) => {
-    // Clear zone selection on background click
-    e.stopPropagation();
-    clearSelection();
-  };
-
   return (
     <group position={[0, 0, 0]}>
       {/* Primary shadow receiving physical floor */}
@@ -19,7 +9,6 @@ export const GarageFloor: React.FC = () => {
         rotation={[-Math.PI / 2, 0, 0]}
         position={[0, -0.01, 0]}
         receiveShadow
-        onClick={handleFloorClick}
       >
         <planeGeometry args={[60, 60]} />
         <meshStandardMaterial

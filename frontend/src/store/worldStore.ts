@@ -37,7 +37,10 @@ export interface CameraPreset {
   position: [number, number, number];
 }
 
-export const ZONE_CAMERA_PRESETS: Record<GarageZone | 'OVERVIEW' | 'VEHICLE_FOCUS', CameraPreset> = {
+export const ZONE_CAMERA_PRESETS: Record<
+  GarageZone | 'OVERVIEW' | 'VEHICLE_FOCUS' | 'VEHICLE_CO_OWNERSHIP',
+  CameraPreset
+> = {
   OVERVIEW: {
     target: [0, 0.5, 2],
     position: [0, 16, 24],
@@ -51,6 +54,11 @@ export const ZONE_CAMERA_PRESETS: Record<GarageZone | 'OVERVIEW' | 'VEHICLE_FOCU
   VEHICLE_FOCUS: {
     target: [-7.1, 0.8, 4],
     position: [-7.1, 3.6, 10.6],
+  },
+
+  VEHICLE_CO_OWNERSHIP: {
+    target: [-5.6, 1.1, 4],
+    position: [-5.6, 4.8, 13.6],
   },
 
   CHARGING: {
@@ -99,6 +107,11 @@ interface WorldState {
   hoveredVehiclePartId: VehiclePartId | null;
   selectedVehiclePartId: VehiclePartId | null;
 
+  // Phase 07: Vehicle Co-Ownership Mode & Owner Selection State
+  vehicleCoOwnershipMode: boolean;
+  hoveredOwnerId: string | null;
+  selectedOwnerId: string | null;
+
   selectZone: (zone: GarageZone | null) => void;
   hoverZone: (zone: GarageZone | null) => void;
   selectVehicle: (id: string | null) => void;
@@ -106,6 +119,7 @@ interface WorldState {
   selectObject: (id: string, position: [number, number, number]) => void;
   hoverObject: (id: string | null) => void;
   clearSelection: () => void;
+  clearActiveSpatialSelection: () => void;
   setWorldMode: (mode: WorldMode) => void;
 
   enterVehicleInspectionMode: () => void;
@@ -113,6 +127,12 @@ interface WorldState {
   hoverVehiclePart: (id: VehiclePartId | null) => void;
   selectVehiclePart: (id: VehiclePartId | null) => void;
   clearVehiclePartSelection: () => void;
+
+  enterVehicleCoOwnershipMode: () => void;
+  exitVehicleCoOwnershipMode: () => void;
+  hoverOwner: (id: string | null) => void;
+  selectOwner: (id: string | null) => void;
+  clearOwnerSelection: () => void;
 }
 
 export const useWorldStore = create<WorldState>((set) => ({
@@ -129,6 +149,10 @@ export const useWorldStore = create<WorldState>((set) => ({
   hoveredVehiclePartId: null,
   selectedVehiclePartId: null,
 
+  vehicleCoOwnershipMode: false,
+  hoveredOwnerId: null,
+  selectedOwnerId: null,
+
   selectZone: (zone) =>
     set({
       selectedZone: zone,
@@ -137,6 +161,9 @@ export const useWorldStore = create<WorldState>((set) => ({
       vehicleInspectionMode: false,
       selectedVehiclePartId: null,
       hoveredVehiclePartId: null,
+      vehicleCoOwnershipMode: false,
+      selectedOwnerId: null,
+      hoveredOwnerId: null,
     }),
 
   hoverZone: (zone) =>
@@ -179,6 +206,47 @@ export const useWorldStore = create<WorldState>((set) => ({
       vehicleInspectionMode: false,
       selectedVehiclePartId: null,
       hoveredVehiclePartId: null,
+      vehicleCoOwnershipMode: false,
+      selectedOwnerId: null,
+      hoveredOwnerId: null,
+    }),
+
+  clearActiveSpatialSelection: () =>
+    set((state) => {
+      // 1. In Co-ownership mode: if an owner is selected, deselect owner while remaining in co-ownership view
+      if (state.vehicleCoOwnershipMode) {
+        if (state.selectedOwnerId) {
+          return {
+            selectedOwnerId: null,
+            hoveredOwnerId: null,
+          };
+        }
+        return {};
+      }
+
+      // 2. In Inspection mode: if a vehicle part is selected, deselect part while remaining in inspection view
+      if (state.vehicleInspectionMode) {
+        if (state.selectedVehiclePartId) {
+          return {
+            selectedVehiclePartId: null,
+            hoveredVehiclePartId: null,
+          };
+        }
+        return {};
+      }
+
+      // 3. In normal garage view: deselect active vehicle or zone
+      return {
+        selectedZone: null,
+        selectedObjectId: null,
+        selectedPosition: null,
+        selectedVehicleId: null,
+        hoveredVehicleId: null,
+        selectedVehiclePartId: null,
+        hoveredVehiclePartId: null,
+        selectedOwnerId: null,
+        hoveredOwnerId: null,
+      };
     }),
 
   setWorldMode: (mode) =>
@@ -189,10 +257,13 @@ export const useWorldStore = create<WorldState>((set) => ({
   enterVehicleInspectionMode: () =>
     set({
       vehicleInspectionMode: true,
+      vehicleCoOwnershipMode: false,
       selectedVehicleId: 'EV01',
       selectedZone: 'VEHICLE',
       selectedVehiclePartId: null,
       hoveredVehiclePartId: null,
+      selectedOwnerId: null,
+      hoveredOwnerId: null,
     }),
 
   exitVehicleInspectionMode: () =>
@@ -216,5 +287,40 @@ export const useWorldStore = create<WorldState>((set) => ({
     set({
       selectedVehiclePartId: null,
       hoveredVehiclePartId: null,
+    }),
+
+  enterVehicleCoOwnershipMode: () =>
+    set({
+      vehicleCoOwnershipMode: true,
+      vehicleInspectionMode: false,
+      selectedVehicleId: 'EV01',
+      selectedZone: 'VEHICLE',
+      selectedVehiclePartId: null,
+      hoveredVehiclePartId: null,
+      selectedOwnerId: null,
+      hoveredOwnerId: null,
+    }),
+
+  exitVehicleCoOwnershipMode: () =>
+    set({
+      vehicleCoOwnershipMode: false,
+      selectedOwnerId: null,
+      hoveredOwnerId: null,
+    }),
+
+  hoverOwner: (id) =>
+    set({
+      hoveredOwnerId: id,
+    }),
+
+  selectOwner: (id) =>
+    set({
+      selectedOwnerId: id,
+    }),
+
+  clearOwnerSelection: () =>
+    set({
+      selectedOwnerId: null,
+      hoveredOwnerId: null,
     }),
 }));

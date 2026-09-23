@@ -35,6 +35,8 @@ app:
     secret: ${JWT_SECRET:EVShare3D_SuperSecretKey_For_Pure3D_Authentication_Platform_2026_Secure_Key}
     access-token-expiration-ms: 900000 # 15 minutes
     refresh-token-expiration-days: 7    # 7 days
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174}
 
 management:
   endpoints:

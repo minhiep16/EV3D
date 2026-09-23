@@ -1,7 +1,9 @@
 import React, { useRef } from 'react';
 import { useFrame, ThreeEvent } from '@react-three/fiber';
-import { Html } from '@react-three/drei';
+import { Html, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
+import { SpatialDataLink } from './SpatialDataLink';
+import { HolographicPanelFrame3D } from './HolographicPanelFrame3D';
 import { useWorldStore, GarageZone } from '../../store/worldStore';
 import { 
   Zap, 
@@ -449,14 +451,24 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
         </Html>
       )}
 
-      {/* 4. World-Space Zone Information Card (Rendered only when zone is selected) */}
+      {/* 4. World-Space Zone Information Card with 3D Holographic Frame & Connector */}
       {showZoneCard && (
-        <Html
-          position={[2.3, 1.6, 0]}
-          center
-          distanceFactor={8.0}
-          style={{ pointerEvents: 'auto', userSelect: 'none' }}
-        >
+        <>
+          {/* Visible 3D Laser Connector linking zone landmark to detailed panel */}
+          <SpatialDataLink
+            start={[0, 1.2, 0]}
+            end={[2.3 - 0.35, 1.6, 0]}
+            color={zone.accentColor}
+          />
+
+          <group position={[2.3, 1.6, 0]}>
+            <Billboard follow={true}>
+              <HolographicPanelFrame3D width={2.35} height={2.65} color={zone.accentColor} />
+              <Html
+                center
+                distanceFactor={8.0}
+                style={{ pointerEvents: 'auto', userSelect: 'none' }}
+              >
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
@@ -584,8 +596,11 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
               <strong style={{ color: '#38bdf8' }}>Tính năng sẽ khả dụng ở giai đoạn tiếp theo</strong>
             </div>
           </div>
-        </Html>
-      )}
+          </Html>
+        </Billboard>
+      </group>
+    </>
+  )}
     </group>
   );
 };

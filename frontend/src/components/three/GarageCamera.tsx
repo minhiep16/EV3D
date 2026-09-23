@@ -5,6 +5,10 @@ import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import * as THREE from 'three';
 import { useWorldStore, ZONE_CAMERA_PRESETS } from '../../store/worldStore';
 import { getPartById } from '../../data/vehicleParts';
+import {
+  notifyCameraOrbitStart,
+  notifyCameraOrbitEnd,
+} from './GlobalInteractionManager';
 
 export const GarageCamera: React.FC = () => {
   const controlsRef = useRef<OrbitControlsImpl>(null);
@@ -14,6 +18,9 @@ export const GarageCamera: React.FC = () => {
   const selectedVehicleId = useWorldStore((state) => state.selectedVehicleId);
   const selectedVehiclePartId = useWorldStore(
     (state) => state.selectedVehiclePartId
+  );
+  const vehicleCoOwnershipMode = useWorldStore(
+    (state) => state.vehicleCoOwnershipMode
   );
 
   const targetLookAt = useRef(
@@ -25,7 +32,9 @@ export const GarageCamera: React.FC = () => {
   useEffect(() => {
     let preset = ZONE_CAMERA_PRESETS.OVERVIEW;
 
-    if (selectedVehiclePartId) {
+    if (vehicleCoOwnershipMode) {
+      preset = ZONE_CAMERA_PRESETS.VEHICLE_CO_OWNERSHIP;
+    } else if (selectedVehiclePartId) {
       const partConfig = getPartById(selectedVehiclePartId);
       if (partConfig) {
         preset = partConfig.cameraPreset;
@@ -41,7 +50,7 @@ export const GarageCamera: React.FC = () => {
     targetLookAt.current.set(...preset.target);
     targetCamPos.current = new THREE.Vector3(...preset.position);
     isTransitioning.current = true;
-  }, [selectedZone, selectedVehicleId, selectedVehiclePartId]);
+  }, [selectedZone, selectedVehicleId, selectedVehiclePartId, vehicleCoOwnershipMode]);
 
   useFrame((_, delta) => {
     if (!controlsRef.current) return;
@@ -74,6 +83,8 @@ export const GarageCamera: React.FC = () => {
       // Strictly prevent camera from passing below the garage floor
       maxPolarAngle={Math.PI / 2 - 0.05}
       minPolarAngle={0.1}
+      onStart={notifyCameraOrbitStart}
+      onEnd={notifyCameraOrbitEnd}
     />
   );
 };

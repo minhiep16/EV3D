@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Html } from '@react-three/drei';
 import { registerApi } from '../../services/authApi';
 import { UserPlus, AlertTriangle, CheckCircle2, ArrowLeft, Shield } from 'lucide-react';
+import { HolographicPanelFrame3D } from '../three/HolographicPanelFrame3D';
 
 interface SpatialRegisterPanelProps {
   onSwitchToLogin: () => void;
@@ -69,6 +70,9 @@ export const SpatialRegisterPanel: React.FC<SpatialRegisterPanelProps> = ({
 
   return (
     <group position={[0, 1.5, 0]}>
+      {/* 3D Holographic Border & Emitter Frame */}
+      <HolographicPanelFrame3D width={3.2} height={4.2} color="#00f2fe" depth={-0.08} />
+
       <Html
         transform
         distanceFactor={6}

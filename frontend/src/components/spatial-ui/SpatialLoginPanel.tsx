@@ -3,6 +3,7 @@ import { Html } from '@react-three/drei';
 import { loginApi } from '../../services/authApi';
 import { useAuthStore } from '../../store/authStore';
 import { LogIn, AlertTriangle, UserPlus, Sparkles } from 'lucide-react';
+import { HolographicPanelFrame3D } from '../three/HolographicPanelFrame3D';
 
 interface SpatialLoginPanelProps {
   onLoginSuccess: () => void;
@@ -44,6 +45,9 @@ export const SpatialLoginPanel: React.FC<SpatialLoginPanelProps> = ({
 
   return (
     <group position={[0, 1.5, 0]}>
+      {/* 3D Holographic Border & Emitter Frame */}
+      <HolographicPanelFrame3D width={3.0} height={3.6} color="#00f2fe" depth={-0.08} />
+
       <Html
         transform
         distanceFactor={6}
