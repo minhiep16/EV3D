@@ -31,10 +31,21 @@ export const HolographicPanelFrame3D: React.FC<HolographicPanelFrame3DProps> = (
     }
   });
 
+  // Purely decorative holographic frame: disable raycast so it never blocks pointer interactions
+  React.useEffect(() => {
+    if (frameRef.current) {
+      frameRef.current.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          child.raycast = () => null;
+        }
+      });
+    }
+  }, []);
+
   return (
     <group ref={frameRef} position={[0, 0, depth]}>
       {/* 1. Translucent Hologram Projection Plane */}
-      <mesh position={[0, 0, 0]}>
+      <mesh position={[0, 0, 0]} raycast={() => null}>
         <planeGeometry args={[width, height]} />
         <meshBasicMaterial
           color="#031122"

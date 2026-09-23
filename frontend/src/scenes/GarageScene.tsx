@@ -11,6 +11,24 @@ export const GarageScene: React.FC = () => {
   const user = useAuthStore((state) => state.user);
   const vehicleCoOwnershipMode = useWorldStore((state) => state.vehicleCoOwnershipMode);
   const exitVehicleCoOwnershipMode = useWorldStore((state) => state.exitVehicleCoOwnershipMode);
+  const vehicleBookingMode = useWorldStore((state) => state.vehicleBookingMode);
+  const exitVehicleBookingMode = useWorldStore((state) => state.exitVehicleBookingMode);
+  const vehicleHandoverMode = useWorldStore((state) => state.vehicleHandoverMode);
+  const exitVehicleHandoverMode = useWorldStore((state) => state.exitVehicleHandoverMode);
+
+  const showBackToVehicle =
+    vehicleCoOwnershipMode || vehicleBookingMode || vehicleHandoverMode;
+  const handleBackToVehicle = () => {
+    if (vehicleHandoverMode) {
+      exitVehicleHandoverMode();
+    }
+    if (vehicleBookingMode) {
+      exitVehicleBookingMode();
+    }
+    if (vehicleCoOwnershipMode) {
+      exitVehicleCoOwnershipMode();
+    }
+  };
 
   const handleLogout = async () => {
     await logoutApi();
@@ -22,8 +40,8 @@ export const GarageScene: React.FC = () => {
       {/* Pure 3D Virtual Garage World */}
       <EVShareWorld />
 
-      {/* Screen-space Utility Control: Top-Left [ ← QUAY LẠI XE ] in Co-ownership Mode */}
-      {vehicleCoOwnershipMode && (
+      {/* Screen-space Utility Control: Top-Left [ ← QUAY LẠI XE ] in Co-ownership or Booking Mode */}
+      {showBackToVehicle && (
         <div
           style={{
             position: 'absolute',
@@ -35,7 +53,7 @@ export const GarageScene: React.FC = () => {
         >
           <button
             type="button"
-            onClick={exitVehicleCoOwnershipMode}
+            onClick={handleBackToVehicle}
             title="Quay lại xe điện EV01"
             style={{
               background: 'rgba(10, 15, 29, 0.82)',

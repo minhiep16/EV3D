@@ -38,7 +38,7 @@ export interface CameraPreset {
 }
 
 export const ZONE_CAMERA_PRESETS: Record<
-  GarageZone | 'OVERVIEW' | 'VEHICLE_FOCUS' | 'VEHICLE_CO_OWNERSHIP',
+  GarageZone | 'OVERVIEW' | 'VEHICLE_FOCUS' | 'VEHICLE_CO_OWNERSHIP' | 'VEHICLE_BOOKING' | 'VEHICLE_HANDOVER',
   CameraPreset
 > = {
   OVERVIEW: {
@@ -59,6 +59,16 @@ export const ZONE_CAMERA_PRESETS: Record<
   VEHICLE_CO_OWNERSHIP: {
     target: [-5.6, 1.1, 4],
     position: [-5.6, 4.8, 13.6],
+  },
+
+  VEHICLE_BOOKING: {
+    target: [-4.6, 1.15, 4.0],
+    position: [-4.6, 4.6, 14.2],
+  },
+
+  VEHICLE_HANDOVER: {
+    target: [-5.6, 1.1, 4.0],
+    position: [-5.6, 4.4, 13.5],
   },
 
   CHARGING: {
@@ -133,6 +143,20 @@ interface WorldState {
   hoverOwner: (id: string | null) => void;
   selectOwner: (id: string | null) => void;
   clearOwnerSelection: () => void;
+
+  vehicleBookingMode: boolean;
+  enterVehicleBookingMode: () => void;
+  exitVehicleBookingMode: () => void;
+
+  // Phase 09: Vehicle Handover & Check-in Mode
+  vehicleHandoverMode: boolean;
+  hoveredHandoverCheckpoint: string | null;
+  selectedHandoverCheckpoint: string | null;
+  enterVehicleHandoverMode: () => void;
+  exitVehicleHandoverMode: () => void;
+  hoverHandoverCheckpoint: (code: string | null) => void;
+  selectHandoverCheckpoint: (code: string | null) => void;
+  clearHandoverCheckpointSelection: () => void;
 }
 
 export const useWorldStore = create<WorldState>((set) => ({
@@ -153,6 +177,12 @@ export const useWorldStore = create<WorldState>((set) => ({
   hoveredOwnerId: null,
   selectedOwnerId: null,
 
+  vehicleBookingMode: false,
+
+  vehicleHandoverMode: false,
+  hoveredHandoverCheckpoint: null,
+  selectedHandoverCheckpoint: null,
+
   selectZone: (zone) =>
     set({
       selectedZone: zone,
@@ -164,6 +194,10 @@ export const useWorldStore = create<WorldState>((set) => ({
       vehicleCoOwnershipMode: false,
       selectedOwnerId: null,
       hoveredOwnerId: null,
+      vehicleBookingMode: false,
+      vehicleHandoverMode: false,
+      selectedHandoverCheckpoint: null,
+      hoveredHandoverCheckpoint: null,
     }),
 
   hoverZone: (zone) =>
@@ -209,10 +243,30 @@ export const useWorldStore = create<WorldState>((set) => ({
       vehicleCoOwnershipMode: false,
       selectedOwnerId: null,
       hoveredOwnerId: null,
+      vehicleBookingMode: false,
+      vehicleHandoverMode: false,
+      selectedHandoverCheckpoint: null,
+      hoveredHandoverCheckpoint: null,
     }),
 
   clearActiveSpatialSelection: () =>
     set((state) => {
+      // 0a. In Handover mode: if a checkpoint is selected, deselect checkpoint while remaining in handover view
+      // Camera orbit or right drag does not exit handover mode
+      if (state.vehicleHandoverMode) {
+        if (state.selectedHandoverCheckpoint) {
+          return {
+            selectedHandoverCheckpoint: null,
+            hoveredHandoverCheckpoint: null,
+          };
+        }
+        return {};
+      }
+
+      // 0b. In Booking mode: preserve booking view and selected time range
+      if (state.vehicleBookingMode) {
+        return {};
+      }
       // 1. In Co-ownership mode: if an owner is selected, deselect owner while remaining in co-ownership view
       if (state.vehicleCoOwnershipMode) {
         if (state.selectedOwnerId) {
@@ -246,6 +300,8 @@ export const useWorldStore = create<WorldState>((set) => ({
         hoveredVehiclePartId: null,
         selectedOwnerId: null,
         hoveredOwnerId: null,
+        selectedHandoverCheckpoint: null,
+        hoveredHandoverCheckpoint: null,
       };
     }),
 
@@ -258,6 +314,7 @@ export const useWorldStore = create<WorldState>((set) => ({
     set({
       vehicleInspectionMode: true,
       vehicleCoOwnershipMode: false,
+      vehicleBookingMode: false,
       selectedVehicleId: 'EV01',
       selectedZone: 'VEHICLE',
       selectedVehiclePartId: null,
@@ -293,6 +350,7 @@ export const useWorldStore = create<WorldState>((set) => ({
     set({
       vehicleCoOwnershipMode: true,
       vehicleInspectionMode: false,
+      vehicleBookingMode: false,
       selectedVehicleId: 'EV01',
       selectedZone: 'VEHICLE',
       selectedVehiclePartId: null,
@@ -306,6 +364,24 @@ export const useWorldStore = create<WorldState>((set) => ({
       vehicleCoOwnershipMode: false,
       selectedOwnerId: null,
       hoveredOwnerId: null,
+    }),
+
+  enterVehicleBookingMode: () =>
+    set({
+      vehicleBookingMode: true,
+      vehicleCoOwnershipMode: false,
+      vehicleInspectionMode: false,
+      selectedVehicleId: 'EV01',
+      selectedZone: 'VEHICLE',
+      selectedVehiclePartId: null,
+      hoveredVehiclePartId: null,
+      selectedOwnerId: null,
+      hoveredOwnerId: null,
+    }),
+
+  exitVehicleBookingMode: () =>
+    set({
+      vehicleBookingMode: false,
     }),
 
   hoverOwner: (id) =>
@@ -323,4 +399,44 @@ export const useWorldStore = create<WorldState>((set) => ({
       selectedOwnerId: null,
       hoveredOwnerId: null,
     }),
+
+  enterVehicleHandoverMode: () =>
+    set({
+      vehicleHandoverMode: true,
+      vehicleBookingMode: false,
+      vehicleCoOwnershipMode: false,
+      vehicleInspectionMode: false,
+      selectedVehicleId: 'EV01',
+      selectedZone: 'VEHICLE',
+      selectedVehiclePartId: null,
+      hoveredVehiclePartId: null,
+      selectedOwnerId: null,
+      hoveredOwnerId: null,
+      selectedHandoverCheckpoint: null,
+      hoveredHandoverCheckpoint: null,
+    }),
+
+  exitVehicleHandoverMode: () =>
+    set({
+      vehicleHandoverMode: false,
+      selectedHandoverCheckpoint: null,
+      hoveredHandoverCheckpoint: null,
+    }),
+
+  hoverHandoverCheckpoint: (code) =>
+    set({
+      hoveredHandoverCheckpoint: code,
+    }),
+
+  selectHandoverCheckpoint: (code) =>
+    set({
+      selectedHandoverCheckpoint: code,
+    }),
+
+  clearHandoverCheckpointSelection: () =>
+    set({
+      selectedHandoverCheckpoint: null,
+      hoveredHandoverCheckpoint: null,
+    }),
 }));
+

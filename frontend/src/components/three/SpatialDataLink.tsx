@@ -52,7 +52,7 @@ export const SpatialDataLink: React.FC<SpatialDataLinkProps> = ({
   return (
     <group>
       {/* 1. Core Glowing Laser Beam */}
-      <mesh position={midPoint} quaternion={orientation}>
+      <mesh position={midPoint} quaternion={orientation} raycast={() => null}>
         <cylinderGeometry args={[thickness, thickness, length, 12]} />
         <meshStandardMaterial
           color={color}
@@ -65,7 +65,7 @@ export const SpatialDataLink: React.FC<SpatialDataLinkProps> = ({
       </mesh>
 
       {/* 2. Outer Beam Halo */}
-      <mesh position={midPoint} quaternion={orientation}>
+      <mesh position={midPoint} quaternion={orientation} raycast={() => null}>
         <cylinderGeometry args={[thickness * 2.4, thickness * 2.4, length, 12]} />
         <meshBasicMaterial
           color={color}
@@ -76,7 +76,7 @@ export const SpatialDataLink: React.FC<SpatialDataLinkProps> = ({
       </mesh>
 
       {/* 3. Start Terminal Beacon Node */}
-      <mesh position={startVec}>
+      <mesh position={startVec} raycast={() => null}>
         <sphereGeometry args={[thickness * 3.4, 16, 16]} />
         <meshStandardMaterial
           color={color}
@@ -86,7 +86,7 @@ export const SpatialDataLink: React.FC<SpatialDataLinkProps> = ({
       </mesh>
 
       {/* 4. End Target Beacon Node */}
-      <mesh position={endVec}>
+      <mesh position={endVec} raycast={() => null}>
         <sphereGeometry args={[thickness * 2.8, 16, 16]} />
         <meshStandardMaterial
           color={color}
@@ -96,7 +96,7 @@ export const SpatialDataLink: React.FC<SpatialDataLinkProps> = ({
       </mesh>
 
       {/* 5. Animated Energy Pulse Node traveling along beam */}
-      <mesh ref={pulseNodeRef}>
+      <mesh ref={pulseNodeRef} raycast={() => null}>
         <sphereGeometry args={[thickness * 3.0, 12, 12]} />
         <meshBasicMaterial color="#ffffff" transparent opacity={0.95} />
       </mesh>

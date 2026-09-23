@@ -14,6 +14,8 @@ import { SpatialVehiclePartPanel } from './SpatialVehiclePartPanel';
 import { SpatialDataLink } from '../SpatialDataLink';
 import { HolographicPanelFrame3D } from '../HolographicPanelFrame3D';
 import { VehicleCoOwnershipWorld } from '../ownership/VehicleCoOwnershipWorld';
+import { VehicleBookingWorld } from '../booking/VehicleBookingWorld';
+import { VehicleHandoverWorld } from '../handover/VehicleHandoverWorld';
 import { getPartById } from '../../../data/vehicleParts';
 import {
   Car,
@@ -22,11 +24,15 @@ import {
   Gauge,
   Wrench,
   Users,
+  Calendar,
   X,
   Sparkles,
   AlertTriangle,
   RefreshCw,
-  Hash
+  Hash,
+  ShieldCheck,
+  Key,
+  Eye,
 } from 'lucide-react';
 
 export const VehicleDigitalTwin: React.FC = () => {
@@ -44,6 +50,9 @@ export const VehicleDigitalTwin: React.FC = () => {
   const vehicleCoOwnershipMode = useWorldStore(
     (state) => state.vehicleCoOwnershipMode
   );
+  const user = useAuthStore((state) => state.user);
+  const vehicleBookingMode = useWorldStore((state) => state.vehicleBookingMode);
+  const vehicleHandoverMode = useWorldStore((state) => state.vehicleHandoverMode);
   const selectedVehiclePartId = useWorldStore(
     (state) => state.selectedVehiclePartId
   );
@@ -55,6 +64,12 @@ export const VehicleDigitalTwin: React.FC = () => {
   );
   const enterVehicleCoOwnershipMode = useWorldStore(
     (state) => state.enterVehicleCoOwnershipMode
+  );
+  const enterVehicleBookingMode = useWorldStore(
+    (state) => state.enterVehicleBookingMode
+  );
+  const enterVehicleHandoverMode = useWorldStore(
+    (state) => state.enterVehicleHandoverMode
   );
 
   // TanStack Query: Fetch vehicles from Spring Boot API / MySQL
@@ -229,29 +244,32 @@ export const VehicleDigitalTwin: React.FC = () => {
 
   const selectedPart = getPartById(selectedVehiclePartId);
 
+  const isBusinessModeActive =
+    vehicleInspectionMode ||
+    vehicleCoOwnershipMode ||
+    vehicleBookingMode ||
+    vehicleHandoverMode;
+
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
+    if (isBusinessModeActive) return;
     e.stopPropagation();
-    if (!vehicleInspectionMode && !vehicleCoOwnershipMode) {
-      selectVehicle(vehicle.id);
-    }
+    selectVehicle(vehicle.id);
   };
 
   const handlePointerOver = (e: ThreeEvent<PointerEvent>) => {
+    if (isBusinessModeActive) return;
     e.stopPropagation();
-    if (!vehicleInspectionMode && !vehicleCoOwnershipMode) {
-      hoverVehicle(vehicle.id);
-      document.body.style.cursor = 'pointer';
-    }
+    hoverVehicle(vehicle.id);
+    document.body.style.cursor = 'pointer';
   };
 
   const handlePointerOut = (e: ThreeEvent<PointerEvent>) => {
+    if (isBusinessModeActive) return;
     e.stopPropagation();
-    if (!vehicleInspectionMode && !vehicleCoOwnershipMode) {
-      if (hoveredVehicleId === vehicle.id || hoveredVehicleId === displayCode) {
-        hoverVehicle(null);
-      }
-      document.body.style.cursor = 'auto';
+    if (hoveredVehicleId === vehicle.id || hoveredVehicleId === displayCode) {
+      hoverVehicle(null);
     }
+    document.body.style.cursor = 'auto';
   };
 
   return (
@@ -288,7 +306,7 @@ export const VehicleDigitalTwin: React.FC = () => {
       )}
 
       {/* 4. World-Space Spatial Vehicle Information Card with 3D Holographic Frame & Connector */}
-      {isSelected && !vehicleInspectionMode && !vehicleCoOwnershipMode && (
+      {isSelected && !vehicleInspectionMode && !vehicleCoOwnershipMode && !vehicleBookingMode && !vehicleHandoverMode && (
         <>
           {/* Visible 3D Laser Connector linking EV01 to detailed panel */}
           <SpatialDataLink
@@ -532,8 +550,44 @@ export const VehicleDigitalTwin: React.FC = () => {
               </div>
             </div>
 
-            {/* Action Buttons: Co-ownership & Inspection */}
+            {/* Action Buttons: Booking, Co-ownership & Inspection */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => enterVehicleBookingMode()}
+                style={{
+                  width: '100%',
+                  padding: '11px',
+                  background: 'linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)',
+                  border: 'none',
+                  borderRadius: '10px',
+                  color: '#ffffff',
+                  fontFamily: 'inherit',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  boxShadow: '0 4px 15px rgba(0, 242, 254, 0.35)',
+                  transition: 'all 0.2s ease',
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.boxShadow = '0 6px 20px rgba(0, 242, 254, 0.55)';
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.boxShadow = '0 4px 15px rgba(0, 242, 254, 0.35)';
+                  e.currentTarget.style.transform = 'none';
+                }}
+              >
+                <Calendar size={14} />
+                ĐẶT LỊCH SỬ DỤNG
+              </button>
+
               <button
                 type="button"
                 onClick={() => enterVehicleCoOwnershipMode()}
@@ -569,6 +623,117 @@ export const VehicleDigitalTwin: React.FC = () => {
                 <Users size={14} />
                 ĐỒNG SỞ HỮU
               </button>
+
+              {/* Role-Aware Handover & Check-in Action (Phase 09) */}
+              {user?.role === 'STAFF' ? (
+                <button
+                  type="button"
+                  onClick={() => enterVehicleHandoverMode()}
+                  style={{
+                    width: '100%',
+                    padding: '11px',
+                    background: 'linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)',
+                    border: 'none',
+                    borderRadius: '10px',
+                    color: '#080c16',
+                    fontFamily: 'inherit',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    letterSpacing: '0.06em',
+                    textTransform: 'uppercase',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 15px rgba(0, 242, 254, 0.4)',
+                    transition: 'all 0.2s ease',
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.boxShadow = '0 6px 22px rgba(0, 242, 254, 0.65)';
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.boxShadow = '0 4px 15px rgba(0, 242, 254, 0.4)';
+                    e.currentTarget.style.transform = 'none';
+                  }}
+                >
+                  <ShieldCheck size={14} />
+                  KIỂM TRA & BÀN GIAO XE
+                </button>
+              ) : user?.role === 'ADMIN' ? (
+                <button
+                  type="button"
+                  onClick={() => enterVehicleHandoverMode()}
+                  style={{
+                    width: '100%',
+                    padding: '11px',
+                    background: 'linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)',
+                    border: 'none',
+                    borderRadius: '10px',
+                    color: '#ffffff',
+                    fontFamily: 'inherit',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    letterSpacing: '0.06em',
+                    textTransform: 'uppercase',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 15px rgba(168, 85, 247, 0.4)',
+                    transition: 'all 0.2s ease',
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.boxShadow = '0 6px 22px rgba(168, 85, 247, 0.65)';
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.boxShadow = '0 4px 15px rgba(168, 85, 247, 0.4)';
+                    e.currentTarget.style.transform = 'none';
+                  }}
+                >
+                  <Eye size={14} />
+                  THEO DÕI BÀN GIAO
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => enterVehicleHandoverMode()}
+                  style={{
+                    width: '100%',
+                    padding: '11px',
+                    background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                    border: 'none',
+                    borderRadius: '10px',
+                    color: '#052e16',
+                    fontFamily: 'inherit',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    letterSpacing: '0.06em',
+                    textTransform: 'uppercase',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 15px rgba(16, 185, 129, 0.4)',
+                    transition: 'all 0.2s ease',
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.boxShadow = '0 6px 22px rgba(16, 185, 129, 0.65)';
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.boxShadow = '0 4px 15px rgba(16, 185, 129, 0.4)';
+                    e.currentTarget.style.transform = 'none';
+                  }}
+                >
+                  <Key size={14} />
+                  NHẬN XE
+                </button>
+              )}
 
               <button
                 type="button"
@@ -626,6 +791,16 @@ export const VehicleDigitalTwin: React.FC = () => {
       {/* 7. Phase 07: Vehicle 3D Co-Ownership View */}
       {vehicleCoOwnershipMode && (
         <VehicleCoOwnershipWorld vehicle={vehicle} />
+      )}
+
+      {/* 8. Phase 08: Pure 3D Vehicle Booking View */}
+      {vehicleBookingMode && (
+        <VehicleBookingWorld vehicle={vehicle} />
+      )}
+
+      {/* 9. Phase 09: 3D Vehicle Handover & Check-in View */}
+      {vehicleHandoverMode && (
+        <VehicleHandoverWorld vehicle={vehicle} />
       )}
     </group>
   );

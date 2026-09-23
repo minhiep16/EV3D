@@ -22,6 +22,8 @@ export const GarageCamera: React.FC = () => {
   const vehicleCoOwnershipMode = useWorldStore(
     (state) => state.vehicleCoOwnershipMode
   );
+  const vehicleBookingMode = useWorldStore((state) => state.vehicleBookingMode);
+  const vehicleHandoverMode = useWorldStore((state) => state.vehicleHandoverMode);
 
   const targetLookAt = useRef(
     new THREE.Vector3(...ZONE_CAMERA_PRESETS.OVERVIEW.target)
@@ -32,7 +34,11 @@ export const GarageCamera: React.FC = () => {
   useEffect(() => {
     let preset = ZONE_CAMERA_PRESETS.OVERVIEW;
 
-    if (vehicleCoOwnershipMode) {
+    if (vehicleHandoverMode) {
+      preset = ZONE_CAMERA_PRESETS.VEHICLE_HANDOVER;
+    } else if (vehicleBookingMode) {
+      preset = ZONE_CAMERA_PRESETS.VEHICLE_BOOKING;
+    } else if (vehicleCoOwnershipMode) {
       preset = ZONE_CAMERA_PRESETS.VEHICLE_CO_OWNERSHIP;
     } else if (selectedVehiclePartId) {
       const partConfig = getPartById(selectedVehiclePartId);
@@ -50,7 +56,7 @@ export const GarageCamera: React.FC = () => {
     targetLookAt.current.set(...preset.target);
     targetCamPos.current = new THREE.Vector3(...preset.position);
     isTransitioning.current = true;
-  }, [selectedZone, selectedVehicleId, selectedVehiclePartId, vehicleCoOwnershipMode]);
+  }, [selectedZone, selectedVehicleId, selectedVehiclePartId, vehicleCoOwnershipMode, vehicleBookingMode, vehicleHandoverMode]);
 
   useFrame((_, delta) => {
     if (!controlsRef.current) return;

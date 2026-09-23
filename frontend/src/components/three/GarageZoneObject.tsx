@@ -119,13 +119,31 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
   const hoverZone = useWorldStore((state) => state.hoverZone);
   const clearSelection = useWorldStore((state) => state.clearSelection);
 
+  const vehicleBookingMode = useWorldStore((state) => state.vehicleBookingMode);
+  const vehicleInspectionMode = useWorldStore((state) => state.vehicleInspectionMode);
+  const vehicleCoOwnershipMode = useWorldStore((state) => state.vehicleCoOwnershipMode);
+  const vehicleHandoverMode = useWorldStore((state) => state.vehicleHandoverMode);
+
   const isSelected = selectedZone === zone.id;
   const isHovered = hoveredZone === zone.id;
 
+  // Centralized business focus mode (Vehicle deep interactions: Handover, Booking, Inspection, Co-ownership)
+  const isFocusedBusinessMode =
+    vehicleHandoverMode ||
+    vehicleBookingMode ||
+    vehicleInspectionMode ||
+    vehicleCoOwnershipMode;
+
   // GLOBAL SPATIAL UI VISIBILITY RULE:
-  // When a zone is selected, its world-space label and compact summary are temporarily hidden.
-  // For VEHICLE, when either selectedZone === 'VEHICLE' or selectedVehicleId != null, it is considered focused/selected.
-  const isZoneFocused = isSelected || (zone.id === 'VEHICLE' && selectedVehicleId != null);
+  // 1. When a focused business mode (Booking, Inspection, Co-ownership) is active on the vehicle,
+  //    all unrelated zone labels/summaries are temporarily hidden to eliminate spatial scene clutter
+  //    and prevent blocking business panels (such as Holographic Booking Summary).
+  // 2. When a specific zone is selected, its own label/summary hides in favor of its detailed card.
+  // 3. For VEHICLE, when selectedVehicleId != null, its own label is hidden.
+  const isZoneFocused =
+    isFocusedBusinessMode ||
+    isSelected ||
+    (zone.id === 'VEHICLE' && selectedVehicleId != null);
   const showZoneLabelAndSummary = !isZoneFocused;
 
   // The detailed spatial panel is shown ONLY for the selected zone.
@@ -152,17 +170,20 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
+    if (isFocusedBusinessMode) return;
     selectZone(zone.id);
   };
 
   const handlePointerOver = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
+    if (isFocusedBusinessMode) return;
     hoverZone(zone.id);
     document.body.style.cursor = 'pointer';
   };
 
   const handlePointerOut = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
+    if (isFocusedBusinessMode) return;
     if (hoveredZone === zone.id) {
       hoverZone(null);
     }
