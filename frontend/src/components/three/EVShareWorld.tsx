@@ -8,25 +8,26 @@ import { GarageFloor } from './GarageFloor';
 import { GarageStructure } from './GarageStructure';
 import { GarageCamera } from './GarageCamera';
 import { GarageZoneObject, ZONE_CONFIGS } from './GarageZoneObject';
-import { VehicleDigitalTwin } from './vehicles/VehicleDigitalTwin';
 import { SpatialOverviewControl } from './SpatialOverviewControl';
 import { GarageZone } from '../../store/worldStore';
+import { useAuthStore } from '../../store/authStore';
+import { getAccessibleZones } from '../../utils/roleCapabilities';
+import { CoOwnerExperience } from './experiences/CoOwnerExperience';
+import { OperationsExperience } from './experiences/OperationsExperience';
 import {
   GlobalInteractionManager,
   handleNeutralSceneClick,
 } from './GlobalInteractionManager';
 
-const ALL_ZONES: GarageZone[] = [
-  'VEHICLE',
-  'CHARGING',
-  'MAINTENANCE',
-  'FINANCE',
-  'GOVERNANCE',
-  'ANALYTICS',
-  'AI',
-];
-
 export const EVShareWorld: React.FC = () => {
+  const user = useAuthStore((state) => state.user);
+  const isOperationsRole = user?.role === 'STAFF' || user?.role === 'ADMIN';
+
+  const accessibleZones = React.useMemo(
+    () => getAccessibleZones(user?.role),
+    [user?.role]
+  );
+
   return (
     <WorldErrorBoundary>
       <div style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden', background: '#070b14' }}>
@@ -54,13 +55,13 @@ export const EVShareWorld: React.FC = () => {
             <GarageFloor />
             <GarageStructure />
 
-            {/* All 7 Functional Garage Zones */}
-            {ALL_ZONES.map((zoneId) => (
+            {/* Functional Garage Zones: Filtered by Centralized Role-Zone Capabilities */}
+            {accessibleZones.map((zoneId) => (
               <GarageZoneObject key={zoneId} zone={ZONE_CONFIGS[zoneId]} />
             ))}
 
-            {/* EV01 Digital Twin positioned in VEHICLE ZONE */}
-            <VehicleDigitalTwin />
+            {/* Role-Specific Experience: CO_OWNER vs OPERATIONS (STAFF + ADMIN) */}
+            {isOperationsRole ? <OperationsExperience /> : <CoOwnerExperience />}
 
             {/* Real-time World-Space Spatial Overview Camera Reset Control */}
             <SpatialOverviewControl />
@@ -70,3 +71,4 @@ export const EVShareWorld: React.FC = () => {
     </WorldErrorBoundary>
   );
 };
+export { EVShareWorld as GarageWorld };

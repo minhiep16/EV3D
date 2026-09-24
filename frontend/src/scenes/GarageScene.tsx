@@ -1,39 +1,84 @@
-import React from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { EVShareWorld } from '../components/three/EVShareWorld';
 import { useAuthStore } from '../store/authStore';
 import { useWorldStore } from '../store/worldStore';
 import { logoutApi } from '../services/authApi';
-import { LogOut, Warehouse, ArrowLeft } from 'lucide-react';
+import { LogOut, Warehouse, ArrowLeft, ShieldCheck, Eye, Sparkles, RotateCcw } from 'lucide-react';
 
 export const GarageScene: React.FC = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
+  const resetExperienceState = useWorldStore((state) => state.resetExperienceState);
+  const vehicleFeatureMode = useWorldStore((state) => state.vehicleFeatureMode);
+  const selectedVehicleId = useWorldStore((state) => state.selectedVehicleId);
+  const selectedZone = useWorldStore((state) => state.selectedZone);
+  const clearSelection = useWorldStore((state) => state.clearSelection);
+  const returnToVehicleOverview = useWorldStore((state) => state.returnToVehicleOverview);
   const vehicleCoOwnershipMode = useWorldStore((state) => state.vehicleCoOwnershipMode);
-  const exitVehicleCoOwnershipMode = useWorldStore((state) => state.exitVehicleCoOwnershipMode);
   const vehicleBookingMode = useWorldStore((state) => state.vehicleBookingMode);
-  const exitVehicleBookingMode = useWorldStore((state) => state.exitVehicleBookingMode);
   const vehicleHandoverMode = useWorldStore((state) => state.vehicleHandoverMode);
-  const exitVehicleHandoverMode = useWorldStore((state) => state.exitVehicleHandoverMode);
+  const vehicleInspectionMode = useWorldStore((state) => state.vehicleInspectionMode);
+
+  // Session Isolation: Whenever authenticated user changes, reset all transient experience states
+  useEffect(() => {
+    resetExperienceState();
+  }, [user?.id, user?.role, resetExperienceState]);
 
   const showBackToVehicle =
-    vehicleCoOwnershipMode || vehicleBookingMode || vehicleHandoverMode;
+    vehicleCoOwnershipMode ||
+    vehicleBookingMode ||
+    vehicleHandoverMode ||
+    vehicleInspectionMode ||
+    vehicleFeatureMode === 'CO_OWNER_VEHICLE_INFO' ||
+    vehicleFeatureMode === 'CO_OWNER_MY_BOOKINGS';
+
+  const showBackToGarageOverview =
+    (!!selectedVehicleId || !!selectedZone) && !showBackToVehicle;
+
   const handleBackToVehicle = () => {
-    if (vehicleHandoverMode) {
-      exitVehicleHandoverMode();
-    }
-    if (vehicleBookingMode) {
-      exitVehicleBookingMode();
-    }
-    if (vehicleCoOwnershipMode) {
-      exitVehicleCoOwnershipMode();
-    }
+    returnToVehicleOverview();
   };
 
   const handleLogout = async () => {
+    resetExperienceState();
+    queryClient.clear();
     await logoutApi();
     navigate('/login', { replace: true });
   };
+
+  const modeBadge = useMemo(() => {
+    if (user?.role === 'STAFF') {
+      return {
+        label: 'CHẾ ĐỘ VẬN HÀNH — NHÂN VIÊN',
+        icon: <ShieldCheck size={12} color="#00f2fe" />,
+        bg: 'rgba(2, 132, 199, 0.2)',
+        border: '1px solid rgba(0, 242, 254, 0.45)',
+        color: '#00f2fe',
+        shadow: '0 0 12px rgba(0, 242, 254, 0.25)',
+      };
+    }
+    if (user?.role === 'ADMIN') {
+      return {
+        label: 'CHẾ ĐỘ QUẢN TRỊ — ADMIN',
+        icon: <Eye size={12} color="#c084fc" />,
+        bg: 'rgba(124, 58, 237, 0.2)',
+        border: '1px solid rgba(168, 85, 247, 0.45)',
+        color: '#c084fc',
+        shadow: '0 0 12px rgba(168, 85, 247, 0.25)',
+      };
+    }
+    return {
+      label: 'CHẾ ĐỘ ĐỒNG SỞ HỮU',
+      icon: <Sparkles size={12} color="#10b981" />,
+      bg: 'rgba(5, 150, 105, 0.18)',
+      border: '1px solid rgba(16, 185, 129, 0.45)',
+      color: '#34d399',
+      shadow: '0 0 12px rgba(16, 185, 129, 0.25)',
+    };
+  }, [user?.role]);
 
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden' }}>
@@ -91,6 +136,57 @@ export const GarageScene: React.FC = () => {
         </div>
       )}
 
+      {/* Screen-space Utility Control: Top-Left [ QUAY LẠI TOÀN CẢNH GARAGE ] when Vehicle is selected */}
+      {showBackToGarageOverview && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '20px',
+            left: '24px',
+            zIndex: 10,
+            pointerEvents: 'auto',
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => clearSelection()}
+            title="Quay lại toàn cảnh garage"
+            style={{
+              background: 'rgba(10, 15, 29, 0.85)',
+              backdropFilter: 'blur(12px)',
+              border: '1px solid rgba(0, 242, 254, 0.5)',
+              borderRadius: '9999px',
+              padding: '7px 16px',
+              color: '#00f2fe',
+              fontSize: '12px',
+              fontWeight: 700,
+              letterSpacing: '0.04em',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '7px',
+              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.6), 0 0 12px rgba(0, 242, 254, 0.25)',
+              transition: 'all 0.2s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(0, 242, 254, 0.22)';
+              e.currentTarget.style.borderColor = '#38bdf8';
+              e.currentTarget.style.boxShadow = '0 6px 20px rgba(0, 242, 254, 0.5)';
+              e.currentTarget.style.transform = 'translateY(-1px)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(10, 15, 29, 0.85)';
+              e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.5)';
+              e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.6), 0 0 12px rgba(0, 242, 254, 0.25)';
+              e.currentTarget.style.transform = 'none';
+            }}
+          >
+            <RotateCcw size={13} color="#00f2fe" />
+            <span>QUAY LẠI TOÀN CẢNH GARAGE</span>
+          </button>
+        </div>
+      )}
+
       {/* Screen-space User / Profile / Logout Utility Control */}
       <div
         style={{
@@ -104,6 +200,28 @@ export const GarageScene: React.FC = () => {
           pointerEvents: 'auto',
         }}
       >
+        {/* Role Mode Identity Badge */}
+        <div
+          style={{
+            background: modeBadge.bg,
+            backdropFilter: 'blur(12px)',
+            border: modeBadge.border,
+            boxShadow: modeBadge.shadow,
+            borderRadius: '9999px',
+            padding: '6px 14px',
+            fontSize: '11px',
+            fontWeight: 800,
+            letterSpacing: '0.06em',
+            color: modeBadge.color,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            textTransform: 'uppercase',
+          }}
+        >
+          {modeBadge.icon}
+          <span>{modeBadge.label}</span>
+        </div>
         <div
           style={{
             background: 'rgba(10, 15, 29, 0.78)',

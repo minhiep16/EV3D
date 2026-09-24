@@ -32,7 +32,7 @@ public class BookingController {
     }
 
     @PostMapping("/vehicles/{vehicleId}/bookings")
-    @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'ADMIN')")
     public ResponseEntity<BookingResponse> createBooking(
             @PathVariable UUID vehicleId,
             @AuthenticationPrincipal UserPrincipal principal,

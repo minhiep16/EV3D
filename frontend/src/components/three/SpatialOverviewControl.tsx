@@ -31,8 +31,8 @@ export const SpatialOverviewControl: React.FC = () => {
         // so it stays clearly visible at the bottom without competing with spatial panels
         return [-6.8, 0.22, 7.8];
       }
-      // Near EV01 focus point, floating low and centered
-      return [-7.1, 0.35, 7.2];
+      // Near EV01 focus point, floating low and centered in vehicle overview
+      return [-5.8, 0.35, 7.8];
     }
     if (selectedZone) {
       const preset = ZONE_CAMERA_PRESETS[selectedZone];

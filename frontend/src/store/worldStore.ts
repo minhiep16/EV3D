@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { VehiclePartId } from '../types/vehiclePart';
+import { useAuthStore } from './authStore';
+import { canAccessZone, hasCapability } from '../utils/roleCapabilities';
 
 export type GarageZone =
   | 'VEHICLE'
@@ -11,6 +13,18 @@ export type GarageZone =
   | 'AI';
 
 export type WorldMode = 'GARAGE' | 'LOGIN' | 'REGISTER';
+
+export type VehicleFeatureMode =
+  | 'NONE'
+  | 'CO_OWNER_VEHICLE_OVERVIEW'
+  | 'STAFF_VEHICLE_OVERVIEW'
+  | 'ADMIN_VEHICLE_OVERVIEW'
+  | 'CO_OWNER_VEHICLE_INFO'
+  | 'CO_OWNER_MY_BOOKINGS'
+  | 'BOOKING'
+  | 'CO_OWNERSHIP'
+  | 'VEHICLE_EXPLORE'
+  | 'RECEIPT';
 
 export type VehicleStatus =
   | 'AVAILABLE'
@@ -47,13 +61,13 @@ export const ZONE_CAMERA_PRESETS: Record<
   },
 
   VEHICLE: {
-    target: [-7.1, 0.8, 4],
-    position: [-7.1, 4.2, 10.6],
+    target: [-5.8, 1.0, 4.0],
+    position: [-5.8, 4.4, 13.2],
   },
 
   VEHICLE_FOCUS: {
-    target: [-7.1, 0.8, 4],
-    position: [-7.1, 3.6, 10.6],
+    target: [-5.8, 1.0, 4.0],
+    position: [-5.8, 4.4, 13.2],
   },
 
   VEHICLE_CO_OWNERSHIP: {
@@ -124,7 +138,7 @@ interface WorldState {
 
   selectZone: (zone: GarageZone | null) => void;
   hoverZone: (zone: GarageZone | null) => void;
-  selectVehicle: (id: string | null) => void;
+  selectVehicle: (id: string | null, explicitRole?: string) => void;
   hoverVehicle: (id: string | null) => void;
   selectObject: (id: string, position: [number, number, number]) => void;
   hoverObject: (id: string | null) => void;
@@ -157,6 +171,17 @@ interface WorldState {
   hoverHandoverCheckpoint: (code: string | null) => void;
   selectHandoverCheckpoint: (code: string | null) => void;
   clearHandoverCheckpointSelection: () => void;
+  resetExperienceState: () => void;
+
+  // Explicit Vehicle Feature Mode (Single source of truth)
+  vehicleFeatureMode: VehicleFeatureMode;
+  vehicleMode: VehicleFeatureMode;
+  activeExperience: 'CO_OWNER' | 'STAFF' | 'ADMIN' | null;
+  isVehicleSelected: boolean;
+  setVehicleFeatureMode: (mode: VehicleFeatureMode) => void;
+  setVehicleMode: (mode: VehicleFeatureMode) => void;
+  setActiveExperience: (exp: 'CO_OWNER' | 'STAFF' | 'ADMIN' | null) => void;
+  returnToVehicleOverview: () => void;
 }
 
 export const useWorldStore = create<WorldState>((set) => ({
@@ -168,6 +193,11 @@ export const useWorldStore = create<WorldState>((set) => ({
   selectedVehicleId: null,
   hoveredVehicleId: null,
   currentWorldMode: 'GARAGE',
+
+  vehicleFeatureMode: 'NONE',
+  vehicleMode: 'NONE',
+  activeExperience: null,
+  isVehicleSelected: false,
 
   vehicleInspectionMode: false,
   hoveredVehiclePartId: null,
@@ -184,20 +214,49 @@ export const useWorldStore = create<WorldState>((set) => ({
   selectedHandoverCheckpoint: null,
 
   selectZone: (zone) =>
-    set({
-      selectedZone: zone,
-      selectedObjectId: zone,
-      selectedVehicleId: zone === 'VEHICLE' ? 'EV01' : null,
-      vehicleInspectionMode: false,
-      selectedVehiclePartId: null,
-      hoveredVehiclePartId: null,
-      vehicleCoOwnershipMode: false,
-      selectedOwnerId: null,
-      hoveredOwnerId: null,
-      vehicleBookingMode: false,
-      vehicleHandoverMode: false,
-      selectedHandoverCheckpoint: null,
-      hoveredHandoverCheckpoint: null,
+    set((state) => {
+      let role: string | undefined;
+      try {
+        role = useAuthStore.getState().user?.role;
+      } catch {
+        role = 'CO_OWNER';
+      }
+
+      if (zone && !canAccessZone(role, zone)) {
+        return {};
+      }
+
+      const vehicleTargetMode: VehicleFeatureMode =
+        role === 'STAFF'
+          ? 'STAFF_VEHICLE_OVERVIEW'
+          : role === 'ADMIN'
+          ? 'ADMIN_VEHICLE_OVERVIEW'
+          : 'CO_OWNER_VEHICLE_OVERVIEW';
+
+      const activeExp: 'CO_OWNER' | 'STAFF' | 'ADMIN' =
+        role === 'STAFF' ? 'STAFF' : role === 'ADMIN' ? 'ADMIN' : 'CO_OWNER';
+
+      const isVeh = zone === 'VEHICLE';
+
+      return {
+        selectedZone: zone,
+        selectedObjectId: zone,
+        selectedVehicleId: isVeh ? (state.selectedVehicleId || 'EV01') : null,
+        isVehicleSelected: isVeh,
+        activeExperience: isVeh ? activeExp : state.activeExperience,
+        vehicleFeatureMode: isVeh ? vehicleTargetMode : 'NONE',
+        vehicleMode: isVeh ? vehicleTargetMode : 'NONE',
+        vehicleInspectionMode: false,
+        selectedVehiclePartId: null,
+        hoveredVehiclePartId: null,
+        vehicleCoOwnershipMode: false,
+        selectedOwnerId: null,
+        hoveredOwnerId: null,
+        vehicleBookingMode: false,
+        vehicleHandoverMode: false,
+        selectedHandoverCheckpoint: null,
+        hoveredHandoverCheckpoint: null,
+      };
     }),
 
   hoverZone: (zone) =>
@@ -206,11 +265,61 @@ export const useWorldStore = create<WorldState>((set) => ({
       hoveredObjectId: zone,
     }),
 
-  selectVehicle: (id) =>
-    set({
-      selectedVehicleId: id,
-      selectedZone: 'VEHICLE',
-      selectedObjectId: id,
+  selectVehicle: (id, explicitRole) =>
+    set((state) => {
+      if (!id) {
+        return {
+          selectedVehicleId: null,
+          selectedZone: null,
+          selectedObjectId: null,
+          vehicleFeatureMode: 'NONE',
+          vehicleMode: 'NONE',
+          isVehicleSelected: false,
+        };
+      }
+
+      let role = explicitRole;
+      if (!role) {
+        try {
+          role = useAuthStore.getState().user?.role;
+        } catch {
+          role = 'CO_OWNER';
+        }
+      }
+
+      let targetMode: VehicleFeatureMode = 'CO_OWNER_VEHICLE_OVERVIEW';
+      let activeExp: 'CO_OWNER' | 'STAFF' | 'ADMIN' = 'CO_OWNER';
+
+      if (role === 'STAFF') {
+        targetMode = 'STAFF_VEHICLE_OVERVIEW';
+        activeExp = 'STAFF';
+      } else if (role === 'ADMIN') {
+        targetMode = 'ADMIN_VEHICLE_OVERVIEW';
+        activeExp = 'ADMIN';
+      } else {
+        targetMode = 'CO_OWNER_VEHICLE_OVERVIEW';
+        activeExp = 'CO_OWNER';
+      }
+
+      return {
+        selectedVehicleId: id,
+        selectedZone: 'VEHICLE',
+        selectedObjectId: id,
+        vehicleFeatureMode: targetMode,
+        vehicleMode: targetMode,
+        activeExperience: activeExp,
+        isVehicleSelected: true,
+        vehicleInspectionMode: false,
+        selectedVehiclePartId: null,
+        hoveredVehiclePartId: null,
+        vehicleCoOwnershipMode: false,
+        selectedOwnerId: null,
+        hoveredOwnerId: null,
+        vehicleBookingMode: false,
+        vehicleHandoverMode: false,
+        selectedHandoverCheckpoint: null,
+        hoveredHandoverCheckpoint: null,
+      };
     }),
 
   hoverVehicle: (id) =>
@@ -237,6 +346,9 @@ export const useWorldStore = create<WorldState>((set) => ({
       selectedPosition: null,
       selectedVehicleId: null,
       hoveredVehicleId: null,
+      vehicleFeatureMode: 'NONE',
+      vehicleMode: 'NONE',
+      isVehicleSelected: false,
       vehicleInspectionMode: false,
       selectedVehiclePartId: null,
       hoveredVehiclePartId: null,
@@ -296,6 +408,9 @@ export const useWorldStore = create<WorldState>((set) => ({
         selectedPosition: null,
         selectedVehicleId: null,
         hoveredVehicleId: null,
+        vehicleFeatureMode: 'NONE',
+        vehicleMode: 'NONE',
+        isVehicleSelected: false,
         selectedVehiclePartId: null,
         hoveredVehiclePartId: null,
         selectedOwnerId: null,
@@ -311,16 +426,25 @@ export const useWorldStore = create<WorldState>((set) => ({
     }),
 
   enterVehicleInspectionMode: () =>
-    set({
-      vehicleInspectionMode: true,
-      vehicleCoOwnershipMode: false,
-      vehicleBookingMode: false,
-      selectedVehicleId: 'EV01',
-      selectedZone: 'VEHICLE',
-      selectedVehiclePartId: null,
-      hoveredVehiclePartId: null,
-      selectedOwnerId: null,
-      hoveredOwnerId: null,
+    set((state) => {
+      let role: string | undefined;
+      try {
+        role = useAuthStore.getState().user?.role;
+      } catch {
+        role = 'CO_OWNER';
+      }
+      if (!hasCapability(role, 'canExploreVehicle')) return {};
+      return {
+        vehicleInspectionMode: true,
+        vehicleCoOwnershipMode: false,
+        vehicleBookingMode: false,
+        selectedVehicleId: 'EV01',
+        selectedZone: 'VEHICLE',
+        selectedVehiclePartId: null,
+        hoveredVehiclePartId: null,
+        selectedOwnerId: null,
+        hoveredOwnerId: null,
+      };
     }),
 
   exitVehicleInspectionMode: () =>
@@ -347,16 +471,25 @@ export const useWorldStore = create<WorldState>((set) => ({
     }),
 
   enterVehicleCoOwnershipMode: () =>
-    set({
-      vehicleCoOwnershipMode: true,
-      vehicleInspectionMode: false,
-      vehicleBookingMode: false,
-      selectedVehicleId: 'EV01',
-      selectedZone: 'VEHICLE',
-      selectedVehiclePartId: null,
-      hoveredVehiclePartId: null,
-      selectedOwnerId: null,
-      hoveredOwnerId: null,
+    set((state) => {
+      let role: string | undefined;
+      try {
+        role = useAuthStore.getState().user?.role;
+      } catch {
+        role = 'CO_OWNER';
+      }
+      if (!hasCapability(role, 'canViewOwnership')) return {};
+      return {
+        vehicleCoOwnershipMode: true,
+        vehicleInspectionMode: false,
+        vehicleBookingMode: false,
+        selectedVehicleId: 'EV01',
+        selectedZone: 'VEHICLE',
+        selectedVehiclePartId: null,
+        hoveredVehiclePartId: null,
+        selectedOwnerId: null,
+        hoveredOwnerId: null,
+      };
     }),
 
   exitVehicleCoOwnershipMode: () =>
@@ -367,16 +500,25 @@ export const useWorldStore = create<WorldState>((set) => ({
     }),
 
   enterVehicleBookingMode: () =>
-    set({
-      vehicleBookingMode: true,
-      vehicleCoOwnershipMode: false,
-      vehicleInspectionMode: false,
-      selectedVehicleId: 'EV01',
-      selectedZone: 'VEHICLE',
-      selectedVehiclePartId: null,
-      hoveredVehiclePartId: null,
-      selectedOwnerId: null,
-      hoveredOwnerId: null,
+    set((state) => {
+      let role: string | undefined;
+      try {
+        role = useAuthStore.getState().user?.role;
+      } catch {
+        role = 'CO_OWNER';
+      }
+      if (!hasCapability(role, 'canBookVehicle')) return {};
+      return {
+        vehicleBookingMode: true,
+        vehicleCoOwnershipMode: false,
+        vehicleInspectionMode: false,
+        selectedVehicleId: 'EV01',
+        selectedZone: 'VEHICLE',
+        selectedVehiclePartId: null,
+        hoveredVehiclePartId: null,
+        selectedOwnerId: null,
+        hoveredOwnerId: null,
+      };
     }),
 
   exitVehicleBookingMode: () =>
@@ -401,19 +543,34 @@ export const useWorldStore = create<WorldState>((set) => ({
     }),
 
   enterVehicleHandoverMode: () =>
-    set({
-      vehicleHandoverMode: true,
-      vehicleBookingMode: false,
-      vehicleCoOwnershipMode: false,
-      vehicleInspectionMode: false,
-      selectedVehicleId: 'EV01',
-      selectedZone: 'VEHICLE',
-      selectedVehiclePartId: null,
-      hoveredVehiclePartId: null,
-      selectedOwnerId: null,
-      hoveredOwnerId: null,
-      selectedHandoverCheckpoint: null,
-      hoveredHandoverCheckpoint: null,
+    set((state) => {
+      let role: string | undefined;
+      try {
+        role = useAuthStore.getState().user?.role;
+      } catch {
+        role = 'CO_OWNER';
+      }
+      if (
+        !hasCapability(role, 'canInspectForHandover') &&
+        !hasCapability(role, 'canMonitorHandover') &&
+        !hasCapability(role, 'canConfirmReceipt')
+      ) {
+        return {};
+      }
+      return {
+        vehicleHandoverMode: true,
+        vehicleBookingMode: false,
+        vehicleCoOwnershipMode: false,
+        vehicleInspectionMode: false,
+        selectedVehicleId: 'EV01',
+        selectedZone: 'VEHICLE',
+        selectedVehiclePartId: null,
+        hoveredVehiclePartId: null,
+        selectedOwnerId: null,
+        hoveredOwnerId: null,
+        selectedHandoverCheckpoint: null,
+        hoveredHandoverCheckpoint: null,
+      };
     }),
 
   exitVehicleHandoverMode: () =>
@@ -437,6 +594,126 @@ export const useWorldStore = create<WorldState>((set) => ({
     set({
       selectedHandoverCheckpoint: null,
       hoveredHandoverCheckpoint: null,
+    }),
+
+  resetExperienceState: () =>
+    set({
+      selectedZone: null,
+      hoveredZone: null,
+      selectedObjectId: null,
+      hoveredObjectId: null,
+      selectedPosition: null,
+      selectedVehicleId: null,
+      hoveredVehicleId: null,
+      currentWorldMode: 'GARAGE',
+      vehicleFeatureMode: 'NONE',
+      vehicleMode: 'NONE',
+      activeExperience: null,
+      isVehicleSelected: false,
+      vehicleInspectionMode: false,
+      hoveredVehiclePartId: null,
+      selectedVehiclePartId: null,
+      vehicleCoOwnershipMode: false,
+      hoveredOwnerId: null,
+      selectedOwnerId: null,
+      vehicleBookingMode: false,
+      vehicleHandoverMode: false,
+      hoveredHandoverCheckpoint: null,
+      selectedHandoverCheckpoint: null,
+    }),
+
+  setVehicleFeatureMode: (mode) =>
+    set((state) => {
+      let role: string | undefined;
+      try {
+        role = useAuthStore.getState().user?.role;
+      } catch {
+        role = 'CO_OWNER';
+      }
+
+      if (mode === 'BOOKING' && !hasCapability(role, 'canBookVehicle')) return {};
+      if (mode === 'CO_OWNERSHIP' && !hasCapability(role, 'canViewOwnership')) return {};
+      if (mode === 'VEHICLE_EXPLORE' && !hasCapability(role, 'canExploreVehicle')) return {};
+      if (mode === 'RECEIPT' && !hasCapability(role, 'canConfirmReceipt')) return {};
+      if (mode === 'CO_OWNER_MY_BOOKINGS' && !hasCapability(role, 'canViewMyBookings')) return {};
+
+      return {
+        vehicleFeatureMode: mode,
+        vehicleMode: mode,
+        vehicleBookingMode: mode === 'BOOKING',
+        vehicleCoOwnershipMode: mode === 'CO_OWNERSHIP',
+        vehicleInspectionMode: mode === 'VEHICLE_EXPLORE',
+        vehicleHandoverMode: mode === 'RECEIPT',
+      };
+    }),
+
+  setVehicleMode: (mode) =>
+    set((state) => {
+      let role: string | undefined;
+      try {
+        role = useAuthStore.getState().user?.role;
+      } catch {
+        role = 'CO_OWNER';
+      }
+
+      if (mode === 'BOOKING' && !hasCapability(role, 'canBookVehicle')) return {};
+      if (mode === 'CO_OWNERSHIP' && !hasCapability(role, 'canViewOwnership')) return {};
+      if (mode === 'VEHICLE_EXPLORE' && !hasCapability(role, 'canExploreVehicle')) return {};
+      if (mode === 'RECEIPT' && !hasCapability(role, 'canConfirmReceipt')) return {};
+      if (mode === 'CO_OWNER_MY_BOOKINGS' && !hasCapability(role, 'canViewMyBookings')) return {};
+
+      return {
+        vehicleFeatureMode: mode,
+        vehicleMode: mode,
+        vehicleBookingMode: mode === 'BOOKING',
+        vehicleCoOwnershipMode: mode === 'CO_OWNERSHIP',
+        vehicleInspectionMode: mode === 'VEHICLE_EXPLORE',
+        vehicleHandoverMode: mode === 'RECEIPT',
+      };
+    }),
+
+  setActiveExperience: (exp) =>
+    set({
+      activeExperience: exp,
+    }),
+
+  returnToVehicleOverview: () =>
+    set((state) => {
+      let role: string | undefined;
+      try {
+        role = useAuthStore.getState().user?.role;
+      } catch {
+        role = 'CO_OWNER';
+      }
+
+      const targetMode: VehicleFeatureMode =
+        role === 'STAFF'
+          ? 'STAFF_VEHICLE_OVERVIEW'
+          : role === 'ADMIN'
+          ? 'ADMIN_VEHICLE_OVERVIEW'
+          : 'CO_OWNER_VEHICLE_OVERVIEW';
+
+      const activeExp: 'CO_OWNER' | 'STAFF' | 'ADMIN' =
+        role === 'STAFF' ? 'STAFF' : role === 'ADMIN' ? 'ADMIN' : 'CO_OWNER';
+
+      return {
+        vehicleFeatureMode: targetMode,
+        vehicleMode: targetMode,
+        activeExperience: activeExp,
+        isVehicleSelected: true,
+        vehicleBookingMode: false,
+        vehicleCoOwnershipMode: false,
+        vehicleInspectionMode: false,
+        vehicleHandoverMode: false,
+        selectedVehiclePartId: null,
+        hoveredVehiclePartId: null,
+        selectedOwnerId: null,
+        hoveredOwnerId: null,
+        selectedHandoverCheckpoint: null,
+        hoveredHandoverCheckpoint: null,
+        selectedZone: 'VEHICLE',
+        selectedVehicleId: state.selectedVehicleId || 'EV01',
+      };
     }),
 }));
 

@@ -10,12 +10,14 @@ interface VehicleModelProps {
   isSelected: boolean;
   isHovered: boolean;
   modelUrl?: string;
+  onSelectVehicle?: () => void;
 }
 
 export const VehicleModel: React.FC<VehicleModelProps> = ({
   isSelected,
   isHovered,
   modelUrl = '/models/ev-car.glb',
+  onSelectVehicle,
 }) => {
   // Load the EV 3D GLB model
   const gltf = useGLTF(modelUrl);
@@ -205,8 +207,8 @@ export const VehicleModel: React.FC<VehicleModelProps> = ({
   };
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
+    e.stopPropagation();
     if (vehicleHandoverMode) {
-      e.stopPropagation();
       const partId = getPartIdFromMesh(e.object);
       if (partId) {
         const cp = getCheckpointByCode(partId);
@@ -216,11 +218,16 @@ export const VehicleModel: React.FC<VehicleModelProps> = ({
       }
       return;
     }
-    if (!vehicleInspectionMode) return;
-    e.stopPropagation();
-    const partId = getPartIdFromMesh(e.object);
-    if (partId) {
-      selectVehiclePart(partId);
+    if (vehicleInspectionMode) {
+      const partId = getPartIdFromMesh(e.object);
+      if (partId) {
+        selectVehiclePart(partId);
+      }
+      return;
+    }
+    // Normal garage view: select vehicle and prevent bubbling to floor or canvas deselect
+    if (onSelectVehicle) {
+      onSelectVehicle();
     }
   };
 

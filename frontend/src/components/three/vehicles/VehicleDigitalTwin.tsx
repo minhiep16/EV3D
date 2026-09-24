@@ -1,9 +1,10 @@
 import React, { Suspense } from 'react';
 import { ThreeEvent } from '@react-three/fiber';
 import { Html, Billboard } from '@react-three/drei';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from '../../../services/queryClient';
 import { useAuthStore } from '../../../store/authStore';
-import { useWorldStore, VEHICLE_STATUS_LABELS } from '../../../store/worldStore';
+import { useWorldStore } from '../../../store/worldStore';
 import { fetchVehicles } from '../../../services/vehicleApi';
 import { VehicleResponse } from '../../../types/vehicle';
 import { VehicleModel } from './VehicleModel';
@@ -17,25 +18,21 @@ import { VehicleCoOwnershipWorld } from '../ownership/VehicleCoOwnershipWorld';
 import { VehicleBookingWorld } from '../booking/VehicleBookingWorld';
 import { VehicleHandoverWorld } from '../handover/VehicleHandoverWorld';
 import { getPartById } from '../../../data/vehicleParts';
+import { CoOwnerVehiclePanel } from './CoOwnerVehiclePanel';
+import { StaffOperationsPanel } from './StaffOperationsPanel';
+import { AdminVehicleMonitorPanel } from './AdminVehicleMonitorPanel';
 import {
   Car,
-  Zap,
-  Battery,
-  Gauge,
-  Wrench,
-  Users,
-  Calendar,
-  X,
   Sparkles,
   AlertTriangle,
   RefreshCw,
-  Hash,
-  ShieldCheck,
-  Key,
-  Eye,
 } from 'lucide-react';
 
-export const VehicleDigitalTwin: React.FC = () => {
+export interface VehicleDigitalTwinProps {
+  renderPanel?: (vehicle: VehicleResponse, onClose: () => void) => React.ReactNode;
+}
+
+export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPanel }) => {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const accessToken = useAuthStore((state) => state.accessToken);
   const refreshToken = useAuthStore((state) => state.refreshToken);
@@ -59,18 +56,8 @@ export const VehicleDigitalTwin: React.FC = () => {
   const selectVehicle = useWorldStore((state) => state.selectVehicle);
   const hoverVehicle = useWorldStore((state) => state.hoverVehicle);
   const clearSelection = useWorldStore((state) => state.clearSelection);
-  const enterVehicleInspectionMode = useWorldStore(
-    (state) => state.enterVehicleInspectionMode
-  );
-  const enterVehicleCoOwnershipMode = useWorldStore(
-    (state) => state.enterVehicleCoOwnershipMode
-  );
-  const enterVehicleBookingMode = useWorldStore(
-    (state) => state.enterVehicleBookingMode
-  );
-  const enterVehicleHandoverMode = useWorldStore(
-    (state) => state.enterVehicleHandoverMode
-  );
+  const vehicleMode = useWorldStore((state) => state.vehicleMode);
+  const isVehicleSelected = useWorldStore((state) => state.isVehicleSelected);
 
   // TanStack Query: Fetch vehicles from Spring Boot API / MySQL
   // Enabled ONLY when authentication state is ready and token exists
@@ -80,6 +67,7 @@ export const VehicleDigitalTwin: React.FC = () => {
     enabled: authReady,
     refetchInterval: authReady ? 6000 : false,
   });
+
 
   // 1. Loading State in 3D Space (also shown while auth is initializing)
   if (!authReady || isLoading) {
@@ -235,12 +223,15 @@ export const VehicleDigitalTwin: React.FC = () => {
   // Connected State: Use the primary vehicle from API
   const vehicle = vehicles[0];
   const displayCode = 'EV01';
-  const isSelected = selectedZone === 'VEHICLE' || selectedVehicleId === vehicle.id || selectedVehicleId === displayCode;
-  const isHovered = hoveredVehicleId === vehicle.id || hoveredVehicleId === displayCode;
+  const role = user?.role || 'CO_OWNER';
 
-  const statusConfig = VEHICLE_STATUS_LABELS[vehicle.status] || VEHICLE_STATUS_LABELS.AVAILABLE;
-  const formattedOdometer = Number(vehicle.odometer).toLocaleString('vi-VN');
-  const estimatedRangeKm = Math.round((vehicle.currentBatteryLevel / 100) * (Number(vehicle.batteryCapacity) * 5.15));
+  const isSelected =
+    isVehicleSelected ||
+    selectedZone === 'VEHICLE' ||
+    selectedVehicleId === vehicle.id ||
+    selectedVehicleId === displayCode ||
+    selectedVehicleId === 'EV01';
+  const isHovered = hoveredVehicleId === vehicle.id || hoveredVehicleId === displayCode;
 
   const selectedPart = getPartById(selectedVehiclePartId);
 
@@ -250,16 +241,21 @@ export const VehicleDigitalTwin: React.FC = () => {
     vehicleBookingMode ||
     vehicleHandoverMode;
 
+  // Section 2: EV01 click must set both selection and mode explicitly
+  const handleVehicleSelect = (selectedVehicle: VehicleResponse) => {
+    selectVehicle(selectedVehicle.id, role);
+  };
+
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
     if (isBusinessModeActive) return;
     e.stopPropagation();
-    selectVehicle(vehicle.id);
+    handleVehicleSelect(vehicle);
   };
 
   const handlePointerOver = (e: ThreeEvent<PointerEvent>) => {
     if (isBusinessModeActive) return;
     e.stopPropagation();
-    hoverVehicle(vehicle.id);
+    hoverVehicle(displayCode);
     document.body.style.cursor = 'pointer';
   };
 
@@ -271,6 +267,33 @@ export const VehicleDigitalTwin: React.FC = () => {
     }
     document.body.style.cursor = 'auto';
   };
+
+  // Section 4: Panel Render Condition
+  // CoOwnerVehiclePanel should render when:
+  // role === "CO_OWNER" AND selectedVehicleId != null AND vehicleMode === "CO_OWNER_VEHICLE_OVERVIEW"
+  const shouldRenderCoOwnerPanel =
+    role === 'CO_OWNER' &&
+    selectedVehicleId != null &&
+    (vehicleMode === 'CO_OWNER_VEHICLE_OVERVIEW' ||
+      vehicleMode === 'CO_OWNER_VEHICLE_INFO' ||
+      vehicleMode === 'CO_OWNER_MY_BOOKINGS');
+
+  const shouldRenderStaffPanel =
+    role === 'STAFF' &&
+    selectedVehicleId != null &&
+    vehicleMode === 'STAFF_VEHICLE_OVERVIEW';
+
+  const shouldRenderAdminPanel =
+    role === 'ADMIN' &&
+    selectedVehicleId != null &&
+    vehicleMode === 'ADMIN_VEHICLE_OVERVIEW';
+
+  const shouldRenderVehicleOverview =
+    (shouldRenderCoOwnerPanel ||
+      shouldRenderStaffPanel ||
+      shouldRenderAdminPanel ||
+      isSelected) &&
+    !isBusinessModeActive;
 
   return (
     // Situated on the Vehicle Zone parking pad (center: x=-8, y=0.14, z=4)
@@ -290,6 +313,7 @@ export const VehicleDigitalTwin: React.FC = () => {
           isSelected={isSelected}
           isHovered={isHovered}
           modelUrl={vehicle.model3dUrl || '/models/ev-car.glb'}
+          onSelectVehicle={() => handleVehicleSelect(vehicle)}
         />
       </Suspense>
 
@@ -306,477 +330,52 @@ export const VehicleDigitalTwin: React.FC = () => {
       )}
 
       {/* 4. World-Space Spatial Vehicle Information Card with 3D Holographic Frame & Connector */}
-      {isSelected && !vehicleInspectionMode && !vehicleCoOwnershipMode && !vehicleBookingMode && !vehicleHandoverMode && (
+      {shouldRenderVehicleOverview && (
         <>
           {/* Visible 3D Laser Connector linking EV01 to detailed panel */}
           <SpatialDataLink
             start={[0, 0.7, 0]}
             end={[2.6 - 0.45, 1.35, 0]}
-            color="#00f2fe"
+            color={role === 'ADMIN' ? '#a855f7' : role === 'CO_OWNER' ? '#10b981' : '#00f2fe'}
           />
 
           <group position={[2.6, 1.35, 0]}>
             <Billboard follow={true}>
-              <HolographicPanelFrame3D width={2.45} height={3.2} color="#00f2fe" />
+              <HolographicPanelFrame3D
+                width={2.55}
+                height={role === 'STAFF' ? 4.2 : 3.4}
+                color={role === 'ADMIN' ? '#a855f7' : role === 'CO_OWNER' ? '#10b981' : '#00f2fe'}
+              />
               <Html
                 center
                 distanceFactor={8.8}
                 style={{ pointerEvents: 'auto', userSelect: 'none' }}
               >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: '330px',
-              background: 'rgba(8, 12, 22, 0.94)',
-              backdropFilter: 'blur(20px)',
-              border: '1px solid #00f2fe',
-              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.85), 0 0 30px rgba(0, 242, 254, 0.25)',
-              borderRadius: '16px',
-              padding: '22px',
-              color: '#ffffff',
-              fontFamily: 'var(--font-family)',
-              position: 'relative',
-            }}
-          >
-            {/* Close button */}
-            <button
-              type="button"
-              onClick={() => clearSelection()}
-              title="Đóng thông tin xe"
-              style={{
-                position: 'absolute',
-                top: '14px',
-                right: '14px',
-                background: 'rgba(255, 255, 255, 0.08)',
-                border: 'none',
-                borderRadius: '50%',
-                width: '24px',
-                height: '24px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#94a3b8',
-                cursor: 'pointer',
-              }}
-            >
-              <X size={14} />
-            </button>
-
-            {/* Header Badge */}
-            <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                fontSize: '10px',
-                fontWeight: 700,
-                color: '#00f2fe',
-                letterSpacing: '0.08em',
-                textTransform: 'uppercase',
-                marginBottom: '6px',
-              }}
-            >
-              <Car size={13} />
-              Bản Sao Số Xe Điện
-            </div>
-
-            <h3
-              style={{
-                fontSize: '20px',
-                fontWeight: 800,
-                letterSpacing: '-0.01em',
-                margin: '0 0 2px 0',
-                color: '#ffffff',
-              }}
-            >
-              {displayCode}
-            </h3>
-
-            <div
-              style={{
-                fontSize: '12px',
-                color: '#38bdf8',
-                fontWeight: 600,
-                marginBottom: '14px',
-              }}
-            >
-              {vehicle.name}
-            </div>
-
-            {/* Status & Battery Level Grid */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '8px',
-                marginBottom: '10px',
-              }}
-            >
-              {/* Status Block */}
-              <div
-                style={{
-                  background: 'rgba(255, 255, 255, 0.04)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  borderRadius: '10px',
-                  padding: '10px',
-                }}
-              >
-                <div style={{ fontSize: '10px', color: '#94a3b8', marginBottom: '4px' }}>
-                  Trạng thái
-                </div>
-                <div
-                  style={{
-                    fontSize: '13px',
-                    fontWeight: 700,
-                    color: statusConfig.color,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                  }}
-                >
-                  <span
-                    style={{
-                      width: '6px',
-                      height: '6px',
-                      borderRadius: '50%',
-                      background: statusConfig.color,
-                      boxShadow: `0 0 6px ${statusConfig.color}`,
-                    }}
-                  />
-                  {statusConfig.label}
-                </div>
-              </div>
-
-              {/* Battery Block */}
-              <div
-                style={{
-                  background: 'rgba(255, 255, 255, 0.04)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  borderRadius: '10px',
-                  padding: '10px',
-                }}
-              >
-                <div style={{ fontSize: '10px', color: '#94a3b8', marginBottom: '4px' }}>
-                  Mức pin
-                </div>
-                <div
-                  style={{
-                    fontSize: '13px',
-                    fontWeight: 700,
-                    color: '#00f2fe',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                  }}
-                >
-                  <Zap size={14} color="#00f2fe" />
-                  {vehicle.currentBatteryLevel}%
-                </div>
-              </div>
-            </div>
-
-            {/* Battery Level Progress Bar */}
-            <div style={{ marginBottom: '14px' }}>
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  fontSize: '10px',
-                  color: '#94a3b8',
-                  marginBottom: '4px',
-                }}
-              >
-                <span>Dung lượng khả dụng</span>
-                <span style={{ color: '#cbd5e1' }}>Ước tính ~{estimatedRangeKm} km</span>
-              </div>
-              <div
-                style={{
-                  width: '100%',
-                  height: '6px',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  borderRadius: '9999px',
-                  overflow: 'hidden',
-                }}
-              >
-                <div
-                  style={{
-                    width: `${vehicle.currentBatteryLevel}%`,
-                    height: '100%',
-                    background: 'linear-gradient(90deg, #0284c7, #00f2fe)',
-                    borderRadius: '9999px',
-                    boxShadow: '0 0 10px rgba(0, 242, 254, 0.8)',
-                    transition: 'width 0.4s ease',
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Technical Specifications Grid (Real MySQL Data) */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '8px',
-                marginBottom: '16px',
-                background: 'rgba(255, 255, 255, 0.03)',
-                border: '1px solid rgba(255, 255, 255, 0.06)',
-                borderRadius: '10px',
-                padding: '10px',
-              }}
-            >
-              <div>
-                <div style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase' }}>Hãng xe</div>
-                <div style={{ fontSize: '12px', fontWeight: 600, color: '#f8fafc' }}>{vehicle.brand}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase' }}>Mẫu xe</div>
-                <div style={{ fontSize: '12px', fontWeight: 600, color: '#f8fafc' }}>{vehicle.model}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase' }}>Biển số</div>
-                <div style={{ fontSize: '12px', fontWeight: 700, color: '#38bdf8' }}>{vehicle.licensePlate}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase' }}>Quãng đường</div>
-                <div style={{ fontSize: '12px', fontWeight: 600, color: '#f8fafc' }}>{formattedOdometer} km</div>
-              </div>
-              <div>
-                <div style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase' }}>Dung lượng pin</div>
-                <div style={{ fontSize: '12px', fontWeight: 600, color: '#f8fafc' }}>{vehicle.batteryCapacity} kWh</div>
-              </div>
-              <div>
-                <div style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase' }}>Năm sản xuất</div>
-                <div style={{ fontSize: '12px', fontWeight: 600, color: '#f8fafc' }}>{vehicle.year}</div>
-              </div>
-            </div>
-
-            {/* Action Buttons: Booking, Co-ownership & Inspection */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <button
-                type="button"
-                onClick={() => enterVehicleBookingMode()}
-                style={{
-                  width: '100%',
-                  padding: '11px',
-                  background: 'linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)',
-                  border: 'none',
-                  borderRadius: '10px',
-                  color: '#ffffff',
-                  fontFamily: 'inherit',
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  letterSpacing: '0.06em',
-                  textTransform: 'uppercase',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  boxShadow: '0 4px 15px rgba(0, 242, 254, 0.35)',
-                  transition: 'all 0.2s ease',
-                }}
-                onMouseOver={(e) => {
-                  e.currentTarget.style.boxShadow = '0 6px 20px rgba(0, 242, 254, 0.55)';
-                  e.currentTarget.style.transform = 'translateY(-1px)';
-                }}
-                onMouseOut={(e) => {
-                  e.currentTarget.style.boxShadow = '0 4px 15px rgba(0, 242, 254, 0.35)';
-                  e.currentTarget.style.transform = 'none';
-                }}
-              >
-                <Calendar size={14} />
-                ĐẶT LỊCH SỬ DỤNG
-              </button>
-
-              <button
-                type="button"
-                onClick={() => enterVehicleCoOwnershipMode()}
-                style={{
-                  width: '100%',
-                  padding: '11px',
-                  background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
-                  border: 'none',
-                  borderRadius: '10px',
-                  color: '#ffffff',
-                  fontFamily: 'inherit',
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  letterSpacing: '0.06em',
-                  textTransform: 'uppercase',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  boxShadow: '0 4px 15px rgba(168, 85, 247, 0.35)',
-                  transition: 'all 0.2s ease',
-                }}
-                onMouseOver={(e) => {
-                  e.currentTarget.style.boxShadow = '0 6px 20px rgba(168, 85, 247, 0.55)';
-                  e.currentTarget.style.transform = 'translateY(-1px)';
-                }}
-                onMouseOut={(e) => {
-                  e.currentTarget.style.boxShadow = '0 4px 15px rgba(168, 85, 247, 0.35)';
-                  e.currentTarget.style.transform = 'none';
-                }}
-              >
-                <Users size={14} />
-                ĐỒNG SỞ HỮU
-              </button>
-
-              {/* Role-Aware Handover & Check-in Action (Phase 09) */}
-              {user?.role === 'STAFF' ? (
-                <button
-                  type="button"
-                  onClick={() => enterVehicleHandoverMode()}
-                  style={{
-                    width: '100%',
-                    padding: '11px',
-                    background: 'linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)',
-                    border: 'none',
-                    borderRadius: '10px',
-                    color: '#080c16',
-                    fontFamily: 'inherit',
-                    fontSize: '12px',
-                    fontWeight: 800,
-                    letterSpacing: '0.06em',
-                    textTransform: 'uppercase',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    boxShadow: '0 4px 15px rgba(0, 242, 254, 0.4)',
-                    transition: 'all 0.2s ease',
-                  }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.boxShadow = '0 6px 22px rgba(0, 242, 254, 0.65)';
-                    e.currentTarget.style.transform = 'translateY(-1px)';
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.boxShadow = '0 4px 15px rgba(0, 242, 254, 0.4)';
-                    e.currentTarget.style.transform = 'none';
-                  }}
-                >
-                  <ShieldCheck size={14} />
-                  KIỂM TRA & BÀN GIAO XE
-                </button>
-              ) : user?.role === 'ADMIN' ? (
-                <button
-                  type="button"
-                  onClick={() => enterVehicleHandoverMode()}
-                  style={{
-                    width: '100%',
-                    padding: '11px',
-                    background: 'linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)',
-                    border: 'none',
-                    borderRadius: '10px',
-                    color: '#ffffff',
-                    fontFamily: 'inherit',
-                    fontSize: '12px',
-                    fontWeight: 800,
-                    letterSpacing: '0.06em',
-                    textTransform: 'uppercase',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    boxShadow: '0 4px 15px rgba(168, 85, 247, 0.4)',
-                    transition: 'all 0.2s ease',
-                  }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.boxShadow = '0 6px 22px rgba(168, 85, 247, 0.65)';
-                    e.currentTarget.style.transform = 'translateY(-1px)';
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.boxShadow = '0 4px 15px rgba(168, 85, 247, 0.4)';
-                    e.currentTarget.style.transform = 'none';
-                  }}
-                >
-                  <Eye size={14} />
-                  THEO DÕI BÀN GIAO
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => enterVehicleHandoverMode()}
-                  style={{
-                    width: '100%',
-                    padding: '11px',
-                    background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
-                    border: 'none',
-                    borderRadius: '10px',
-                    color: '#052e16',
-                    fontFamily: 'inherit',
-                    fontSize: '12px',
-                    fontWeight: 800,
-                    letterSpacing: '0.06em',
-                    textTransform: 'uppercase',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    boxShadow: '0 4px 15px rgba(16, 185, 129, 0.4)',
-                    transition: 'all 0.2s ease',
-                  }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.boxShadow = '0 6px 22px rgba(16, 185, 129, 0.65)';
-                    e.currentTarget.style.transform = 'translateY(-1px)';
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.boxShadow = '0 4px 15px rgba(16, 185, 129, 0.4)';
-                    e.currentTarget.style.transform = 'none';
-                  }}
-                >
-                  <Key size={14} />
-                  NHẬN XE
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => enterVehicleInspectionMode()}
-                style={{
-                  width: '100%',
-                  padding: '9px',
-                  background: 'rgba(2, 132, 199, 0.2)',
-                  border: '1px solid rgba(0, 242, 254, 0.4)',
-                  borderRadius: '10px',
-                  color: '#38bdf8',
-                  fontFamily: 'inherit',
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  letterSpacing: '0.06em',
-                  textTransform: 'uppercase',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  boxShadow: '0 4px 12px rgba(0, 242, 254, 0.15)',
-                  transition: 'all 0.2s ease',
-                }}
-                onMouseOver={(e) => {
-                  e.currentTarget.style.boxShadow = '0 6px 16px rgba(0, 242, 254, 0.35)';
-                  e.currentTarget.style.transform = 'translateY(-1px)';
-                }}
-                onMouseOut={(e) => {
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 242, 254, 0.15)';
-                  e.currentTarget.style.transform = 'none';
-                }}
-              >
-                <Wrench size={13} />
-                KIỂM TRA BỘ PHẬN
-              </button>
-            </div>
-          </div>
-        </Html>
-      </Billboard>
-    </group>
-  </>
-)}
+                <QueryClientProvider client={queryClient}>
+                  {renderPanel ? (
+                    renderPanel(vehicle, () => clearSelection())
+                  ) : role === 'ADMIN' ? (
+                    <AdminVehicleMonitorPanel
+                      vehicle={vehicle}
+                      onClose={() => clearSelection()}
+                    />
+                  ) : role === 'STAFF' ? (
+                    <StaffOperationsPanel
+                      vehicle={vehicle}
+                      onClose={() => clearSelection()}
+                    />
+                  ) : (
+                    <CoOwnerVehiclePanel
+                      vehicle={vehicle}
+                      onClose={() => clearSelection()}
+                    />
+                  )}
+                </QueryClientProvider>
+              </Html>
+            </Billboard>
+          </group>
+        </>
+      )}
 
       {/* 5. Vehicle Inspection Mode: Floating Instruction Guide */}
       {vehicleInspectionMode && !selectedVehiclePartId && (

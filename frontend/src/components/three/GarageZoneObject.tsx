@@ -5,6 +5,8 @@ import * as THREE from 'three';
 import { SpatialDataLink } from './SpatialDataLink';
 import { HolographicPanelFrame3D } from './HolographicPanelFrame3D';
 import { useWorldStore, GarageZone } from '../../store/worldStore';
+import { useAuthStore } from '../../store/authStore';
+import { canAccessZone } from '../../utils/roleCapabilities';
 import { 
   Zap, 
   Wrench, 
@@ -134,6 +136,60 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
     vehicleInspectionMode ||
     vehicleCoOwnershipMode;
 
+  const user = useAuthStore((state) => state.user);
+  const isAccessible = canAccessZone(user?.role, zone.id);
+
+  const isOperationsRole = user?.role === 'STAFF' || user?.role === 'ADMIN';
+  const isAdmin = user?.role === 'ADMIN';
+
+  // Role-adapted zone metadata for ANALYTICS and GOVERNANCE (Sections 12, 13, 18)
+  const zoneName = React.useMemo(() => {
+    if (zone.id === 'ANALYTICS') {
+      return isOperationsRole ? 'KHU VỰC PHÂN TÍCH & GIÁM SÁT' : 'KHU VỰC PHÂN TÍCH';
+    }
+    return zone.name;
+  }, [zone.id, zone.name, isOperationsRole]);
+
+  const zoneSubtitle = React.useMemo(() => {
+    if (zone.id === 'ANALYTICS') {
+      if (isAdmin) return 'Giám sát toàn diện hệ thống & Chỉ số vận hành';
+      if (user?.role === 'STAFF') return 'Đo lường vận hành & Tiến độ bàn giao';
+      return 'Đo lường dữ liệu, Hiệu suất & Công bằng';
+    }
+    if (zone.id === 'GOVERNANCE') {
+      return 'Quản trị hệ thống & Giám sát phân quyền';
+    }
+    return zone.subtitle;
+  }, [zone.id, zone.subtitle, isAdmin, user?.role]);
+
+  const zoneDescription = React.useMemo(() => {
+    if (zone.id === 'ANALYTICS') {
+      if (isAdmin) {
+        return 'Theo dõi các chỉ số SLA, tình trạng đội xe toàn hệ thống và phân tích dữ liệu hiệu suất vận hành.';
+      }
+      if (user?.role === 'STAFF') {
+        return 'Theo dõi tiến độ bàn giao xe, tần suất hoạt động và phân tích hiệu suất phục vụ ca trực.';
+      }
+      return zone.description;
+    }
+    if (zone.id === 'GOVERNANCE') {
+      return 'Quản lý phân quyền người dùng (RBAC), kiểm soát quy chế vận hành và giám sát an toàn nền tảng.';
+    }
+    return zone.description;
+  }, [zone.id, zone.description, isAdmin, user?.role]);
+
+  const zoneCompactSummary = React.useMemo(() => {
+    if (zone.id === 'ANALYTICS') {
+      if (isAdmin) return 'Chỉ số hệ thống';
+      if (user?.role === 'STAFF') return 'Tiến độ vận hành';
+      return 'Dữ liệu vận hành';
+    }
+    if (zone.id === 'GOVERNANCE') {
+      return 'Quản trị hệ thống';
+    }
+    return zone.compactSummary;
+  }, [zone.id, zone.compactSummary, isAdmin, user?.role]);
+
   // GLOBAL SPATIAL UI VISIBILITY RULE:
   // 1. When a focused business mode (Booking, Inspection, Co-ownership) is active on the vehicle,
   //    all unrelated zone labels/summaries are temporarily hidden to eliminate spatial scene clutter
@@ -170,20 +226,20 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
-    if (isFocusedBusinessMode) return;
+    if (isFocusedBusinessMode || !isAccessible) return;
     selectZone(zone.id);
   };
 
   const handlePointerOver = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
-    if (isFocusedBusinessMode) return;
+    if (isFocusedBusinessMode || !isAccessible) return;
     hoverZone(zone.id);
     document.body.style.cursor = 'pointer';
   };
 
   const handlePointerOut = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
-    if (isFocusedBusinessMode) return;
+    if (isFocusedBusinessMode || !isAccessible) return;
     if (hoveredZone === zone.id) {
       hoverZone(null);
     }
@@ -459,12 +515,12 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
                 boxShadow: isHovered ? `0 0 6px ${zone.accentColor}` : 'none',
               }}
             />
-            <span>{zone.name}</span>
-            {zone.compactSummary && (
+            <span>{zoneName}</span>
+            {zoneCompactSummary && (
               <>
                 <span style={{ color: '#475569' }}>|</span>
                 <span style={{ color: '#94a3b8', fontSize: '10px', fontWeight: 600 }}>
-                  {zone.compactSummary}
+                  {zoneCompactSummary}
                 </span>
               </>
             )}
@@ -555,7 +611,7 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
                 color: '#ffffff',
               }}
             >
-              {zone.name}
+              {zoneName}
             </h3>
 
             <div
@@ -566,7 +622,7 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
                 marginBottom: '10px',
               }}
             >
-              {zone.subtitle}
+              {zoneSubtitle}
             </div>
 
             <p
@@ -577,10 +633,10 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
                 marginBottom: '14px',
               }}
             >
-              {zone.description}
+              {zoneDescription}
             </p>
 
-            {zone.compactSummary && (
+            {zoneCompactSummary && (
               <div
                 style={{
                   background: 'rgba(255, 255, 255, 0.04)',
@@ -596,7 +652,7 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
                 }}
               >
                 <span style={{ color: '#94a3b8' }}>Chỉ số khu vực:</span>
-                <strong style={{ color: zone.accentColor }}>{zone.compactSummary}</strong>
+                <strong style={{ color: zone.accentColor }}>{zoneCompactSummary}</strong>
               </div>
             )}
 
