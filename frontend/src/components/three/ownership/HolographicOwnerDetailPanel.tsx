@@ -11,13 +11,18 @@ import {
   Mail,
   X,
   Sparkles,
+  Car,
+  Award,
 } from 'lucide-react';
 
 interface HolographicOwnerDetailPanelProps {
   member: GroupMemberResponse;
   orbPosition: [number, number, number];
+  groupName?: string;
+  vehicleCode?: string;
   panelPosition?: [number, number, number];
   color?: string;
+  renderLink?: boolean;
   onClose: () => void;
 }
 
@@ -28,13 +33,23 @@ const STATUS_LABELS: Record<
   ACTIVE: { label: 'Đang hoạt động', color: '#10b981' },
   PENDING: { label: 'Đang chờ duyệt', color: '#f59e0b' },
   INACTIVE: { label: 'Ngừng hoạt động', color: '#ef4444' },
+  REMOVED: { label: 'Đã rời nhóm', color: '#6b7280' },
+};
+
+const ROLE_LABELS: Record<string, string> = {
+  REPRESENTATIVE: 'Đại diện nhóm',
+  ADMIN: 'Quản trị viên nhóm',
+  MEMBER: 'Đồng sở hữu',
 };
 
 export const HolographicOwnerDetailPanel: React.FC<HolographicOwnerDetailPanelProps> = ({
   member,
   orbPosition,
+  groupName = 'EVShare Demo Group',
+  vehicleCode = 'EV01',
   panelPosition = [2.7, 1.45, 0.4],
   color = '#00f2fe',
+  renderLink = true,
   onClose,
 }) => {
   const percentage = member.share?.percentage ?? 0;
@@ -42,6 +57,8 @@ export const HolographicOwnerDetailPanel: React.FC<HolographicOwnerDetailPanelPr
     label: member.status,
     color: '#94a3b8',
   };
+
+  const roleText = member.memberRole ? (ROLE_LABELS[member.memberRole] || 'Đồng sở hữu') : 'Đồng sở hữu';
 
   const formattedDate = member.joinedAt
     ? new Date(member.joinedAt).toLocaleDateString('vi-VN', {
@@ -54,16 +71,18 @@ export const HolographicOwnerDetailPanel: React.FC<HolographicOwnerDetailPanelPr
   return (
     <>
       {/* 1. Spatial Laser Link connecting Selected Orb to Holographic Panel */}
-      <SpatialDataLink
-        start={orbPosition}
-        end={[panelPosition[0] - 0.4, panelPosition[1], panelPosition[2]]}
-        color={color}
-      />
+      {renderLink && (
+        <SpatialDataLink
+          start={orbPosition}
+          end={[panelPosition[0] - 0.4, panelPosition[1], panelPosition[2]]}
+          color={color}
+        />
+      )}
 
-      {/* 2. Holographic Panel positioned on the right */}
+      {/* 2. Holographic Panel positioned in 3D Space */}
       <group position={panelPosition}>
         <Billboard follow={true}>
-          <HolographicPanelFrame3D width={2.4} height={3.15} color={color} />
+          <HolographicPanelFrame3D width={2.4} height={3.35} color={color} />
           <Html
             center
             distanceFactor={8.8}
@@ -116,7 +135,7 @@ export const HolographicOwnerDetailPanel: React.FC<HolographicOwnerDetailPanelPr
                   alignItems: 'center',
                   gap: '6px',
                   fontSize: '10px',
-                  fontWeight: 700,
+                  fontWeight: 800,
                   color: color,
                   letterSpacing: '0.08em',
                   textTransform: 'uppercase',
@@ -124,7 +143,7 @@ export const HolographicOwnerDetailPanel: React.FC<HolographicOwnerDetailPanelPr
                 }}
               >
                 <Users size={13} />
-                ĐỒNG SỞ HỮU
+                THÔNG TIN ĐỒNG SỞ HỮU
               </div>
 
               {/* Member Full Name */}
@@ -148,11 +167,41 @@ export const HolographicOwnerDetailPanel: React.FC<HolographicOwnerDetailPanelPr
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
-                  marginBottom: '16px',
+                  marginBottom: '14px',
                 }}
               >
                 <Mail size={12} color="#94a3b8" />
                 {member.email}
+              </div>
+
+              {/* Group & Vehicle Identity Bar */}
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px',
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid rgba(255, 255, 255, 0.06)',
+                  borderRadius: '10px',
+                  padding: '9px 12px',
+                  marginBottom: '14px',
+                  fontSize: '11px',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <Users size={12} color="#a855f7" />
+                    Nhóm:
+                  </span>
+                  <span style={{ fontWeight: 700, color: '#f8fafc' }}>{groupName}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <Car size={12} color="#00f2fe" />
+                    Xe:
+                  </span>
+                  <span style={{ fontWeight: 800, color: '#00f2fe' }}>{vehicleCode}</span>
+                </div>
               </div>
 
               {/* Key Metrics Grid */}
@@ -220,9 +269,13 @@ export const HolographicOwnerDetailPanel: React.FC<HolographicOwnerDetailPanelPr
                       fontSize: '12px',
                       fontWeight: 700,
                       color: '#f8fafc',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
                     }}
                   >
-                    Đồng sở hữu
+                    <Award size={13} color="#f59e0b" />
+                    {roleText}
                   </div>
                 </div>
               </div>
@@ -257,7 +310,7 @@ export const HolographicOwnerDetailPanel: React.FC<HolographicOwnerDetailPanelPr
                     }}
                   >
                     <ShieldCheck size={12} color="#94a3b8" />
-                    Trạng thái
+                    Trạng thái thành viên
                   </span>
                   <span
                     style={{
@@ -327,7 +380,7 @@ export const HolographicOwnerDetailPanel: React.FC<HolographicOwnerDetailPanelPr
               >
                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <Sparkles size={11} color={color} />
-                  NHÓM ĐỒNG SỞ HỮU EV01
+                  {groupName}
                 </span>
                 <span style={{ letterSpacing: '0.04em' }}>ID: {member.id.substring(0, 8)}</span>
               </div>

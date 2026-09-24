@@ -1,4 +1,4 @@
-export type BookingStatus = 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'COMPLETED';
+export type BookingStatus = 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'COMPLETED' | 'EXPIRED';
 
 export interface Booking {
   id: string;
@@ -11,6 +11,8 @@ export interface Booking {
   status: BookingStatus;
   purpose?: string;
   createdAt: string;
+  isExpired?: boolean;
+  expired?: boolean;
 }
 
 export interface CreateBookingRequest {

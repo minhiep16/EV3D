@@ -170,7 +170,7 @@ export const CoOwnerReceiptPanel3D: React.FC<CoOwnerReceiptPanel3DProps> = ({
                   }}
                 >
                   <Key size={14} />
-                  BÀN GIAO & NHẬN XE ĐỒNG SỞ HỮU
+                  BÀN GIAO & NHẬN XE
                 </div>
 
                 {selectedCheckpoint && onCloseCheckpoint && (
@@ -286,19 +286,26 @@ export const CoOwnerReceiptPanel3D: React.FC<CoOwnerReceiptPanel3DProps> = ({
                   }}
                 >
                   <Car size={14} />
-                  XE ĐANG ĐƯỢC BÀN GIAO CHO BẠN
+                  XE ĐÃ ĐƯỢC BÀN GIAO CHO BẠN
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ color: '#94a3b8' }}>Phương tiện:</span>
-                    <span style={{ fontWeight: 800, color: '#fbbf24' }}>
-                      {handover.vehicleCode || 'EV01'} ({handover.licensePlate})
+                    <span style={{ color: '#94a3b8' }}>Người nhận:</span>
+                    <span style={{ fontWeight: 800, color: '#ffffff' }}>
+                      {handover.coOwnerName || 'Đồng sở hữu'}
                     </span>
                   </div>
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ color: '#94a3b8' }}>Lịch đặt:</span>
+                    <span style={{ color: '#94a3b8' }}>Xe:</span>
+                    <span style={{ fontWeight: 800, color: '#fbbf24' }}>
+                      {handover.vehicleCode || 'EV01'}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: '#94a3b8' }}>Ngày:</span>
                     <span style={{ fontWeight: 600, color: '#ffffff' }}>
                       {formatBookingDate(handover.bookingStartTime)}
                     </span>
@@ -485,13 +492,16 @@ export const CoOwnerReceiptPanel3D: React.FC<CoOwnerReceiptPanel3DProps> = ({
                   marginBottom: '12px',
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                   <div style={{ fontSize: '11px', fontWeight: 800, color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    TÓM TẮT TÌNH TRẠNG XE
+                    KẾT QUẢ KIỂM TRA CỦA NHÂN VIÊN
                   </div>
                   <div style={{ fontSize: '10.5px', color: '#94a3b8' }}>
                     {handover.totalInspectedCount} / {handover.requiredCheckpointsCount} điểm
                   </div>
+                </div>
+                <div style={{ fontSize: '10.5px', color: '#38bdf8', marginBottom: '8px' }}>
+                  Click hotspot 3D để xem chi tiết.
                 </div>
 
                 {/* Stat badges */}

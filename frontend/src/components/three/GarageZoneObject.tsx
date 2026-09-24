@@ -125,12 +125,16 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
   const vehicleInspectionMode = useWorldStore((state) => state.vehicleInspectionMode);
   const vehicleCoOwnershipMode = useWorldStore((state) => state.vehicleCoOwnershipMode);
   const vehicleHandoverMode = useWorldStore((state) => state.vehicleHandoverMode);
+  const vehicleTripStartMode = useWorldStore((state) => state.vehicleTripStartMode);
+  const vehicleTripVisualizationMode = useWorldStore((state) => state.vehicleTripVisualizationMode);
 
   const isSelected = selectedZone === zone.id;
   const isHovered = hoveredZone === zone.id;
 
-  // Centralized business focus mode (Vehicle deep interactions: Handover, Booking, Inspection, Co-ownership)
+  // Centralized business focus mode (Vehicle deep interactions: Trip Start, Trip Visualization, Handover, Booking, Inspection, Co-ownership)
   const isFocusedBusinessMode =
+    vehicleTripVisualizationMode ||
+    vehicleTripStartMode ||
     vehicleHandoverMode ||
     vehicleBookingMode ||
     vehicleInspectionMode ||

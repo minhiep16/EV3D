@@ -1,5 +1,6 @@
 package com.evshare.ownership.entity;
 
+import com.evshare.vehicle.entity.Vehicle;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -11,7 +12,9 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "ownership_shares")
+@Table(name = "ownership_shares", uniqueConstraints = {
+        @UniqueConstraint(name = "uk_share_group_vehicle_member", columnNames = {"group_id", "vehicle_id", "member_id"})
+})
 public class OwnershipShare {
 
     @Id
@@ -23,8 +26,12 @@ public class OwnershipShare {
     @JoinColumn(name = "group_id", nullable = false)
     private CoOwnershipGroup group;
 
-    @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "member_id", nullable = false, unique = true)
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "vehicle_id", nullable = false)
+    private Vehicle vehicle;
+
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "member_id", nullable = false)
     private GroupMember member;
 
     @Column(name = "percentage", precision = 5, scale = 2, nullable = false)
@@ -41,9 +48,10 @@ public class OwnershipShare {
     public OwnershipShare() {
     }
 
-    public OwnershipShare(UUID id, CoOwnershipGroup group, GroupMember member, BigDecimal percentage) {
+    public OwnershipShare(UUID id, CoOwnershipGroup group, Vehicle vehicle, GroupMember member, BigDecimal percentage) {
         this.id = id != null ? id : UUID.randomUUID();
         this.group = group;
+        this.vehicle = vehicle;
         this.member = member;
         this.percentage = percentage;
     }
@@ -69,6 +77,14 @@ public class OwnershipShare {
 
     public void setGroup(CoOwnershipGroup group) {
         this.group = group;
+    }
+
+    public Vehicle getVehicle() {
+        return vehicle;
+    }
+
+    public void setVehicle(Vehicle vehicle) {
+        this.vehicle = vehicle;
     }
 
     public GroupMember getMember() {

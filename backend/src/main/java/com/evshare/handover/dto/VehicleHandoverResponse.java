@@ -41,6 +41,9 @@ public class VehicleHandoverResponse {
     private boolean allCheckpointsInspected;
     private boolean hasWarningsOrDamage;
     private List<VehicleInspectionResponse> inspections = new ArrayList<>();
+    private boolean isExpired;
+    private HandoverEligibilityReason eligibilityReason;
+    private String eligibilityMessage;
 
     public VehicleHandoverResponse() {
     }
@@ -53,7 +56,11 @@ public class VehicleHandoverResponse {
             resp.setBookingStartTime(entity.getBooking().getStartTime());
             resp.setBookingEndTime(entity.getBooking().getEndTime());
             resp.setBookingPurpose(entity.getBooking().getPurpose());
-            if (entity.getBooking().getStatus() != null) {
+            boolean expired = entity.getBooking().isExpired();
+            resp.setExpired(expired);
+            if (expired && entity.getStatus() != HandoverStatus.COMPLETED && entity.getStatus() != HandoverStatus.OWNER_CONFIRMED) {
+                resp.setBookingStatus("EXPIRED");
+            } else if (entity.getBooking().getStatus() != null) {
                 resp.setBookingStatus(entity.getBooking().getStatus().name());
             }
             if (entity.getBooking().getUser() != null) {
@@ -330,6 +337,36 @@ public class VehicleHandoverResponse {
 
     public void setConditionAcknowledged(boolean conditionAcknowledged) {
         this.conditionAcknowledged = conditionAcknowledged;
+    }
+
+    @com.fasterxml.jackson.annotation.JsonProperty("isExpired")
+    public boolean isExpired() {
+        return isExpired;
+    }
+
+    @com.fasterxml.jackson.annotation.JsonProperty("expired")
+    public boolean getExpired() {
+        return isExpired;
+    }
+
+    public void setExpired(boolean isExpired) {
+        this.isExpired = isExpired;
+    }
+
+    public HandoverEligibilityReason getEligibilityReason() {
+        return eligibilityReason;
+    }
+
+    public void setEligibilityReason(HandoverEligibilityReason eligibilityReason) {
+        this.eligibilityReason = eligibilityReason;
+    }
+
+    public String getEligibilityMessage() {
+        return eligibilityMessage;
+    }
+
+    public void setEligibilityMessage(String eligibilityMessage) {
+        this.eligibilityMessage = eligibilityMessage;
     }
 }
 

@@ -14,9 +14,17 @@ import java.util.UUID;
 @Repository
 public interface OwnershipShareRepository extends JpaRepository<OwnershipShare, UUID> {
     List<OwnershipShare> findByGroupId(UUID groupId);
-    Optional<OwnershipShare> findByMemberId(UUID memberId);
-    Optional<OwnershipShare> findByGroupIdAndMemberId(UUID groupId, UUID memberId);
+    List<OwnershipShare> findByGroupIdAndVehicleId(UUID groupId, UUID vehicleId);
+    Optional<OwnershipShare> findByGroupIdAndVehicleIdAndMemberId(UUID groupId, UUID vehicleId, UUID memberId);
+    Optional<OwnershipShare> findByMemberIdAndVehicleId(UUID memberId, UUID vehicleId);
+    List<OwnershipShare> findByMemberId(UUID memberId);
+
+    @Query("SELECT COALESCE(SUM(s.percentage), 0) FROM OwnershipShare s WHERE s.group.id = :groupId AND s.vehicle.id = :vehicleId")
+    BigDecimal sumPercentageByGroupIdAndVehicleId(@Param("groupId") UUID groupId, @Param("vehicleId") UUID vehicleId);
 
     @Query("SELECT COALESCE(SUM(s.percentage), 0) FROM OwnershipShare s WHERE s.group.id = :groupId")
     BigDecimal sumPercentageByGroupId(@Param("groupId") UUID groupId);
+
+    void deleteByGroupIdAndVehicleId(UUID groupId, UUID vehicleId);
+    void deleteByMemberId(UUID memberId);
 }

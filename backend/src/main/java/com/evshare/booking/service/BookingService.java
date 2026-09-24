@@ -31,13 +31,27 @@ public class BookingService {
     private final BookingRepository bookingRepository;
     private final VehicleRepository vehicleRepository;
     private final UserRepository userRepository;
+    private final com.evshare.ownership.service.CoOwnershipService coOwnershipService;
 
-    public BookingService(BookingRepository bookingRepository,
-                          VehicleRepository vehicleRepository,
-                          UserRepository userRepository) {
+    public BookingService(
+            BookingRepository bookingRepository,
+            VehicleRepository vehicleRepository,
+            UserRepository userRepository
+    ) {
+        this(bookingRepository, vehicleRepository, userRepository, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public BookingService(
+            BookingRepository bookingRepository,
+            VehicleRepository vehicleRepository,
+            UserRepository userRepository,
+            com.evshare.ownership.service.CoOwnershipService coOwnershipService
+    ) {
         this.bookingRepository = bookingRepository;
         this.vehicleRepository = vehicleRepository;
         this.userRepository = userRepository;
+        this.coOwnershipService = coOwnershipService;
     }
 
     @Transactional(readOnly = true)
@@ -71,6 +85,13 @@ public class BookingService {
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Người dùng không tồn tại: " + userId));
+
+        // 3b. Verify Active Co-Ownership Membership for CO_OWNER
+        if (user.getRole() == com.evshare.user.entity.Role.CO_OWNER && coOwnershipService != null) {
+            if (!coOwnershipService.isUserActiveMemberForVehicle(userId, vehicleId)) {
+                throw new AccessDeniedException("Bạn không phải là thành viên hoạt động của nhóm đồng sở hữu xe này.");
+            }
+        }
 
         // 4. Overlap & Conflict detection
         List<Booking> conflicts = bookingRepository.findConflictingBookings(

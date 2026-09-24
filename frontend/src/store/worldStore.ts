@@ -24,7 +24,10 @@ export type VehicleFeatureMode =
   | 'BOOKING'
   | 'CO_OWNERSHIP'
   | 'VEHICLE_EXPLORE'
-  | 'RECEIPT';
+  | 'RECEIPT'
+  | 'CO_OWNER_RECEIPT_REVIEW'
+  | 'TRIP_START'
+  | 'TRIP_VISUALIZATION';
 
 export type VehicleStatus =
   | 'AVAILABLE'
@@ -52,7 +55,7 @@ export interface CameraPreset {
 }
 
 export const ZONE_CAMERA_PRESETS: Record<
-  GarageZone | 'OVERVIEW' | 'VEHICLE_FOCUS' | 'VEHICLE_CO_OWNERSHIP' | 'VEHICLE_BOOKING' | 'VEHICLE_HANDOVER',
+  GarageZone | 'OVERVIEW' | 'VEHICLE_FOCUS' | 'VEHICLE_CO_OWNERSHIP' | 'VEHICLE_BOOKING' | 'VEHICLE_HANDOVER' | 'VEHICLE_TRIP_VISUALIZATION',
   CameraPreset
 > = {
   OVERVIEW: {
@@ -71,8 +74,8 @@ export const ZONE_CAMERA_PRESETS: Record<
   },
 
   VEHICLE_CO_OWNERSHIP: {
-    target: [-5.6, 1.1, 4],
-    position: [-5.6, 4.8, 13.6],
+    target: [-7.8, 1.35, 4.0],
+    position: [-7.8, 4.0, 14.8],
   },
 
   VEHICLE_BOOKING: {
@@ -83,6 +86,11 @@ export const ZONE_CAMERA_PRESETS: Record<
   VEHICLE_HANDOVER: {
     target: [-5.6, 1.1, 4.0],
     position: [-5.6, 4.4, 13.5],
+  },
+
+  VEHICLE_TRIP_VISUALIZATION: {
+    target: [-5.6, 1.1, 4.0],
+    position: [-4.2, 4.2, 14.5],
   },
 
   CHARGING: {
@@ -171,6 +179,24 @@ interface WorldState {
   hoverHandoverCheckpoint: (code: string | null) => void;
   selectHandoverCheckpoint: (code: string | null) => void;
   clearHandoverCheckpointSelection: () => void;
+
+  // Phase 09: Dedicated CO_OWNER Receipt Review Mode
+  vehicleReceiptReviewMode: boolean;
+  enterVehicleReceiptReviewMode: () => void;
+  exitVehicleReceiptReviewMode: () => void;
+
+  // Phase 10: Pure 3D Trip Start Mode
+  vehicleTripStartMode: boolean;
+  enterVehicleTripStartMode: () => void;
+  exitVehicleTripStartMode: () => void;
+
+  // Phase 11: Pure 3D Trip Visualization Mode
+  vehicleTripVisualizationMode: boolean;
+  selectedTripRouteNode: string | null;
+  enterVehicleTripVisualizationMode: () => void;
+  exitVehicleTripVisualizationMode: () => void;
+  selectTripRouteNode: (nodeId: string | null) => void;
+
   resetExperienceState: () => void;
 
   // Explicit Vehicle Feature Mode (Single source of truth)
@@ -210,8 +236,13 @@ export const useWorldStore = create<WorldState>((set) => ({
   vehicleBookingMode: false,
 
   vehicleHandoverMode: false,
+  vehicleReceiptReviewMode: false,
   hoveredHandoverCheckpoint: null,
   selectedHandoverCheckpoint: null,
+
+  vehicleTripStartMode: false,
+  vehicleTripVisualizationMode: false,
+  selectedTripRouteNode: null,
 
   selectZone: (zone) =>
     set((state) => {
@@ -254,8 +285,12 @@ export const useWorldStore = create<WorldState>((set) => ({
         hoveredOwnerId: null,
         vehicleBookingMode: false,
         vehicleHandoverMode: false,
+        vehicleReceiptReviewMode: false,
         selectedHandoverCheckpoint: null,
         hoveredHandoverCheckpoint: null,
+        vehicleTripStartMode: false,
+        vehicleTripVisualizationMode: false,
+        selectedTripRouteNode: null,
       };
     }),
 
@@ -317,8 +352,10 @@ export const useWorldStore = create<WorldState>((set) => ({
         hoveredOwnerId: null,
         vehicleBookingMode: false,
         vehicleHandoverMode: false,
+        vehicleReceiptReviewMode: false,
         selectedHandoverCheckpoint: null,
         hoveredHandoverCheckpoint: null,
+        vehicleTripStartMode: false,
       };
     }),
 
@@ -357,12 +394,31 @@ export const useWorldStore = create<WorldState>((set) => ({
       hoveredOwnerId: null,
       vehicleBookingMode: false,
       vehicleHandoverMode: false,
+      vehicleReceiptReviewMode: false,
       selectedHandoverCheckpoint: null,
       hoveredHandoverCheckpoint: null,
+      vehicleTripStartMode: false,
     }),
 
   clearActiveSpatialSelection: () =>
     set((state) => {
+      // 0a-1. In Trip Start mode: preserve view
+      if (state.vehicleTripStartMode) {
+        return {};
+      }
+
+      // 0a-2. In CO_OWNER Receipt Review mode: preserve view and deselect checkpoint if any
+      // Camera orbit or right drag does not exit receipt review mode
+      if (state.vehicleReceiptReviewMode) {
+        if (state.selectedHandoverCheckpoint) {
+          return {
+            selectedHandoverCheckpoint: null,
+            hoveredHandoverCheckpoint: null,
+          };
+        }
+        return {};
+      }
+
       // 0a. In Handover mode: if a checkpoint is selected, deselect checkpoint while remaining in handover view
       // Camera orbit or right drag does not exit handover mode
       if (state.vehicleHandoverMode) {
@@ -417,6 +473,8 @@ export const useWorldStore = create<WorldState>((set) => ({
         hoveredOwnerId: null,
         selectedHandoverCheckpoint: null,
         hoveredHandoverCheckpoint: null,
+        vehicleReceiptReviewMode: false,
+        vehicleTripStartMode: false,
       };
     }),
 
@@ -559,6 +617,7 @@ export const useWorldStore = create<WorldState>((set) => ({
       }
       return {
         vehicleHandoverMode: true,
+        vehicleReceiptReviewMode: false,
         vehicleBookingMode: false,
         vehicleCoOwnershipMode: false,
         vehicleInspectionMode: false,
@@ -580,6 +639,39 @@ export const useWorldStore = create<WorldState>((set) => ({
       hoveredHandoverCheckpoint: null,
     }),
 
+  enterVehicleReceiptReviewMode: () =>
+    set((state) => {
+      let role: string | undefined;
+      try {
+        role = useAuthStore.getState().user?.role;
+      } catch {
+        role = 'CO_OWNER';
+      }
+      if (!hasCapability(role, 'canConfirmReceipt')) return {};
+      return {
+        vehicleReceiptReviewMode: true,
+        vehicleHandoverMode: false,
+        vehicleBookingMode: false,
+        vehicleCoOwnershipMode: false,
+        vehicleInspectionMode: false,
+        vehicleTripStartMode: false,
+        vehicleTripVisualizationMode: false,
+        vehicleFeatureMode: 'CO_OWNER_RECEIPT_REVIEW',
+        vehicleMode: 'CO_OWNER_RECEIPT_REVIEW',
+        selectedVehicleId: 'EV01',
+        selectedZone: 'VEHICLE',
+        selectedHandoverCheckpoint: null,
+        hoveredHandoverCheckpoint: null,
+      };
+    }),
+
+  exitVehicleReceiptReviewMode: () =>
+    set({
+      vehicleReceiptReviewMode: false,
+      selectedHandoverCheckpoint: null,
+      hoveredHandoverCheckpoint: null,
+    }),
+
   hoverHandoverCheckpoint: (code) =>
     set({
       hoveredHandoverCheckpoint: code,
@@ -594,6 +686,77 @@ export const useWorldStore = create<WorldState>((set) => ({
     set({
       selectedHandoverCheckpoint: null,
       hoveredHandoverCheckpoint: null,
+    }),
+
+  enterVehicleTripStartMode: () =>
+    set((state) => {
+      let role: string | undefined;
+      try {
+        role = useAuthStore.getState().user?.role;
+      } catch {
+        role = 'CO_OWNER';
+      }
+      if (!hasCapability(role, 'canStartTrip')) return {};
+      return {
+        vehicleTripStartMode: true,
+        vehicleTripVisualizationMode: false,
+        selectedTripRouteNode: null,
+        vehicleFeatureMode: 'TRIP_START',
+        vehicleMode: 'TRIP_START',
+        vehicleBookingMode: false,
+        vehicleCoOwnershipMode: false,
+        vehicleInspectionMode: false,
+        vehicleHandoverMode: false,
+        vehicleReceiptReviewMode: false,
+        selectedVehicleId: 'EV01',
+        selectedZone: 'VEHICLE',
+        selectedVehiclePartId: null,
+        hoveredVehiclePartId: null,
+        selectedOwnerId: null,
+        hoveredOwnerId: null,
+        selectedHandoverCheckpoint: null,
+        hoveredHandoverCheckpoint: null,
+      };
+    }),
+
+  exitVehicleTripStartMode: () =>
+    set({
+      vehicleTripStartMode: false,
+    }),
+
+  enterVehicleTripVisualizationMode: () =>
+    set((state) => {
+      return {
+        vehicleTripVisualizationMode: true,
+        vehicleTripStartMode: false,
+        vehicleFeatureMode: 'TRIP_VISUALIZATION',
+        vehicleMode: 'TRIP_VISUALIZATION',
+        vehicleBookingMode: false,
+        vehicleCoOwnershipMode: false,
+        vehicleInspectionMode: false,
+        vehicleHandoverMode: false,
+        vehicleReceiptReviewMode: false,
+        selectedVehicleId: 'EV01',
+        selectedZone: 'VEHICLE',
+        selectedVehiclePartId: null,
+        hoveredVehiclePartId: null,
+        selectedOwnerId: null,
+        hoveredOwnerId: null,
+        selectedHandoverCheckpoint: null,
+        hoveredHandoverCheckpoint: null,
+        selectedTripRouteNode: 'CURRENT_PROGRESS',
+      };
+    }),
+
+  exitVehicleTripVisualizationMode: () =>
+    set({
+      vehicleTripVisualizationMode: false,
+      selectedTripRouteNode: null,
+    }),
+
+  selectTripRouteNode: (nodeId) =>
+    set({
+      selectedTripRouteNode: nodeId,
     }),
 
   resetExperienceState: () =>
@@ -618,8 +781,12 @@ export const useWorldStore = create<WorldState>((set) => ({
       selectedOwnerId: null,
       vehicleBookingMode: false,
       vehicleHandoverMode: false,
+      vehicleReceiptReviewMode: false,
       hoveredHandoverCheckpoint: null,
       selectedHandoverCheckpoint: null,
+      vehicleTripStartMode: false,
+      vehicleTripVisualizationMode: false,
+      selectedTripRouteNode: null,
     }),
 
   setVehicleFeatureMode: (mode) =>
@@ -634,16 +801,22 @@ export const useWorldStore = create<WorldState>((set) => ({
       if (mode === 'BOOKING' && !hasCapability(role, 'canBookVehicle')) return {};
       if (mode === 'CO_OWNERSHIP' && !hasCapability(role, 'canViewOwnership')) return {};
       if (mode === 'VEHICLE_EXPLORE' && !hasCapability(role, 'canExploreVehicle')) return {};
-      if (mode === 'RECEIPT' && !hasCapability(role, 'canConfirmReceipt')) return {};
+      if ((mode === 'RECEIPT' || mode === 'CO_OWNER_RECEIPT_REVIEW') && !hasCapability(role, 'canConfirmReceipt')) return {};
       if (mode === 'CO_OWNER_MY_BOOKINGS' && !hasCapability(role, 'canViewMyBookings')) return {};
+      if (mode === 'TRIP_START' && !hasCapability(role, 'canStartTrip')) return {};
 
+      const isReceiptMode = mode === 'RECEIPT' || mode === 'CO_OWNER_RECEIPT_REVIEW';
       return {
         vehicleFeatureMode: mode,
         vehicleMode: mode,
         vehicleBookingMode: mode === 'BOOKING',
         vehicleCoOwnershipMode: mode === 'CO_OWNERSHIP',
         vehicleInspectionMode: mode === 'VEHICLE_EXPLORE',
-        vehicleHandoverMode: mode === 'RECEIPT',
+        vehicleReceiptReviewMode: isReceiptMode && role === 'CO_OWNER',
+        vehicleHandoverMode: (mode === 'RECEIPT' && role === 'STAFF') || (mode === 'STAFF_VEHICLE_OVERVIEW' && role === 'STAFF'),
+        vehicleTripStartMode: mode === 'TRIP_START',
+        vehicleTripVisualizationMode: mode === 'TRIP_VISUALIZATION',
+        selectedTripRouteNode: mode === 'TRIP_VISUALIZATION' ? (state.selectedTripRouteNode || 'CURRENT_PROGRESS') : null,
       };
     }),
 
@@ -659,16 +832,22 @@ export const useWorldStore = create<WorldState>((set) => ({
       if (mode === 'BOOKING' && !hasCapability(role, 'canBookVehicle')) return {};
       if (mode === 'CO_OWNERSHIP' && !hasCapability(role, 'canViewOwnership')) return {};
       if (mode === 'VEHICLE_EXPLORE' && !hasCapability(role, 'canExploreVehicle')) return {};
-      if (mode === 'RECEIPT' && !hasCapability(role, 'canConfirmReceipt')) return {};
+      if ((mode === 'RECEIPT' || mode === 'CO_OWNER_RECEIPT_REVIEW') && !hasCapability(role, 'canConfirmReceipt')) return {};
       if (mode === 'CO_OWNER_MY_BOOKINGS' && !hasCapability(role, 'canViewMyBookings')) return {};
+      if (mode === 'TRIP_START' && !hasCapability(role, 'canStartTrip')) return {};
 
+      const isReceiptMode = mode === 'RECEIPT' || mode === 'CO_OWNER_RECEIPT_REVIEW';
       return {
         vehicleFeatureMode: mode,
         vehicleMode: mode,
         vehicleBookingMode: mode === 'BOOKING',
         vehicleCoOwnershipMode: mode === 'CO_OWNERSHIP',
         vehicleInspectionMode: mode === 'VEHICLE_EXPLORE',
-        vehicleHandoverMode: mode === 'RECEIPT',
+        vehicleReceiptReviewMode: isReceiptMode && role === 'CO_OWNER',
+        vehicleHandoverMode: (mode === 'RECEIPT' && role === 'STAFF') || (mode === 'STAFF_VEHICLE_OVERVIEW' && role === 'STAFF'),
+        vehicleTripStartMode: mode === 'TRIP_START',
+        vehicleTripVisualizationMode: mode === 'TRIP_VISUALIZATION',
+        selectedTripRouteNode: mode === 'TRIP_VISUALIZATION' ? (state.selectedTripRouteNode || 'CURRENT_PROGRESS') : null,
       };
     }),
 
@@ -705,6 +884,10 @@ export const useWorldStore = create<WorldState>((set) => ({
         vehicleCoOwnershipMode: false,
         vehicleInspectionMode: false,
         vehicleHandoverMode: false,
+        vehicleReceiptReviewMode: false,
+        vehicleTripStartMode: false,
+        vehicleTripVisualizationMode: false,
+        selectedTripRouteNode: null,
         selectedVehiclePartId: null,
         hoveredVehiclePartId: null,
         selectedOwnerId: null,

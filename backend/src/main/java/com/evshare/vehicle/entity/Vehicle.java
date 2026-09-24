@@ -110,6 +110,10 @@ public class Vehicle {
         return name;
     }
 
+    public String getVehicleCode() {
+        return name;
+    }
+
     public void setName(String name) {
         this.name = name;
     }

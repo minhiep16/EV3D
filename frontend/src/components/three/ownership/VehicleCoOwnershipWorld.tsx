@@ -5,9 +5,10 @@ import { VehicleResponse } from '../../../types/vehicle';
 import { CoOwnershipGroupResponse, GroupMemberResponse } from '../../../types/coOwnership';
 import { fetchVehicleCoOwnership } from '../../../services/coOwnershipApi';
 import { useWorldStore } from '../../../store/worldStore';
-import { CentralOwnershipTotal3D } from './CentralOwnershipTotal3D';
 import { OwnerOrb3D } from './OwnerOrb3D';
 import { HolographicOwnerDetailPanel } from './HolographicOwnerDetailPanel';
+import { GroupSummaryPanel3D } from './GroupSummaryPanel3D';
+import { SpatialDataLink } from '../SpatialDataLink';
 import {
   Sparkles,
   AlertTriangle,
@@ -19,24 +20,22 @@ interface VehicleCoOwnershipWorldProps {
 }
 
 const OWNER_ORB_COLORS = [
-  '#00f2fe', // Cyan (Owner A)
-  '#a855f7', // Violet (Owner B)
-  '#10b981', // Emerald (Owner C)
-  '#f59e0b', // Amber (Owner D)
-  '#ec4899', // Pink (Owner E)
+  '#00f2fe', // Cyan (Nguyen Van A - 40%)
+  '#a855f7', // Purple (Tran Thi B - 30%)
+  '#10b981', // Emerald (Le Van C - 30%)
+  '#f59e0b', // Amber
+  '#ec4899', // Pink
+  '#3b82f6', // Blue
+  '#14b8a6', // Teal
+  '#8b5cf6', // Violet
 ];
 
-// Curated spatial positions around EV01 in Left / Center-Left composition:
-// - Owner A (40%): Upper-left of EV01 [-2.6, 1.7, 0.2]
-// - Owner B (30%): Left-middle of EV01 [-3.2, 1.2, 1.2]
-// - Owner C (30%): Lower-left of EV01 [-1.6, 0.85, 2.8]
-const DEFAULT_ORB_POSITIONS: [number, number, number][] = [
-  [-2.6, 1.7, 0.2],   // Owner A 40% (Upper-left)
-  [-3.2, 1.2, 1.2],   // Owner B 30% (Left-middle)
-  [-1.6, 0.85, 2.8],  // Owner C 30% (Lower-left)
-  [-2.8, 1.2, -1.6],  // Fallback Owner D
-  [-0.2, 1.1, 3.4],   // Fallback Owner E
-];
+// Clean vertical ownership column parameters on the LEFT side:
+// - Members stacked vertically from upper-left down to lower-left
+const BASE_X = -3.6;
+const BASE_Z = 0.1;
+const START_Y = 1.35;
+const VERTICAL_GAP = 0.58;
 
 interface OwnerNode {
   id: string;
@@ -65,27 +64,34 @@ export const VehicleCoOwnershipWorld: React.FC<VehicleCoOwnershipWorldProps> = (
     queryFn: () => fetchVehicleCoOwnership(vehicle.id),
   });
 
-  // Build deterministic owner node array mapped from members
-  const ownerNodes = useMemo<OwnerNode[]>(() => {
-    if (!coOwnership?.members || coOwnership.members.length === 0) return [];
+  // Filter only ACTIVE members from database
+  const activeMembers = useMemo(() => {
+    if (!coOwnership?.members) return [];
+    return coOwnership.members.filter((m) => m.status === 'ACTIVE');
+  }, [coOwnership?.members]);
 
-    // Sort by ownership percentage descending: 40% (Owner A), 30% (Owner B), 30% (Owner C)
-    const sortedMembers = [...coOwnership.members].sort((a, b) => {
+  // Deterministic sorting by percentage descending, then member.id tiebreaker
+  // Yields:
+  // 1. Nguyen Van A (40%) -> upper-left (START_Y = 1.7)
+  // 2. Tran Thi B (30%)   -> middle-left (START_Y - 0.7 = 1.0)
+  // 3. Le Van C (30%)     -> lower-left  (START_Y - 1.4 = 0.3)
+  const sortedMembers = useMemo(() => {
+    return [...activeMembers].sort((a, b) => {
       const shareA = a.share?.percentage ?? 0;
       const shareB = b.share?.percentage ?? 0;
-      return shareB - shareA;
+      const diff = shareB - shareA;
+      if (diff !== 0) return diff;
+      return a.id.localeCompare(b.id);
     });
+  }, [activeMembers]);
+
+  // Build clean vertical owner nodes on the left side
+  const ownerNodes = useMemo<OwnerNode[]>(() => {
+    if (sortedMembers.length === 0) return [];
 
     return sortedMembers.map((member, index) => {
-      const position =
-        index < DEFAULT_ORB_POSITIONS.length
-          ? DEFAULT_ORB_POSITIONS[index]
-          : ([
-              Math.cos((index / sortedMembers.length) * Math.PI * 2) * 3.2,
-              1.2,
-              Math.sin((index / sortedMembers.length) * Math.PI * 2) * 3.2,
-            ] as [number, number, number]);
-
+      const yPos = parseFloat((START_Y - index * VERTICAL_GAP).toFixed(2));
+      const position: [number, number, number] = [BASE_X, yPos, BASE_Z];
       const color = OWNER_ORB_COLORS[index % OWNER_ORB_COLORS.length];
 
       return {
@@ -95,9 +101,9 @@ export const VehicleCoOwnershipWorld: React.FC<VehicleCoOwnershipWorldProps> = (
         color,
       };
     });
-  }, [coOwnership?.members]);
+  }, [sortedMembers]);
 
-  // Find currently selected owner node by ID
+  // Find currently selected owner node by stable ID
   const selectedNode = useMemo(() => {
     if (!selectedOwnerId) return null;
     return ownerNodes.find((node) => node.id === selectedOwnerId) ?? null;
@@ -224,7 +230,7 @@ export const VehicleCoOwnershipWorld: React.FC<VehicleCoOwnershipWorldProps> = (
   }
 
   // 3. Empty State in 3D Space
-  if (!coOwnership || coOwnership.members.length === 0) {
+  if (!coOwnership || ownerNodes.length === 0) {
     return (
       <group position={[0, 1.8, 0]}>
         <Billboard follow={true}>
@@ -243,7 +249,7 @@ export const VehicleCoOwnershipWorld: React.FC<VehicleCoOwnershipWorldProps> = (
               }}
             >
               <div style={{ fontSize: '12px', fontWeight: 700, color: '#c084fc' }}>
-                CHƯA CÓ NHÓM ĐỒNG SỞ HỮU
+                CHƯA CÓ THÀNH VIÊN HOẠT ĐỘNG TRONG NHÓM
               </div>
             </div>
           </Html>
@@ -252,16 +258,30 @@ export const VehicleCoOwnershipWorld: React.FC<VehicleCoOwnershipWorldProps> = (
     );
   }
 
+  const spineTopY = START_Y;
+  const spineBottomY = START_Y - (ownerNodes.length - 1) * VERTICAL_GAP;
+  const spineCenterY = (spineTopY + spineBottomY) / 2;
+  const spineHeight = Math.max(0.1, spineTopY - spineBottomY);
+
   return (
     <group>
-      {/* 1. Central 3D Total Ownership Visualization Dual-Ring */}
-      <CentralOwnershipTotal3D
-        totalPercentage={coOwnership.totalOwnershipPercentage}
-        availablePercentage={coOwnership.availablePercentage}
-        position={[0, 2.4, 0]}
+      {/* 1. Group Summary Panel in Upper-Middle-Left Area (Requirements 1 & 2) */}
+      <GroupSummaryPanel3D
+        group={coOwnership}
+        vehicleCode={coOwnership.vehicleCode || vehicle.name || 'EV01'}
+        position={[-2.1, 2.50, 0.0]}
+        onClose={() => exitVehicleCoOwnershipMode()}
       />
 
-      {/* 3. 3D Spatial Owner Orbs placed around EV01 */}
+      {/* 2. Vertical Ownership Network Spine linking the members on the Left */}
+      {ownerNodes.length > 1 && (
+        <mesh position={[BASE_X, spineCenterY, BASE_Z]}>
+          <cylinderGeometry args={[0.005, 0.005, spineHeight, 12]} />
+          <meshBasicMaterial color="#a855f7" transparent opacity={0.35} />
+        </mesh>
+      )}
+
+      {/* 3. Vertical Ownership Member Nodes on the Left Side (Requirements 2, 3, 6, 7) */}
       {ownerNodes.map((node) => (
         <OwnerOrb3D
           key={node.id}
@@ -271,16 +291,36 @@ export const VehicleCoOwnershipWorld: React.FC<VehicleCoOwnershipWorldProps> = (
         />
       ))}
 
-      {/* 4. Holographic Detail Panel when an Owner is Selected */}
+      {/* 4. Spatial Relationships & Connections (Requirement 6: ● [EV01] --------> [OWNER DETAIL PANEL]) */}
       {selectedNode && (
-        <HolographicOwnerDetailPanel
-          key={selectedNode.id}
-          member={selectedNode.member}
-          orbPosition={selectedNode.position}
-          panelPosition={[3.6, 1.5, 0.5]}
-          color={selectedNode.color}
-          onClose={() => clearOwnerSelection()}
-        />
+        <>
+          {/* Link 1: Selected Member Orb -> EV01 Anchor */}
+          <SpatialDataLink
+            start={selectedNode.position}
+            end={[-0.75, 0.75, 0.1]}
+            color={selectedNode.color}
+          />
+
+          {/* Link 2: EV01 Anchor -> Right Owner Detail Panel */}
+          <SpatialDataLink
+            start={[0.75, 0.75, 0.1]}
+            end={[2.0, 1.25, 0.2]}
+            color={selectedNode.color}
+          />
+
+          {/* 5. Holographic Owner Detail Panel on the Right Side (Requirements 5 & 6) */}
+          <HolographicOwnerDetailPanel
+            key={selectedNode.id}
+            member={selectedNode.member}
+            groupName={coOwnership.name}
+            vehicleCode={coOwnership.vehicleCode || vehicle.name || 'EV01'}
+            orbPosition={selectedNode.position}
+            panelPosition={[3.3, 1.25, 0.2]}
+            color={selectedNode.color}
+            renderLink={false}
+            onClose={() => clearOwnerSelection()}
+          />
+        </>
       )}
     </group>
   );

@@ -1,10 +1,18 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { VehicleResponse } from '../../../types/vehicle';
-import { VehicleHandoverData, HANDOVER_STATUS_CONFIG } from '../../../types/handover';
+import {
+  VehicleHandoverData,
+  VehicleHandoverEligibilityResponse,
+  HANDOVER_STATUS_CONFIG,
+  HANDOVER_ELIGIBILITY_CONFIG,
+  HandoverEligibilityReason,
+} from '../../../types/handover';
 import { Booking } from '../../../types/booking';
-import { fetchActiveVehicleHandovers } from '../../../services/handoverApi';
+import { TripData } from '../../../types/trip';
+import { fetchActiveVehicleHandovers, fetchHandoverEligibility } from '../../../services/handoverApi';
 import { fetchVehicleBookings } from '../../../services/bookingApi';
+import { fetchActiveTripForVehicle } from '../../../services/tripApi';
 import { useAuthStore } from '../../../store/authStore';
 import { useWorldStore, VEHICLE_STATUS_LABELS } from '../../../store/worldStore';
 import {
@@ -18,6 +26,7 @@ import {
   User,
   CheckCircle,
   AlertCircle,
+  AlertTriangle,
   ClipboardList,
 } from 'lucide-react';
 
@@ -73,6 +82,14 @@ export const StaffOperationsPanel: React.FC<StaffOperationsPanelProps> = ({
     refetchInterval: 4000,
   });
 
+  // TanStack Query: Fetch handover eligibility (source of truth)
+  const { data: eligibility } = useQuery<VehicleHandoverEligibilityResponse>({
+    queryKey: ['handoverEligibility', vehicle.id],
+    queryFn: () => fetchHandoverEligibility(vehicle.id),
+    enabled: authReady && !!vehicle.id,
+    refetchInterval: 4000,
+  });
+
   // TanStack Query: Fetch bookings for preparation queue
   const { data: bookings = [] } = useQuery<Booking[]>({
     queryKey: ['vehicleBookings', vehicle.id],
@@ -81,38 +98,79 @@ export const StaffOperationsPanel: React.FC<StaffOperationsPanelProps> = ({
     refetchInterval: 8000,
   });
 
-  // Resolve prioritized handover candidate
+  // Helper to check if a handover is expired
+  const isHandoverExpired = (h?: VehicleHandoverData | null) => {
+    if (!h) return false;
+    return Boolean(
+      h.isExpired ||
+      h.expired ||
+      h.bookingStatus === 'EXPIRED' ||
+      (h.bookingEndTime && new Date(h.bookingEndTime).getTime() < Date.now())
+    );
+  };
+
+  // Helper to check if a booking is expired
+  const isBookingExpired = (b?: Booking | null) => {
+    if (!b) return false;
+    return Boolean(
+      b.isExpired ||
+      b.expired ||
+      b.status === 'EXPIRED' ||
+      (b.endTime && new Date(b.endTime).getTime() < Date.now())
+    );
+  };
+
+  // Resolve prioritized handover candidate: prioritize non-expired candidates first
   const nextHandover = React.useMemo(() => {
     if (!activeHandovers || activeHandovers.length === 0) return null;
-    const prioritized = activeHandovers.find(
+    const nonExpired = activeHandovers.filter((h) => !isHandoverExpired(h));
+    const targetPool = nonExpired.length > 0 ? nonExpired : activeHandovers;
+    const prioritized = targetPool.find(
       (h) =>
         h.status === 'READY_FOR_HANDOVER' ||
         h.status === 'INSPECTION_IN_PROGRESS' ||
         h.status === 'PENDING_PREPARATION' ||
         h.status === 'HANDED_OVER'
     );
-    return prioritized || activeHandovers[0];
+    return prioritized || targetPool[0];
   }, [activeHandovers]);
 
-  // Resolve upcoming booking requiring preparation
+  // Resolve upcoming booking requiring preparation: prioritize non-expired
   const upcomingBooking = React.useMemo(() => {
     if (!bookings || bookings.length === 0) return null;
-    const now = new Date();
     const active = bookings.filter((b) => b.status === 'CONFIRMED' || b.status === 'PENDING');
-    return active.find((b) => new Date(b.endTime) >= now) || active[0] || null;
+    const futureActive = active.filter((b) => !isBookingExpired(b));
+    return futureActive[0] || active[0] || bookings[0] || null;
   }, [bookings]);
 
+  // TanStack Query: Fetch active trip for vehicle
+  const { data: activeTrip } = useQuery<TripData | null>({
+    queryKey: ['activeTrip', vehicle.id],
+    queryFn: () => fetchActiveTripForVehicle(vehicle.id),
+    enabled: authReady && !!vehicle.id,
+    refetchInterval: 3000,
+  });
+
+  const isTripActive = !!activeTrip && activeTrip.status === 'ACTIVE';
+
   const displayCode = 'EV01';
-  const statusConfig = VEHICLE_STATUS_LABELS[vehicle.status] || {
-    label: vehicle.status,
-    color: '#00f2fe',
-  };
+  const statusConfig = isTripActive
+    ? { label: 'Đang sử dụng', color: '#00f2fe' }
+    : VEHICLE_STATUS_LABELS[vehicle.status] || {
+        label: vehicle.status,
+        color: '#00f2fe',
+      };
   const formattedOdometer = Number(vehicle.odometer ?? 12450).toLocaleString('vi-VN');
   const estimatedRangeKm = Math.round(((vehicle.currentBatteryLevel || 82) / 100) * 450);
 
   const handoverConfig = nextHandover?.status
     ? HANDOVER_STATUS_CONFIG[nextHandover.status]
     : null;
+
+  const eligibilityReason: HandoverEligibilityReason =
+    eligibility?.reason ||
+    (nextHandover?.eligibilityReason ?? (activeHandovers.length === 0 ? 'NO_BOOKING' : 'READY_FOR_PREPARATION'));
+  const eligibilityConfig = HANDOVER_ELIGIBILITY_CONFIG[eligibilityReason];
 
   return (
     <div
@@ -222,6 +280,80 @@ export const StaffOperationsPanel: React.FC<StaffOperationsPanelProps> = ({
       </div>
 
       {/* ======================================================== */}
+      {/* SECTION 20: READ-ONLY OPERATIONAL TRIP STATE             */}
+      {/* ======================================================== */}
+      {isTripActive && activeTrip && (
+        <div
+          style={{
+            background: 'rgba(2, 132, 199, 0.18)',
+            border: '1px solid rgba(0, 242, 254, 0.45)',
+            borderRadius: '12px',
+            padding: '12px',
+            marginBottom: '12px',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '6px',
+            }}
+          >
+            <span
+              style={{
+                fontSize: '11px',
+                fontWeight: 800,
+                color: '#00f2fe',
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+              }}
+            >
+              TRẠNG THÁI VẬN HÀNH
+            </span>
+            <span
+              style={{
+                background: 'rgba(0, 242, 254, 0.25)',
+                color: '#00f2fe',
+                fontSize: '9px',
+                fontWeight: 800,
+                padding: '2px 6px',
+                borderRadius: '4px',
+              }}
+            >
+              ĐANG SỬ DỤNG
+            </span>
+          </div>
+          <div style={{ fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8' }}>Người sử dụng:</span>
+              <span style={{ fontWeight: 700, color: '#ffffff' }}>{activeTrip.userName}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8' }}>Bắt đầu:</span>
+              <span style={{ color: '#f8fafc', fontWeight: 600 }}>
+                {new Date(activeTrip.startedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} ({new Date(activeTrip.startedAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })})
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8' }}>Khung giờ:</span>
+              <span style={{ color: '#00f2fe', fontWeight: 700 }}>
+                {formatTimeRange(activeTrip.bookingStartTime, activeTrip.bookingEndTime)}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8' }}>Pin khi bắt đầu:</span>
+              <span style={{ color: '#38bdf8', fontWeight: 700 }}>{activeTrip.startBatteryLevel}%</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8' }}>Odometer khi bắt đầu:</span>
+              <span style={{ color: '#c084fc', fontWeight: 700 }}>{Number(activeTrip.startOdometer).toLocaleString()} km</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
       {/* MODULE 1: XE CẦN CHUẨN BỊ (Section 19)                   */}
       {/* ======================================================== */}
       <div
@@ -258,46 +390,47 @@ export const StaffOperationsPanel: React.FC<StaffOperationsPanelProps> = ({
           </div>
           <span
             style={{
-              background: 'rgba(0, 242, 254, 0.2)',
-              color: '#00f2fe',
+              background: eligibilityConfig?.badgeBg || 'rgba(0, 242, 254, 0.2)',
+              color: eligibilityConfig?.color || '#00f2fe',
+              border: `1px solid ${eligibilityConfig?.border || 'rgba(0, 242, 254, 0.4)'}`,
               fontSize: '9px',
               fontWeight: 800,
               padding: '2px 6px',
               borderRadius: '4px',
             }}
           >
-            {nextHandover ? nextHandover.status : 'SẴN SÀNG'}
+            {eligibilityConfig?.labelVi || 'SẴN SÀNG'}
           </span>
         </div>
 
-        {nextHandover || upcomingBooking ? (
+        {nextHandover || upcomingBooking || eligibility?.recipientName ? (
           <div style={{ fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ color: '#94a3b8' }}>Người nhận xe:</span>
               <span style={{ fontWeight: 700, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <User size={11} color="#38bdf8" />
-                {nextHandover?.coOwnerName || upcomingBooking?.userName || 'Nguyen Van A'}
+                {eligibility?.recipientName || nextHandover?.coOwnerName || upcomingBooking?.userName || 'Chưa xác định'}
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ color: '#94a3b8' }}>Ngày bàn giao:</span>
               <span style={{ color: '#f8fafc', fontWeight: 600 }}>
-                {formatDate(nextHandover?.bookingStartTime || upcomingBooking?.startTime)}
+                {formatDate(eligibility?.bookingStartTime || nextHandover?.bookingStartTime || upcomingBooking?.startTime)}
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ color: '#94a3b8' }}>Khung giờ:</span>
               <span style={{ color: '#00f2fe', fontWeight: 700 }}>
                 {formatTimeRange(
-                  nextHandover?.bookingStartTime || upcomingBooking?.startTime,
-                  nextHandover?.bookingEndTime || upcomingBooking?.endTime
+                  eligibility?.bookingStartTime || nextHandover?.bookingStartTime || upcomingBooking?.startTime,
+                  eligibility?.bookingEndTime || nextHandover?.bookingEndTime || upcomingBooking?.endTime
                 )}
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px' }}>
               <span style={{ color: '#94a3b8' }}>Tiến độ kiểm tra:</span>
               <span style={{ color: '#38bdf8', fontWeight: 800 }}>
-                {nextHandover?.inspections?.length ?? 8} / 8 Điểm kiểm tra
+                {nextHandover?.inspections?.length ?? (eligibilityReason === 'READY_FOR_PREPARATION' || eligibilityReason === 'TOO_EARLY' ? 0 : 8)} / 8 Điểm kiểm tra
               </span>
             </div>
           </div>
@@ -337,25 +470,30 @@ export const StaffOperationsPanel: React.FC<StaffOperationsPanelProps> = ({
           <span>LỊCH BÀN GIAO VẬN HÀNH</span>
         </div>
 
-        {activeHandovers.length > 0 ? (
+        {activeHandovers.length > 0 || eligibility?.recipientName ? (
           <div style={{ fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8' }}>
               <span>Bàn giao tiếp theo:</span>
               <span style={{ color: '#f8fafc', fontWeight: 600 }}>
-                {nextHandover?.coOwnerName || 'Đồng sở hữu'}
+                {eligibility?.recipientName || nextHandover?.coOwnerName || 'Đồng sở hữu'}
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8' }}>
               <span>Trạng thái quy trình:</span>
-              <span style={{ color: handoverConfig?.color || '#00f2fe', fontWeight: 700 }}>
-                {handoverConfig?.labelVi || nextHandover?.status}
+              <span
+                style={{
+                  color: eligibilityConfig?.color || '#00f2fe',
+                  fontWeight: 700,
+                }}
+              >
+                {eligibilityConfig?.labelVi || handoverConfig?.labelVi || nextHandover?.status}
               </span>
             </div>
           </div>
         ) : (
           /* Role-Specific Empty State (Section 24) */
           <div style={{ textAlign: 'center', padding: '6px 0', color: '#94a3b8', fontSize: '11px' }}>
-            KHÔNG CÓ XE NÀO CẦN BÀN GIAO LÚC NÀY
+            {eligibilityConfig?.labelVi || 'KHÔNG CÓ LỊCH BÀN GIAO'}
           </div>
         )}
       </div>
@@ -410,32 +548,55 @@ export const StaffOperationsPanel: React.FC<StaffOperationsPanelProps> = ({
       {/* MODULE 4: PRIMARY ACTION CTA (Section 23)                */}
       {/* ======================================================== */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {/* Primary CTA */}
-        <button
-          type="button"
-          onClick={() => enterVehicleHandoverMode()}
-          style={{
-            width: '100%',
-            background: 'linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)',
-            border: 'none',
-            borderRadius: '10px',
-            padding: '11px',
-            color: '#070b14',
-            fontSize: '12px',
-            fontWeight: 800,
-            letterSpacing: '0.04em',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px',
-            boxShadow: '0 4px 18px rgba(0, 242, 254, 0.4)',
-            transition: 'all 0.2s ease',
-          }}
-        >
-          <Wrench size={15} color="#070b14" />
-          KIỂM TRA & BÀN GIAO XE
-        </button>
+        {/* Primary CTA: Disabled when vehicle is in active trip (không giao lại, không handover lại) */}
+        {isTripActive ? (
+          <div
+            style={{
+              width: '100%',
+              background: 'rgba(30, 41, 59, 0.65)',
+              border: '1px solid rgba(148, 163, 184, 0.25)',
+              borderRadius: '10px',
+              padding: '11px',
+              color: '#94a3b8',
+              fontSize: '11.5px',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              textAlign: 'center',
+            }}
+          >
+            <AlertTriangle size={15} color="#fbbf24" />
+            <span>XE ĐANG SỬ DỤNG — KHÔNG THỂ BÀN GIAO LẠI</span>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => enterVehicleHandoverMode()}
+            style={{
+              width: '100%',
+              background: 'linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)',
+              border: 'none',
+              borderRadius: '10px',
+              padding: '11px',
+              color: '#070b14',
+              fontSize: '12px',
+              fontWeight: 800,
+              letterSpacing: '0.04em',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              boxShadow: '0 4px 18px rgba(0, 242, 254, 0.4)',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            <Wrench size={15} color="#070b14" />
+            KIỂM TRA & BÀN GIAO XE
+          </button>
+        )}
 
         {/* Secondary CTA */}
         <button

@@ -17,6 +17,9 @@ export const SpatialOverviewControl: React.FC = () => {
 
   const vehicleBookingMode = useWorldStore((state) => state.vehicleBookingMode);
   const vehicleHandoverMode = useWorldStore((state) => state.vehicleHandoverMode);
+  const vehicleReceiptReviewMode = useWorldStore((state) => state.vehicleReceiptReviewMode);
+  const vehicleTripStartMode = useWorldStore((state) => state.vehicleTripStartMode);
+  const vehicleTripVisualizationMode = useWorldStore((state) => state.vehicleTripVisualizationMode);
 
   // Active only when camera is focused on a specific vehicle or zone
   const isFocused = !!selectedZone || !!selectedVehicleId;
@@ -26,8 +29,14 @@ export const SpatialOverviewControl: React.FC = () => {
     if (!isFocused) return null;
 
     if (selectedVehicleId) {
-      if (vehicleBookingMode || vehicleHandoverMode) {
-        // In booking or handover mode, position low and slightly to the left under EV01 front
+      if (
+        vehicleBookingMode ||
+        vehicleHandoverMode ||
+        vehicleReceiptReviewMode ||
+        vehicleTripStartMode ||
+        vehicleTripVisualizationMode
+      ) {
+        // In booking, handover, receipt review, trip start, or trip visualization mode, position low and slightly to the left under EV01 front
         // so it stays clearly visible at the bottom without competing with spatial panels
         return [-6.8, 0.22, 7.8];
       }
@@ -43,7 +52,7 @@ export const SpatialOverviewControl: React.FC = () => {
       }
     }
     return [0, 0.35, 6];
-  }, [isFocused, selectedZone, selectedVehicleId, vehicleBookingMode, vehicleHandoverMode]);
+  }, [isFocused, selectedZone, selectedVehicleId, vehicleBookingMode, vehicleHandoverMode, vehicleReceiptReviewMode, vehicleTripStartMode, vehicleTripVisualizationMode]);
 
   useFrame((_, delta) => {
     if (!isFocused || !groupRef.current) return;

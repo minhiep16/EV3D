@@ -3,9 +3,11 @@ import { useQuery } from '@tanstack/react-query';
 import { VehicleResponse } from '../../../types/vehicle';
 import { VehicleHandoverData, HANDOVER_STATUS_CONFIG } from '../../../types/handover';
 import { CoOwnershipGroupResponse } from '../../../types/coOwnership';
+import { TripData } from '../../../types/trip';
 import { fetchActiveVehicleHandovers } from '../../../services/handoverApi';
 import { fetchVehicleCoOwnership } from '../../../services/coOwnershipApi';
 import { fetchVehicles } from '../../../services/vehicleApi';
+import { fetchActiveTripForVehicle } from '../../../services/tripApi';
 import { useAuthStore } from '../../../store/authStore';
 import { useWorldStore, VEHICLE_STATUS_LABELS } from '../../../store/worldStore';
 import {
@@ -59,11 +61,23 @@ export const AdminVehicleMonitorPanel: React.FC<AdminVehicleMonitorPanelProps> =
     refetchInterval: 15000,
   });
 
+  // TanStack Query: Fetch active trip for vehicle
+  const { data: activeTrip } = useQuery<TripData | null>({
+    queryKey: ['activeTrip', vehicle.id],
+    queryFn: () => fetchActiveTripForVehicle(vehicle.id),
+    enabled: authReady && !!vehicle.id,
+    refetchInterval: 3000,
+  });
+
+  const isTripActive = !!activeTrip && activeTrip.status === 'ACTIVE';
+
   const displayCode = 'EV01';
-  const statusConfig = VEHICLE_STATUS_LABELS[vehicle.status] || {
-    label: vehicle.status,
-    color: '#a855f7',
-  };
+  const statusConfig = isTripActive
+    ? { label: 'Đang sử dụng', color: '#c084fc' }
+    : VEHICLE_STATUS_LABELS[vehicle.status] || {
+        label: vehicle.status,
+        color: '#a855f7',
+      };
   const formattedOdometer = Number(vehicle.odometer ?? 12450).toLocaleString('vi-VN');
   const estimatedRangeKm = Math.round(((vehicle.currentBatteryLevel || 82) / 100) * 450);
 
@@ -243,6 +257,74 @@ export const AdminVehicleMonitorPanel: React.FC<AdminVehicleMonitorPanelProps> =
       </div>
 
       {/* ======================================================== */}
+      {/* SECTION 20: READ-ONLY OPERATIONAL TRIP STATE             */}
+      {/* ======================================================== */}
+      {isTripActive && activeTrip && (
+        <div
+          style={{
+            background: 'rgba(168, 85, 247, 0.12)',
+            border: '1px solid rgba(168, 85, 247, 0.45)',
+            borderRadius: '12px',
+            padding: '12px',
+            marginBottom: '12px',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '6px',
+            }}
+          >
+            <span
+              style={{
+                fontSize: '11px',
+                fontWeight: 800,
+                color: '#c084fc',
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+              }}
+            >
+              TRẠNG THÁI VẬN HÀNH
+            </span>
+            <span
+              style={{
+                background: 'rgba(168, 85, 247, 0.25)',
+                color: '#c084fc',
+                fontSize: '9px',
+                fontWeight: 800,
+                padding: '2px 6px',
+                borderRadius: '4px',
+              }}
+            >
+              ĐANG SỬ DỤNG
+            </span>
+          </div>
+          <div style={{ fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8' }}>Người sử dụng:</span>
+              <span style={{ fontWeight: 700, color: '#ffffff' }}>{activeTrip.userName}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8' }}>Bắt đầu:</span>
+              <span style={{ color: '#f8fafc', fontWeight: 600 }}>
+                {new Date(activeTrip.startedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} ({new Date(activeTrip.startedAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })})
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8' }}>Pin khi bắt đầu:</span>
+              <span style={{ color: '#38bdf8', fontWeight: 700 }}>{activeTrip.startBatteryLevel}%</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8' }}>Odometer khi bắt đầu:</span>
+              <span style={{ color: '#c084fc', fontWeight: 700 }}>{Number(activeTrip.startOdometer).toLocaleString()} km</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
       {/* MODULE 2: GIÁM SÁT BÀN GIAO (Section 20)                 */}
       {/* ======================================================== */}
       <div
@@ -296,7 +378,7 @@ export const AdminVehicleMonitorPanel: React.FC<AdminVehicleMonitorPanelProps> =
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ color: '#94a3b8' }}>Người nhận:</span>
               <span style={{ color: '#ffffff', fontWeight: 600 }}>
-                {activeHandover.coOwnerName || 'Nguyen Van A'}
+                {activeHandover.coOwnerName || 'Chưa xác định'}
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>

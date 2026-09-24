@@ -120,6 +120,11 @@ public class Booking {
         this.status = status;
     }
 
+    public boolean isExpired() {
+        return this.status == BookingStatus.EXPIRED ||
+                (this.status == BookingStatus.CONFIRMED && this.endTime != null && Instant.now().isAfter(this.endTime));
+    }
+
     public String getPurpose() {
         return purpose;
     }

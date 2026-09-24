@@ -16,7 +16,13 @@ import com.evshare.handover.repository.VehicleInspectionRepository;
 import com.evshare.user.entity.Role;
 import com.evshare.user.entity.User;
 import com.evshare.user.repository.UserRepository;
+import com.evshare.handover.dto.HandoverEligibilityReason;
+import com.evshare.handover.dto.VehicleHandoverEligibilityResponse;
+import com.evshare.trip.entity.TripStatus;
+import com.evshare.trip.repository.TripRepository;
 import com.evshare.vehicle.entity.Vehicle;
+import com.evshare.vehicle.entity.VehicleStatus;
+import com.evshare.vehicle.repository.VehicleRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -48,6 +54,12 @@ class VehicleHandoverServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private VehicleRepository vehicleRepository;
+
+    @Mock
+    private TripRepository tripRepository;
 
     @InjectMocks
     private VehicleHandoverService handoverService;
@@ -91,8 +103,8 @@ class VehicleHandoverServiceTest {
         booking.setUser(coOwner);
         booking.setStatus(BookingStatus.CONFIRMED);
         booking.setPurpose("Đi công tác nội ô");
-        booking.setStartTime(Instant.now().plus(2, ChronoUnit.HOURS));
-        booking.setEndTime(Instant.now().plus(4, ChronoUnit.HOURS));
+        booking.setStartTime(Instant.now().plus(1, ChronoUnit.HOURS));
+        booking.setEndTime(Instant.now().plus(3, ChronoUnit.HOURS));
 
         handover = new VehicleHandover(handoverId, booking, vehicle, staff, coOwner, HandoverStatus.PENDING_PREPARATION);
     }
@@ -469,5 +481,190 @@ class VehicleHandoverServiceTest {
         VehicleHandoverResponse res = handoverService.confirmOwnerReceipt(handoverId, coOwnerId);
         assertNotNull(res);
         assertEquals(HandoverStatus.COMPLETED, res.getStatus());
+    }
+
+    @Test
+    @DisplayName("Should reject starting handover when booking has EXPIRED")
+    void testStartHandover_ExpiredBooking_ThrowsIllegalStateException() {
+        booking.setEndTime(Instant.now().minus(1, ChronoUnit.HOURS));
+        booking.setStatus(BookingStatus.EXPIRED);
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(booking));
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> handoverService.startHandover(bookingId, staffId));
+        assertTrue(ex.getMessage().contains("EXPIRED"));
+    }
+
+    @Test
+    @DisplayName("Should reject record inspection when booking has EXPIRED")
+    void testRecordInspection_ExpiredBooking_ThrowsIllegalStateException() {
+        booking.setEndTime(Instant.now().minus(30, ChronoUnit.MINUTES));
+        handover.setStatus(HandoverStatus.INSPECTION_IN_PROGRESS);
+        when(handoverRepository.findById(handoverId)).thenReturn(Optional.of(handover));
+
+        VehicleInspectionRequest req = new VehicleInspectionRequest();
+        req.setVehiclePartCode("BODY");
+        req.setConditionStatus(InspectionCondition.GOOD);
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> handoverService.recordInspection(handoverId, req, staffId));
+        assertTrue(ex.getMessage().contains("EXPIRED"));
+    }
+
+    @Test
+    @DisplayName("Should reject mark ready when booking has EXPIRED")
+    void testMarkReady_ExpiredBooking_ThrowsIllegalStateException() {
+        booking.setEndTime(Instant.now().minus(10, ChronoUnit.MINUTES));
+        handover.setStatus(HandoverStatus.INSPECTION_IN_PROGRESS);
+        when(handoverRepository.findById(handoverId)).thenReturn(Optional.of(handover));
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> handoverService.markReadyForHandover(handoverId, staffId));
+        assertTrue(ex.getMessage().contains("EXPIRED"));
+    }
+
+    @Test
+    @DisplayName("Should reject staff handover when booking has EXPIRED")
+    void testConfirmStaffHandover_ExpiredBooking_ThrowsIllegalStateException() {
+        booking.setEndTime(Instant.now().minus(5, ChronoUnit.MINUTES));
+        handover.setStatus(HandoverStatus.READY_FOR_HANDOVER);
+        when(handoverRepository.findById(handoverId)).thenReturn(Optional.of(handover));
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> handoverService.confirmStaffHandover(handoverId, staffId));
+        assertTrue(ex.getMessage().contains("EXPIRED"));
+    }
+
+    @Test
+    @DisplayName("Should reject owner receipt confirmation when booking has EXPIRED")
+    void testConfirmOwnerReceipt_ExpiredBooking_ThrowsIllegalStateException() {
+        booking.setEndTime(Instant.now().minus(2, ChronoUnit.MINUTES));
+        handover.setStatus(HandoverStatus.HANDED_OVER);
+        when(handoverRepository.findById(handoverId)).thenReturn(Optional.of(handover));
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> handoverService.confirmOwnerReceipt(handoverId, coOwnerId));
+        assertTrue(ex.getMessage().contains("EXPIRED"));
+    }
+
+    @Test
+    @DisplayName("Should reject owner condition acknowledgement when booking has EXPIRED")
+    void testAcknowledgeCondition_ExpiredBooking_ThrowsIllegalStateException() {
+        booking.setEndTime(Instant.now().minus(2, ChronoUnit.MINUTES));
+        handover.setStatus(HandoverStatus.HANDED_OVER);
+        when(handoverRepository.findById(handoverId)).thenReturn(Optional.of(handover));
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> handoverService.acknowledgeCondition(handoverId, coOwnerId));
+        assertTrue(ex.getMessage().contains("EXPIRED"));
+    }
+
+    @Test
+    @DisplayName("Should reject start handover when it is TOO_EARLY outside preparation window")
+    void testStartHandover_TooEarly_ThrowsIllegalStateException() {
+        booking.setStartTime(Instant.now().plus(5, ChronoUnit.HOURS));
+        booking.setEndTime(Instant.now().plus(7, ChronoUnit.HOURS));
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(booking));
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> handoverService.startHandover(bookingId, staffId));
+        assertTrue(ex.getMessage().contains("TOO_EARLY"));
+    }
+
+    @Test
+    @DisplayName("Should return VEHICLE_IN_USE when vehicle is in active trip or status is IN_USE")
+    void testEligibility_VehicleInUse() {
+        vehicle.setStatus(VehicleStatus.IN_USE);
+        when(vehicleRepository.findById(vehicle.getId())).thenReturn(Optional.of(vehicle));
+
+        VehicleHandoverEligibilityResponse res = handoverService.getHandoverEligibility(vehicle.getId(), staffId, Role.STAFF);
+        assertNotNull(res);
+        assertEquals(HandoverEligibilityReason.VEHICLE_IN_USE, res.getReason());
+        assertEquals("XE ĐANG ĐƯỢC SỬ DỤNG", res.getMessage());
+        assertFalse(res.isEligibleForInspection());
+    }
+
+    @Test
+    @DisplayName("Should return HANDED_OVER when vehicle has been handed over")
+    void testEligibility_HandedOver() {
+        handover.setStatus(HandoverStatus.HANDED_OVER);
+        when(vehicleRepository.findById(vehicle.getId())).thenReturn(Optional.of(vehicle));
+        when(handoverRepository.findActiveByVehicleId(vehicle.getId())).thenReturn(List.of(handover));
+
+        VehicleHandoverEligibilityResponse res = handoverService.getHandoverEligibility(vehicle.getId(), staffId, Role.STAFF);
+        assertNotNull(res);
+        assertEquals(HandoverEligibilityReason.HANDED_OVER, res.getReason());
+        assertEquals("XE ĐÃ ĐƯỢC BÀN GIAO", res.getMessage());
+        assertFalse(res.isEligibleForInspection());
+    }
+
+    @Test
+    @DisplayName("Should return NO_BOOKING when vehicle has no confirmed bookings")
+    void testEligibility_NoBooking() {
+        when(vehicleRepository.findById(vehicle.getId())).thenReturn(Optional.of(vehicle));
+        when(handoverRepository.findActiveByVehicleId(vehicle.getId())).thenReturn(Collections.emptyList());
+        when(bookingRepository.findByVehicleIdOrderByStartTimeAsc(vehicle.getId())).thenReturn(Collections.emptyList());
+
+        VehicleHandoverEligibilityResponse res = handoverService.getHandoverEligibility(vehicle.getId(), staffId, Role.STAFF);
+        assertNotNull(res);
+        assertEquals(HandoverEligibilityReason.NO_BOOKING, res.getReason());
+        assertEquals("KHÔNG CÓ LỊCH BÀN GIAO", res.getMessage());
+        assertFalse(res.isEligibleForInspection());
+    }
+
+    @Test
+    @DisplayName("Should return BOOKING_EXPIRED when all bookings are in the past")
+    void testEligibility_BookingExpired() {
+        booking.setStartTime(Instant.now().minus(4, ChronoUnit.HOURS));
+        booking.setEndTime(Instant.now().minus(2, ChronoUnit.HOURS));
+        booking.setStatus(BookingStatus.EXPIRED);
+
+        when(vehicleRepository.findById(vehicle.getId())).thenReturn(Optional.of(vehicle));
+        when(handoverRepository.findActiveByVehicleId(vehicle.getId())).thenReturn(Collections.emptyList());
+        when(bookingRepository.findByVehicleIdOrderByStartTimeAsc(vehicle.getId())).thenReturn(List.of(booking));
+
+        VehicleHandoverEligibilityResponse res = handoverService.getHandoverEligibility(vehicle.getId(), staffId, Role.STAFF);
+        assertNotNull(res);
+        assertEquals(HandoverEligibilityReason.BOOKING_EXPIRED, res.getReason());
+        assertEquals("LỊCH ĐẶT ĐÃ HẾT HIỆU LỰC", res.getMessage());
+        assertFalse(res.isEligibleForInspection());
+    }
+
+    @Test
+    @DisplayName("Should return TOO_EARLY when valid booking is outside preparation window")
+    void testEligibility_TooEarly() {
+        booking.setStartTime(Instant.now().plus(6, ChronoUnit.HOURS));
+        booking.setEndTime(Instant.now().plus(8, ChronoUnit.HOURS));
+
+        when(vehicleRepository.findById(vehicle.getId())).thenReturn(Optional.of(vehicle));
+        when(handoverRepository.findActiveByVehicleId(vehicle.getId())).thenReturn(Collections.emptyList());
+        when(bookingRepository.findByVehicleIdOrderByStartTimeAsc(vehicle.getId())).thenReturn(List.of(booking));
+
+        VehicleHandoverEligibilityResponse res = handoverService.getHandoverEligibility(vehicle.getId(), staffId, Role.STAFF);
+        assertNotNull(res);
+        assertEquals(HandoverEligibilityReason.TOO_EARLY, res.getReason());
+        assertEquals("CHƯA ĐẾN THỜI GIAN CHUẨN BỊ XE", res.getMessage());
+        assertFalse(res.isEligibleForInspection());
+        assertNotNull(res.getRecipientName());
+        assertNotNull(res.getSecondsUntilPreparation());
+        assertTrue(res.getSecondsUntilPreparation() > 0);
+    }
+
+    @Test
+    @DisplayName("Should return READY_FOR_PREPARATION when booking is within preparation window")
+    void testEligibility_ReadyForPreparation() {
+        booking.setStartTime(Instant.now().plus(1, ChronoUnit.HOURS));
+        booking.setEndTime(Instant.now().plus(3, ChronoUnit.HOURS));
+
+        when(vehicleRepository.findById(vehicle.getId())).thenReturn(Optional.of(vehicle));
+        when(handoverRepository.findActiveByVehicleId(vehicle.getId())).thenReturn(Collections.emptyList());
+        when(bookingRepository.findByVehicleIdOrderByStartTimeAsc(vehicle.getId())).thenReturn(List.of(booking));
+
+        VehicleHandoverEligibilityResponse res = handoverService.getHandoverEligibility(vehicle.getId(), staffId, Role.STAFF);
+        assertNotNull(res);
+        assertEquals(HandoverEligibilityReason.READY_FOR_PREPARATION, res.getReason());
+        assertEquals("SẴN SÀNG CHUẨN BỊ BÀN GIAO XE", res.getMessage());
+        assertTrue(res.isEligibleForInspection());
+        assertNotNull(res.getHandover());
     }
 }

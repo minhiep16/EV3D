@@ -4,9 +4,12 @@ import com.evshare.user.entity.User;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -29,23 +32,40 @@ public class GroupMember {
     private User user;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "member_role", length = 30, nullable = false)
+    private GroupMemberRole memberRole = GroupMemberRole.MEMBER;
+
+    @Enumerated(EnumType.STRING)
     @Column(name = "status", length = 30, nullable = false)
     private MemberStatus status = MemberStatus.ACTIVE;
 
-    @OneToOne(mappedBy = "member", cascade = CascadeType.ALL, orphanRemoval = true)
-    private OwnershipShare share;
+    @OneToMany(mappedBy = "member", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<OwnershipShare> shares = new ArrayList<>();
 
     @CreationTimestamp
     @Column(name = "joined_at", updatable = false)
     private Instant joinedAt;
 
+    @CreationTimestamp
+    @Column(name = "created_at", updatable = false)
+    private Instant createdAt;
+
+    @UpdateTimestamp
+    @Column(name = "updated_at")
+    private Instant updatedAt;
+
     public GroupMember() {
     }
 
     public GroupMember(UUID id, CoOwnershipGroup group, User user, MemberStatus status) {
+        this(id, group, user, GroupMemberRole.MEMBER, status);
+    }
+
+    public GroupMember(UUID id, CoOwnershipGroup group, User user, GroupMemberRole memberRole, MemberStatus status) {
         this.id = id != null ? id : UUID.randomUUID();
         this.group = group;
         this.user = user;
+        this.memberRole = memberRole != null ? memberRole : GroupMemberRole.MEMBER;
         this.status = status != null ? status : MemberStatus.ACTIVE;
     }
 
@@ -80,6 +100,14 @@ public class GroupMember {
         this.user = user;
     }
 
+    public GroupMemberRole getMemberRole() {
+        return memberRole;
+    }
+
+    public void setMemberRole(GroupMemberRole memberRole) {
+        this.memberRole = memberRole;
+    }
+
     public MemberStatus getStatus() {
         return status;
     }
@@ -88,12 +116,12 @@ public class GroupMember {
         this.status = status;
     }
 
-    public OwnershipShare getShare() {
-        return share;
+    public List<OwnershipShare> getShares() {
+        return shares;
     }
 
-    public void setShare(OwnershipShare share) {
-        this.share = share;
+    public void setShares(List<OwnershipShare> shares) {
+        this.shares = shares;
     }
 
     public Instant getJoinedAt() {
@@ -102,5 +130,21 @@ public class GroupMember {
 
     public void setJoinedAt(Instant joinedAt) {
         this.joinedAt = joinedAt;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(Instant createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public Instant getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(Instant updatedAt) {
+        this.updatedAt = updatedAt;
     }
 }

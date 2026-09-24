@@ -3,8 +3,10 @@ import { useQuery } from '@tanstack/react-query';
 import { VehicleResponse } from '../../../types/vehicle';
 import { VehicleHandoverData } from '../../../types/handover';
 import { Booking } from '../../../types/booking';
+import { TripData, TripStartEligibilityData } from '../../../types/trip';
 import { fetchActiveVehicleHandovers } from '../../../services/handoverApi';
 import { fetchVehicleBookings } from '../../../services/bookingApi';
+import { fetchActiveTripForVehicle, fetchTripStartEligibility } from '../../../services/tripApi';
 import { useAuthStore } from '../../../store/authStore';
 import { useWorldStore, VEHICLE_STATUS_LABELS } from '../../../store/worldStore';
 import {
@@ -18,6 +20,11 @@ import {
   Clock,
   Sparkles,
   Info,
+  Play,
+  CheckCircle2,
+  AlertTriangle,
+  MapPin,
+  Compass,
 } from 'lucide-react';
 
 function formatDate(isoString?: string): string {
@@ -64,6 +71,8 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
   const authReady = isAuthenticated && !!accessToken;
 
   const setVehicleFeatureMode = useWorldStore((state) => state.setVehicleFeatureMode);
+  const enterVehicleReceiptReviewMode = useWorldStore((state) => state.enterVehicleReceiptReviewMode);
+  const enterVehicleTripVisualizationMode = useWorldStore((state) => state.enterVehicleTripVisualizationMode);
 
   // TanStack Query: Fetch active handovers to evaluate eligibility for check-in
   const { data: activeHandovers = [] } = useQuery<VehicleHandoverData[]>({
@@ -80,6 +89,21 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
     enabled: authReady && !!vehicle.id,
     refetchInterval: 8000,
   });
+
+  // TanStack Query: Fetch active trip for vehicle
+  const { data: activeTrip } = useQuery<TripData | null>({
+    queryKey: ['activeTrip', vehicle.id],
+    queryFn: () => fetchActiveTripForVehicle(vehicle.id),
+    enabled: authReady && !!vehicle.id,
+    refetchInterval: 3000,
+  });
+
+  const isTripActive = !!activeTrip && activeTrip.status === 'ACTIVE';
+  const isMyActiveTrip = isTripActive && !!activeTrip && (
+    (!!user?.id && activeTrip.userId === user.id) ||
+    (!!user?.email && activeTrip.userEmail === user.email)
+  );
+  const isOtherUserActiveTrip = isTripActive && !isMyActiveTrip;
 
   // Resolve upcoming booking for this vehicle / user
   const upcomingBooking = React.useMemo(() => {
@@ -99,6 +123,7 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
 
   // Check if CO_OWNER has an active handover ready for receipt / check-in (HANDED_OVER status)
   const isEligibleForCheckIn = React.useMemo(() => {
+    if (isTripActive) return false;
     const list = Array.isArray(activeHandovers) ? activeHandovers : [];
     if (list.length === 0) return false;
     return list.some(
@@ -107,13 +132,40 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
         (h.status === 'HANDED_OVER' || h.status === 'READY_FOR_HANDOVER') &&
         (!user?.id || h.coOwnerId === user?.id || h.coOwnerEmail === user?.email)
     );
+  }, [activeHandovers, user, isTripActive]);
+
+  // Resolve completed handover for current user (Phase 10 transition prerequisite)
+  const completedHandover = React.useMemo(() => {
+    const list = Array.isArray(activeHandovers) ? activeHandovers : [];
+    if (list.length === 0) return null;
+    return (
+      list.find(
+        (h) =>
+          h &&
+          (h.status === 'COMPLETED' || h.status === 'OWNER_CONFIRMED') &&
+          (!user?.id || h.coOwnerId === user?.id || h.coOwnerEmail === user?.email)
+      ) || null
+    );
   }, [activeHandovers, user]);
 
+  // If completed handover exists and trip is not active, check trip start eligibility
+  const { data: tripEligibility } = useQuery<TripStartEligibilityData | null>({
+    queryKey: ['tripEligibility', completedHandover?.bookingId],
+    queryFn: () =>
+      completedHandover?.bookingId
+        ? fetchTripStartEligibility(completedHandover.bookingId)
+        : Promise.resolve(null),
+    enabled: authReady && !!completedHandover?.bookingId && (!activeTrip || activeTrip.status !== 'ACTIVE'),
+    refetchInterval: 4000,
+  });
+
   const displayCode = 'EV01';
-  const statusConfig = VEHICLE_STATUS_LABELS[vehicle.status] || {
-    label: 'Sẵn sàng',
-    color: '#10b981',
-  };
+  const statusConfig = isTripActive
+    ? { label: 'Đang sử dụng', color: '#00f2fe' }
+    : VEHICLE_STATUS_LABELS[vehicle.status] || {
+        label: 'Sẵn sàng',
+        color: '#10b981',
+      };
   const estimatedRangeKm = Math.round(((vehicle.currentBatteryLevel || 82) / 100) * 450);
 
   return (
@@ -374,8 +426,193 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
         )}
       </div>
 
+      {/* Phase 10: Active Trip Restoration Card (Section 18 & 19) */}
+      {/* Phase 11: Active Trip State for My Trip vs Other Co-Owner (Section 5 & 17) */}
+      {isMyActiveTrip && activeTrip && (
+        <div
+          style={{
+            background: 'rgba(2, 132, 199, 0.18)',
+            border: '1px solid rgba(56, 189, 248, 0.55)',
+            boxShadow: '0 0 16px rgba(56, 189, 248, 0.2)',
+            borderRadius: '12px',
+            padding: '12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+            marginBottom: '14px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '11px', fontWeight: 800, color: '#38bdf8', letterSpacing: '0.04em' }}>
+              CHUYẾN ĐI ĐANG DIỄN RA
+            </span>
+            <span
+              style={{
+                fontSize: '9.5px',
+                fontWeight: 800,
+                background: 'rgba(56, 189, 248, 0.25)',
+                color: '#38bdf8',
+                padding: '2px 8px',
+                borderRadius: '9999px',
+              }}
+            >
+              {displayCode}
+            </span>
+          </div>
+
+          <div style={{ fontSize: '11px', color: '#f1f5f9', marginTop: '2px', display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: '#94a3b8' }}>Bắt đầu:</span>
+            <strong style={{ color: '#ffffff' }}>
+              {new Date(activeTrip.startedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} ({formatDate(activeTrip.startedAt)})
+            </strong>
+          </div>
+
+          <div style={{ fontSize: '11px', color: '#f1f5f9', display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: '#94a3b8' }}>Khung giờ đặt:</span>
+            <span style={{ color: '#38bdf8', fontWeight: 700 }}>
+              {formatTimeRange(activeTrip.bookingStartTime, activeTrip.bookingEndTime)}
+            </span>
+          </div>
+
+          <div style={{ fontSize: '10.5px', color: '#94a3b8', borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: '6px', marginTop: '2px' }}>
+            Mức pin: <strong style={{ color: '#34d399' }}>{activeTrip.startBatteryLevel}%</strong> • Odo: <strong style={{ color: '#f8fafc' }}>{Number(activeTrip.startOdometer).toLocaleString()} km</strong>
+          </div>
+        </div>
+      )}
+
+      {isOtherUserActiveTrip && activeTrip && (
+        <div
+          style={{
+            background: 'rgba(245, 158, 11, 0.14)',
+            border: '1px solid rgba(245, 158, 11, 0.45)',
+            boxShadow: '0 0 16px rgba(245, 158, 11, 0.15)',
+            borderRadius: '12px',
+            padding: '12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+            marginBottom: '14px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '11px', fontWeight: 800, color: '#fbbf24', letterSpacing: '0.04em' }}>
+              XE ĐANG ĐƯỢC SỬ DỤNG
+            </span>
+            <span
+              style={{
+                fontSize: '9.5px',
+                fontWeight: 800,
+                background: 'rgba(245, 158, 11, 0.25)',
+                color: '#fbbf24',
+                padding: '2px 8px',
+                borderRadius: '9999px',
+              }}
+            >
+              {displayCode}
+            </span>
+          </div>
+
+          <div style={{ fontSize: '11px', color: '#f1f5f9', marginTop: '2px', display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: '#94a3b8' }}>Người sử dụng:</span>
+            <strong style={{ color: '#ffffff' }}>{activeTrip.userName || 'Thành viên nhóm'}</strong>
+          </div>
+
+          <div style={{ fontSize: '11px', color: '#f1f5f9', display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: '#94a3b8' }}>Bắt đầu:</span>
+            <span style={{ color: '#cbd5e1' }}>
+              {new Date(activeTrip.startedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} ({formatDate(activeTrip.startedAt)})
+            </span>
+          </div>
+
+          <div style={{ fontSize: '11px', color: '#f1f5f9', display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: '#94a3b8' }}>Khung giờ:</span>
+            <span style={{ color: '#fbbf24', fontWeight: 700 }}>
+              {formatTimeRange(activeTrip.bookingStartTime, activeTrip.bookingEndTime)}
+            </span>
+          </div>
+
+          <div style={{ fontSize: '11px', color: '#f1f5f9', display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: '#94a3b8' }}>Dự kiến khả dụng:</span>
+            <span style={{ color: '#34d399', fontWeight: 700 }}>
+              {activeTrip.bookingEndTime
+                ? `${new Date(activeTrip.bookingEndTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} (${formatDate(activeTrip.bookingEndTime)})`
+                : 'Sau khi trả xe'}
+            </span>
+          </div>
+
+          <div style={{ fontSize: '10.5px', color: '#38bdf8', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <Calendar size={12} color="#38bdf8" />
+            <span>Bạn vẫn có thể đặt lịch tương lai (không trùng thời gian).</span>
+          </div>
+        </div>
+      )}
+
+      {/* Phase 10: Trip Start Eligibility Notice (Section 15) */}
+      {!isTripActive && completedHandover && (
+        <div style={{ marginBottom: '14px' }}>
+          {tripEligibility?.eligible ? (
+            <div
+              style={{
+                background: 'rgba(16, 185, 129, 0.15)',
+                border: '1px solid rgba(16, 185, 129, 0.4)',
+                borderRadius: '12px',
+                padding: '10px 12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                color: '#34d399',
+                fontSize: '11.5px',
+                fontWeight: 700,
+              }}
+            >
+              <CheckCircle2 size={16} />
+              <span>XE SẴN SÀNG SỬ DỤNG</span>
+            </div>
+          ) : tripEligibility ? (
+            <div
+              style={{
+                background: 'rgba(245, 158, 11, 0.15)',
+                border: '1px solid rgba(245, 158, 11, 0.4)',
+                borderRadius: '12px',
+                padding: '10px 12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                color: '#fbbf24',
+                fontSize: '11px',
+                fontWeight: 600,
+              }}
+            >
+              <AlertTriangle size={15} />
+              <span>XE ĐÃ NHẬN — {tripEligibility.message || 'CHƯA ĐẾN THỜI GIAN SỬ DỤNG XE'}</span>
+            </div>
+          ) : null}
+        </div>
+      )}
+
       {/* Section 3: Exact Role Actions */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {/* Phase 11: Primary Trip Action - XEM CHUYẾN ĐI (Current Owner Only) */}
+        {isMyActiveTrip ? (
+          <button
+            type="button"
+            onClick={() => enterVehicleTripVisualizationMode()}
+            style={highlightActionButtonStyle('linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)', '#00f2fe')}
+          >
+            <Compass size={15} />
+            <span>XEM CHUYẾN ĐI</span>
+          </button>
+        ) : !isTripActive && completedHandover && tripEligibility?.eligible ? (
+          <button
+            type="button"
+            onClick={() => setVehicleFeatureMode('TRIP_START')}
+            style={highlightActionButtonStyle('linear-gradient(135deg, #0284c7 0%, #06b6d4 100%)', '#00f2fe')}
+          >
+            <Play size={14} fill="currentColor" />
+            <span>BẮT ĐẦU CHUYẾN ĐI</span>
+          </button>
+        ) : null}
+
         <button
           type="button"
           onClick={() => setVehicleFeatureMode('CO_OWNER_MY_BOOKINGS')}
@@ -416,7 +653,7 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
         {isEligibleForCheckIn && (
           <button
             type="button"
-            onClick={() => setVehicleFeatureMode('RECEIPT')}
+            onClick={() => enterVehicleReceiptReviewMode()}
             style={highlightActionButtonStyle('linear-gradient(135deg, #059669 0%, #10b981 100%)', '#10b981')}
           >
             <Key size={14} />

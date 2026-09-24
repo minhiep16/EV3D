@@ -7,7 +7,6 @@ import java.time.Instant;
 import java.util.UUID;
 
 public class BookingResponse {
-
     private UUID id;
     private UUID vehicleId;
     private UUID userId;
@@ -18,12 +17,18 @@ public class BookingResponse {
     private BookingStatus status;
     private String purpose;
     private Instant createdAt;
+    private boolean isExpired;
 
     public BookingResponse() {
     }
 
     public BookingResponse(UUID id, UUID vehicleId, UUID userId, String userName, String userEmail,
                            Instant startTime, Instant endTime, BookingStatus status, String purpose, Instant createdAt) {
+        this(id, vehicleId, userId, userName, userEmail, startTime, endTime, status, purpose, createdAt, false);
+    }
+
+    public BookingResponse(UUID id, UUID vehicleId, UUID userId, String userName, String userEmail,
+                           Instant startTime, Instant endTime, BookingStatus status, String purpose, Instant createdAt, boolean isExpired) {
         this.id = id;
         this.vehicleId = vehicleId;
         this.userId = userId;
@@ -34,9 +39,13 @@ public class BookingResponse {
         this.status = status;
         this.purpose = purpose;
         this.createdAt = createdAt;
+        this.isExpired = isExpired;
     }
 
     public static BookingResponse fromEntity(Booking booking) {
+        boolean expired = booking.isExpired();
+        BookingStatus effectiveStatus = (expired && booking.getStatus() == BookingStatus.CONFIRMED) ? BookingStatus.EXPIRED : booking.getStatus();
+
         return new BookingResponse(
                 booking.getId(),
                 booking.getVehicle().getId(),
@@ -45,9 +54,10 @@ public class BookingResponse {
                 booking.getUser().getEmail(),
                 booking.getStartTime(),
                 booking.getEndTime(),
-                booking.getStatus(),
+                effectiveStatus,
                 booking.getPurpose(),
-                booking.getCreatedAt()
+                booking.getCreatedAt(),
+                expired
         );
     }
 
@@ -89,5 +99,19 @@ public class BookingResponse {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    @com.fasterxml.jackson.annotation.JsonProperty("isExpired")
+    public boolean isExpired() {
+        return isExpired;
+    }
+
+    @com.fasterxml.jackson.annotation.JsonProperty("expired")
+    public boolean getExpired() {
+        return isExpired;
+    }
+
+    public void setExpired(boolean expired) {
+        this.isExpired = expired;
     }
 }

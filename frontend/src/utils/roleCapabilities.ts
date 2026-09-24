@@ -9,6 +9,7 @@ export interface FeatureCapabilities {
   canViewOwnership: boolean;
   canExploreVehicle: boolean;
   canConfirmReceipt: boolean;
+  canStartTrip: boolean;
 
   // STAFF Operational Capabilities (Section 22)
   canPrepareVehicle: boolean;
@@ -28,6 +29,7 @@ export const FEATURE_CAPABILITIES: Record<UserRole, FeatureCapabilities> = {
     canViewOwnership: true,
     canExploreVehicle: true,
     canConfirmReceipt: true,
+    canStartTrip: true,
 
     canPrepareVehicle: false,
     canInspectForHandover: false,
@@ -43,6 +45,7 @@ export const FEATURE_CAPABILITIES: Record<UserRole, FeatureCapabilities> = {
     canViewOwnership: false,
     canExploreVehicle: false,
     canConfirmReceipt: false,
+    canStartTrip: false,
 
     canPrepareVehicle: true,
     canInspectForHandover: true,
@@ -58,6 +61,7 @@ export const FEATURE_CAPABILITIES: Record<UserRole, FeatureCapabilities> = {
     canViewOwnership: false,
     canExploreVehicle: false,
     canConfirmReceipt: false,
+    canStartTrip: false,
 
     canPrepareVehicle: false,
     canInspectForHandover: false,

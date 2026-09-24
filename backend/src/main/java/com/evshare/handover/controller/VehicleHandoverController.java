@@ -69,6 +69,20 @@ public class VehicleHandoverController {
         return ResponseEntity.ok(response);
     }
 
+    @GetMapping("/vehicles/{vehicleId}/handover-eligibility")
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
+    public ResponseEntity<com.evshare.handover.dto.VehicleHandoverEligibilityResponse> getHandoverEligibility(
+            @PathVariable UUID vehicleId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        com.evshare.handover.dto.VehicleHandoverEligibilityResponse response = handoverService.getHandoverEligibility(
+                vehicleId,
+                principal.getId(),
+                principal.getUser().getRole()
+        );
+        return ResponseEntity.ok(response);
+    }
+
     @PostMapping("/bookings/{bookingId}/handover/start")
     @PreAuthorize("hasRole('STAFF')")
     public ResponseEntity<VehicleHandoverResponse> startHandover(

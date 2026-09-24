@@ -20,6 +20,9 @@ export const GarageScene: React.FC = () => {
   const vehicleCoOwnershipMode = useWorldStore((state) => state.vehicleCoOwnershipMode);
   const vehicleBookingMode = useWorldStore((state) => state.vehicleBookingMode);
   const vehicleHandoverMode = useWorldStore((state) => state.vehicleHandoverMode);
+  const vehicleReceiptReviewMode = useWorldStore((state) => state.vehicleReceiptReviewMode);
+  const vehicleTripStartMode = useWorldStore((state) => state.vehicleTripStartMode);
+  const vehicleTripVisualizationMode = useWorldStore((state) => state.vehicleTripVisualizationMode);
   const vehicleInspectionMode = useWorldStore((state) => state.vehicleInspectionMode);
 
   // Session Isolation: Whenever authenticated user changes, reset all transient experience states
@@ -31,6 +34,9 @@ export const GarageScene: React.FC = () => {
     vehicleCoOwnershipMode ||
     vehicleBookingMode ||
     vehicleHandoverMode ||
+    vehicleReceiptReviewMode ||
+    vehicleTripStartMode ||
+    vehicleTripVisualizationMode ||
     vehicleInspectionMode ||
     vehicleFeatureMode === 'CO_OWNER_VEHICLE_INFO' ||
     vehicleFeatureMode === 'CO_OWNER_MY_BOOKINGS';

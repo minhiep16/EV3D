@@ -6,6 +6,8 @@ import java.util.UUID;
 
 public record OwnershipShareResponse(
         UUID id,
+        UUID groupId,
+        UUID vehicleId,
         UUID memberId,
         BigDecimal percentage,
         Instant updatedAt

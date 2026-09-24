@@ -49,6 +49,38 @@ export interface VehicleHandoverData {
   allCheckpointsInspected: boolean;
   hasWarningsOrDamage: boolean;
   inspections: VehicleInspectionItem[];
+  isExpired?: boolean;
+  expired?: boolean;
+  eligibilityReason?: HandoverEligibilityReason;
+  eligibilityMessage?: string;
+}
+
+export type HandoverEligibilityReason =
+  | 'NO_BOOKING'
+  | 'BOOKING_EXPIRED'
+  | 'TOO_EARLY'
+  | 'READY_FOR_PREPARATION'
+  | 'HANDED_OVER'
+  | 'VEHICLE_IN_USE';
+
+export interface VehicleHandoverEligibilityResponse {
+  reason: HandoverEligibilityReason;
+  message: string;
+  eligibleForInspection: boolean;
+  vehicleId: string;
+  vehicleName?: string;
+  vehicleCode?: string;
+  bookingId?: string;
+  bookingStartTime?: string;
+  bookingEndTime?: string;
+  recipientName?: string;
+  recipientEmail?: string;
+  bookingPurpose?: string;
+  preparationWindowStartTime?: string;
+  secondsUntilPreparation?: number;
+  handoverId?: string;
+  handoverStatus?: HandoverStatus;
+  handover?: VehicleHandoverData;
 }
 
 export interface VehicleInspectionSubmitRequest {
@@ -56,6 +88,48 @@ export interface VehicleInspectionSubmitRequest {
   conditionStatus: InspectionCondition;
   note?: string;
 }
+
+export const HANDOVER_ELIGIBILITY_CONFIG: Record<
+  HandoverEligibilityReason,
+  { labelVi: string; color: string; badgeBg: string; border: string }
+> = {
+  NO_BOOKING: {
+    labelVi: 'KHÔNG CÓ LỊCH BÀN GIAO',
+    color: '#94a3b8',
+    badgeBg: 'rgba(148, 163, 184, 0.15)',
+    border: 'rgba(148, 163, 184, 0.35)',
+  },
+  BOOKING_EXPIRED: {
+    labelVi: 'LỊCH ĐẶT ĐÃ HẾT HIỆU LỰC',
+    color: '#f87171',
+    badgeBg: 'rgba(239, 68, 68, 0.15)',
+    border: 'rgba(239, 68, 68, 0.4)',
+  },
+  TOO_EARLY: {
+    labelVi: 'CHƯA ĐẾN THỜI GIAN CHUẨN BỊ XE',
+    color: '#38bdf8',
+    badgeBg: 'rgba(56, 189, 248, 0.15)',
+    border: 'rgba(56, 189, 248, 0.4)',
+  },
+  READY_FOR_PREPARATION: {
+    labelVi: 'SẴN SÀNG CHUẨN BỊ BÀN GIAO XE',
+    color: '#10b981',
+    badgeBg: 'rgba(16, 185, 129, 0.18)',
+    border: 'rgba(16, 185, 129, 0.4)',
+  },
+  HANDED_OVER: {
+    labelVi: 'XE ĐÃ ĐƯỢC BÀN GIAO',
+    color: '#a855f7',
+    badgeBg: 'rgba(168, 85, 247, 0.2)',
+    border: 'rgba(168, 85, 247, 0.4)',
+  },
+  VEHICLE_IN_USE: {
+    labelVi: 'XE ĐANG ĐƯỢC SỬ DỤNG',
+    color: '#00f2fe',
+    badgeBg: 'rgba(0, 242, 254, 0.2)',
+    border: 'rgba(0, 242, 254, 0.4)',
+  },
+};
 
 export const HANDOVER_STATUS_CONFIG: Record<
   HandoverStatus,

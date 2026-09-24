@@ -3,7 +3,22 @@ import {
   VehicleHandoverData,
   VehicleInspectionItem,
   VehicleInspectionSubmitRequest,
+  VehicleHandoverEligibilityResponse,
 } from '../types/handover';
+
+export async function fetchHandoverEligibility(
+  vehicleId: string
+): Promise<VehicleHandoverEligibilityResponse> {
+  try {
+    const res = await authenticatedFetch(`/api/vehicles/${vehicleId}/handover-eligibility`);
+    return await safeParseResponse<VehicleHandoverEligibilityResponse>(res);
+  } catch (err: any) {
+    if (err instanceof TypeError || (err instanceof Error && err.message.includes('fetch'))) {
+      throw new Error('Không thể kết nối đến máy chủ kiểm tra điều kiện bàn giao xe.');
+    }
+    throw err;
+  }
+}
 
 export async function fetchActiveVehicleHandover(
   vehicleId: string

@@ -154,9 +154,16 @@ export const StaffInspectionPanel3D: React.FC<StaffInspectionPanel3DProps> = ({
     }
   };
 
+  const isHandoverExpired = Boolean(
+    handover.isExpired ||
+    handover.expired ||
+    handover.bookingStatus === 'EXPIRED' ||
+    (handover.bookingEndTime && new Date(handover.bookingEndTime).getTime() < Date.now())
+  );
+
   const statusConfig = HANDOVER_STATUS_CONFIG[handover.status];
   const allInspected = handover.totalInspectedCount >= handover.requiredCheckpointsCount;
-  const isInspectionEditable = handover.status === 'INSPECTION_IN_PROGRESS';
+  const isInspectionEditable = handover.status === 'INSPECTION_IN_PROGRESS' && !isHandoverExpired;
 
   return (
     <>
@@ -239,6 +246,32 @@ export const StaffInspectionPanel3D: React.FC<StaffInspectionPanel3DProps> = ({
                 )}
               </div>
 
+              {/* Expired Read-Only Warning Banner */}
+              {isHandoverExpired && (
+                <div
+                  style={{
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    border: '1px solid rgba(239, 68, 68, 0.5)',
+                    borderRadius: '10px',
+                    padding: '9px 12px',
+                    marginBottom: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                  }}
+                >
+                  <AlertTriangle size={16} color="#f87171" style={{ flexShrink: 0 }} />
+                  <div>
+                    <div style={{ color: '#f87171', fontSize: '10.5px', fontWeight: 800, textTransform: 'uppercase' }}>
+                      LỊCH ĐẶT ĐÃ HẾT THỜI GIAN (EXPIRED) — CHẾ ĐỘ XEM CHỈ ĐỌC
+                    </div>
+                    <div style={{ color: '#cbd5e1', fontSize: '9.5px', marginTop: '2px' }}>
+                      Không thể bắt đầu kiểm tra, ready hoặc bàn giao xe cho lịch đặt này.
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Booking Selection Switcher if multiple bookings exist */}
               {activeHandovers && activeHandovers.length > 1 && (
                 <div
@@ -277,14 +310,30 @@ export const StaffInspectionPanel3D: React.FC<StaffInspectionPanel3DProps> = ({
                   >
                     {activeHandovers.map((h) => {
                       const isCurrent = h.bookingId === handover.bookingId;
+                      const isHExpired = Boolean(
+                        h.isExpired ||
+                        h.expired ||
+                        h.bookingStatus === 'EXPIRED' ||
+                        (h.bookingEndTime && new Date(h.bookingEndTime).getTime() < Date.now())
+                      );
                       return (
                         <button
                           key={h.bookingId}
                           type="button"
                           onClick={() => onSelectBookingId?.(h.bookingId)}
                           style={{
-                            background: isCurrent ? 'rgba(0, 242, 254, 0.2)' : 'rgba(30, 41, 59, 0.6)',
-                            border: `1px solid ${isCurrent ? '#00f2fe' : 'rgba(148, 163, 184, 0.2)'}`,
+                            background: isCurrent
+                              ? isHExpired
+                                ? 'rgba(239, 68, 68, 0.2)'
+                                : 'rgba(0, 242, 254, 0.2)'
+                              : 'rgba(30, 41, 59, 0.6)',
+                            border: `1px solid ${
+                              isCurrent
+                                ? isHExpired
+                                  ? '#f87171'
+                                  : '#00f2fe'
+                                : 'rgba(148, 163, 184, 0.2)'
+                            }`,
                             borderRadius: '6px',
                             padding: '5px 8px',
                             textAlign: 'left',
@@ -297,7 +346,12 @@ export const StaffInspectionPanel3D: React.FC<StaffInspectionPanel3DProps> = ({
                           }}
                         >
                           <div>
-                            <span style={{ fontWeight: isCurrent ? 800 : 600, color: isCurrent ? '#00f2fe' : '#ffffff' }}>
+                            <span
+                              style={{
+                                fontWeight: isCurrent ? 800 : 600,
+                                color: isCurrent ? (isHExpired ? '#f87171' : '#00f2fe') : '#ffffff',
+                              }}
+                            >
                               {h.coOwnerName}
                             </span>
                             <span style={{ color: '#94a3b8', marginLeft: '6px', fontSize: '9.5px' }}>
@@ -308,10 +362,10 @@ export const StaffInspectionPanel3D: React.FC<StaffInspectionPanel3DProps> = ({
                             style={{
                               fontSize: '9px',
                               fontWeight: 700,
-                              color: HANDOVER_STATUS_CONFIG[h.status].color,
+                              color: isHExpired ? '#f87171' : HANDOVER_STATUS_CONFIG[h.status].color,
                             }}
                           >
-                            {HANDOVER_STATUS_CONFIG[h.status].labelVi}
+                            {isHExpired ? 'EXPIRED' : HANDOVER_STATUS_CONFIG[h.status].labelVi}
                           </span>
                         </button>
                       );
@@ -349,13 +403,13 @@ export const StaffInspectionPanel3D: React.FC<StaffInspectionPanel3DProps> = ({
                       display: 'inline-block',
                       fontSize: '11.5px',
                       fontWeight: 800,
-                      color: statusConfig.color,
-                      background: statusConfig.badgeBg,
+                      color: isHandoverExpired ? '#f87171' : statusConfig.color,
+                      background: isHandoverExpired ? 'rgba(239, 68, 68, 0.2)' : statusConfig.badgeBg,
                       padding: '2px 8px',
                       borderRadius: '6px',
                     }}
                   >
-                    {statusConfig.labelVi}
+                    {isHandoverExpired ? 'HẾT THỜI GIAN (EXPIRED)' : statusConfig.labelVi}
                   </div>
                 </div>
 
@@ -422,14 +476,18 @@ export const StaffInspectionPanel3D: React.FC<StaffInspectionPanel3DProps> = ({
                     style={{
                       fontSize: '9.5px',
                       fontWeight: 700,
-                      color: '#34d399',
-                      background: 'rgba(16, 185, 129, 0.15)',
-                      border: '1px solid rgba(16, 185, 129, 0.4)',
+                      color: isHandoverExpired ? '#f87171' : '#34d399',
+                      background: isHandoverExpired ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                      border: isHandoverExpired ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid rgba(16, 185, 129, 0.4)',
                       padding: '2px 6px',
                       borderRadius: '4px',
                     }}
                   >
-                    {handover.bookingStatus ? `Booking ${handover.bookingStatus}` : 'Booking đã xác nhận'}
+                    {isHandoverExpired
+                      ? 'Lịch đặt hết hạn (EXPIRED)'
+                      : handover.bookingStatus
+                      ? `Booking ${handover.bookingStatus}`
+                      : 'Booking đã xác nhận'}
                   </span>
                 </div>
 
@@ -737,258 +795,296 @@ export const StaffInspectionPanel3D: React.FC<StaffInspectionPanel3DProps> = ({
 
               {/* CONTEXTUAL ACTION AREA — STRICTLY BY STATE (Section 7 & 9) */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {/* STATE 1: PENDING_PREPARATION */}
-                {handover.status === 'PENDING_PREPARATION' && (
-                  <div>
-                    <button
-                      type="button"
-                      onClick={onStartInspection}
-                      disabled={isSubmitting}
+                {isHandoverExpired ? (
+                  /* EXPIRED STATE: NO START, NO READY, NO HANDOVER ALLOWED */
+                  <div
+                    style={{
+                      background: 'rgba(30, 41, 59, 0.7)',
+                      border: '1px solid rgba(239, 68, 68, 0.4)',
+                      borderRadius: '10px',
+                      padding: '12px 14px',
+                      textAlign: 'center',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <div
                       style={{
-                        width: '100%',
-                        padding: '12px',
-                        background: 'linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)',
-                        border: 'none',
-                        borderRadius: '10px',
-                        color: '#080c16',
-                        fontWeight: 900,
-                        fontSize: '12px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        color: '#f87171',
+                        fontSize: '11.5px',
+                        fontWeight: 800,
                         letterSpacing: '0.04em',
                         textTransform: 'uppercase',
-                        cursor: isSubmitting ? 'not-allowed' : 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                        boxShadow: '0 4px 16px rgba(0, 242, 254, 0.4)',
-                        transition: 'all 0.2s ease',
-                        opacity: isSubmitting ? 0.7 : 1,
                       }}
                     >
-                      <Play size={14} />
-                      {isSubmitting ? 'ĐANG BẮT ĐẦU...' : 'BẮT ĐẦU KIỂM TRA XE'}
-                    </button>
-                    <div style={{ fontSize: '10px', color: '#94a3b8', textAlign: 'center', marginTop: '6px' }}>
-                      Nhấn để chuyển sang trạng thái kiểm tra và kích hoạt các điểm 3D.
+                      <AlertTriangle size={15} color="#f87171" />
+                      LỊCH ĐẶT ĐÃ HẾT THỜI GIAN (EXPIRED)
+                    </div>
+                    <div style={{ color: '#94a3b8', fontSize: '10.5px', lineHeight: '1.4' }}>
+                      Không thể bắt đầu kiểm tra, ready hoặc bàn giao xe. Lịch đặt đã hết hiệu lực.
                     </div>
                   </div>
-                )}
+                ) : (
+                  <>
+                    {/* STATE 1: PENDING_PREPARATION */}
+                    {handover.status === 'PENDING_PREPARATION' && (
+                      <div>
+                        <button
+                          type="button"
+                          onClick={onStartInspection}
+                          disabled={isSubmitting}
+                          style={{
+                            width: '100%',
+                            padding: '12px',
+                            background: 'linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)',
+                            border: 'none',
+                            borderRadius: '10px',
+                            color: '#080c16',
+                            fontWeight: 900,
+                            fontSize: '12px',
+                            letterSpacing: '0.04em',
+                            textTransform: 'uppercase',
+                            cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            boxShadow: '0 4px 16px rgba(0, 242, 254, 0.4)',
+                            transition: 'all 0.2s ease',
+                            opacity: isSubmitting ? 0.7 : 1,
+                          }}
+                        >
+                          <Play size={14} />
+                          {isSubmitting ? 'ĐANG BẮT ĐẦU...' : 'BẮT ĐẦU KIỂM TRA XE'}
+                        </button>
+                        <div style={{ fontSize: '10px', color: '#94a3b8', textAlign: 'center', marginTop: '6px' }}>
+                          Nhấn để chuyển sang trạng thái kiểm tra và kích hoạt các điểm 3D.
+                        </div>
+                      </div>
+                    )}
 
-                {/* STATE 2: INSPECTION_IN_PROGRESS */}
-                {handover.status === 'INSPECTION_IN_PROGRESS' && (
-                  <div>
-                    <button
-                      type="button"
-                      onClick={onMarkReady}
-                      disabled={!allInspected || isSubmitting}
-                      style={{
-                        width: '100%',
-                        padding: '11px',
-                        background: allInspected
-                          ? 'linear-gradient(135deg, #10b981 0%, #34d399 100%)'
-                          : 'rgba(30, 41, 59, 0.6)',
-                        border: allInspected ? 'none' : '1px solid rgba(148, 163, 184, 0.2)',
-                        borderRadius: '10px',
-                        color: allInspected ? '#052e16' : '#64748b',
-                        fontWeight: 800,
-                        fontSize: '11.5px',
-                        letterSpacing: '0.04em',
-                        textTransform: 'uppercase',
-                        cursor: allInspected && !isSubmitting ? 'pointer' : 'not-allowed',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                        boxShadow: allInspected ? '0 4px 16px rgba(16, 185, 129, 0.4)' : 'none',
-                        transition: 'all 0.2s ease',
-                      }}
-                    >
-                      <Sparkles size={14} />
-                      {isSubmitting ? 'ĐANG XÁC NHẬN...' : 'XÁC NHẬN XE SẴN SÀNG'}
-                    </button>
-                    {!allInspected && (
+                    {/* STATE 2: INSPECTION_IN_PROGRESS */}
+                    {handover.status === 'INSPECTION_IN_PROGRESS' && (
+                      <div>
+                        <button
+                          type="button"
+                          onClick={onMarkReady}
+                          disabled={!allInspected || isSubmitting}
+                          style={{
+                            width: '100%',
+                            padding: '11px',
+                            background: allInspected
+                              ? 'linear-gradient(135deg, #10b981 0%, #34d399 100%)'
+                              : 'rgba(30, 41, 59, 0.6)',
+                            border: allInspected ? 'none' : '1px solid rgba(148, 163, 184, 0.2)',
+                            borderRadius: '10px',
+                            color: allInspected ? '#052e16' : '#64748b',
+                            fontWeight: 800,
+                            fontSize: '11.5px',
+                            letterSpacing: '0.04em',
+                            textTransform: 'uppercase',
+                            cursor: allInspected && !isSubmitting ? 'pointer' : 'not-allowed',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            boxShadow: allInspected ? '0 4px 16px rgba(16, 185, 129, 0.4)' : 'none',
+                            transition: 'all 0.2s ease',
+                          }}
+                        >
+                          <Sparkles size={14} />
+                          {isSubmitting ? 'ĐANG XÁC NHẬN...' : 'XÁC NHẬN XE SẴN SÀNG'}
+                        </button>
+                        {!allInspected && (
+                          <div
+                            style={{
+                              fontSize: '10px',
+                              color: '#f59e0b',
+                              textAlign: 'center',
+                              marginTop: '4px',
+                            }}
+                          >
+                            * Cần kiểm tra đủ 8/8 điểm trước khi xác nhận sẵn sàng
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* STATE 3: READY_FOR_HANDOVER (ONLY state where XÁC NHẬN GIAO XE exists!) */}
+                    {handover.status === 'READY_FOR_HANDOVER' && (
+                      <div>
+                        <div
+                          style={{
+                            background: 'rgba(16, 185, 129, 0.12)',
+                            border: '1px solid rgba(16, 185, 129, 0.4)',
+                            padding: '10px 12px',
+                            borderRadius: '10px',
+                            textAlign: 'center',
+                            marginBottom: '8px',
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: '11px',
+                              color: '#34d399',
+                              fontWeight: 800,
+                              letterSpacing: '0.04em',
+                              textTransform: 'uppercase',
+                              marginBottom: '3px',
+                            }}
+                          >
+                            XE ĐÃ SẴN SÀNG BÀN GIAO
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#cbd5e1' }}>
+                            Tất cả 8 bộ phận đã được kiểm định đầy đủ.
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={onConfirmHandover}
+                          disabled={isSubmitting}
+                          style={{
+                            width: '100%',
+                            padding: '12px 10px',
+                            background: 'linear-gradient(135deg, #a855f7 0%, #c084fc 100%)',
+                            border: 'none',
+                            borderRadius: '10px',
+                            color: '#ffffff',
+                            fontWeight: 800,
+                            fontSize: '11.5px',
+                            letterSpacing: '0.03em',
+                            textTransform: 'uppercase',
+                            cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            boxShadow: '0 4px 16px rgba(168, 85, 247, 0.4)',
+                            transition: 'all 0.2s ease',
+                          }}
+                        >
+                          <Send size={14} />
+                          {isSubmitting ? 'ĐANG XỬ LÝ...' : `XÁC NHẬN GIAO XE CHO ${handover.coOwnerName.toUpperCase()}`}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* STATE 4: HANDED_OVER (NO handover button exists!) */}
+                    {handover.status === 'HANDED_OVER' && (
                       <div
                         style={{
-                          fontSize: '10px',
-                          color: '#f59e0b',
+                          background: 'rgba(168, 85, 247, 0.15)',
+                          border: '1px solid rgba(168, 85, 247, 0.5)',
+                          borderRadius: '10px',
+                          padding: '12px',
                           textAlign: 'center',
-                          marginTop: '4px',
                         }}
                       >
-                        * Cần kiểm tra đủ 8/8 điểm trước khi xác nhận sẵn sàng
+                        <div
+                          style={{
+                            color: '#c084fc',
+                            fontSize: '12px',
+                            fontWeight: 800,
+                            textTransform: 'uppercase',
+                            marginBottom: '4px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                          }}
+                        >
+                          <CheckCheck size={14} />
+                          ĐÃ BÀN GIAO XE
+                        </div>
+                        <div style={{ color: '#ffffff', fontSize: '12px', fontWeight: 700, marginBottom: '2px' }}>
+                          Đã giao cho: {handover.coOwnerName}
+                        </div>
+                        {handover.staffHandedOverAt && (
+                          <div style={{ color: '#94a3b8', fontSize: '10.5px', marginBottom: '6px' }}>
+                            Thời gian: {formatDateTime(handover.staffHandedOverAt)}
+                          </div>
+                        )}
+                        <div style={{ color: '#fbbf24', fontSize: '11px', fontWeight: 600 }}>
+                          CHỜ CHỦ XE XÁC NHẬN NHẬN XE
+                        </div>
                       </div>
                     )}
-                  </div>
-                )}
 
-                {/* STATE 3: READY_FOR_HANDOVER (ONLY state where XÁC NHẬN GIAO XE exists!) */}
-                {handover.status === 'READY_FOR_HANDOVER' && (
-                  <div>
-                    <div
-                      style={{
-                        background: 'rgba(16, 185, 129, 0.12)',
-                        border: '1px solid rgba(16, 185, 129, 0.4)',
-                        padding: '10px 12px',
-                        borderRadius: '10px',
-                        textAlign: 'center',
-                        marginBottom: '8px',
-                      }}
-                    >
+                    {/* STATE 5: OWNER_CONFIRMED */}
+                    {handover.status === 'OWNER_CONFIRMED' && (
                       <div
                         style={{
-                          fontSize: '11px',
-                          color: '#34d399',
-                          fontWeight: 800,
-                          letterSpacing: '0.04em',
-                          textTransform: 'uppercase',
-                          marginBottom: '3px',
+                          background: 'rgba(56, 189, 248, 0.15)',
+                          border: '1px solid rgba(56, 189, 248, 0.5)',
+                          borderRadius: '10px',
+                          padding: '12px',
+                          textAlign: 'center',
                         }}
                       >
-                        XE ĐÃ SẴN SÀNG BÀN GIAO
-                      </div>
-                      <div style={{ fontSize: '11px', color: '#cbd5e1' }}>
-                        Tất cả 8 bộ phận đã được kiểm định đầy đủ.
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={onConfirmHandover}
-                      disabled={isSubmitting}
-                      style={{
-                        width: '100%',
-                        padding: '12px 10px',
-                        background: 'linear-gradient(135deg, #a855f7 0%, #c084fc 100%)',
-                        border: 'none',
-                        borderRadius: '10px',
-                        color: '#ffffff',
-                        fontWeight: 800,
-                        fontSize: '11.5px',
-                        letterSpacing: '0.03em',
-                        textTransform: 'uppercase',
-                        cursor: isSubmitting ? 'not-allowed' : 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                        boxShadow: '0 4px 16px rgba(168, 85, 247, 0.4)',
-                        transition: 'all 0.2s ease',
-                      }}
-                    >
-                      <Send size={14} />
-                      {isSubmitting ? 'ĐANG XỬ LÝ...' : `XÁC NHẬN GIAO XE CHO ${handover.coOwnerName.toUpperCase()}`}
-                    </button>
-                  </div>
-                )}
-
-                {/* STATE 4: HANDED_OVER (NO handover button exists!) */}
-                {handover.status === 'HANDED_OVER' && (
-                  <div
-                    style={{
-                      background: 'rgba(168, 85, 247, 0.15)',
-                      border: '1px solid rgba(168, 85, 247, 0.5)',
-                      borderRadius: '10px',
-                      padding: '12px',
-                      textAlign: 'center',
-                    }}
-                  >
-                    <div
-                      style={{
-                        color: '#c084fc',
-                        fontSize: '12px',
-                        fontWeight: 800,
-                        textTransform: 'uppercase',
-                        marginBottom: '4px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                      }}
-                    >
-                      <CheckCheck size={14} />
-                      ĐÃ BÀN GIAO XE
-                    </div>
-                    <div style={{ color: '#ffffff', fontSize: '12px', fontWeight: 700, marginBottom: '2px' }}>
-                      Đã giao cho: {handover.coOwnerName}
-                    </div>
-                    {handover.staffHandedOverAt && (
-                      <div style={{ color: '#94a3b8', fontSize: '10.5px', marginBottom: '6px' }}>
-                        Thời gian: {formatDateTime(handover.staffHandedOverAt)}
+                        <div
+                          style={{
+                            color: '#38bdf8',
+                            fontSize: '12px',
+                            fontWeight: 800,
+                            textTransform: 'uppercase',
+                            marginBottom: '4px',
+                          }}
+                        >
+                          CHỦ XE ĐÃ XÁC NHẬN NHẬN XE
+                        </div>
+                        <div style={{ color: '#ffffff', fontSize: '11.5px', fontWeight: 600 }}>
+                          ĐANG HOÀN TẤT CHECK-IN...
+                        </div>
                       </div>
                     )}
-                    <div style={{ color: '#fbbf24', fontSize: '11px', fontWeight: 600 }}>
-                      CHỜ CHỦ XE XÁC NHẬN NHẬN XE
-                    </div>
-                  </div>
-                )}
 
-                {/* STATE 5: OWNER_CONFIRMED */}
-                {handover.status === 'OWNER_CONFIRMED' && (
-                  <div
-                    style={{
-                      background: 'rgba(56, 189, 248, 0.15)',
-                      border: '1px solid rgba(56, 189, 248, 0.5)',
-                      borderRadius: '10px',
-                      padding: '12px',
-                      textAlign: 'center',
-                    }}
-                  >
-                    <div
-                      style={{
-                        color: '#38bdf8',
-                        fontSize: '12px',
-                        fontWeight: 800,
-                        textTransform: 'uppercase',
-                        marginBottom: '4px',
-                      }}
-                    >
-                      CHỦ XE ĐÃ XÁC NHẬN NHẬN XE
-                    </div>
-                    <div style={{ color: '#ffffff', fontSize: '11.5px', fontWeight: 600 }}>
-                      ĐANG HOÀN TẤT CHECK-IN...
-                    </div>
-                  </div>
-                )}
-
-                {/* STATE 6: COMPLETED */}
-                {handover.status === 'COMPLETED' && (
-                  <div
-                    style={{
-                      background: 'rgba(16, 185, 129, 0.15)',
-                      border: '1px solid rgba(16, 185, 129, 0.5)',
-                      borderRadius: '10px',
-                      padding: '12px',
-                      textAlign: 'center',
-                    }}
-                  >
-                    <div
-                      style={{
-                        color: '#34d399',
-                        fontSize: '12.5px',
-                        fontWeight: 900,
-                        textTransform: 'uppercase',
-                        marginBottom: '4px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                      }}
-                    >
-                      <Sparkles size={14} />
-                      BÀN GIAO & CHECK-IN HOÀN TẤT
-                    </div>
-                    <div style={{ color: '#ffffff', fontSize: '11.5px', fontWeight: 700, marginBottom: '4px' }}>
-                      Người nhận: {handover.coOwnerName}
-                    </div>
-                    <div style={{ color: '#94a3b8', fontSize: '10px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      {handover.staffHandedOverAt && (
-                        <span>Bàn giao: {formatDateTime(handover.staffHandedOverAt)}</span>
-                      )}
-                      {handover.ownerReceivedAt && (
-                        <span>Nhận xe: {formatDateTime(handover.ownerReceivedAt)}</span>
-                      )}
-                    </div>
-                  </div>
+                    {/* STATE 6: COMPLETED */}
+                    {handover.status === 'COMPLETED' && (
+                      <div
+                        style={{
+                          background: 'rgba(16, 185, 129, 0.15)',
+                          border: '1px solid rgba(16, 185, 129, 0.5)',
+                          borderRadius: '10px',
+                          padding: '12px',
+                          textAlign: 'center',
+                        }}
+                      >
+                        <div
+                          style={{
+                            color: '#34d399',
+                            fontSize: '12.5px',
+                            fontWeight: 900,
+                            textTransform: 'uppercase',
+                            marginBottom: '4px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                          }}
+                        >
+                          <Sparkles size={14} />
+                          BÀN GIAO & CHECK-IN HOÀN TẤT
+                        </div>
+                        <div style={{ color: '#ffffff', fontSize: '11.5px', fontWeight: 700, marginBottom: '4px' }}>
+                          Người nhận: {handover.coOwnerName}
+                        </div>
+                        <div style={{ color: '#94a3b8', fontSize: '10px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          {handover.staffHandedOverAt && (
+                            <span>Bàn giao: {formatDateTime(handover.staffHandedOverAt)}</span>
+                          )}
+                          {handover.ownerReceivedAt && (
+                            <span>Nhận xe: {formatDateTime(handover.ownerReceivedAt)}</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>

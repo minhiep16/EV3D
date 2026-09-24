@@ -17,6 +17,9 @@ import { HolographicPanelFrame3D } from '../HolographicPanelFrame3D';
 import { VehicleCoOwnershipWorld } from '../ownership/VehicleCoOwnershipWorld';
 import { VehicleBookingWorld } from '../booking/VehicleBookingWorld';
 import { VehicleHandoverWorld } from '../handover/VehicleHandoverWorld';
+import { CoOwnerReceiptWorld } from '../handover/CoOwnerReceiptWorld';
+import { TripStartWorld } from '../trip/TripStartWorld';
+import { TripVisualizationWorld } from '../trip/TripVisualizationWorld';
 import { getPartById } from '../../../data/vehicleParts';
 import { CoOwnerVehiclePanel } from './CoOwnerVehiclePanel';
 import { StaffOperationsPanel } from './StaffOperationsPanel';
@@ -50,6 +53,9 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
   const user = useAuthStore((state) => state.user);
   const vehicleBookingMode = useWorldStore((state) => state.vehicleBookingMode);
   const vehicleHandoverMode = useWorldStore((state) => state.vehicleHandoverMode);
+  const vehicleReceiptReviewMode = useWorldStore((state) => state.vehicleReceiptReviewMode);
+  const vehicleTripStartMode = useWorldStore((state) => state.vehicleTripStartMode);
+  const vehicleTripVisualizationMode = useWorldStore((state) => state.vehicleTripVisualizationMode);
   const selectedVehiclePartId = useWorldStore(
     (state) => state.selectedVehiclePartId
   );
@@ -239,7 +245,10 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
     vehicleInspectionMode ||
     vehicleCoOwnershipMode ||
     vehicleBookingMode ||
-    vehicleHandoverMode;
+    vehicleHandoverMode ||
+    vehicleReceiptReviewMode ||
+    vehicleTripStartMode ||
+    vehicleTripVisualizationMode;
 
   // Section 2: EV01 click must set both selection and mode explicitly
   const handleVehicleSelect = (selectedVehicle: VehicleResponse) => {
@@ -397,9 +406,24 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
         <VehicleBookingWorld vehicle={vehicle} />
       )}
 
-      {/* 9. Phase 09: 3D Vehicle Handover & Check-in View */}
+      {/* 9a. Phase 09: Dedicated CO_OWNER Receipt Review View */}
+      {vehicleReceiptReviewMode && (
+        <CoOwnerReceiptWorld vehicle={vehicle} />
+      )}
+
+      {/* 9b. Phase 09: 3D Vehicle Handover & Check-in View (STAFF/ADMIN) */}
       {vehicleHandoverMode && (
         <VehicleHandoverWorld vehicle={vehicle} />
+      )}
+
+      {/* 10. Phase 10: Pure 3D Trip Start View */}
+      {vehicleTripStartMode && (
+        <TripStartWorld vehicle={vehicle} />
+      )}
+
+      {/* 11. Phase 11: Pure 3D Trip Visualization View */}
+      {vehicleTripVisualizationMode && (
+        <TripVisualizationWorld vehicle={vehicle} />
       )}
     </group>
   );

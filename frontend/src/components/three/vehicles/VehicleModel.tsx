@@ -38,6 +38,10 @@ export const VehicleModel: React.FC<VehicleModelProps> = ({
   const vehicleHandoverMode = useWorldStore(
     (state) => state.vehicleHandoverMode
   );
+  const vehicleReceiptReviewMode = useWorldStore(
+    (state) => state.vehicleReceiptReviewMode
+  );
+  const isHandoverOrReceipt = vehicleHandoverMode || vehicleReceiptReviewMode;
   const selectedHandoverCheckpoint = useWorldStore(
     (state) => state.selectedHandoverCheckpoint
   );
@@ -91,7 +95,7 @@ export const VehicleModel: React.FC<VehicleModelProps> = ({
         const originalMat = originalMaterialsMap.get(mesh);
         if (!originalMat) return;
 
-        if (vehicleHandoverMode) {
+        if (isHandoverOrReceipt) {
           const partId = getPartIdFromMesh(mesh);
           if (partId && partId === selectedHandoverCheckpoint) {
             // Selected checkpoint: prominent glowing cyan highlight
@@ -161,6 +165,7 @@ export const VehicleModel: React.FC<VehicleModelProps> = ({
     clonedScene,
     originalMaterialsMap,
     vehicleHandoverMode,
+    vehicleReceiptReviewMode,
     selectedHandoverCheckpoint,
     hoveredHandoverCheckpoint,
     vehicleInspectionMode,
@@ -172,7 +177,7 @@ export const VehicleModel: React.FC<VehicleModelProps> = ({
 
   // Pointer interaction during vehicle handover mode or inspection mode
   const handlePointerOver = (e: ThreeEvent<PointerEvent>) => {
-    if (vehicleHandoverMode) {
+    if (isHandoverOrReceipt) {
       e.stopPropagation();
       const partId = getPartIdFromMesh(e.object);
       if (partId) {
@@ -194,7 +199,7 @@ export const VehicleModel: React.FC<VehicleModelProps> = ({
   };
 
   const handlePointerOut = (e: ThreeEvent<PointerEvent>) => {
-    if (vehicleHandoverMode) {
+    if (isHandoverOrReceipt) {
       e.stopPropagation();
       hoverHandoverCheckpoint(null);
       document.body.style.cursor = 'auto';
@@ -208,7 +213,7 @@ export const VehicleModel: React.FC<VehicleModelProps> = ({
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
-    if (vehicleHandoverMode) {
+    if (isHandoverOrReceipt) {
       const partId = getPartIdFromMesh(e.object);
       if (partId) {
         const cp = getCheckpointByCode(partId);
