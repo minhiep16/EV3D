@@ -15,6 +15,9 @@ export interface FeatureCapabilities {
   canPrepareVehicle: boolean;
   canInspectForHandover: boolean;
   canConfirmHandover: boolean;
+  // Phase 13: 3D Damage Mapping Capabilities
+  canRecordDamage: boolean;
+  canViewDamage: boolean;
 
   // ADMIN Monitoring & Governance Capabilities (Section 22)
   canMonitorFleet: boolean;
@@ -35,6 +38,9 @@ export const FEATURE_CAPABILITIES: Record<UserRole, FeatureCapabilities> = {
     canInspectForHandover: false,
     canConfirmHandover: false,
 
+    canRecordDamage: false,
+    canViewDamage: true,
+
     canMonitorFleet: false,
     canMonitorHandover: false,
     canAccessAdministration: false,
@@ -51,6 +57,9 @@ export const FEATURE_CAPABILITIES: Record<UserRole, FeatureCapabilities> = {
     canInspectForHandover: true,
     canConfirmHandover: true,
 
+    canRecordDamage: true,
+    canViewDamage: true,
+
     canMonitorFleet: false,
     canMonitorHandover: false,
     canAccessAdministration: false,
@@ -66,6 +75,9 @@ export const FEATURE_CAPABILITIES: Record<UserRole, FeatureCapabilities> = {
     canPrepareVehicle: false,
     canInspectForHandover: false,
     canConfirmHandover: false,
+
+    canRecordDamage: false,
+    canViewDamage: true,
 
     canMonitorFleet: true,
     canMonitorHandover: true,

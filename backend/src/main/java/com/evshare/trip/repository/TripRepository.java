@@ -26,4 +26,8 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
 
     @Query("SELECT t FROM Trip t WHERE t.vehicle.id = :vehicleId AND t.status = 'ACTIVE'")
     Optional<Trip> findActiveTripByVehicleId(@Param("vehicleId") UUID vehicleId);
+
+    Optional<Trip> findFirstByVehicleIdAndStatusOrderByEndedAtDesc(UUID vehicleId, TripStatus status);
+
+    Optional<Trip> findFirstByVehicleIdOrderByCreatedAtDesc(UUID vehicleId);
 }

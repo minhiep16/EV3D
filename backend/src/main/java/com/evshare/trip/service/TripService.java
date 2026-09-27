@@ -57,6 +57,17 @@ public class TripService {
     public static final String REASON_HANDOVER_DATA_INCONSISTENT = "HANDOVER_DATA_INCONSISTENT";
     public static final String MSG_HANDOVER_DATA_INCONSISTENT = "DỮ LIỆU BÀN GIAO KHÔNG HỢP LỆ";
 
+    public static final String REASON_NOT_TRIP_OWNER = "NOT_TRIP_OWNER";
+    public static final String MSG_NOT_TRIP_OWNER = "BẠN KHÔNG CÓ QUYỀN KẾT THÚC CHUYẾN ĐI NÀY";
+
+    public static final String REASON_TRIP_ALREADY_COMPLETED = "TRIP_ALREADY_COMPLETED";
+    public static final String MSG_TRIP_ALREADY_COMPLETED = "CHUYẾN ĐI ĐÃ ĐƯỢC KẾT THÚC";
+
+    public static final String REASON_TRIP_NOT_ACTIVE = "TRIP_NOT_ACTIVE";
+    public static final String MSG_TRIP_NOT_ACTIVE = "KHÔNG CÓ CHUYẾN ĐI ĐANG HOẠT ĐỘNG";
+
+    public static final String MSG_ONLY_CO_OWNER_CHECKOUT = "CHỈ CHỦ SỞ HỮU CHUYẾN ĐI MỚI CÓ QUYỀN TRẢ XE";
+
     private final TripRepository tripRepository;
     private final BookingRepository bookingRepository;
     private final VehicleHandoverRepository handoverRepository;
@@ -325,10 +336,6 @@ public class TripService {
         return tripRepository.findByVehicleIdAndStatus(vehicleId, TripStatus.ACTIVE).map(TripResponse::fromEntity);
     }
 
-    /**
-     * Retrieve trip by trip ID (purely read-only query).
-     * For CO_OWNER: trip.userId == authenticatedUser.id (Requirement 1 & 28).
-     */
     @Transactional(readOnly = true)
     public Optional<TripResponse> getTripById(UUID tripId, UUID currentUserId, Role currentUserRole) {
         Trip trip = tripRepository.findById(tripId).orElse(null);
@@ -339,5 +346,77 @@ public class TripService {
             throw new AccessDeniedException("BẠN KHÔNG CÓ QUYỀN XEM CHUYẾN ĐI NÀY");
         }
         return Optional.of(TripResponse.fromEntity(trip));
+    }
+
+    /**
+     * Complete / check-out an active trip (Phase 12).
+     * Atomic, concurrency-safe check-out workflow.
+     * Transactionally updates Trip, Vehicle, and Booking.
+     */
+    @Transactional
+    public TripResponse completeTrip(UUID tripId, UUID currentUserId, Role currentUserRole) {
+        // 1. Role validation: Must be CO_OWNER (STAFF/ADMIN cannot execute normal CO_OWNER checkout)
+        if (currentUserRole != Role.CO_OWNER) {
+            throw new AccessDeniedException(MSG_ONLY_CO_OWNER_CHECKOUT);
+        }
+
+        // 2. Load Trip
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy chuyến đi với mã: " + tripId));
+
+        // 3. Ownership validation: Trip must belong to the authenticated user
+        if (trip.getUser() == null || !trip.getUser().getId().equals(currentUserId)) {
+            throw new AccessDeniedException(MSG_NOT_TRIP_OWNER);
+        }
+
+        // 4. Idempotency & Status validation: Must be ACTIVE
+        if (trip.getStatus() == TripStatus.COMPLETED) {
+            throw new IllegalStateException(MSG_TRIP_ALREADY_COMPLETED);
+        }
+        if (trip.getStatus() != TripStatus.ACTIVE) {
+            throw new IllegalStateException(MSG_TRIP_NOT_ACTIVE);
+        }
+
+        // 5. Verify Vehicle and Booking relationship
+        Vehicle vehicle = trip.getVehicle();
+        if (vehicle == null) {
+            throw new IllegalStateException("CHUYẾN ĐI THIẾU THÔNG TIN PHƯƠNG TIỆN");
+        }
+        Booking booking = trip.getBooking();
+        if (booking == null) {
+            throw new IllegalStateException("CHUYẾN ĐI THIẾU THÔNG TIN LỊCH ĐẶT");
+        }
+
+        // Re-read authoritative Vehicle entity to get fresh odometer and battery
+        Vehicle managedVehicle = vehicleRepository.findById(vehicle.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy phương tiện với mã: " + vehicle.getId()));
+
+        // 6. Time validation: Server clock is authoritative (Section 9)
+        Instant now = Instant.now();
+        if (trip.getStartedAt() != null && now.isBefore(trip.getStartedAt())) {
+            now = trip.getStartedAt();
+        }
+
+        // 7. Snapshot authoritative end telemetry
+        trip.setStatus(TripStatus.COMPLETED);
+        trip.setEndedAt(now);
+        trip.setEndBatteryLevel(managedVehicle.getCurrentBatteryLevel());
+        trip.setEndOdometer(managedVehicle.getOdometer());
+
+        // 8. Vehicle exits IN_USE state -> AVAILABLE (Section 7)
+        managedVehicle.setStatus(VehicleStatus.AVAILABLE);
+        vehicleRepository.save(managedVehicle);
+
+        // 9. Booking transition: If currently CONFIRMED or PENDING, mark COMPLETED (Section 8)
+        Booking managedBooking = bookingRepository.findById(booking.getId())
+                .orElse(booking);
+        if (managedBooking.getStatus() == BookingStatus.CONFIRMED || managedBooking.getStatus() == BookingStatus.PENDING) {
+            managedBooking.setStatus(BookingStatus.COMPLETED);
+            bookingRepository.save(managedBooking);
+        }
+
+        // 10. Persist trip
+        Trip savedTrip = tripRepository.save(trip);
+        return TripResponse.fromEntity(savedTrip);
     }
 }

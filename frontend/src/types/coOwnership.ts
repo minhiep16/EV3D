@@ -17,6 +17,7 @@ export interface GroupMemberResponse {
   memberRole?: 'MEMBER' | 'REPRESENTATIVE' | 'ADMIN';
   status: 'ACTIVE' | 'INACTIVE' | 'PENDING' | 'REMOVED';
   joinedAt: string;
+  removedAt?: string | null;
   share: OwnershipShareResponse | null;
 }
 
@@ -28,6 +29,17 @@ export interface GroupVehicleResponse {
   model: string;
   status: 'ACTIVE' | 'INACTIVE';
   addedAt: string;
+}
+
+export interface AvailableUserResponse {
+  id: string;
+  displayName: string;
+  email: string;
+}
+
+export interface AddMemberPayload {
+  userId?: string;
+  email?: string;
 }
 
 export interface CoOwnershipGroupResponse {

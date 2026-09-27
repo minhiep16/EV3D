@@ -69,6 +69,8 @@ export const HolographicBookingSummary: React.FC<HolographicBookingSummaryProps>
           <Html center distanceFactor={8.8} style={{ pointerEvents: 'auto', userSelect: 'none' }}>
             <div
               onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
               style={{
                 width: '320px',
                 background: 'rgba(8, 12, 22, 0.94)',

@@ -7,8 +7,7 @@ import { WorldEnvironment } from './WorldEnvironment';
 import { GarageFloor } from './GarageFloor';
 import { GarageStructure } from './GarageStructure';
 import { GarageCamera } from './GarageCamera';
-import { GarageZoneObject, ZONE_CONFIGS } from './GarageZoneObject';
-import { SpatialOverviewControl } from './SpatialOverviewControl';
+import { GarageZoneObject, getZoneConfig } from './GarageZoneObject';
 import { GarageZone } from '../../store/worldStore';
 import { useAuthStore } from '../../store/authStore';
 import { getAccessibleZones } from '../../utils/roleCapabilities';
@@ -22,6 +21,7 @@ import {
 export const EVShareWorld: React.FC = () => {
   const user = useAuthStore((state) => state.user);
   const isOperationsRole = user?.role === 'STAFF' || user?.role === 'ADMIN';
+  const isCoOwner = !user?.role || user?.role === 'CO_OWNER';
 
   const accessibleZones = React.useMemo(
     () => getAccessibleZones(user?.role),
@@ -30,10 +30,10 @@ export const EVShareWorld: React.FC = () => {
 
   return (
     <WorldErrorBoundary>
-      <div style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden', background: '#070b14' }}>
+      <div style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden', background: '#eaf1f8' }}>
         <Canvas
           shadows
-          camera={{ position: [0, 16, 24], fov: 45 }}
+          camera={{ position: isCoOwner ? [0.0, 6.2, 13.8] : [0, 14.5, 19.5], fov: 42 }}
           gl={{ antialias: true, alpha: false }}
           style={{ width: '100%', height: '100%' }}
           onPointerMissed={handleNeutralSceneClick}
@@ -57,14 +57,11 @@ export const EVShareWorld: React.FC = () => {
 
             {/* Functional Garage Zones: Filtered by Centralized Role-Zone Capabilities */}
             {accessibleZones.map((zoneId) => (
-              <GarageZoneObject key={zoneId} zone={ZONE_CONFIGS[zoneId]} />
+              <GarageZoneObject key={zoneId} zone={getZoneConfig(zoneId, user?.role)} />
             ))}
 
             {/* Role-Specific Experience: CO_OWNER vs OPERATIONS (STAFF + ADMIN) */}
             {isOperationsRole ? <OperationsExperience /> : <CoOwnerExperience />}
-
-            {/* Real-time World-Space Spatial Overview Camera Reset Control */}
-            <SpatialOverviewControl />
           </Suspense>
         </Canvas>
       </div>

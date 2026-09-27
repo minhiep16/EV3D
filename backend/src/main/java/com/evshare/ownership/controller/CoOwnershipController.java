@@ -54,23 +54,34 @@ public class CoOwnershipController {
     // 2. Group Membership Endpoints
     // ==========================================
 
-    @GetMapping("/co-ownership-groups/{groupId}/members")
+    @GetMapping({"/co-ownership-groups/{groupId}/members", "/co-ownership/groups/{groupId}/members"})
     @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
     public ResponseEntity<List<GroupMemberResponse>> getGroupMembers(@PathVariable UUID groupId) {
         return ResponseEntity.ok(coOwnershipService.getGroupMembers(groupId));
     }
 
-    @PostMapping("/co-ownership-groups/{groupId}/members")
-    @PreAuthorize("hasRole('ADMIN')")
+    @GetMapping({"/co-ownership-groups/{groupId}/available-users", "/co-ownership/groups/{groupId}/available-users"})
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'ADMIN')")
+    public ResponseEntity<List<AvailableUserResponse>> getAvailableUsers(
+            @PathVariable UUID groupId,
+            @RequestParam(required = false, defaultValue = "") String query,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(coOwnershipService.getAvailableUsers(groupId, query, principal));
+    }
+
+    @PostMapping({"/co-ownership-groups/{groupId}/members", "/co-ownership/groups/{groupId}/members"})
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'ADMIN')")
     public ResponseEntity<GroupMemberResponse> addMember(
             @PathVariable UUID groupId,
-            @Valid @RequestBody AddMemberRequest request
+            @Valid @RequestBody AddMemberRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
     ) {
-        GroupMemberResponse member = coOwnershipService.addMember(groupId, request);
+        GroupMemberResponse member = coOwnershipService.addMember(groupId, request, principal);
         return ResponseEntity.status(HttpStatus.CREATED).body(member);
     }
 
-    @PatchMapping("/co-ownership-groups/{groupId}/members/{memberId}")
+    @PatchMapping({"/co-ownership-groups/{groupId}/members/{memberId}", "/co-ownership/groups/{groupId}/members/{memberId}"})
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<GroupMemberResponse> updateMember(
             @PathVariable UUID groupId,
@@ -81,13 +92,14 @@ public class CoOwnershipController {
         return ResponseEntity.ok(updated);
     }
 
-    @DeleteMapping("/co-ownership-groups/{groupId}/members/{memberId}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @DeleteMapping({"/co-ownership-groups/{groupId}/members/{memberId}", "/co-ownership/groups/{groupId}/members/{memberId}"})
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'ADMIN')")
     public ResponseEntity<Void> removeMember(
             @PathVariable UUID groupId,
-            @PathVariable UUID memberId
+            @PathVariable UUID memberId,
+            @AuthenticationPrincipal UserPrincipal principal
     ) {
-        coOwnershipService.removeMember(groupId, memberId);
+        coOwnershipService.removeMember(groupId, memberId, principal);
         return ResponseEntity.noContent().build();
     }
 
@@ -178,12 +190,13 @@ public class CoOwnershipController {
     }
 
     @PostMapping("/co-ownership/{groupId}/members")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'ADMIN')")
     public ResponseEntity<GroupMemberResponse> addMemberLegacy(
             @PathVariable UUID groupId,
-            @Valid @RequestBody AddMemberRequest request
+            @Valid @RequestBody AddMemberRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
     ) {
-        GroupMemberResponse member = coOwnershipService.addMember(groupId, request);
+        GroupMemberResponse member = coOwnershipService.addMember(groupId, request, principal);
         return ResponseEntity.status(HttpStatus.CREATED).body(member);
     }
 

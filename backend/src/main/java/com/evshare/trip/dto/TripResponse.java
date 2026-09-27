@@ -28,6 +28,9 @@ public class TripResponse {
     private String bookingPurpose;
     private String licensePlate;
     private String vehicleCode;
+    private Long durationSeconds;
+    private BigDecimal distanceTraveled;
+    private Integer batteryUsed;
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -62,6 +65,18 @@ public class TripResponse {
         res.setEndOdometer(trip.getEndOdometer());
         res.setStartBatteryLevel(trip.getStartBatteryLevel());
         res.setEndBatteryLevel(trip.getEndBatteryLevel());
+        if (trip.getEndedAt() != null && trip.getStartedAt() != null) {
+            long secs = java.time.Duration.between(trip.getStartedAt(), trip.getEndedAt()).getSeconds();
+            res.setDurationSeconds(Math.max(0, secs));
+        }
+        if (trip.getEndOdometer() != null && trip.getStartOdometer() != null) {
+            BigDecimal dist = trip.getEndOdometer().subtract(trip.getStartOdometer());
+            res.setDistanceTraveled(dist.max(BigDecimal.ZERO));
+        }
+        if (trip.getEndBatteryLevel() != null && trip.getStartBatteryLevel() != null) {
+            int used = trip.getStartBatteryLevel() - trip.getEndBatteryLevel();
+            res.setBatteryUsed(Math.max(0, used));
+        }
         res.setCreatedAt(trip.getCreatedAt());
         res.setUpdatedAt(trip.getUpdatedAt());
         return res;
@@ -233,5 +248,29 @@ public class TripResponse {
 
     public void setVehicleCode(String vehicleCode) {
         this.vehicleCode = vehicleCode;
+    }
+
+    public Long getDurationSeconds() {
+        return durationSeconds;
+    }
+
+    public void setDurationSeconds(Long durationSeconds) {
+        this.durationSeconds = durationSeconds;
+    }
+
+    public BigDecimal getDistanceTraveled() {
+        return distanceTraveled;
+    }
+
+    public void setDistanceTraveled(BigDecimal distanceTraveled) {
+        this.distanceTraveled = distanceTraveled;
+    }
+
+    public Integer getBatteryUsed() {
+        return batteryUsed;
+    }
+
+    public void setBatteryUsed(Integer batteryUsed) {
+        this.batteryUsed = batteryUsed;
     }
 }

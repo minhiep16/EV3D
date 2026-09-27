@@ -5,9 +5,10 @@ import * as THREE from 'three';
 import { useWorldStore } from '../../../store/worldStore';
 import { TripRouteNode } from '../../../types/trip';
 import { Navigation, MapPin, Flag, Compass, CircleDot } from 'lucide-react';
+import { INTERACTION_CONFIG } from '../../../config/interactionConfig';
 
 // Demo Route Definition (strictly simulation/visualization-only, no fake GPS persisted)
-// Coordinates in local space of VehicleDigitalTwin (centered at EV01 [-8, 0.14, 4])
+// Coordinates in local space of VehicleDigitalTwin (centered at EV01 [-1.5, 0.14, 1.5])
 const ROUTE_CONTROL_POINTS: [number, number, number][] = [
   [-0.2, 0.15, 2.4],   // Start bay exit
   [0.8, 0.22, 3.6],    // Turning into driveway
@@ -164,6 +165,7 @@ export const TripRouteVisualizer3D: React.FC = () => {
             key={node.id}
             position={node.position}
             onClick={(e: ThreeEvent<MouseEvent>) => {
+              if (e.delta > INTERACTION_CONFIG.clickDragThresholdPx) return;
               e.stopPropagation();
               selectTripRouteNode(node.id);
             }}

@@ -4,6 +4,7 @@ import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { useWorldStore } from '../../store/worldStore';
 import { CheckCircle2 } from 'lucide-react';
+import { INTERACTION_CONFIG } from '../../config/interactionConfig';
 
 export interface SelectableObjectProps {
   id: string;
@@ -51,6 +52,7 @@ export const SelectableObject: React.FC<SelectableObjectProps> = ({
   });
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
+    if (e.delta > INTERACTION_CONFIG.clickDragThresholdPx) return;
     e.stopPropagation();
     selectObject(id, position);
   };

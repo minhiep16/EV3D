@@ -22,6 +22,9 @@ export interface TripData {
   bookingPurpose?: string;
   createdAt?: string;
   updatedAt?: string;
+  durationSeconds?: number | null;
+  distanceTraveled?: number | null;
+  batteryUsed?: number | null;
 }
 
 export interface TripStartEligibilityData {

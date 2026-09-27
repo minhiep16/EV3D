@@ -1,18 +1,10 @@
 import React, { useEffect } from 'react';
 import { useThree } from '@react-three/fiber';
 import { useWorldStore } from '../../store/worldStore';
+import { INTERACTION_CONFIG } from '../../config/interactionConfig';
 
-/**
- * Movement distance threshold (in screen pixels) to distinguish an intentional
- * stationary click from a camera drag / orbit gesture.
- */
-const DRAG_THRESHOLD_PX = 6;
-
-/**
- * Cooldown window (in milliseconds) after a drag or orbit operation ends,
- * ensuring mouseup/click events emitted on drag-release are never mistaken for clicks.
- */
-const DRAG_COOLDOWN_MS = 180;
+const DRAG_THRESHOLD_PX = INTERACTION_CONFIG.clickDragThresholdPx;
+const DRAG_COOLDOWN_MS = INTERACTION_CONFIG.dragCooldownMs;
 
 /**
  * Transient interaction state tracking pointer gestures and camera manipulation.
@@ -23,8 +15,12 @@ export const globalInteractionState = {
   pointerDownButton: null as number | null,
   isPointerDragging: false,
   isCameraOrbiting: false,
+  isVehicleDragging: false,
+  isVehicleInteracting: false,
+  orbitControls: null as any | null,
   lastDragEndTime: 0,
   lastOrbitEndTime: 0,
+  lastVehicleDragEndTime: 0,
 };
 
 /**
@@ -43,6 +39,70 @@ export const notifyCameraOrbitEnd = (): void => {
 };
 
 /**
+ * Notify interaction manager that pointer went down on vehicle EV01.
+ * Immediately pauses OrbitControls to prevent camera orbit during vehicle drag.
+ */
+export const notifyVehiclePointerDown = (): void => {
+  globalInteractionState.isVehicleInteracting = true;
+  if (globalInteractionState.orbitControls) {
+    globalInteractionState.orbitControls.enabled = false;
+  }
+};
+
+/**
+ * Notify interaction manager that pointer went up from vehicle EV01.
+ * Re-enables camera OrbitControls when not dragging.
+ */
+export const notifyVehiclePointerUp = (): void => {
+  globalInteractionState.isVehicleInteracting = false;
+  if (globalInteractionState.orbitControls && !globalInteractionState.isVehicleDragging) {
+    globalInteractionState.orbitControls.enabled = true;
+  }
+};
+
+/**
+ * Notify interaction manager that direct vehicle 360 rotation drag has started.
+ */
+export const notifyVehicleDragStart = (): void => {
+  globalInteractionState.isVehicleDragging = true;
+  globalInteractionState.isPointerDragging = true;
+  if (globalInteractionState.orbitControls) {
+    globalInteractionState.orbitControls.enabled = false;
+  }
+};
+
+/**
+ * Notify interaction manager that direct vehicle 360 rotation drag has ended.
+ */
+export const notifyVehicleDragEnd = (): void => {
+  globalInteractionState.isVehicleDragging = false;
+  globalInteractionState.lastVehicleDragEndTime = Date.now();
+  globalInteractionState.lastDragEndTime = Date.now();
+  if (globalInteractionState.orbitControls) {
+    globalInteractionState.orbitControls.enabled = true;
+  }
+};
+
+/**
+ * Helper to determine if a recent drag or ongoing orbit occurred,
+ * preventing accidental click selections on mouse release.
+ */
+export const isRecentDragInteraction = (delta?: number): boolean => {
+  if (delta !== undefined && delta > DRAG_THRESHOLD_PX) {
+    return true;
+  }
+  const now = Date.now();
+  return (
+    globalInteractionState.isPointerDragging ||
+    globalInteractionState.isVehicleDragging ||
+    globalInteractionState.isCameraOrbiting ||
+    now - globalInteractionState.lastOrbitEndTime < DRAG_COOLDOWN_MS ||
+    now - globalInteractionState.lastDragEndTime < DRAG_COOLDOWN_MS ||
+    now - globalInteractionState.lastVehicleDragEndTime < DRAG_COOLDOWN_MS
+  );
+};
+
+/**
  * Centralized background deselection evaluator.
  * Evaluates whether a neutral canvas/scene click is an intentional stationary LEFT click.
  * Strictly ignores right-click, middle-click, wheel, and any drag/orbit interactions.
@@ -54,17 +114,19 @@ export const handleNeutralSceneClick = (e: MouseEvent): void => {
     return;
   }
 
-  // 2. RULE: If pointer dragged beyond threshold, it was a camera manipulation, NOT a click.
-  if (globalInteractionState.isPointerDragging) {
+  // 2. RULE: If pointer dragged beyond threshold, it was a camera or vehicle manipulation, NOT a click.
+  if (globalInteractionState.isPointerDragging || globalInteractionState.isVehicleDragging) {
     return;
   }
 
-  // 3. RULE: If camera was orbiting or recently ended orbit, do NOT deselect.
+  // 3. RULE: If camera was orbiting or recently ended orbit or vehicle drag, do NOT deselect.
   const now = Date.now();
   if (
     globalInteractionState.isCameraOrbiting ||
+    globalInteractionState.isVehicleDragging ||
     now - globalInteractionState.lastOrbitEndTime < DRAG_COOLDOWN_MS ||
-    now - globalInteractionState.lastDragEndTime < DRAG_COOLDOWN_MS
+    now - globalInteractionState.lastDragEndTime < DRAG_COOLDOWN_MS ||
+    now - globalInteractionState.lastVehicleDragEndTime < DRAG_COOLDOWN_MS
   ) {
     return;
   }

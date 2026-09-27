@@ -25,8 +25,8 @@ export const HolographicPanelFrame3D: React.FC<HolographicPanelFrame3DProps> = (
 
   useFrame((state) => {
     if (glowMatRef.current) {
-      // Gentle holographic flicker & pulse
-      const pulse = 1.4 + Math.sin(state.clock.elapsedTime * 2.5) * 0.35;
+      // Subtle, elegant pulse
+      const pulse = 1.0 + Math.sin(state.clock.elapsedTime * 2.0) * 0.25;
       glowMatRef.current.emissiveIntensity = pulse;
     }
   });
@@ -48,9 +48,9 @@ export const HolographicPanelFrame3D: React.FC<HolographicPanelFrame3DProps> = (
       <mesh position={[0, 0, 0]} raycast={() => null}>
         <planeGeometry args={[width, height]} />
         <meshBasicMaterial
-          color="#031122"
+          color="#0f172a"
           transparent
-          opacity={0.32}
+          opacity={0.16}
           side={THREE.DoubleSide}
         />
       </mesh>

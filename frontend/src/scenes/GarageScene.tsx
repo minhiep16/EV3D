@@ -23,6 +23,7 @@ export const GarageScene: React.FC = () => {
   const vehicleReceiptReviewMode = useWorldStore((state) => state.vehicleReceiptReviewMode);
   const vehicleTripStartMode = useWorldStore((state) => state.vehicleTripStartMode);
   const vehicleTripVisualizationMode = useWorldStore((state) => state.vehicleTripVisualizationMode);
+  const vehicleDamageMappingMode = useWorldStore((state) => state.vehicleDamageMappingMode);
   const vehicleInspectionMode = useWorldStore((state) => state.vehicleInspectionMode);
 
   // Session Isolation: Whenever authenticated user changes, reset all transient experience states
@@ -37,6 +38,7 @@ export const GarageScene: React.FC = () => {
     vehicleReceiptReviewMode ||
     vehicleTripStartMode ||
     vehicleTripVisualizationMode ||
+    vehicleDamageMappingMode ||
     vehicleInspectionMode ||
     vehicleFeatureMode === 'CO_OWNER_VEHICLE_INFO' ||
     vehicleFeatureMode === 'CO_OWNER_MY_BOOKINGS';
@@ -59,30 +61,30 @@ export const GarageScene: React.FC = () => {
     if (user?.role === 'STAFF') {
       return {
         label: 'CHẾ ĐỘ VẬN HÀNH — NHÂN VIÊN',
-        icon: <ShieldCheck size={12} color="#00f2fe" />,
-        bg: 'rgba(2, 132, 199, 0.2)',
-        border: '1px solid rgba(0, 242, 254, 0.45)',
+        icon: <ShieldCheck size={13} color="#00f2fe" />,
+        bg: 'rgba(13, 27, 42, 0.88)',
+        border: '1.5px solid rgba(0, 242, 254, 0.6)',
         color: '#00f2fe',
-        shadow: '0 0 12px rgba(0, 242, 254, 0.25)',
+        shadow: '0 8px 24px rgba(0, 0, 0, 0.25), 0 0 16px rgba(0, 242, 254, 0.3)',
       };
     }
     if (user?.role === 'ADMIN') {
       return {
         label: 'CHẾ ĐỘ QUẢN TRỊ — ADMIN',
-        icon: <Eye size={12} color="#c084fc" />,
-        bg: 'rgba(124, 58, 237, 0.2)',
-        border: '1px solid rgba(168, 85, 247, 0.45)',
+        icon: <Eye size={13} color="#c084fc" />,
+        bg: 'rgba(13, 27, 42, 0.88)',
+        border: '1.5px solid rgba(168, 85, 247, 0.6)',
         color: '#c084fc',
-        shadow: '0 0 12px rgba(168, 85, 247, 0.25)',
+        shadow: '0 8px 24px rgba(0, 0, 0, 0.25), 0 0 16px rgba(168, 85, 247, 0.3)',
       };
     }
     return {
       label: 'CHẾ ĐỘ ĐỒNG SỞ HỮU',
-      icon: <Sparkles size={12} color="#10b981" />,
-      bg: 'rgba(5, 150, 105, 0.18)',
-      border: '1px solid rgba(16, 185, 129, 0.45)',
+      icon: <Sparkles size={13} color="#10b981" />,
+      bg: 'rgba(13, 27, 42, 0.88)',
+      border: '1.5px solid rgba(16, 185, 129, 0.6)',
       color: '#34d399',
-      shadow: '0 0 12px rgba(16, 185, 129, 0.25)',
+      shadow: '0 8px 24px rgba(0, 0, 0, 0.25), 0 0 16px rgba(16, 185, 129, 0.3)',
     };
   }, [user?.role]);
 
@@ -107,32 +109,32 @@ export const GarageScene: React.FC = () => {
             onClick={handleBackToVehicle}
             title="Quay lại xe điện EV01"
             style={{
-              background: 'rgba(10, 15, 29, 0.82)',
-              backdropFilter: 'blur(12px)',
-              border: '1px solid rgba(168, 85, 247, 0.5)',
+              background: 'rgba(13, 27, 42, 0.88)',
+              backdropFilter: 'blur(16px)',
+              border: '1.5px solid rgba(168, 85, 247, 0.6)',
               borderRadius: '9999px',
-              padding: '7px 16px',
+              padding: '8px 18px',
               color: '#f3e8ff',
               fontSize: '12px',
               fontWeight: 700,
-              letterSpacing: '0.04em',
+              letterSpacing: '0.05em',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               gap: '7px',
-              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.6), 0 0 12px rgba(168, 85, 247, 0.25)',
+              boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25), 0 0 14px rgba(168, 85, 247, 0.25)',
               transition: 'all 0.2s ease',
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(168, 85, 247, 0.22)';
+              e.currentTarget.style.background = 'rgba(168, 85, 247, 0.3)';
               e.currentTarget.style.borderColor = '#c084fc';
-              e.currentTarget.style.boxShadow = '0 6px 20px rgba(168, 85, 247, 0.5)';
+              e.currentTarget.style.boxShadow = '0 8px 28px rgba(168, 85, 247, 0.45)';
               e.currentTarget.style.transform = 'translateY(-1px)';
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(10, 15, 29, 0.82)';
-              e.currentTarget.style.borderColor = 'rgba(168, 85, 247, 0.5)';
-              e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.6), 0 0 12px rgba(168, 85, 247, 0.25)';
+              e.currentTarget.style.background = 'rgba(13, 27, 42, 0.88)';
+              e.currentTarget.style.borderColor = 'rgba(168, 85, 247, 0.6)';
+              e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.25), 0 0 14px rgba(168, 85, 247, 0.25)';
               e.currentTarget.style.transform = 'none';
             }}
           >
@@ -158,32 +160,32 @@ export const GarageScene: React.FC = () => {
             onClick={() => clearSelection()}
             title="Quay lại toàn cảnh garage"
             style={{
-              background: 'rgba(10, 15, 29, 0.85)',
-              backdropFilter: 'blur(12px)',
-              border: '1px solid rgba(0, 242, 254, 0.5)',
+              background: 'rgba(13, 27, 42, 0.88)',
+              backdropFilter: 'blur(16px)',
+              border: '1.5px solid rgba(0, 242, 254, 0.6)',
               borderRadius: '9999px',
-              padding: '7px 16px',
+              padding: '8px 18px',
               color: '#00f2fe',
               fontSize: '12px',
               fontWeight: 700,
-              letterSpacing: '0.04em',
+              letterSpacing: '0.05em',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               gap: '7px',
-              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.6), 0 0 12px rgba(0, 242, 254, 0.25)',
+              boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25), 0 0 14px rgba(0, 242, 254, 0.25)',
               transition: 'all 0.2s ease',
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(0, 242, 254, 0.22)';
+              e.currentTarget.style.background = 'rgba(0, 242, 254, 0.25)';
               e.currentTarget.style.borderColor = '#38bdf8';
-              e.currentTarget.style.boxShadow = '0 6px 20px rgba(0, 242, 254, 0.5)';
+              e.currentTarget.style.boxShadow = '0 8px 28px rgba(0, 242, 254, 0.45)';
               e.currentTarget.style.transform = 'translateY(-1px)';
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(10, 15, 29, 0.85)';
-              e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.5)';
-              e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.6), 0 0 12px rgba(0, 242, 254, 0.25)';
+              e.currentTarget.style.background = 'rgba(13, 27, 42, 0.88)';
+              e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.6)';
+              e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.25), 0 0 14px rgba(0, 242, 254, 0.25)';
               e.currentTarget.style.transform = 'none';
             }}
           >
@@ -210,11 +212,11 @@ export const GarageScene: React.FC = () => {
         <div
           style={{
             background: modeBadge.bg,
-            backdropFilter: 'blur(12px)',
+            backdropFilter: 'blur(16px)',
             border: modeBadge.border,
             boxShadow: modeBadge.shadow,
             borderRadius: '9999px',
-            padding: '6px 14px',
+            padding: '7px 16px',
             fontSize: '11px',
             fontWeight: 800,
             letterSpacing: '0.06em',
@@ -230,17 +232,18 @@ export const GarageScene: React.FC = () => {
         </div>
         <div
           style={{
-            background: 'rgba(10, 15, 29, 0.78)',
-            backdropFilter: 'blur(12px)',
-            border: '1px solid rgba(56, 189, 248, 0.25)',
+            background: 'rgba(13, 27, 42, 0.85)',
+            backdropFilter: 'blur(16px)',
+            border: '1px solid rgba(56, 189, 248, 0.35)',
             borderRadius: '9999px',
-            padding: '6px 14px',
+            padding: '7px 16px',
             fontSize: '12px',
             fontWeight: 600,
-            color: '#94a3b8',
+            color: '#cbd5e1',
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.2)',
           }}
         >
           <Warehouse size={14} color="#38bdf8" />

@@ -2,13 +2,11 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '../../../services/queryClient';
 import { VehicleResponse } from '../../../types/vehicle';
-import { fetchActiveVehicleHandovers } from '../../../services/handoverApi';
 import {
-  fetchTripStartEligibility,
   fetchActiveTripForVehicle,
   startTripApi,
 } from '../../../services/tripApi';
-import { VehicleHandoverData } from '../../../types/handover';
+import { useCoOwnerTripPrerequisites } from '../../../hooks/useCoOwnerTripPrerequisites';
 import { TripStartPanel3D } from './TripStartPanel3D';
 import { SpatialDataLink } from '../SpatialDataLink';
 import { useWorldStore } from '../../../store/worldStore';
@@ -24,36 +22,25 @@ export const TripStartWorld: React.FC<TripStartWorldProps> = ({ vehicle }) => {
   const returnToVehicleOverview = useWorldStore((state) => state.returnToVehicleOverview);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // 1. Fetch active handovers for vehicle
-  const { data: activeHandovers = [], isLoading: isHandoverLoading } = useQuery<VehicleHandoverData[]>({
-    queryKey: ['activeVehicleHandovers', vehicle.id],
-    queryFn: () => fetchActiveVehicleHandovers(vehicle.id),
-    refetchInterval: 3000,
-  });
-
-  // Resolve completed handover candidate
-  const completedHandover = React.useMemo(() => {
-    if (!activeHandovers || activeHandovers.length === 0) return null;
-    return activeHandovers.find(
-      (h) => h.status === 'COMPLETED' || h.status === 'OWNER_CONFIRMED'
-    ) || activeHandovers[0];
-  }, [activeHandovers]);
-
-  // 2. Fetch active trip for vehicle (restoration on reload / ongoing trip)
+  // 1. Fetch active trip for vehicle (restoration on reload / ongoing trip)
   const { data: activeTrip = null, isLoading: isTripLoading } = useQuery({
     queryKey: ['activeTrip', vehicle.id],
     queryFn: () => fetchActiveTripForVehicle(vehicle.id),
     refetchInterval: 3000,
   });
 
-  // 3. Fetch trip start eligibility for completed handover's booking
-  const bookingId = completedHandover?.bookingId || activeTrip?.bookingId;
-  const { data: eligibility = null, isLoading: isEligibilityLoading } = useQuery({
-    queryKey: ['tripEligibility', bookingId],
-    queryFn: () => (bookingId ? fetchTripStartEligibility(bookingId) : Promise.resolve(null)),
-    enabled: !!bookingId,
-    refetchInterval: 4000,
-  });
+  const isTripActive = !!activeTrip && activeTrip.status === 'ACTIVE';
+
+  // 2. Fetch authoritative CO_OWNER trip prerequisites using booking-specific identity chain
+  const {
+    candidateBooking,
+    completedHandover,
+    tripEligibility,
+    isLoading: isPrereqLoading,
+  } = useCoOwnerTripPrerequisites(vehicle.id, isTripActive);
+
+  // 3. Resolve stable bookingId for Trip Start
+  const bookingId = completedHandover?.bookingId || candidateBooking?.id || activeTrip?.bookingId;
 
   // 4. Start Trip Mutation
   const startTripMutation = useMutation({
@@ -69,8 +56,11 @@ export const TripStartWorld: React.FC<TripStartWorldProps> = ({ vehicle }) => {
       qc.invalidateQueries({ queryKey: ['activeVehicleHandovers', vehicle.id] });
       qc.invalidateQueries({ queryKey: ['vehicle', vehicle.id] });
       qc.invalidateQueries({ queryKey: ['vehicles'] });
+      qc.invalidateQueries({ queryKey: ['vehicleBookings', vehicle.id] });
+      qc.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] });
       if (bookingId) {
         qc.invalidateQueries({ queryKey: ['tripEligibility', bookingId] });
+        qc.invalidateQueries({ queryKey: ['bookingHandover', bookingId] });
       }
     },
     onError: (err: any) => {
@@ -86,9 +76,9 @@ export const TripStartWorld: React.FC<TripStartWorldProps> = ({ vehicle }) => {
     }
   };
 
-  const isLoading = isHandoverLoading || isTripLoading;
+  const isLoading = (isPrereqLoading || isTripLoading) && !activeTrip && !completedHandover;
 
-  if (isLoading && !activeTrip) {
+  if (isLoading) {
     return (
       <group position={[0, 1.4, 0]}>
         <Html center distanceFactor={8.5} style={{ pointerEvents: 'none', userSelect: 'none' }}>
@@ -137,7 +127,7 @@ export const TripStartWorld: React.FC<TripStartWorldProps> = ({ vehicle }) => {
           vehicle={vehicle}
           handover={completedHandover}
           activeTrip={activeTrip}
-          eligibility={eligibility}
+          eligibility={tripEligibility}
           isStarting={startTripMutation.isPending}
           onStartTrip={handleStartTrip}
           onBack={returnToVehicleOverview}

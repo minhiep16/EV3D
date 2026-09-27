@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Html, Billboard } from '@react-three/drei';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { GroupMemberResponse } from '../../../types/coOwnership';
+import { removeMemberFromGroup } from '../../../services/coOwnershipApi';
 import { HolographicPanelFrame3D } from '../HolographicPanelFrame3D';
 import { SpatialDataLink } from '../SpatialDataLink';
 import {
@@ -13,6 +15,9 @@ import {
   Sparkles,
   Car,
   Award,
+  UserMinus,
+  AlertTriangle,
+  Loader2,
 } from 'lucide-react';
 
 interface HolographicOwnerDetailPanelProps {
@@ -20,9 +25,11 @@ interface HolographicOwnerDetailPanelProps {
   orbPosition: [number, number, number];
   groupName?: string;
   vehicleCode?: string;
+  vehicleId?: string;
   panelPosition?: [number, number, number];
   color?: string;
   renderLink?: boolean;
+  canManage?: boolean;
   onClose: () => void;
 }
 
@@ -47,11 +54,33 @@ export const HolographicOwnerDetailPanel: React.FC<HolographicOwnerDetailPanelPr
   orbPosition,
   groupName = 'EVShare Demo Group',
   vehicleCode = 'EV01',
+  vehicleId,
   panelPosition = [2.7, 1.45, 0.4],
   color = '#00f2fe',
   renderLink = true,
+  canManage = false,
   onClose,
 }) => {
+  const queryClient = useQueryClient();
+  const [showConfirmRemove, setShowConfirmRemove] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+
+  const removeMutation = useMutation({
+    mutationFn: () => removeMemberFromGroup(member.groupId, member.id),
+    onSuccess: () => {
+      if (vehicleId) {
+        queryClient.invalidateQueries({ queryKey: ['coOwnership', vehicleId] });
+      }
+      queryClient.invalidateQueries({ queryKey: ['coOwnership'] });
+      queryClient.invalidateQueries({ queryKey: ['coOwnershipGroup', member.groupId] });
+      queryClient.invalidateQueries({ queryKey: ['groupMembers', member.groupId] });
+      onClose();
+    },
+    onError: (err: any) => {
+      setRemoveError(err?.message || 'Không thể xoá thành viên khỏi nhóm.');
+    },
+  });
+
   const percentage = member.share?.percentage ?? 0;
   const statusInfo = STATUS_LABELS[member.status] ?? {
     label: member.status,
@@ -82,7 +111,7 @@ export const HolographicOwnerDetailPanel: React.FC<HolographicOwnerDetailPanelPr
       {/* 2. Holographic Panel positioned in 3D Space */}
       <group position={panelPosition}>
         <Billboard follow={true}>
-          <HolographicPanelFrame3D width={2.4} height={3.35} color={color} />
+          <HolographicPanelFrame3D width={2.4} height={canManage ? 3.90 : 3.35} color={color} />
           <Html
             center
             distanceFactor={8.8}
@@ -90,6 +119,8 @@ export const HolographicOwnerDetailPanel: React.FC<HolographicOwnerDetailPanelPr
           >
             <div
               onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
               style={{
                 width: '320px',
                 background: 'rgba(8, 12, 22, 0.94)',
@@ -365,6 +396,136 @@ export const HolographicOwnerDetailPanel: React.FC<HolographicOwnerDetailPanelPr
                   </span>
                 </div>
               </div>
+
+              {/* Member Removal Controls (Only for Authorized Roles) */}
+              {canManage && (
+                <div style={{ marginBottom: '14px' }}>
+                  {!showConfirmRemove ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowConfirmRemove(true);
+                        setRemoveError(null);
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        background: 'rgba(239, 68, 68, 0.12)',
+                        border: '1px solid rgba(239, 68, 68, 0.45)',
+                        borderRadius: '8px',
+                        color: '#fca5a5',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        transition: 'all 0.2s ease',
+                      }}
+                    >
+                      <UserMinus size={13} color="#ef4444" />
+                      XOÁ KHỎI NHÓM
+                    </button>
+                  ) : (
+                    <div
+                      style={{
+                        background: 'rgba(239, 68, 68, 0.15)',
+                        border: '1px solid rgba(239, 68, 68, 0.6)',
+                        borderRadius: '10px',
+                        padding: '10px 12px',
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: '11px',
+                          color: '#fecaca',
+                          fontWeight: 600,
+                          marginBottom: '8px',
+                          lineHeight: 1.35,
+                        }}
+                      >
+                        Bạn có chắc muốn xoá thành viên này khỏi nhóm?
+                      </div>
+
+                      {removeError && (
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: '5px',
+                            background: 'rgba(0, 0, 0, 0.3)',
+                            border: '1px solid rgba(239, 68, 68, 0.6)',
+                            borderRadius: '6px',
+                            padding: '6px 8px',
+                            color: '#f87171',
+                            fontSize: '10.5px',
+                            lineHeight: 1.3,
+                            marginBottom: '8px',
+                          }}
+                        >
+                          <AlertTriangle size={13} color="#ef4444" style={{ flexShrink: 0, marginTop: '1px' }} />
+                          <span>{removeError}</span>
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowConfirmRemove(false);
+                            setRemoveError(null);
+                          }}
+                          disabled={removeMutation.isPending}
+                          style={{
+                            flex: 1,
+                            padding: '6px 8px',
+                            background: 'rgba(255, 255, 255, 0.08)',
+                            border: '1px solid rgba(255, 255, 255, 0.15)',
+                            borderRadius: '6px',
+                            color: '#ffffff',
+                            fontSize: '10.5px',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          HUỶ
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeMutation.mutate()}
+                          disabled={removeMutation.isPending}
+                          style={{
+                            flex: 1.4,
+                            padding: '6px 8px',
+                            background: '#ef4444',
+                            border: 'none',
+                            borderRadius: '6px',
+                            color: '#ffffff',
+                            fontSize: '10.5px',
+                            fontWeight: 700,
+                            cursor: removeMutation.isPending ? 'not-allowed' : 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '4px',
+                            boxShadow: '0 0 10px rgba(239, 68, 68, 0.5)',
+                          }}
+                        >
+                          {removeMutation.isPending ? (
+                            <>
+                              <Loader2 size={11} className="animate-spin" />
+                              ĐANG XOÁ...
+                            </>
+                          ) : (
+                            'XÁC NHẬN XOÁ'
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Holographic Footer */}
               <div

@@ -16,5 +16,21 @@ public record GroupMemberResponse(
         GroupMemberRole memberRole,
         MemberStatus status,
         Instant joinedAt,
+        Instant removedAt,
         OwnershipShareResponse share
-) {}
+) {
+    public GroupMemberResponse(
+            UUID id,
+            UUID groupId,
+            UUID userId,
+            String fullName,
+            String email,
+            String role,
+            GroupMemberRole memberRole,
+            MemberStatus status,
+            Instant joinedAt,
+            OwnershipShareResponse share
+    ) {
+        this(id, groupId, userId, fullName, email, role, memberRole, status, joinedAt, null, share);
+    }
+}

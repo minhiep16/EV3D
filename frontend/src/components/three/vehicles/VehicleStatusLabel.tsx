@@ -1,6 +1,7 @@
 import React from 'react';
 import { Html } from '@react-three/drei';
-import { VEHICLE_STATUS_LABELS, VehicleStatus } from '../../../store/worldStore';
+import { VEHICLE_STATUS_LABELS, VehicleStatus, useWorldStore } from '../../../store/worldStore';
+import { isGarageZoneFocused } from '../../../config/garageZoneVisibility';
 import { BatteryCharging, Zap } from 'lucide-react';
 
 interface VehicleStatusLabelProps {
@@ -20,8 +21,37 @@ export const VehicleStatusLabel: React.FC<VehicleStatusLabelProps> = ({
   isSelected,
   isHovered,
 }) => {
-  // When vehicle is selected, hide this compact summary strip completely
-  if (isSelected) return null;
+  const selectedZone = useWorldStore((state) => state.selectedZone);
+  const selectedVehicleId = useWorldStore((state) => state.selectedVehicleId);
+  const isVehicleSelected = useWorldStore((state) => state.isVehicleSelected);
+  const vehicleBookingMode = useWorldStore((state) => state.vehicleBookingMode);
+  const vehicleCoOwnershipMode = useWorldStore((state) => state.vehicleCoOwnershipMode);
+  const vehicleHandoverMode = useWorldStore((state) => state.vehicleHandoverMode);
+  const vehicleReceiptReviewMode = useWorldStore((state) => state.vehicleReceiptReviewMode);
+  const vehicleTripStartMode = useWorldStore((state) => state.vehicleTripStartMode);
+  const vehicleTripVisualizationMode = useWorldStore((state) => state.vehicleTripVisualizationMode);
+  const vehicleDamageMappingMode = useWorldStore((state) => state.vehicleDamageMappingMode);
+  const vehicleInspectionMode = useWorldStore((state) => state.vehicleInspectionMode);
+
+  // When vehicle or any other zone is focused, hide this status pill completely
+  if (
+    isSelected ||
+    isGarageZoneFocused({
+      selectedZone,
+      selectedVehicleId,
+      isVehicleSelected,
+      vehicleBookingMode,
+      vehicleCoOwnershipMode,
+      vehicleHandoverMode,
+      vehicleReceiptReviewMode,
+      vehicleTripStartMode,
+      vehicleTripVisualizationMode,
+      vehicleDamageMappingMode,
+      vehicleInspectionMode,
+    })
+  ) {
+    return null;
+  }
 
   const statusConfig = VEHICLE_STATUS_LABELS[status] || VEHICLE_STATUS_LABELS.AVAILABLE;
 

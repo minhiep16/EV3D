@@ -15,10 +15,17 @@ import {
   BarChart3, 
   Bot, 
   Car, 
-  ChevronRight,
   Info,
-  X
+  X,
+  MessageSquare,
+  TrendingUp,
 } from 'lucide-react';
+import { INTERACTION_CONFIG } from '../../config/interactionConfig';
+import {
+  shouldShowZoneLabel,
+  shouldShowZoneSummary,
+  isGarageZoneFocused,
+} from '../../config/garageZoneVisibility';
 
 export interface ZoneConfig {
   id: GarageZone;
@@ -31,16 +38,25 @@ export interface ZoneConfig {
   accentColor: string;
 }
 
-export const ZONE_CONFIGS: Record<GarageZone, ZoneConfig> = {
+/**
+ * STAFF / OPERATIONS Dedicated Spatial Zone Layout:
+ * Top row:
+ *                      [ PHÂN TÍCH & GIÁM SÁT (0.0, -5.2) ]
+ * Middle row:
+ * [ BẢO DƯỠNG (-6.5, 0.5) ]      [ EV01 (0.0, 0.5) ]      [ SẠC (6.5, 0.5) ]
+ * Bottom row:
+ *                      [ VẬN HÀNH / BÀN GIAO (0.0, 6.2) ]
+ */
+export const OPERATIONS_ZONE_CONFIGS: Record<GarageZone, ZoneConfig> = {
   VEHICLE: {
     id: 'VEHICLE',
-    name: 'KHU VỰC XE',
-    subtitle: 'Vị trí đỗ & Bàn giao xe đồng sở hữu',
-    description: 'Khu vực tiếp nhận, đỗ xe tập trung và chuyển giao quyền vận hành cho xe điện đồng sở hữu.',
-    compactSummary: '', // Handled directly by VehicleStatusLabel on the vehicle
-    position: [-8, 0, 4],
-    color: '#0369a1',
-    accentColor: '#38bdf8',
+    name: 'KHU VỰC VẬN HÀNH / BÀN GIAO',
+    subtitle: 'Trạm điều phối, tiếp nhận & bàn giao xe',
+    description: 'Khu vực tiếp nhận, kiểm định kỹ thuật và chuyển giao quyền vận hành cho xe điện đồng sở hữu.',
+    compactSummary: 'Trạm bàn giao',
+    position: [0.0, 0, 6.2],
+    color: '#0284c7',
+    accentColor: '#00f2fe',
   },
   CHARGING: {
     id: 'CHARGING',
@@ -48,7 +64,7 @@ export const ZONE_CONFIGS: Record<GarageZone, ZoneConfig> = {
     subtitle: 'Trạm sạc thông minh công suất cao',
     description: 'Quản lý sạc tốc độ cao tự động và đồng bộ dữ liệu pin xe điện theo thời gian thực.',
     compactSummary: '2 trụ sạc | Sẵn sàng',
-    position: [8, 0, 4],
+    position: [6.5, 0, 0.5],
     color: '#0284c7',
     accentColor: '#00f2fe',
   },
@@ -58,7 +74,7 @@ export const ZONE_CONFIGS: Record<GarageZone, ZoneConfig> = {
     subtitle: 'Khu vực chẩn đoán & Dịch vụ kỹ thuật',
     description: 'Theo dõi tình trạng sức khỏe xe, kích nâng kiểm tra linh kiện và quản lý lịch sử bảo dưỡng.',
     compactSummary: '0 yêu cầu đang xử lý',
-    position: [0, 0, 6],
+    position: [-6.5, 0, 0.5],
     color: '#d97706',
     accentColor: '#fbbf24',
   },
@@ -68,7 +84,7 @@ export const ZONE_CONFIGS: Record<GarageZone, ZoneConfig> = {
     subtitle: 'Quỹ đồng sở hữu & Phân bổ chi phí',
     description: 'Quản lý quỹ chung minh bạch, theo dõi chi phí vận hành và phân bổ doanh thu/chi phí cho các chủ xe.',
     compactSummary: 'Quỹ chung | 25.000.000 ₫',
-    position: [-8, 0, -5],
+    position: [-7.5, 0, -4.5],
     color: '#059669',
     accentColor: '#34d399',
   },
@@ -78,17 +94,17 @@ export const ZONE_CONFIGS: Record<GarageZone, ZoneConfig> = {
     subtitle: 'Bỏ phiếu & Quyết định chung của cổ đông',
     description: 'Biểu quyết các đề xuất nâng cấp xe, phê duyệt quy chế hoạt động và quản trị đồng sở hữu theo tỷ lệ cổ phần.',
     compactSummary: '1 biểu quyết đang mở',
-    position: [8, 0, -5],
+    position: [7.5, 0, -4.5],
     color: '#7c3aed',
     accentColor: '#c084fc',
   },
   ANALYTICS: {
     id: 'ANALYTICS',
-    name: 'KHU VỰC PHÂN TÍCH',
-    subtitle: 'Đo lường dữ liệu, Hiệu suất & Công bằng',
-    description: 'Phân tích tần suất sử dụng xe, tổng quãng đường vận hành và đánh giá tính công bằng trong chia sẻ phương tiện.',
-    compactSummary: 'Dữ liệu vận hành',
-    position: [0, 0, -8],
+    name: 'KHU VỰC PHÂN TÍCH & GIÁM SÁT',
+    subtitle: 'Đo lường vận hành & Tiến độ bàn giao',
+    description: 'Theo dõi tiến độ bàn giao xe, tần suất hoạt động và phân tích hiệu suất phục vụ ca trực.',
+    compactSummary: 'Tiến độ vận hành',
+    position: [0.0, 0, -5.2],
     color: '#2563eb',
     accentColor: '#60a5fa',
   },
@@ -98,11 +114,81 @@ export const ZONE_CONFIGS: Record<GarageZone, ZoneConfig> = {
     subtitle: 'Trợ lý ảo vận hành đồng sở hữu thông minh',
     description: 'Đề xuất lịch trình tối ưu, cân bằng quyền ưu tiên đặt xe và đưa ra cảnh báo bất thường tự động.',
     compactSummary: 'Sẵn sàng hỗ trợ',
-    position: [0, 0, 13],
+    position: [0.0, 0, 9.0],
     color: '#0284c7',
     accentColor: '#00f2fe',
   },
 };
+
+/**
+ * CO_OWNER Dedicated Garage Zone Spatial Layout (Reference Design):
+ * Rear-Center:
+ *                      [ TRỢ LÝ AI (-2.2, -4.2) ]
+ * Mid row:
+ * [ TÀI CHÍNH (-5.4, -0.6) ]                  [ PHÂN TÍCH (3.0, -4.0) ]
+ * Foreground hero:
+ *                  [ EV01 (0.0, 1.8) ]        [ SẠC (5.0, 0.8) ]
+ */
+export const CO_OWNER_ZONE_CONFIGS: Record<GarageZone, ZoneConfig> = {
+  VEHICLE: {
+    ...OPERATIONS_ZONE_CONFIGS.VEHICLE,
+    position: [0.0, 0, 1.8],
+  },
+  CHARGING: {
+    ...OPERATIONS_ZONE_CONFIGS.CHARGING,
+    position: [5.0, 0, 0.8],
+  },
+  MAINTENANCE: {
+    ...OPERATIONS_ZONE_CONFIGS.MAINTENANCE,
+    position: [-9.0, 0, 0.5],
+  },
+  FINANCE: {
+    ...OPERATIONS_ZONE_CONFIGS.FINANCE,
+    position: [-5.4, 0, -0.6],
+  },
+  GOVERNANCE: {
+    ...OPERATIONS_ZONE_CONFIGS.GOVERNANCE,
+    position: [9.0, 0, -4.5],
+  },
+  ANALYTICS: {
+    ...OPERATIONS_ZONE_CONFIGS.ANALYTICS,
+    position: [3.0, 0, -4.0],
+  },
+  AI: {
+    ...OPERATIONS_ZONE_CONFIGS.AI,
+    position: [-2.2, 0, -4.2],
+  },
+};
+
+/**
+ * ADMIN Dedicated Garage Zone Spatial Layout:
+ * Management-focused layout with EV01 center-stage and oversight stations
+ */
+export const ADMIN_ZONE_CONFIGS: Record<GarageZone, ZoneConfig> = {
+  ...OPERATIONS_ZONE_CONFIGS,
+  VEHICLE: {
+    ...OPERATIONS_ZONE_CONFIGS.VEHICLE,
+    position: [0.0, 0, 6.2],
+  },
+  GOVERNANCE: {
+    ...OPERATIONS_ZONE_CONFIGS.GOVERNANCE,
+    position: [-6.5, 0, -2.5],
+  },
+  ANALYTICS: {
+    ...OPERATIONS_ZONE_CONFIGS.ANALYTICS,
+    position: [0.0, 0, -5.2],
+  },
+};
+
+export const ZONE_CONFIGS = OPERATIONS_ZONE_CONFIGS;
+
+export function getZoneConfig(zoneId: GarageZone, role?: string): ZoneConfig {
+  if (role === 'ADMIN') {
+    return ADMIN_ZONE_CONFIGS[zoneId] || OPERATIONS_ZONE_CONFIGS[zoneId];
+  }
+  const isCoOwner = !role || role === 'CO_OWNER';
+  return isCoOwner ? CO_OWNER_ZONE_CONFIGS[zoneId] : OPERATIONS_ZONE_CONFIGS[zoneId];
+}
 
 interface GarageZoneObjectProps {
   zone: ZoneConfig;
@@ -127,15 +213,51 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
   const vehicleHandoverMode = useWorldStore((state) => state.vehicleHandoverMode);
   const vehicleTripStartMode = useWorldStore((state) => state.vehicleTripStartMode);
   const vehicleTripVisualizationMode = useWorldStore((state) => state.vehicleTripVisualizationMode);
+  const vehicleReceiptReviewMode = useWorldStore((state) => state.vehicleReceiptReviewMode);
+  const vehicleDamageMappingMode = useWorldStore((state) => state.vehicleDamageMappingMode);
+  const isVehicleSelected = useWorldStore((state) => state.isVehicleSelected);
+  const selectedVehiclePartId = useWorldStore((state) => state.selectedVehiclePartId);
+
+  const focusState = React.useMemo(
+    () => ({
+      selectedZone,
+      selectedVehicleId,
+      isVehicleSelected,
+      vehicleBookingMode,
+      vehicleCoOwnershipMode,
+      vehicleHandoverMode,
+      vehicleReceiptReviewMode,
+      vehicleTripStartMode,
+      vehicleTripVisualizationMode,
+      vehicleDamageMappingMode,
+      vehicleInspectionMode,
+      selectedVehiclePartId,
+    }),
+    [
+      selectedZone,
+      selectedVehicleId,
+      isVehicleSelected,
+      vehicleBookingMode,
+      vehicleCoOwnershipMode,
+      vehicleHandoverMode,
+      vehicleReceiptReviewMode,
+      vehicleTripStartMode,
+      vehicleTripVisualizationMode,
+      vehicleDamageMappingMode,
+      vehicleInspectionMode,
+      selectedVehiclePartId,
+    ]
+  );
 
   const isSelected = selectedZone === zone.id;
   const isHovered = hoveredZone === zone.id;
 
-  // Centralized business focus mode (Vehicle deep interactions: Trip Start, Trip Visualization, Handover, Booking, Inspection, Co-ownership)
   const isFocusedBusinessMode =
+    vehicleDamageMappingMode ||
     vehicleTripVisualizationMode ||
     vehicleTripStartMode ||
     vehicleHandoverMode ||
+    vehicleReceiptReviewMode ||
     vehicleBookingMode ||
     vehicleInspectionMode ||
     vehicleCoOwnershipMode;
@@ -146,10 +268,12 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
   const isOperationsRole = user?.role === 'STAFF' || user?.role === 'ADMIN';
   const isAdmin = user?.role === 'ADMIN';
 
-  // Role-adapted zone metadata for ANALYTICS and GOVERNANCE (Sections 12, 13, 18)
   const zoneName = React.useMemo(() => {
     if (zone.id === 'ANALYTICS') {
       return isOperationsRole ? 'KHU VỰC PHÂN TÍCH & GIÁM SÁT' : 'KHU VỰC PHÂN TÍCH';
+    }
+    if (zone.id === 'VEHICLE') {
+      return isOperationsRole ? 'KHU VỰC VẬN HÀNH / BÀN GIAO' : 'KHU VỰC XE';
     }
     return zone.name;
   }, [zone.id, zone.name, isOperationsRole]);
@@ -163,8 +287,13 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
     if (zone.id === 'GOVERNANCE') {
       return 'Quản trị hệ thống & Giám sát phân quyền';
     }
+    if (zone.id === 'VEHICLE') {
+      return isOperationsRole
+        ? 'Trạm điều phối, tiếp nhận & bàn giao xe'
+        : 'Vị trí đỗ & Bàn giao xe đồng sở hữu';
+    }
     return zone.subtitle;
-  }, [zone.id, zone.subtitle, isAdmin, user?.role]);
+  }, [zone.id, zone.subtitle, isAdmin, user?.role, isOperationsRole]);
 
   const zoneDescription = React.useMemo(() => {
     if (zone.id === 'ANALYTICS') {
@@ -179,8 +308,13 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
     if (zone.id === 'GOVERNANCE') {
       return 'Quản lý phân quyền người dùng (RBAC), kiểm soát quy chế vận hành và giám sát an toàn nền tảng.';
     }
+    if (zone.id === 'VEHICLE') {
+      return isOperationsRole
+        ? 'Khu vực tiếp nhận, kiểm định kỹ thuật và chuyển giao quyền vận hành cho xe điện đồng sở hữu.'
+        : 'Khu vực tiếp nhận, đỗ xe tập trung và chuyển giao quyền vận hành cho xe điện đồng sở hữu.';
+    }
     return zone.description;
-  }, [zone.id, zone.description, isAdmin, user?.role]);
+  }, [zone.id, zone.description, isAdmin, user?.role, isOperationsRole]);
 
   const zoneCompactSummary = React.useMemo(() => {
     if (zone.id === 'ANALYTICS') {
@@ -191,37 +325,34 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
     if (zone.id === 'GOVERNANCE') {
       return 'Quản trị hệ thống';
     }
+    if (zone.id === 'VEHICLE') {
+      return isOperationsRole ? 'Trạm bàn giao' : '';
+    }
     return zone.compactSummary;
-  }, [zone.id, zone.compactSummary, isAdmin, user?.role]);
+  }, [zone.id, zone.compactSummary, isAdmin, user?.role, isOperationsRole]);
 
-  // GLOBAL SPATIAL UI VISIBILITY RULE:
-  // 1. When a focused business mode (Booking, Inspection, Co-ownership) is active on the vehicle,
-  //    all unrelated zone labels/summaries are temporarily hidden to eliminate spatial scene clutter
-  //    and prevent blocking business panels (such as Holographic Booking Summary).
-  // 2. When a specific zone is selected, its own label/summary hides in favor of its detailed card.
-  // 3. For VEHICLE, when selectedVehicleId != null, its own label is hidden.
-  const isZoneFocused =
-    isFocusedBusinessMode ||
-    isSelected ||
-    (zone.id === 'VEHICLE' && selectedVehicleId != null);
-  const showZoneLabelAndSummary = !isZoneFocused;
-
-  // The detailed spatial panel is shown ONLY for the selected zone.
-  // For VEHICLE, the single detailed panel is the Spatial Vehicle Information panel rendered by VehicleDigitalTwin.
+  // Centralized focus visibility logic:
+  // - In overview mode: all zone labels & summaries are shown
+  // - In focused mode: ONLY the focused zone shows its label/card; all unrelated zones are hidden
+  const showZoneLabel = shouldShowZoneLabel(zone.id, focusState);
+  const showZoneSummary = shouldShowZoneSummary(zone.id, focusState);
+  const showZoneLabelAndSummary =
+    showZoneLabel && !(zone.id === 'VEHICLE' && (selectedVehicleId != null || isVehicleSelected));
   const showZoneCard = isSelected && zone.id !== 'VEHICLE';
 
   useFrame((_, delta) => {
-    // Subtle idle animation for landmark object
     if (coreMeshRef.current) {
-      if (zone.id === 'FINANCE' || zone.id === 'AI') {
+      if (zone.id === 'FINANCE') {
         coreMeshRef.current.rotation.y += delta * 0.8;
       }
-      if (zone.id === 'AI') {
-        coreMeshRef.current.position.y = 1.6 + Math.sin(Date.now() * 0.003) * 0.12;
-      }
     }
-    if (coreGroupRef.current && zone.id === 'ANALYTICS') {
-      coreGroupRef.current.rotation.y += delta * 0.8;
+    if (coreGroupRef.current) {
+      if (zone.id === 'AI') {
+        coreGroupRef.current.position.y = 1.35 + Math.sin(Date.now() * 0.0025) * 0.08;
+      }
+      if (zone.id === 'ANALYTICS') {
+        coreGroupRef.current.rotation.y += delta * 0.4;
+      }
     }
     if (ringRef.current && isSelected) {
       ringRef.current.rotation.z += delta * 1.2;
@@ -229,6 +360,7 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
   });
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
+    if (e.delta > INTERACTION_CONFIG.clickDragThresholdPx) return;
     e.stopPropagation();
     if (isFocusedBusinessMode || !isAccessible) return;
     selectZone(zone.id);
@@ -250,8 +382,26 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
     document.body.style.cursor = 'auto';
   };
 
-  const emissiveColor = isSelected ? zone.accentColor : isHovered ? zone.accentColor : '#000000';
-  const emissiveIntensity = isSelected ? 1.6 : isHovered ? 0.6 : 0;
+  const getZoneIcon = (id: GarageZone) => {
+    switch (id) {
+      case 'VEHICLE':
+        return <Car size={13} color="#00f2fe" />;
+      case 'CHARGING':
+        return <Zap size={13} color="#00f2fe" />;
+      case 'FINANCE':
+        return <DollarSign size={13} color="#00f2fe" />;
+      case 'AI':
+        return <MessageSquare size={13} color="#00f2fe" />;
+      case 'ANALYTICS':
+        return <BarChart3 size={13} color="#00f2fe" />;
+      case 'MAINTENANCE':
+        return <Wrench size={13} color="#fbbf24" />;
+      case 'GOVERNANCE':
+        return <Vote size={13} color="#c084fc" />;
+      default:
+        return <Info size={13} color="#00f2fe" />;
+    }
+  };
 
   return (
     <group
@@ -261,230 +411,607 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
       onPointerOver={handlePointerOver}
       onPointerOut={handlePointerOut}
     >
-      {/* 1. Base Zone Platform */}
-      <mesh position={[0, 0.04, 0]} receiveShadow>
-        <boxGeometry args={[4.4, 0.08, 4.4]} />
-        <meshStandardMaterial
-          color="#0f172a"
-          roughness={0.7}
-          metalness={0.4}
-        />
-      </mesh>
+      {/* =========================================================================
+          1. REALISTIC CIRCULAR RAISED PLATFORMS WITH THIN CYAN EMISSIVE RINGS
+          ========================================================================= */}
+      {zone.id === 'VEHICLE' && !isOperationsRole ? (
+        /* HERO PLATFORM FOR EV01: Largest Circular Multi-Tiered Showroom Turntable */
+        <group position={[0, 0, 0]}>
+          {/* Base Stepped Turntable Pad */}
+          <mesh position={[0, 0.035, 0]} receiveShadow>
+            <cylinderGeometry args={[3.55, 3.65, 0.07, 64]} />
+            <meshStandardMaterial
+              color="#f8fafc"
+              roughness={0.2}
+              metalness={0.25}
+            />
+          </mesh>
 
-      {/* Glowing Platform Perimeter Rail */}
-      <mesh position={[0, 0.08, 0]}>
-        <boxGeometry args={[4.45, 0.02, 4.45]} />
-        <meshStandardMaterial
-          color={zone.accentColor}
-          emissive={zone.accentColor}
-          emissiveIntensity={isSelected ? 1.8 : isHovered ? 1.0 : 0.3}
-          wireframe
-        />
-      </mesh>
+          {/* Outer Polished Aluminum Bevel Rim */}
+          <mesh position={[0, 0.072, 0]}>
+            <cylinderGeometry args={[3.52, 3.56, 0.015, 64]} />
+            <meshStandardMaterial
+              color="#94a3b8"
+              roughness={0.2}
+              metalness={0.8}
+            />
+          </mesh>
 
-      {/* Selected Halo on Ground */}
-      {isSelected && (
-        <mesh ref={ringRef} position={[0, 0.09, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[2.5, 2.7, 48]} />
-          <meshBasicMaterial
-            color={zone.accentColor}
-            side={THREE.DoubleSide}
-            transparent
-            opacity={0.8}
-          />
-        </mesh>
+          {/* Outer Recessed Thin Cyan Emissive Neon Halo */}
+          <mesh position={[0, 0.076, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[3.42, 3.50, 64]} />
+            <meshBasicMaterial
+              color="#00f2fe"
+              transparent
+              opacity={isSelected ? 0.95 : isHovered ? 0.85 : 0.75}
+            />
+          </mesh>
+
+          {/* Middle Elevated Stepped Tier */}
+          <mesh position={[0, 0.09, 0]} receiveShadow>
+            <cylinderGeometry args={[3.2, 3.28, 0.035, 64]} />
+            <meshStandardMaterial
+              color="#eef2f6"
+              roughness={0.22}
+              metalness={0.25}
+            />
+          </mesh>
+
+          {/* Inner Recessed Thin Cyan LED Ring */}
+          <mesh position={[0, 0.11, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[2.62, 2.70, 64]} />
+            <meshBasicMaterial
+              color="#00f2fe"
+              transparent
+              opacity={0.65}
+            />
+          </mesh>
+
+          {/* Top Glossy Vehicle Turntable Surface */}
+          <mesh position={[0, 0.114, 0]} receiveShadow>
+            <cylinderGeometry args={[2.6, 2.6, 0.012, 64]} />
+            <meshStandardMaterial
+              color="#ffffff"
+              roughness={0.16}
+              metalness={0.22}
+            />
+          </mesh>
+        </group>
+      ) : (
+        /* STANDARD CIRCULAR RAISED PLATFORMS FOR FINANCE, AI, ANALYTICS, CHARGING */
+        <group position={[0, 0, 0]}>
+          {/* Base Chamfered Station Pad */}
+          <mesh position={[0, 0.04, 0]} receiveShadow>
+            <cylinderGeometry args={[1.9, 1.98, 0.08, 48]} />
+            <meshStandardMaterial
+              color="#f8fafc"
+              roughness={0.2}
+              metalness={0.25}
+            />
+          </mesh>
+
+          {/* Outer Brushed Metal Bevel Rim */}
+          <mesh position={[0, 0.082, 0]}>
+            <cylinderGeometry args={[1.88, 1.92, 0.015, 48]} />
+            <meshStandardMaterial
+              color="#94a3b8"
+              roughness={0.2}
+              metalness={0.8}
+            />
+          </mesh>
+
+          {/* Recessed Thin Cyan Emissive Ring */}
+          <mesh position={[0, 0.086, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[1.76, 1.85, 48]} />
+            <meshBasicMaterial
+              color={zone.accentColor}
+              transparent
+              opacity={isSelected ? 0.95 : isHovered ? 0.8 : 0.6}
+            />
+          </mesh>
+
+          {/* Inner Upper Platform Disc */}
+          <mesh position={[0, 0.09, 0]} receiveShadow>
+            <cylinderGeometry args={[1.74, 1.74, 0.015, 48]} />
+            <meshStandardMaterial
+              color="#f1f5f9"
+              roughness={0.2}
+              metalness={0.2}
+            />
+          </mesh>
+
+          {/* Selection Rotating Ground Disc */}
+          {isSelected && (
+            <mesh ref={ringRef} position={[0, 0.11, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+              <ringGeometry args={[2.15, 2.25, 48]} />
+              <meshBasicMaterial
+                color={zone.accentColor}
+                side={THREE.DoubleSide}
+                transparent
+                opacity={0.8}
+              />
+            </mesh>
+          )}
+        </group>
       )}
 
-      {/* 2. Zone Specific Landmark Geometries */}
-      {/* VEHICLE ZONE: Parking Pad with Wheel Guides & Laser Markers */}
-      {zone.id === 'VEHICLE' && (
-        <group position={[0, 0.1, 0]}>
-          <mesh position={[0, 0.02, 0]} receiveShadow>
-            <boxGeometry args={[3.2, 0.04, 3.8]} />
-            <meshStandardMaterial color="#1e293b" roughness={0.6} />
+      {/* =========================================================================
+          2. ZONE-SPECIFIC REALISTIC SMART EQUIPMENT LANDMARKS (NATIVE GEOMETRY ONLY)
+          ========================================================================= */}
+
+      {/* VEHICLE ZONE: Handover Dispatch Terminal Console (STAFF / OPERATIONS ONLY) */}
+      {zone.id === 'VEHICLE' && isOperationsRole && (
+        <group position={[0, 0.07, 0]}>
+          <mesh position={[0, 0.45, 0]} castShadow receiveShadow>
+            <cylinderGeometry args={[0.22, 0.3, 0.9, 16]} />
+            <meshStandardMaterial color="#f8fafc" roughness={0.25} metalness={0.3} />
           </mesh>
-          {/* Wheel Stops */}
-          <mesh position={[0.9, 0.1, -1.3]} castShadow>
-            <boxGeometry args={[0.5, 0.15, 0.2]} />
-            <meshStandardMaterial color="#334155" emissive="#38bdf8" emissiveIntensity={0.2} />
+          <mesh position={[0, 0.88, 0]}>
+            <cylinderGeometry args={[0.24, 0.22, 0.08, 16]} />
+            <meshStandardMaterial color="#94a3b8" metalness={0.8} roughness={0.2} />
           </mesh>
-          <mesh position={[-0.9, 0.1, -1.3]} castShadow>
-            <boxGeometry args={[0.5, 0.15, 0.2]} />
-            <meshStandardMaterial color="#334155" emissive="#38bdf8" emissiveIntensity={0.2} />
-          </mesh>
-          {/* Laser Corner Pylons */}
-          {[[-1.4, -1.7], [1.4, -1.7], [-1.4, 1.7], [1.4, 1.7]].map(([px, pz], i) => (
-            <mesh key={i} position={[px, 0.25, pz]} castShadow>
-              <cylinderGeometry args={[0.06, 0.08, 0.5, 16]} />
-              <meshStandardMaterial color="#0284c7" emissive={zone.accentColor} emissiveIntensity={emissiveIntensity + 0.5} />
+          <group position={[0, 1.05, 0.08]} rotation={[-Math.PI / 5, 0, 0]}>
+            <mesh castShadow>
+              <boxGeometry args={[0.7, 0.05, 0.45]} />
+              <meshStandardMaterial color="#0f172a" roughness={0.2} metalness={0.8} />
+            </mesh>
+            <mesh position={[0, 0.027, 0]}>
+              <planeGeometry args={[0.62, 0.37]} />
+              <meshBasicMaterial color="#0284c7" />
+            </mesh>
+          </group>
+          {[[-1.2, -1.2], [1.2, -1.2], [-1.2, 1.2], [1.2, 1.2]].map(([px, pz], i) => (
+            <mesh key={i} position={[px, 0.15, pz]} castShadow>
+              <cylinderGeometry args={[0.04, 0.06, 0.3, 16]} />
+              <meshStandardMaterial color="#0284c7" emissive={zone.accentColor} emissiveIntensity={0.5} />
             </mesh>
           ))}
         </group>
       )}
 
-      {/* CHARGING ZONE: Futuristic Charging Station Tower & Cable Base */}
+      {/* CHARGING ZONE: Clean White EV Fast Charger Kiosk + Holographic Charging HUD */}
       {zone.id === 'CHARGING' && (
-        <group position={[0, 0.1, 0]}>
-          {/* Main Tower */}
-          <mesh ref={coreMeshRef} position={[0, 1.0, 0]} castShadow>
-            <boxGeometry args={[0.7, 2.0, 0.5]} />
-            <meshStandardMaterial
-              color="#0f172a"
-              roughness={0.3}
-              metalness={0.8}
-              emissive={emissiveColor}
-              emissiveIntensity={emissiveIntensity}
-            />
-          </mesh>
-          {/* Charging Display Screen */}
-          <mesh position={[0, 1.4, 0.26]}>
-            <planeGeometry args={[0.5, 0.4]} />
-            <meshBasicMaterial color="#00f2fe" />
-          </mesh>
-          {/* Cable Holster Pedestal */}
-          <mesh position={[0.7, 0.5, 0]} castShadow>
-            <cylinderGeometry args={[0.1, 0.14, 1.0, 16]} />
-            <meshStandardMaterial color="#1e293b" emissive={zone.accentColor} emissiveIntensity={0.4} />
-          </mesh>
-        </group>
-      )}
+        <group position={[0, 0.08, 0]}>
+          {/* Main White Charger Tower Body */}
+          <group position={[0.42, 0, 0]}>
+            <mesh position={[0, 0.95, 0]} castShadow receiveShadow>
+              <boxGeometry args={[0.64, 1.88, 0.42]} />
+              <meshStandardMaterial
+                color="#ffffff"
+                roughness={0.2}
+                metalness={0.22}
+              />
+            </mesh>
+            {/* Side Brushed Alloy Trim Strips */}
+            <mesh position={[-0.325, 0.95, 0]}>
+              <boxGeometry args={[0.02, 1.9, 0.4]} />
+              <meshStandardMaterial color="#94a3b8" metalness={0.8} roughness={0.2} />
+            </mesh>
+            <mesh position={[0.325, 0.95, 0]}>
+              <boxGeometry args={[0.02, 1.9, 0.4]} />
+              <meshStandardMaterial color="#94a3b8" metalness={0.8} roughness={0.2} />
+            </mesh>
+            {/* Front Black Beveled Glass Frame */}
+            <mesh position={[0, 1.15, 0.215]}>
+              <boxGeometry args={[0.48, 1.05, 0.02]} />
+              <meshStandardMaterial color="#0b1320" roughness={0.1} metalness={0.9} />
+            </mesh>
+            {/* Active Vertical Cyan Touch Screen */}
+            <mesh position={[0, 1.2, 0.23]}>
+              <planeGeometry args={[0.4, 0.8]} />
+              <meshBasicMaterial color="#00f2fe" />
+            </mesh>
+            {/* Lightning bolt indicator plate */}
+            <mesh position={[0, 1.25, 0.232]}>
+              <planeGeometry args={[0.18, 0.32]} />
+              <meshBasicMaterial color="#ffffff" transparent opacity={0.9} />
+            </mesh>
+            {/* Top Status LED Arch */}
+            <mesh position={[0, 1.9, 0]}>
+              <boxGeometry args={[0.56, 0.04, 0.32]} />
+              <meshBasicMaterial color="#00f2fe" />
+            </mesh>
+            {/* Side CCS2 Charging Cable Holster & Plug */}
+            <mesh position={[0.42, 0.45, 0]} castShadow>
+              <cylinderGeometry args={[0.06, 0.08, 0.9, 16]} />
+              <meshStandardMaterial color="#334155" metalness={0.7} />
+            </mesh>
+            <mesh position={[0.42, 0.9, 0.05]} rotation={[Math.PI / 4, 0, 0]}>
+              <cylinderGeometry args={[0.05, 0.06, 0.25, 16]} />
+              <meshStandardMaterial color="#0f172a" metalness={0.8} />
+            </mesh>
+            <mesh position={[0.42, 0.98, 0.12]}>
+              <sphereGeometry args={[0.05, 16, 16]} />
+              <meshStandardMaterial color="#0284c7" emissive="#00f2fe" emissiveIntensity={0.8} />
+            </mesh>
+          </group>
 
-      {/* MAINTENANCE ZONE: Service Lift Platform & Hydraulic Arms */}
-      {zone.id === 'MAINTENANCE' && (
-        <group position={[0, 0.1, 0]}>
-          {/* Dual Lift Rails */}
-          <mesh position={[-1.1, 0.4, 0]} castShadow>
-            <boxGeometry args={[0.4, 0.8, 3.4]} />
-            <meshStandardMaterial color="#334155" metalness={0.7} />
-          </mesh>
-          <mesh position={[1.1, 0.4, 0]} castShadow>
-            <boxGeometry args={[0.4, 0.8, 3.4]} />
-            <meshStandardMaterial color="#334155" metalness={0.7} />
-          </mesh>
-          {/* Diagnostic Console Pedestal */}
-          <mesh ref={coreMeshRef} position={[0, 0.7, -1.4]} castShadow>
-            <boxGeometry args={[0.8, 1.4, 0.4]} />
-            <meshStandardMaterial
-              color="#1e293b"
-              emissive={emissiveColor}
-              emissiveIntensity={emissiveIntensity}
-            />
-          </mesh>
-        </group>
-      )}
-
-      {/* FINANCE ZONE: Floating Hex Treasury Core & Orbiting Data Rings */}
-      {zone.id === 'FINANCE' && (
-        <group position={[0, 0.1, 0]}>
-          {/* Base Pedestal */}
-          <mesh position={[0, 0.4, 0]} castShadow>
-            <cylinderGeometry args={[0.9, 1.2, 0.8, 6]} />
-            <meshStandardMaterial color="#0f172a" roughness={0.4} metalness={0.8} />
-          </mesh>
-          {/* Floating Core */}
-          <mesh ref={coreMeshRef} position={[0, 1.4, 0]} castShadow>
-            <octahedronGeometry args={[0.6, 0]} />
-            <meshStandardMaterial
-              color="#059669"
-              emissive={zone.accentColor}
-              emissiveIntensity={emissiveIntensity + 0.8}
-              roughness={0.2}
-              metalness={0.9}
-            />
-          </mesh>
-          {/* Orbiting Ring */}
-          <mesh position={[0, 1.4, 0]} rotation={[Math.PI / 4, 0, 0]}>
-            <torusGeometry args={[0.95, 0.03, 16, 32]} />
-            <meshStandardMaterial color={zone.accentColor} emissive={zone.accentColor} emissiveIntensity={1.2} />
-          </mesh>
-        </group>
-      )}
-
-      {/* GOVERNANCE ZONE: Holographic Voting Podium & Voting Pillars */}
-      {zone.id === 'GOVERNANCE' && (
-        <group position={[0, 0.1, 0]}>
-          {/* Circular Stage */}
-          <mesh position={[0, 0.3, 0]} castShadow>
-            <cylinderGeometry args={[1.3, 1.5, 0.6, 32]} />
-            <meshStandardMaterial color="#1e1b4b" roughness={0.4} metalness={0.8} />
-          </mesh>
-          {/* Central Voting Column */}
-          <mesh ref={coreMeshRef} position={[0, 1.0, 0]} castShadow>
-            <cylinderGeometry args={[0.3, 0.3, 1.4, 16]} />
-            <meshStandardMaterial
-              color="#4c1d95"
-              emissive={zone.accentColor}
-              emissiveIntensity={emissiveIntensity + 0.6}
-            />
-          </mesh>
-          {/* Holographic Header Disc */}
-          <mesh position={[0, 1.7, 0]}>
-            <cylinderGeometry args={[0.6, 0.6, 0.04, 32]} />
-            <meshBasicMaterial color={zone.accentColor} transparent opacity={0.7} />
-          </mesh>
-        </group>
-      )}
-
-      {/* ANALYTICS ZONE: Tiered Data Metric Cylinders */}
-      {zone.id === 'ANALYTICS' && (
-        <group position={[0, 0.1, 0]}>
-          <mesh position={[0, 0.2, 0]} castShadow>
-            <cylinderGeometry args={[1.4, 1.6, 0.4, 32]} />
-            <meshStandardMaterial color="#0f172a" roughness={0.5} />
-          </mesh>
-          {/* Tiered Bar Columns */}
-          <group ref={coreGroupRef} position={[0, 0.4, 0]}>
-            {[
-              { pos: [-0.6, 0.5, -0.4], h: 1.0 },
-              { pos: [0.0, 0.8, -0.6], h: 1.6 },
-              { pos: [0.6, 0.6, -0.3], h: 1.2 },
-              { pos: [-0.4, 0.9, 0.4], h: 1.8 },
-              { pos: [0.4, 0.7, 0.5], h: 1.4 },
-            ].map((col, idx) => (
-              <mesh key={idx} position={[col.pos[0], col.h / 2, col.pos[2]]} castShadow>
-                <boxGeometry args={[0.3, col.h, 0.3]} />
-                <meshStandardMaterial
-                  color="#1e3a8a"
-                  emissive={zone.accentColor}
-                  emissiveIntensity={emissiveIntensity + (idx % 2 === 0 ? 0.9 : 0.5)}
-                />
+          {/* Floating Holographic Charging Status HUD Panel */}
+          <group position={[-0.65, 1.18, 0.15]} rotation={[0, 0.32, 0]}>
+            {/* Translucent Glass HUD Backing */}
+            <mesh>
+              <planeGeometry args={[0.9, 0.72]} />
+              <meshStandardMaterial
+                color="#041b2d"
+                roughness={0.1}
+                metalness={0.8}
+                transparent
+                opacity={0.75}
+                side={THREE.DoubleSide}
+              />
+            </mesh>
+            {/* Cyan Border Frame */}
+            <mesh position={[0, 0, 0.005]}>
+              <planeGeometry args={[0.92, 0.74]} />
+              <meshBasicMaterial color="#00f2fe" wireframe transparent opacity={0.6} />
+            </mesh>
+            {/* Simulated EV Wireframe Silhouette */}
+            <mesh position={[0, 0.14, 0.01]}>
+              <planeGeometry args={[0.55, 0.24]} />
+              <meshBasicMaterial color="#38bdf8" wireframe transparent opacity={0.85} />
+            </mesh>
+            {/* Battery Level Gauge Bars */}
+            {[-0.25, -0.15, -0.05, 0.05, 0.15, 0.25].map((bx, bidx) => (
+              <mesh key={bidx} position={[bx, -0.12, 0.01]}>
+                <planeGeometry args={[0.07, 0.14]} />
+                <meshBasicMaterial color={bidx < 5 ? '#00f2fe' : '#64748b'} />
               </mesh>
             ))}
           </group>
         </group>
       )}
 
-      {/* AI ZONE: Pulsing AI Core Orb & Floating Gyroscopic Rings */}
-      {zone.id === 'AI' && (
-        <group position={[0, 0.1, 0]}>
-          {/* Spire Pedestal */}
-          <mesh position={[0, 0.6, 0]} castShadow>
-            <cylinderGeometry args={[0.4, 0.9, 1.2, 8]} />
-            <meshStandardMaterial color="#082f49" metalness={0.9} roughness={0.2} />
+      {/* FINANCE ZONE: Square Pedestal + Floating Emerald-Cyan Crystal + Coin Stacks + Holographic Chart */}
+      {zone.id === 'FINANCE' && (
+        <group position={[0, 0.08, 0]}>
+          {/* Stepped Clean White Pedestal */}
+          <mesh position={[0, 0.18, 0]} castShadow receiveShadow>
+            <boxGeometry args={[1.15, 0.24, 1.15]} />
+            <meshStandardMaterial color="#f8fafc" roughness={0.25} metalness={0.3} />
           </mesh>
-          {/* Suspended AI Core Orb */}
-          <mesh ref={coreMeshRef} position={[0, 1.6, 0]} castShadow>
-            <sphereGeometry args={[0.5, 32, 32]} />
+          <mesh position={[0, 0.32, 0]}>
+            <boxGeometry args={[0.92, 0.06, 0.92]} />
+            <meshStandardMaterial color="#94a3b8" metalness={0.8} roughness={0.2} />
+          </mesh>
+          <mesh position={[0, 0.355, 0]}>
+            <boxGeometry args={[0.82, 0.015, 0.82]} />
+            <meshBasicMaterial color="#00f2fe" transparent opacity={0.8} />
+          </mesh>
+
+          {/* Floating Faceted Emerald-Cyan Crystal Core */}
+          <mesh ref={coreMeshRef} position={[0, 1.15, 0]} castShadow>
+            <octahedronGeometry args={[0.55, 0]} />
             <meshStandardMaterial
-              color="#0284c7"
-              emissive={zone.accentColor}
-              emissiveIntensity={isSelected ? 2.5 : isHovered ? 1.8 : 1.2}
-              roughness={0.1}
-              metalness={0.9}
+              color="#00e5ff"
+              emissive="#059669"
+              emissiveIntensity={isSelected ? 1.6 : 1.1}
+              roughness={0.12}
+              metalness={0.65}
             />
           </mesh>
-          {/* Ambient Gyroscope Ring */}
-          <mesh position={[0, 1.6, 0]} rotation={[Math.PI / 3, Math.PI / 4, 0]}>
-            <torusGeometry args={[0.8, 0.025, 16, 32]} />
-            <meshBasicMaterial color={zone.accentColor} />
+          {/* Floating Cyan Orbital Ring */}
+          <mesh position={[0, 1.15, 0]} rotation={[Math.PI / 4, 0, 0]}>
+            <torusGeometry args={[0.78, 0.02, 16, 32]} />
+            <meshBasicMaterial color="#00f2fe" />
+          </mesh>
+
+          {/* Stacks of Metallic Cyan / Gold Coins */}
+          {[
+            { pos: [0.65, 0.08, 0.35], count: 5 },
+            { pos: [0.88, 0.08, 0.08], count: 8 },
+            { pos: [0.55, 0.08, -0.28], count: 4 },
+          ].map((stack, sIdx) => (
+            <group key={sIdx} position={stack.pos as [number, number, number]}>
+              {Array.from({ length: stack.count }).map((_, cIdx) => (
+                <mesh key={cIdx} position={[0, cIdx * 0.035, 0]} castShadow>
+                  <cylinderGeometry args={[0.13, 0.13, 0.03, 24]} />
+                  <meshStandardMaterial
+                    color="#38bdf8"
+                    emissive="#0284c7"
+                    emissiveIntensity={0.25}
+                    metalness={0.9}
+                    roughness={0.18}
+                  />
+                </mesh>
+              ))}
+            </group>
+          ))}
+
+          {/* Standing Holographic Growth Chart Panel */}
+          <group position={[0.82, 0.95, -0.45]} rotation={[0, -0.42, 0]}>
+            {/* Glass panel */}
+            <mesh>
+              <planeGeometry args={[0.82, 0.62]} />
+              <meshStandardMaterial
+                color="#061a2b"
+                roughness={0.1}
+                metalness={0.8}
+                transparent
+                opacity={0.8}
+                side={THREE.DoubleSide}
+              />
+            </mesh>
+            <mesh position={[0, 0, 0.005]}>
+              <planeGeometry args={[0.84, 0.64]} />
+              <meshBasicMaterial color="#34d399" wireframe transparent opacity={0.6} />
+            </mesh>
+            {/* Mini Bar Columns */}
+            {[-0.25, -0.12, 0.0, 0.12, 0.25].map((barX, bIdx) => {
+              const h = 0.12 + bIdx * 0.06;
+              return (
+                <mesh key={bIdx} position={[barX, -0.16 + h / 2, 0.01]}>
+                  <planeGeometry args={[0.07, h]} />
+                  <meshBasicMaterial color="#34d399" />
+                </mesh>
+              );
+            })}
+            {/* Upward Trend Line */}
+            <mesh position={[0, 0.08, 0.012]} rotation={[0, 0, 0.35]}>
+              <planeGeometry args={[0.62, 0.02]} />
+              <meshBasicMaterial color="#00f2fe" />
+            </mesh>
+          </group>
+        </group>
+      )}
+
+      {/* ANALYTICS ZONE: 3D Bar-Chart Columns + Large Holographic Analytics HUD Panel */}
+      {zone.id === 'ANALYTICS' && (
+        <group position={[0, 0.08, 0]}>
+          {/* Circular Stage Collar */}
+          <mesh position={[0, 0.15, 0]} castShadow receiveShadow>
+            <cylinderGeometry args={[1.3, 1.42, 0.28, 32]} />
+            <meshStandardMaterial color="#f8fafc" roughness={0.25} metalness={0.3} />
+          </mesh>
+
+          {/* 3D Bar-Chart Columns on the platform */}
+          <group position={[0, 0.28, 0]}>
+            {[
+              { pos: [-0.48, 0.15], h: 0.55 },
+              { pos: [-0.22, 0.1], h: 0.9 },
+              { pos: [0.05, 0.0], h: 1.35 },
+              { pos: [0.32, -0.08], h: 1.7 },
+              { pos: [0.58, -0.14], h: 1.15 },
+              { pos: [0.18, 0.32], h: 0.75 },
+            ].map((col, idx) => (
+              <group key={idx} position={[col.pos[0], 0, col.pos[1]]}>
+                {/* Column Body */}
+                <mesh position={[0, col.h / 2, 0]} castShadow>
+                  <boxGeometry args={[0.22, col.h, 0.22]} />
+                  <meshStandardMaterial
+                    color="#0284c7"
+                    roughness={0.2}
+                    metalness={0.5}
+                    transparent
+                    opacity={0.88}
+                  />
+                </mesh>
+                {/* Glowing Top Cap */}
+                <mesh position={[0, col.h + 0.01, 0]}>
+                  <boxGeometry args={[0.225, 0.02, 0.225]} />
+                  <meshBasicMaterial color="#00f2fe" />
+                </mesh>
+              </group>
+            ))}
+          </group>
+
+          {/* Large Floating Holographic Analytics HUD Panel */}
+          <group position={[0, 1.35, -0.45]}>
+            {/* Curved / Angled Glass HUD Screen */}
+            <mesh>
+              <planeGeometry args={[1.85, 0.95]} />
+              <meshStandardMaterial
+                color="#031526"
+                roughness={0.1}
+                metalness={0.85}
+                transparent
+                opacity={0.78}
+                side={THREE.DoubleSide}
+              />
+            </mesh>
+            <mesh position={[0, 0, 0.005]}>
+              <planeGeometry args={[1.87, 0.97]} />
+              <meshBasicMaterial color="#00f2fe" wireframe transparent opacity={0.65} />
+            </mesh>
+            {/* Line graph line */}
+            <mesh position={[-0.35, 0.1, 0.012]} rotation={[0, 0, 0.15]}>
+              <planeGeometry args={[0.9, 0.015]} />
+              <meshBasicMaterial color="#00f2fe" />
+            </mesh>
+            {/* KPI Circular Donut Ring */}
+            <mesh position={[0.55, 0.1, 0.01]}>
+              <ringGeometry args={[0.18, 0.24, 32]} />
+              <meshBasicMaterial color="#38bdf8" />
+            </mesh>
+            {/* Mini metrics horizontal bars */}
+            {[-0.2, -0.28].map((my, mi) => (
+              <mesh key={mi} position={[-0.35, my, 0.01]}>
+                <planeGeometry args={[0.85, 0.04]} />
+                <meshBasicMaterial color={mi === 0 ? '#00f2fe' : '#0284c7'} />
+              </mesh>
+            ))}
+          </group>
+        </group>
+      )}
+
+      {/* AI ZONE: Floating Spherical AI Bot Assistant + Floating Holographic Panels */}
+      {zone.id === 'AI' && (
+        <group position={[0, 0.08, 0]}>
+          {/* Circular Ground Stage Collar */}
+          <mesh position={[0, 0.16, 0]} castShadow receiveShadow>
+            <cylinderGeometry args={[0.85, 1.05, 0.32, 24]} />
+            <meshStandardMaterial color="#f8fafc" roughness={0.25} metalness={0.3} />
+          </mesh>
+
+          {/* Floating Cyan Magnetic Levitation Ring */}
+          <mesh position={[0, 0.72, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <torusGeometry args={[0.62, 0.035, 16, 32]} />
+            <meshBasicMaterial color="#00f2fe" />
+          </mesh>
+
+          {/* Cute Floating Spherical AI Assistant Bot (Animated smoothly via coreGroupRef) */}
+          <group ref={coreGroupRef} position={[0, 1.35, 0]}>
+            {/* Glossy Pearl-White Spherical Head / Body */}
+            <mesh castShadow>
+              <sphereGeometry args={[0.52, 32, 32]} />
+              <meshStandardMaterial
+                color="#ffffff"
+                roughness={0.15}
+                metalness={0.25}
+              />
+            </mesh>
+
+            {/* Inset Curved Dark Glass Face Visor */}
+            <mesh position={[0, 0.04, 0.33]}>
+              <boxGeometry args={[0.52, 0.28, 0.16]} />
+              <meshStandardMaterial
+                color="#070c18"
+                roughness={0.1}
+                metalness={0.9}
+              />
+            </mesh>
+
+            {/* Glowing Cyan Visor Display (Curved Eyes / Smiling Waveform) */}
+            <mesh position={[0, 0.04, 0.42]}>
+              <planeGeometry args={[0.34, 0.12]} />
+              <meshBasicMaterial color="#00f2fe" transparent opacity={0.95} />
+            </mesh>
+
+            {/* Left Sleek Audio Ear Pod */}
+            <group position={[-0.53, 0.04, 0]}>
+              <mesh rotation={[0, 0, Math.PI / 2]}>
+                <cylinderGeometry args={[0.18, 0.18, 0.08, 24]} />
+                <meshStandardMaterial color="#ffffff" roughness={0.2} metalness={0.3} />
+              </mesh>
+              <mesh rotation={[0, 0, Math.PI / 2]}>
+                <torusGeometry args={[0.16, 0.02, 16, 24]} />
+                <meshBasicMaterial color="#00f2fe" />
+              </mesh>
+            </group>
+
+            {/* Right Sleek Audio Ear Pod */}
+            <group position={[0.53, 0.04, 0]}>
+              <mesh rotation={[0, 0, Math.PI / 2]}>
+                <cylinderGeometry args={[0.18, 0.18, 0.08, 24]} />
+                <meshStandardMaterial color="#ffffff" roughness={0.2} metalness={0.3} />
+              </mesh>
+              <mesh rotation={[0, 0, Math.PI / 2]}>
+                <torusGeometry args={[0.16, 0.02, 16, 24]} />
+                <meshBasicMaterial color="#00f2fe" />
+              </mesh>
+            </group>
+          </group>
+
+          {/* Left Floating Holographic Speech Bubble HUD */}
+          <group position={[-0.92, 1.45, 0.2]} rotation={[0, 0.35, 0]}>
+            <mesh>
+              <planeGeometry args={[0.55, 0.42]} />
+              <meshStandardMaterial
+                color="#06192c"
+                roughness={0.1}
+                metalness={0.8}
+                transparent
+                opacity={0.8}
+                side={THREE.DoubleSide}
+              />
+            </mesh>
+            <mesh position={[0, 0, 0.005]}>
+              <planeGeometry args={[0.57, 0.44]} />
+              <meshBasicMaterial color="#00f2fe" wireframe transparent opacity={0.65} />
+            </mesh>
+            {/* Chat Dots */}
+            {[-0.12, 0.0, 0.12].map((cx, ci) => (
+              <mesh key={ci} position={[cx, 0.02, 0.01]}>
+                <circleGeometry args={[0.035, 16]} />
+                <meshBasicMaterial color="#00f2fe" />
+              </mesh>
+            ))}
+          </group>
+
+          {/* Right Floating Holographic Soundwave Telemetry HUD */}
+          <group position={[0.92, 1.45, 0.2]} rotation={[0, -0.35, 0]}>
+            <mesh>
+              <planeGeometry args={[0.55, 0.42]} />
+              <meshStandardMaterial
+                color="#06192c"
+                roughness={0.1}
+                metalness={0.8}
+                transparent
+                opacity={0.8}
+                side={THREE.DoubleSide}
+              />
+            </mesh>
+            <mesh position={[0, 0, 0.005]}>
+              <planeGeometry args={[0.57, 0.44]} />
+              <meshBasicMaterial color="#00f2fe" wireframe transparent opacity={0.65} />
+            </mesh>
+            {/* Soundwave bars */}
+            {[-0.18, -0.09, 0.0, 0.09, 0.18].map((sx, si) => {
+              const swH = [0.08, 0.18, 0.25, 0.15, 0.09][si];
+              return (
+                <mesh key={si} position={[sx, 0, 0.01]}>
+                  <planeGeometry args={[0.03, swH]} />
+                  <meshBasicMaterial color="#00f2fe" />
+                </mesh>
+              );
+            })}
+          </group>
+        </group>
+      )}
+
+      {/* MAINTENANCE ZONE: Service Lift Platform & Diagnostic Console (STAFF / OPERATIONS ONLY) */}
+      {zone.id === 'MAINTENANCE' && (
+        <group position={[0, 0.07, 0]}>
+          <mesh position={[-0.9, 0.2, 0]} castShadow receiveShadow>
+            <boxGeometry args={[0.35, 0.4, 2.8]} />
+            <meshStandardMaterial color="#94a3b8" roughness={0.3} metalness={0.7} />
+          </mesh>
+          <mesh position={[0.9, 0.2, 0]} castShadow receiveShadow>
+            <boxGeometry args={[0.35, 0.4, 2.8]} />
+            <meshStandardMaterial color="#94a3b8" roughness={0.3} metalness={0.7} />
+          </mesh>
+          <mesh ref={coreMeshRef} position={[0, 0.65, -1.0]} castShadow>
+            <boxGeometry args={[0.7, 1.3, 0.35]} />
+            <meshStandardMaterial color="#f8fafc" roughness={0.3} metalness={0.3} />
+          </mesh>
+          <mesh position={[0, 0.85, -0.82]}>
+            <planeGeometry args={[0.55, 0.4]} />
+            <meshBasicMaterial color="#f59e0b" />
           </mesh>
         </group>
       )}
 
-      {/* 3. Readable World-Space Zone Label & Compact Summary (Visible when unselected) */}
+      {/* GOVERNANCE ZONE: Modern Executive Voting Podium (ADMIN / OPERATIONS ONLY) */}
+      {zone.id === 'GOVERNANCE' && (
+        <group position={[0, 0.07, 0]}>
+          <mesh position={[0, 0.22, 0]} castShadow receiveShadow>
+            <cylinderGeometry args={[1.0, 1.2, 0.44, 32]} />
+            <meshStandardMaterial color="#f8fafc" roughness={0.3} metalness={0.3} />
+          </mesh>
+          <mesh ref={coreMeshRef} position={[0, 0.85, 0]} castShadow>
+            <cylinderGeometry args={[0.22, 0.22, 1.2, 16]} />
+            <meshStandardMaterial
+              color="#6d28d9"
+              emissive="#c084fc"
+              emissiveIntensity={isSelected ? 1.2 : 0.5}
+            />
+          </mesh>
+          <mesh position={[0, 1.45, 0]}>
+            <cylinderGeometry args={[0.48, 0.48, 0.03, 32]} />
+            <meshBasicMaterial color="#c084fc" transparent opacity={0.7} />
+          </mesh>
+        </group>
+      )}
+
+      {/* =========================================================================
+          3. CLEAN FLOATING ZONE BADGES MATCHING THE REFERENCE IMAGE
+          ========================================================================= */}
       {showZoneLabelAndSummary && (
         <Html
-          position={[0, 2.5, 0]}
+          position={
+            !isOperationsRole && zone.id === 'VEHICLE'
+              ? [0, 0.32, 3.45]
+              : [0, 2.35, 0]
+          }
           center
           distanceFactor={11}
           style={{ pointerEvents: 'none', userSelect: 'none' }}
@@ -492,37 +1019,33 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
           <div
             style={{
               background: isHovered
-                ? 'rgba(10, 15, 29, 0.92)'
-                : 'rgba(10, 15, 29, 0.75)',
-              backdropFilter: 'blur(12px)',
-              border: `1px solid ${isHovered ? zone.accentColor : 'rgba(255, 255, 255, 0.18)'}`,
+                ? 'rgba(11, 23, 38, 0.94)'
+                : 'rgba(13, 27, 42, 0.88)',
+              backdropFilter: 'blur(16px)',
+              border: `1.5px solid ${isHovered ? '#00f2fe' : 'rgba(0, 242, 254, 0.5)'}`,
               borderRadius: '9999px',
-              padding: '6px 16px',
-              color: '#f8fafc',
+              padding: '6px 18px',
+              color: '#ffffff',
               fontFamily: 'var(--font-family)',
               fontSize: '11px',
-              fontWeight: 700,
+              fontWeight: 800,
+              letterSpacing: '0.04em',
               whiteSpace: 'nowrap',
-              boxShadow: isHovered ? `0 0 16px ${zone.accentColor}88` : 'none',
+              boxShadow: isHovered
+                ? '0 0 18px rgba(0, 242, 254, 0.45), 0 8px 20px rgba(0, 0, 0, 0.4)'
+                : '0 4px 14px rgba(0, 0, 0, 0.35)',
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
               transition: 'all 0.2s ease',
+              textTransform: 'uppercase',
             }}
           >
-            <span
-              style={{
-                width: '6px',
-                height: '6px',
-                borderRadius: '50%',
-                background: zone.accentColor,
-                boxShadow: isHovered ? `0 0 6px ${zone.accentColor}` : 'none',
-              }}
-            />
-            <span>{zoneName}</span>
-            {zoneCompactSummary && (
+            {getZoneIcon(zone.id)}
+            <span style={{ color: '#ffffff' }}>{zoneName}</span>
+            {showZoneSummary && zoneCompactSummary && isOperationsRole && (
               <>
-                <span style={{ color: '#475569' }}>|</span>
+                <span style={{ color: '#64748b' }}>|</span>
                 <span style={{ color: '#94a3b8', fontSize: '10px', fontWeight: 600 }}>
                   {zoneCompactSummary}
                 </span>
@@ -532,10 +1055,11 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
         </Html>
       )}
 
-      {/* 4. World-Space Zone Information Card with 3D Holographic Frame & Connector */}
+      {/* =========================================================================
+          4. WORLD-SPACE ZONE INFORMATION CARD WITH HOLOGRAPHIC FRAME & DATA LINK
+          ========================================================================= */}
       {showZoneCard && (
         <>
-          {/* Visible 3D Laser Connector linking zone landmark to detailed panel */}
           <SpatialDataLink
             start={[0, 1.2, 0]}
             end={[2.3 - 0.35, 1.6, 0]}
@@ -550,138 +1074,138 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
                 distanceFactor={8.0}
                 style={{ pointerEvents: 'auto', userSelect: 'none' }}
               >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: '320px',
-              background: 'rgba(8, 12, 22, 0.94)',
-              backdropFilter: 'blur(20px)',
-              border: `1px solid ${zone.accentColor}`,
-              boxShadow: `0 20px 45px rgba(0, 0, 0, 0.85), 0 0 25px ${zone.accentColor}33`,
-              borderRadius: '16px',
-              padding: '20px',
-              color: '#ffffff',
-              fontFamily: 'var(--font-family)',
-              position: 'relative',
-            }}
-          >
-            {/* Close button */}
-            <button
-              type="button"
-              onClick={() => clearSelection()}
-              title="Đóng thông tin khu vực"
-              style={{
-                position: 'absolute',
-                top: '14px',
-                right: '14px',
-                background: 'rgba(255, 255, 255, 0.08)',
-                border: 'none',
-                borderRadius: '50%',
-                width: '24px',
-                height: '24px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#94a3b8',
-                cursor: 'pointer',
-              }}
-            >
-              <X size={14} />
-            </button>
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    width: '320px',
+                    background: 'rgba(13, 27, 42, 0.94)',
+                    backdropFilter: 'blur(20px)',
+                    border: `1.5px solid ${zone.accentColor}`,
+                    boxShadow: `0 20px 45px rgba(0, 0, 0, 0.75), 0 0 25px ${zone.accentColor}33`,
+                    borderRadius: '16px',
+                    padding: '20px',
+                    color: '#ffffff',
+                    fontFamily: 'var(--font-family)',
+                    position: 'relative',
+                  }}
+                >
+                  {/* Close button */}
+                  <button
+                    type="button"
+                    onClick={() => clearSelection()}
+                    title="Đóng thông tin khu vực"
+                    style={{
+                      position: 'absolute',
+                      top: '14px',
+                      right: '14px',
+                      background: 'rgba(255, 255, 255, 0.08)',
+                      border: 'none',
+                      borderRadius: '50%',
+                      width: '24px',
+                      height: '24px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#94a3b8',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <X size={14} />
+                  </button>
 
-            <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '5px',
-                fontSize: '10px',
-                fontWeight: 700,
-                color: zone.accentColor,
-                letterSpacing: '0.08em',
-                textTransform: 'uppercase',
-                marginBottom: '6px',
-              }}
-            >
-              <Info size={12} />
-              Thông tin Khu Vực Không Gian
-            </div>
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      color: zone.accentColor,
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
+                      marginBottom: '6px',
+                    }}
+                  >
+                    <Info size={12} />
+                    Thông tin Khu Vực Không Gian
+                  </div>
 
-            <h3
-              style={{
-                fontSize: '18px',
-                fontWeight: 800,
-                letterSpacing: '-0.01em',
-                margin: '0 0 4px 0',
-                color: '#ffffff',
-              }}
-            >
-              {zoneName}
-            </h3>
+                  <h3
+                    style={{
+                      fontSize: '18px',
+                      fontWeight: 800,
+                      letterSpacing: '-0.01em',
+                      margin: '0 0 4px 0',
+                      color: '#ffffff',
+                    }}
+                  >
+                    {zoneName}
+                  </h3>
 
-            <div
-              style={{
-                fontSize: '12px',
-                color: zone.accentColor,
-                fontWeight: 600,
-                marginBottom: '10px',
-              }}
-            >
-              {zoneSubtitle}
-            </div>
+                  <div
+                    style={{
+                      fontSize: '12px',
+                      color: zone.accentColor,
+                      fontWeight: 600,
+                      marginBottom: '10px',
+                    }}
+                  >
+                    {zoneSubtitle}
+                  </div>
 
-            <p
-              style={{
-                color: '#94a3b8',
-                fontSize: '12px',
-                lineHeight: 1.5,
-                marginBottom: '14px',
-              }}
-            >
-              {zoneDescription}
-            </p>
+                  <p
+                    style={{
+                      color: '#cbd5e1',
+                      fontSize: '12px',
+                      lineHeight: 1.5,
+                      marginBottom: '14px',
+                    }}
+                  >
+                    {zoneDescription}
+                  </p>
 
-            {zoneCompactSummary && (
-              <div
-                style={{
-                  background: 'rgba(255, 255, 255, 0.04)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  borderRadius: '8px',
-                  padding: '7px 12px',
-                  fontSize: '11px',
-                  color: '#cbd5e1',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: '10px',
-                }}
-              >
-                <span style={{ color: '#94a3b8' }}>Chỉ số khu vực:</span>
-                <strong style={{ color: zone.accentColor }}>{zoneCompactSummary}</strong>
-              </div>
-            )}
+                  {zoneCompactSummary && (
+                    <div
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.06)',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        borderRadius: '8px',
+                        padding: '7px 12px',
+                        fontSize: '11px',
+                        color: '#cbd5e1',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginBottom: '10px',
+                      }}
+                    >
+                      <span style={{ color: '#94a3b8' }}>Chỉ số khu vực:</span>
+                      <strong style={{ color: zone.accentColor }}>{zoneCompactSummary}</strong>
+                    </div>
+                  )}
 
-            <div
-              style={{
-                background: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-                borderRadius: '8px',
-                padding: '8px 12px',
-                fontSize: '11px',
-                color: '#cbd5e1',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <span style={{ color: '#94a3b8' }}>Trạng thái:</span>
-              <strong style={{ color: '#38bdf8' }}>Tính năng sẽ khả dụng ở giai đoạn tiếp theo</strong>
-            </div>
-          </div>
-          </Html>
-        </Billboard>
-      </group>
-    </>
-  )}
+                  <div
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.06)',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '8px',
+                      padding: '8px 12px',
+                      fontSize: '11px',
+                      color: '#cbd5e1',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <span style={{ color: '#94a3b8' }}>Trạng thái:</span>
+                    <strong style={{ color: '#38bdf8' }}>Sẵn sàng hoạt động</strong>
+                  </div>
+                </div>
+              </Html>
+            </Billboard>
+          </group>
+        </>
+      )}
     </group>
   );
 };

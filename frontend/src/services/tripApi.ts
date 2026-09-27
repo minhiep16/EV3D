@@ -100,3 +100,38 @@ export async function fetchTripById(tripId: string): Promise<TripData | null> {
     throw err;
   }
 }
+
+/**
+ * End/Check-out an ACTIVE trip.
+ * Exclusively called by authorized trip owner (CO_OWNER).
+ * Idempotently and transactionally transitions Trip to COMPLETED and Vehicle to AVAILABLE.
+ */
+export async function completeTripApi(tripId: string): Promise<TripData> {
+  try {
+    const res = await authenticatedFetch(`/api/trips/${tripId}/complete`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    return await safeParseResponse<TripData>(res);
+  } catch (err: any) {
+    if (err.status === 403) {
+      throw new Error(err.message || 'Bạn không có quyền kết thúc chuyến đi này.');
+    }
+    if (err.status === 409 || err.status === 400) {
+      throw new Error(err.message || 'Chuyến đi đã được kết thúc hoặc không ở trạng thái hoạt động.');
+    }
+    if (err.status === 404) {
+      throw new Error('Không có chuyến đi đang hoạt động.');
+    }
+    if (err instanceof TypeError || (err instanceof Error && err.message?.includes('fetch'))) {
+      throw new Error('Không thể kết nối đến máy chủ quản lý chuyến đi.');
+    }
+    if (err.message) {
+      throw new Error(err.message);
+    }
+    throw new Error('Không thể hoàn tất trả xe. Vui lòng thử lại.');
+  }
+}
+

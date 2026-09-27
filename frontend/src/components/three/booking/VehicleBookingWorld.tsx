@@ -211,7 +211,7 @@ export const VehicleBookingWorld: React.FC<VehicleBookingWorldProps> = ({ vehicl
                 <span>KHÔNG THỂ TẢI LỊCH XE</span>
               </div>
               <p style={{ fontSize: '11px', color: '#94a3b8', margin: '0 0 12px 0' }}>
-                {(error as Error)?.message || 'Vui lòng kiểm tra lại kết nối mạng.'}
+                {(error as Error)?.message || 'Không thể kết nối đến máy chủ.'}
               </p>
               <button
                 type="button"

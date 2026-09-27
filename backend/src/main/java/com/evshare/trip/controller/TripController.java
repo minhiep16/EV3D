@@ -1,5 +1,6 @@
 package com.evshare.trip.controller;
 
+import com.evshare.common.exception.UnauthorizedException;
 import com.evshare.security.UserPrincipal;
 import com.evshare.trip.dto.TripResponse;
 import com.evshare.trip.dto.TripStartEligibilityResponse;
@@ -33,6 +34,9 @@ public class TripController {
             @PathVariable UUID bookingId,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
+        if (principal == null || principal.getUser() == null) {
+            throw new UnauthorizedException("Vui lòng đăng nhập để kiểm tra điều kiện");
+        }
         TripStartEligibilityResponse response = tripService.checkStartEligibility(
                 bookingId,
                 principal.getId(),
@@ -51,6 +55,9 @@ public class TripController {
             @PathVariable UUID bookingId,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
+        if (principal == null || principal.getUser() == null) {
+            throw new UnauthorizedException("Vui lòng đăng nhập để bắt đầu chuyến đi");
+        }
         TripResponse response = tripService.startTrip(
                 bookingId,
                 principal.getId(),
@@ -106,5 +113,26 @@ public class TripController {
         );
         return response.map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    /**
+     * Complete / check-out an active trip (Phase 12).
+     * Exclusively accessible by the authenticated CO_OWNER who owns the active trip.
+     */
+    @PostMapping("/trips/{tripId}/complete")
+    @PreAuthorize("hasRole('CO_OWNER')")
+    public ResponseEntity<TripResponse> completeTrip(
+            @PathVariable UUID tripId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        if (principal == null || principal.getUser() == null) {
+            throw new UnauthorizedException("Vui lòng đăng nhập để trả xe");
+        }
+        TripResponse response = tripService.completeTrip(
+                tripId,
+                principal.getId(),
+                principal.getUser().getRole()
+        );
+        return ResponseEntity.ok(response);
     }
 }

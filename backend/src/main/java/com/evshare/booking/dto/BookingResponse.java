@@ -107,10 +107,11 @@ public class BookingResponse {
     }
 
     @com.fasterxml.jackson.annotation.JsonProperty("expired")
-    public boolean getExpired() {
+    public boolean hasExpired() {
         return isExpired;
     }
 
+    @com.fasterxml.jackson.annotation.JsonProperty("isExpired")
     public void setExpired(boolean expired) {
         this.isExpired = expired;
     }

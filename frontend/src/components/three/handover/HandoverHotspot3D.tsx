@@ -9,6 +9,7 @@ import {
   INSPECTION_CONDITION_CONFIG,
 } from '../../../types/handover';
 import { CheckCircle2, AlertTriangle, XCircle, HelpCircle } from 'lucide-react';
+import { INTERACTION_CONFIG } from '../../../config/interactionConfig';
 
 interface HandoverHotspot3DProps {
   checkpoint: HandoverCheckpoint;
@@ -72,6 +73,7 @@ export const HandoverHotspot3D: React.FC<HandoverHotspot3DProps> = ({
   });
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
+    if (e.delta > INTERACTION_CONFIG.clickDragThresholdPx) return;
     e.stopPropagation();
     onSelect(checkpoint.code);
   };

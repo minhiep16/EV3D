@@ -11,19 +11,24 @@ import {
   AlertCircle,
   Sparkles,
   X,
+  UserPlus,
 } from 'lucide-react';
 
 interface GroupSummaryPanel3DProps {
   group: CoOwnershipGroupResponse;
   vehicleCode: string;
   position?: [number, number, number];
+  canManage?: boolean;
+  onAddMemberClick?: () => void;
   onClose?: () => void;
 }
 
 export const GroupSummaryPanel3D: React.FC<GroupSummaryPanel3DProps> = ({
   group,
   vehicleCode,
-  position = [-2.1, 2.50, 0.0],
+  position = [0.0, 2.70, 0.0],
+  canManage = false,
+  onAddMemberClick,
   onClose,
 }) => {
   const memberCount = group.members?.length ?? 0;
@@ -37,7 +42,7 @@ export const GroupSummaryPanel3D: React.FC<GroupSummaryPanel3DProps> = ({
     <group position={position}>
       <Billboard follow={true}>
         {/* Holographic Frame behind the Panel */}
-        <HolographicPanelFrame3D width={2.25} height={1.95} color="#a855f7" depth={-0.05} />
+        <HolographicPanelFrame3D width={2.25} height={canManage ? 2.30 : 1.95} color="#a855f7" depth={-0.05} />
 
         <Html
           center
@@ -46,6 +51,8 @@ export const GroupSummaryPanel3D: React.FC<GroupSummaryPanel3DProps> = ({
         >
           <div
             onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
             style={{
               width: '250px',
               background: 'rgba(8, 12, 24, 0.94)',
@@ -253,6 +260,36 @@ export const GroupSummaryPanel3D: React.FC<GroupSummaryPanel3DProps> = ({
                 }}
               />
             </div>
+
+            {/* Add Member Button for Authorized Roles */}
+            {canManage && onAddMemberClick && (
+              <button
+                type="button"
+                onClick={onAddMemberClick}
+                style={{
+                  width: '100%',
+                  marginTop: '10px',
+                  padding: '7px 10px',
+                  background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.25), rgba(0, 242, 254, 0.2))',
+                  border: '1px solid rgba(168, 85, 247, 0.6)',
+                  borderRadius: '8px',
+                  color: '#ffffff',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  letterSpacing: '0.04em',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  boxShadow: '0 0 14px rgba(168, 85, 247, 0.25)',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <UserPlus size={13} color="#c084fc" />
+                + THÊM THÀNH VIÊN
+              </button>
+            )}
 
             {/* Subtle bottom note */}
             <div

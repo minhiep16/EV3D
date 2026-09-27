@@ -1,6 +1,7 @@
-import React, { Suspense } from 'react';
-import { ThreeEvent } from '@react-three/fiber';
+import React, { Suspense, useRef, useEffect } from 'react';
+import { ThreeEvent, useFrame } from '@react-three/fiber';
 import { Html, Billboard } from '@react-three/drei';
+import * as THREE from 'three';
 import { useQuery, QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '../../../services/queryClient';
 import { useAuthStore } from '../../../store/authStore';
@@ -8,6 +9,8 @@ import { useWorldStore } from '../../../store/worldStore';
 import { fetchVehicles } from '../../../services/vehicleApi';
 import { VehicleResponse } from '../../../types/vehicle';
 import { VehicleModel } from './VehicleModel';
+import { VehicleInteractionHitboxes } from './VehicleInteractionHitboxes';
+import { getVehicleModelUrl } from './vehicleModelConfig';
 import { VehicleStatusLabel } from './VehicleStatusLabel';
 import { VehicleSelectionEffect } from './VehicleSelectionEffect';
 import { VehicleInspectionGuide } from './VehicleInspectionGuide';
@@ -20,16 +23,27 @@ import { VehicleHandoverWorld } from '../handover/VehicleHandoverWorld';
 import { CoOwnerReceiptWorld } from '../handover/CoOwnerReceiptWorld';
 import { TripStartWorld } from '../trip/TripStartWorld';
 import { TripVisualizationWorld } from '../trip/TripVisualizationWorld';
+import { VehicleDamageWorld } from '../damage/VehicleDamageWorld';
 import { getPartById } from '../../../data/vehicleParts';
 import { CoOwnerVehiclePanel } from './CoOwnerVehiclePanel';
 import { StaffOperationsPanel } from './StaffOperationsPanel';
 import { AdminVehicleMonitorPanel } from './AdminVehicleMonitorPanel';
+import { shouldShowVehicleStatusLabel } from '../../../config/garageZoneVisibility';
 import {
   Car,
   Sparkles,
   AlertTriangle,
   RefreshCw,
 } from 'lucide-react';
+import { VEHICLE_INTERACTION_CONFIG } from '../../../config/interactionConfig';
+import {
+  globalInteractionState,
+  notifyVehiclePointerDown,
+  notifyVehiclePointerUp,
+  notifyVehicleDragStart,
+  notifyVehicleDragEnd,
+  isRecentDragInteraction,
+} from '../GlobalInteractionManager';
 
 export interface VehicleDigitalTwinProps {
   renderPanel?: (vehicle: VehicleResponse, onClose: () => void) => React.ReactNode;
@@ -51,11 +65,16 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
     (state) => state.vehicleCoOwnershipMode
   );
   const user = useAuthStore((state) => state.user);
+  const isCoOwner = !user?.role || user?.role === 'CO_OWNER';
+  const vehiclePosition: [number, number, number] = isCoOwner
+    ? [0.0, 0.14, 1.8]
+    : [0.0, 0.14, 0.5];
   const vehicleBookingMode = useWorldStore((state) => state.vehicleBookingMode);
   const vehicleHandoverMode = useWorldStore((state) => state.vehicleHandoverMode);
   const vehicleReceiptReviewMode = useWorldStore((state) => state.vehicleReceiptReviewMode);
   const vehicleTripStartMode = useWorldStore((state) => state.vehicleTripStartMode);
   const vehicleTripVisualizationMode = useWorldStore((state) => state.vehicleTripVisualizationMode);
+  const vehicleDamageMappingMode = useWorldStore((state) => state.vehicleDamageMappingMode);
   const selectedVehiclePartId = useWorldStore(
     (state) => state.selectedVehiclePartId
   );
@@ -64,6 +83,8 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
   const clearSelection = useWorldStore((state) => state.clearSelection);
   const vehicleMode = useWorldStore((state) => state.vehicleMode);
   const isVehicleSelected = useWorldStore((state) => state.isVehicleSelected);
+  const vehicleYaw = useWorldStore((state) => state.vehicleYaw);
+  const setVehicleYaw = useWorldStore((state) => state.setVehicleYaw);
 
   // TanStack Query: Fetch vehicles from Spring Boot API / MySQL
   // Enabled ONLY when authentication state is ready and token exists
@@ -74,11 +95,87 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
     refetchInterval: authReady ? 6000 : false,
   });
 
+  // Section 2: EV01 360-Degree Turntable Rotation State & Ref (Unconditional Top-Level Hooks)
+  const defaultYaw = isCoOwner
+    ? VEHICLE_INTERACTION_CONFIG.defaultCoOwnerYaw
+    : VEHICLE_INTERACTION_CONFIG.defaultOperationsYaw;
+
+  const turntableRef = useRef<THREE.Group>(null);
+  const targetYaw = useRef(vehicleYaw ?? defaultYaw);
+  const currentYaw = useRef(vehicleYaw ?? defaultYaw);
+  const isVehicleDraggingRef = useRef(false);
+  const pointerDownPos = useRef<{ x: number; y: number } | null>(null);
+  const lastPointerX = useRef(0);
+
+  // Synchronize target yaw when worldStore resets yaw (e.g. on return to overview)
+  useEffect(() => {
+    if (vehicleYaw !== undefined) {
+      targetYaw.current = vehicleYaw;
+    }
+  }, [vehicleYaw]);
+
+  // Smooth 60fps damped turntable rotation around vertical Y axis
+  useFrame((_, delta) => {
+    if (!turntableRef.current) return;
+    currentYaw.current = THREE.MathUtils.damp(
+      currentYaw.current,
+      targetYaw.current,
+      VEHICLE_INTERACTION_CONFIG.rotationDamping,
+      delta
+    );
+    turntableRef.current.rotation.y = currentYaw.current;
+  });
+
+  const handleTurntablePointerDown = (e: ThreeEvent<PointerEvent>) => {
+    // Only primary left button rotates the vehicle
+    if (e.button !== 0) return;
+    e.stopPropagation();
+
+    // Immediately pause OrbitControls so camera does not orbit during vehicle drag
+    notifyVehiclePointerDown();
+
+    pointerDownPos.current = { x: e.clientX, y: e.clientY };
+    lastPointerX.current = e.clientX;
+    isVehicleDraggingRef.current = false;
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (!pointerDownPos.current) return;
+      const dx = moveEvent.clientX - pointerDownPos.current.x;
+      const dy = moveEvent.clientY - pointerDownPos.current.y;
+      const dist = Math.hypot(dx, dy);
+
+      if (dist > VEHICLE_INTERACTION_CONFIG.clickDragThresholdPx) {
+        if (!isVehicleDraggingRef.current) {
+          isVehicleDraggingRef.current = true;
+          notifyVehicleDragStart();
+          document.body.style.cursor = 'grabbing';
+        }
+        const deltaX = moveEvent.clientX - lastPointerX.current;
+        targetYaw.current += deltaX * VEHICLE_INTERACTION_CONFIG.rotationSensitivity;
+        lastPointerX.current = moveEvent.clientX;
+      }
+    };
+
+    const handlePointerUp = () => {
+      if (isVehicleDraggingRef.current) {
+        notifyVehicleDragEnd();
+        setVehicleYaw(targetYaw.current);
+      }
+      notifyVehiclePointerUp();
+      pointerDownPos.current = null;
+      document.body.style.cursor = 'auto';
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  };
 
   // 1. Loading State in 3D Space (also shown while auth is initializing)
   if (!authReady || isLoading) {
     return (
-      <group position={[-8, 0.14, 4]}>
+      <group position={vehiclePosition}>
         <Html position={[0, 1.8, 0]} center distanceFactor={8.5} style={{ pointerEvents: 'none', userSelect: 'none' }}>
           <div
             style={{
@@ -110,7 +207,7 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
   // 2. Error State in 3D Space
   if (isError) {
     return (
-      <group position={[-8, 0.14, 4]}>
+      <group position={vehiclePosition}>
         <Html position={[0, 1.8, 0]} center distanceFactor={8.5} style={{ pointerEvents: 'auto', userSelect: 'none' }}>
           <div
             style={{
@@ -198,7 +295,7 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
   // 3. Empty State in 3D Space (No vehicles found in database)
   if (!vehicles || vehicles.length === 0) {
     return (
-      <group position={[-8, 0.14, 4]}>
+      <group position={vehiclePosition}>
         <Html position={[0, 1.8, 0]} center distanceFactor={8.5} style={{ pointerEvents: 'none', userSelect: 'none' }}>
           <div
             style={{
@@ -248,14 +345,16 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
     vehicleHandoverMode ||
     vehicleReceiptReviewMode ||
     vehicleTripStartMode ||
-    vehicleTripVisualizationMode;
+    vehicleTripVisualizationMode ||
+    vehicleDamageMappingMode;
 
-  // Section 2: EV01 click must set both selection and mode explicitly
   const handleVehicleSelect = (selectedVehicle: VehicleResponse) => {
     selectVehicle(selectedVehicle.id, role);
   };
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
+    // Prevent accidental selection during camera orbit/drag or vehicle turntable drag
+    if (isRecentDragInteraction(e.delta) || isVehicleDraggingRef.current) return;
     if (isBusinessModeActive) return;
     e.stopPropagation();
     handleVehicleSelect(vehicle);
@@ -265,7 +364,7 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
     if (isBusinessModeActive) return;
     e.stopPropagation();
     hoverVehicle(displayCode);
-    document.body.style.cursor = 'pointer';
+    document.body.style.cursor = 'grab';
   };
 
   const handlePointerOut = (e: ThreeEvent<PointerEvent>) => {
@@ -274,7 +373,9 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
     if (hoveredVehicleId === vehicle.id || hoveredVehicleId === displayCode) {
       hoverVehicle(null);
     }
-    document.body.style.cursor = 'auto';
+    if (!isVehicleDraggingRef.current) {
+      document.body.style.cursor = 'auto';
+    }
   };
 
   // Section 4: Panel Render Condition
@@ -305,38 +406,65 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
     !isBusinessModeActive;
 
   return (
-    // Situated on the Vehicle Zone parking pad (center: x=-8, y=0.14, z=4)
-    <group
-      position={[-8, 0.14, 4]}
-      rotation={[0, 0, 0]}
-      onClick={handleClick}
-      onPointerOver={handlePointerOver}
-      onPointerOut={handlePointerOut}
-    >
-      {/* 1. Selection & Hover Underglow Halo */}
-      <VehicleSelectionEffect isSelected={isSelected} isHovered={isHovered} />
+    // Situated on the Vehicle Zone parking pad
+    <group position={vehiclePosition}>
+      {/* 360-Degree Interactive Vehicle Turntable Group */}
+      <group
+        ref={turntableRef}
+        rotation={[0, currentYaw.current, 0]}
+        onPointerDown={handleTurntablePointerDown}
+        onClick={handleClick}
+        onPointerOver={handlePointerOver}
+        onPointerOut={handlePointerOut}
+      >
+        {/* 1. Selection & Hover Underglow Halo */}
+        <VehicleSelectionEffect isSelected={isSelected} isHovered={isHovered} />
 
-      {/* 2. Real EV 3D GLB Model (dynamic path from backend) */}
-      <Suspense fallback={null}>
-        <VehicleModel
-          isSelected={isSelected}
-          isHovered={isHovered}
-          modelUrl={vehicle.model3dUrl || '/models/ev-car.glb'}
+        {/* 2. Real EV 3D GLB Model (Visual Only) */}
+        <Suspense fallback={null}>
+          <VehicleModel
+            isSelected={isSelected}
+            isHovered={isHovered}
+            modelUrl={getVehicleModelUrl(vehicle.model3dUrl)}
+            onSelectVehicle={() => handleVehicleSelect(vehicle)}
+            onPointerDown={handleTurntablePointerDown}
+          />
+        </Suspense>
+
+        {/* 2b. Decoupled Semantic Interaction Hitbox Layer (rotates with car) */}
+        <VehicleInteractionHitboxes
           onSelectVehicle={() => handleVehicleSelect(vehicle)}
+          onPointerDown={handleTurntablePointerDown}
         />
-      </Suspense>
+      </group>
 
-      {/* 3. Floating 3D Status Pill Indicator (shown only before vehicle is selected) */}
-      {!isSelected && !vehicleInspectionMode && !vehicleCoOwnershipMode && (
-        <VehicleStatusLabel
-          id={displayCode}
-          name={vehicle.name}
-          status={vehicle.status}
-          batteryLevel={vehicle.currentBatteryLevel}
-          isSelected={isSelected}
-          isHovered={isHovered}
-        />
-      )}
+      {/* 3. Floating 3D Status Pill Indicator (shown only in overview mode when no zone/vehicle is focused) */}
+      {!isSelected &&
+        !vehicleInspectionMode &&
+        !vehicleCoOwnershipMode &&
+        shouldShowVehicleStatusLabel({
+          selectedZone,
+          selectedVehicleId,
+          isVehicleSelected,
+          vehicleBookingMode,
+          vehicleCoOwnershipMode,
+          vehicleHandoverMode,
+          vehicleReceiptReviewMode,
+          vehicleTripStartMode,
+          vehicleTripVisualizationMode,
+          vehicleDamageMappingMode,
+          vehicleInspectionMode,
+          selectedVehiclePartId,
+        }) && (
+          <VehicleStatusLabel
+            id={displayCode}
+            name={vehicle.name}
+            status={vehicle.status}
+            batteryLevel={vehicle.currentBatteryLevel}
+            isSelected={isSelected}
+            isHovered={isHovered}
+          />
+        )}
 
       {/* 4. World-Space Spatial Vehicle Information Card with 3D Holographic Frame & Connector */}
       {shouldRenderVehicleOverview && (
@@ -352,7 +480,7 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
             <Billboard follow={true}>
               <HolographicPanelFrame3D
                 width={2.55}
-                height={role === 'STAFF' ? 4.2 : 3.4}
+                height={3.4}
                 color={role === 'ADMIN' ? '#a855f7' : role === 'CO_OWNER' ? '#10b981' : '#00f2fe'}
               />
               <Html
@@ -424,6 +552,11 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
       {/* 11. Phase 11: Pure 3D Trip Visualization View */}
       {vehicleTripVisualizationMode && (
         <TripVisualizationWorld vehicle={vehicle} />
+      )}
+
+      {/* 12. Phase 13: Pure 3D Damage Mapping View */}
+      {vehicleDamageMappingMode && (
+        <VehicleDamageWorld vehicle={vehicle} />
       )}
     </group>
   );

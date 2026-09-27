@@ -27,36 +27,36 @@ export const VehicleSelectionEffect: React.FC<VehicleSelectionEffectProps> = ({
 
   return (
     <group position={[0, 0.01, 0]}>
-      {/* 1. Primary Underglow Projection */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
-        <planeGeometry args={[2.8, 5.0]} />
+      {/* 1. Primary Soft Architectural Ground Light Projection */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.005, 0]}>
+        <planeGeometry args={[3.2, 5.4]} />
         <meshBasicMaterial
-          color={isSelected ? '#00f2fe' : '#38bdf8'}
+          color={isSelected ? '#0284c7' : '#38bdf8'}
           transparent
-          opacity={isSelected ? 0.35 : 0.15}
+          opacity={isSelected ? 0.22 : 0.08}
           side={THREE.DoubleSide}
         />
       </mesh>
 
-      {/* 2. Concentric Orbiting Selection Ring (Active when selected) */}
+      {/* 2. Concentric Fine Showroom Ring (Active when selected) */}
       {isSelected && (
         <>
-          <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-            <ringGeometry args={[2.5, 2.65, 48]} />
+          <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.015, 0]}>
+            <ringGeometry args={[2.55, 2.65, 48]} />
             <meshBasicMaterial
               color="#00f2fe"
               transparent
-              opacity={0.8}
+              opacity={0.65}
               side={THREE.DoubleSide}
             />
           </mesh>
 
-          <mesh ref={outerRingRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+          <mesh ref={outerRingRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.015, 0]}>
             <ringGeometry args={[2.85, 2.92, 48]} />
             <meshBasicMaterial
               color="#38bdf8"
               transparent
-              opacity={0.4}
+              opacity={0.35}
               side={THREE.DoubleSide}
             />
           </mesh>

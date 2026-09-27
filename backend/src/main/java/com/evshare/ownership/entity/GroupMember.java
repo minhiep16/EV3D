@@ -46,6 +46,9 @@ public class GroupMember {
     @Column(name = "joined_at", updatable = false)
     private Instant joinedAt;
 
+    @Column(name = "removed_at")
+    private Instant removedAt;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;
@@ -130,6 +133,14 @@ public class GroupMember {
 
     public void setJoinedAt(Instant joinedAt) {
         this.joinedAt = joinedAt;
+    }
+
+    public Instant getRemovedAt() {
+        return removedAt;
+    }
+
+    public void setRemovedAt(Instant removedAt) {
+        this.removedAt = removedAt;
     }
 
     public Instant getCreatedAt() {

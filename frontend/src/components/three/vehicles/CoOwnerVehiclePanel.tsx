@@ -9,6 +9,7 @@ import { fetchVehicleBookings } from '../../../services/bookingApi';
 import { fetchActiveTripForVehicle, fetchTripStartEligibility } from '../../../services/tripApi';
 import { useAuthStore } from '../../../store/authStore';
 import { useWorldStore, VEHICLE_STATUS_LABELS } from '../../../store/worldStore';
+import { useCoOwnerTripPrerequisites } from '../../../hooks/useCoOwnerTripPrerequisites';
 import {
   Car,
   Zap,
@@ -56,6 +57,31 @@ function formatTimeRange(startIso?: string, endIso?: string): string {
   }
 }
 
+function formatDateTime(isoString?: string | null): string {
+  if (!isoString) return '--:-- --/--/----';
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return '--:-- --/--/----';
+    const time = d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${time} ${day}/${month}/${year}`;
+  } catch {
+    return '--:-- --/--/----';
+  }
+}
+
+function isTripOverdue(bookingEndTime?: string | null): boolean {
+  if (!bookingEndTime) return false;
+  try {
+    const end = new Date(bookingEndTime).getTime();
+    return !isNaN(end) && end < Date.now();
+  } catch {
+    return false;
+  }
+}
+
 interface CoOwnerVehiclePanelProps {
   vehicle: VehicleResponse;
   onClose: () => void;
@@ -98,12 +124,15 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
     refetchInterval: 3000,
   });
 
+  const isVehicleInUse = vehicle.status === 'IN_USE';
   const isTripActive = !!activeTrip && activeTrip.status === 'ACTIVE';
+  const isInconsistentInUseState = isVehicleInUse && !isTripActive;
   const isMyActiveTrip = isTripActive && !!activeTrip && (
     (!!user?.id && activeTrip.userId === user.id) ||
     (!!user?.email && activeTrip.userEmail === user.email)
   );
   const isOtherUserActiveTrip = isTripActive && !isMyActiveTrip;
+  const isOverdue = isTripActive && isTripOverdue(activeTrip.bookingEndTime);
 
   // Resolve upcoming booking for this vehicle / user
   const upcomingBooking = React.useMemo(() => {
@@ -123,7 +152,7 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
 
   // Check if CO_OWNER has an active handover ready for receipt / check-in (HANDED_OVER status)
   const isEligibleForCheckIn = React.useMemo(() => {
-    if (isTripActive) return false;
+    if (isTripActive || isVehicleInUse) return false;
     const list = Array.isArray(activeHandovers) ? activeHandovers : [];
     if (list.length === 0) return false;
     return list.some(
@@ -132,32 +161,16 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
         (h.status === 'HANDED_OVER' || h.status === 'READY_FOR_HANDOVER') &&
         (!user?.id || h.coOwnerId === user?.id || h.coOwnerEmail === user?.email)
     );
-  }, [activeHandovers, user, isTripActive]);
+  }, [activeHandovers, user, isTripActive, isVehicleInUse]);
 
-  // Resolve completed handover for current user (Phase 10 transition prerequisite)
-  const completedHandover = React.useMemo(() => {
-    const list = Array.isArray(activeHandovers) ? activeHandovers : [];
-    if (list.length === 0) return null;
-    return (
-      list.find(
-        (h) =>
-          h &&
-          (h.status === 'COMPLETED' || h.status === 'OWNER_CONFIRMED') &&
-          (!user?.id || h.coOwnerId === user?.id || h.coOwnerEmail === user?.email)
-      ) || null
-    );
-  }, [activeHandovers, user]);
-
-  // If completed handover exists and trip is not active, check trip start eligibility
-  const { data: tripEligibility } = useQuery<TripStartEligibilityData | null>({
-    queryKey: ['tripEligibility', completedHandover?.bookingId],
-    queryFn: () =>
-      completedHandover?.bookingId
-        ? fetchTripStartEligibility(completedHandover.bookingId)
-        : Promise.resolve(null),
-    enabled: authReady && !!completedHandover?.bookingId && (!activeTrip || activeTrip.status !== 'ACTIVE'),
-    refetchInterval: 4000,
-  });
+  // Authoritative CO_OWNER Trip Prerequisites derived from booking-specific identity chain
+  const {
+    candidateBooking,
+    completedHandover,
+    tripEligibility,
+    isEligibilityError,
+    eligibilityErrorMessage,
+  } = useCoOwnerTripPrerequisites(vehicle.id, isTripActive);
 
   const displayCode = 'EV01';
   const statusConfig = isTripActive
@@ -410,13 +423,13 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
           <span>LỊCH GẦN NHẤT / LỊCH CỦA TÔI</span>
         </div>
 
-        {upcomingBooking ? (
+        {(candidateBooking || upcomingBooking) ? (
           <div style={{ fontSize: '12px' }}>
             <div style={{ fontWeight: 700, color: '#ffffff' }}>
-              {formatDate(upcomingBooking.startTime)}
+              {formatDate((candidateBooking || upcomingBooking)!.startTime)}
             </div>
             <div style={{ color: '#34d399', fontWeight: 600, fontSize: '11.5px' }}>
-              {formatTimeRange(upcomingBooking.startTime, upcomingBooking.endTime)}
+              {formatTimeRange((candidateBooking || upcomingBooking)!.startTime, (candidateBooking || upcomingBooking)!.endTime)}
             </div>
           </div>
         ) : (
@@ -480,6 +493,33 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
         </div>
       )}
 
+      {/* Inconsistent State: Vehicle IN_USE but no ACTIVE trip found */}
+      {isInconsistentInUseState && (
+        <div
+          style={{
+            background: 'rgba(239, 68, 68, 0.15)',
+            border: '1px solid rgba(239, 68, 68, 0.5)',
+            boxShadow: '0 0 16px rgba(239, 68, 68, 0.15)',
+            borderRadius: '12px',
+            padding: '12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+            marginBottom: '14px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#f87171' }}>
+            <AlertTriangle size={16} />
+            <span style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.04em' }}>
+              CẢNH BÁO TRẠNG THÁI XE
+            </span>
+          </div>
+          <div style={{ fontSize: '11px', color: '#fca5a5', lineHeight: '1.4' }}>
+            Xe đang được đánh dấu IN_USE nhưng không tìm thấy chuyến đi đang hoạt động.
+          </div>
+        </div>
+      )}
+
       {isOtherUserActiveTrip && activeTrip && (
         <div
           style={{
@@ -495,9 +535,26 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: '11px', fontWeight: 800, color: '#fbbf24', letterSpacing: '0.04em' }}>
-              XE ĐANG ĐƯỢC SỬ DỤNG
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 800, color: '#fbbf24', letterSpacing: '0.04em' }}>
+                XE ĐANG ĐƯỢC SỬ DỤNG
+              </span>
+              {isOverdue && (
+                <span
+                  style={{
+                    fontSize: '9px',
+                    fontWeight: 800,
+                    background: 'rgba(239, 68, 68, 0.25)',
+                    color: '#f87171',
+                    border: '1px solid rgba(239, 68, 68, 0.5)',
+                    padding: '1px 6px',
+                    borderRadius: '4px',
+                  }}
+                >
+                  QUÁ GIỜ
+                </span>
+              )}
+            </div>
             <span
               style={{
                 fontSize: '9.5px',
@@ -513,19 +570,19 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
           </div>
 
           <div style={{ fontSize: '11px', color: '#f1f5f9', marginTop: '2px', display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: '#94a3b8' }}>Người sử dụng:</span>
+            <span style={{ color: '#94a3b8' }}>Người đang sử dụng:</span>
             <strong style={{ color: '#ffffff' }}>{activeTrip.userName || 'Thành viên nhóm'}</strong>
           </div>
 
           <div style={{ fontSize: '11px', color: '#f1f5f9', display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ color: '#94a3b8' }}>Bắt đầu:</span>
             <span style={{ color: '#cbd5e1' }}>
-              {new Date(activeTrip.startedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} ({formatDate(activeTrip.startedAt)})
+              {formatDateTime(activeTrip.startedAt)}
             </span>
           </div>
 
           <div style={{ fontSize: '11px', color: '#f1f5f9', display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: '#94a3b8' }}>Khung giờ:</span>
+            <span style={{ color: '#94a3b8' }}>Khung giờ đặt:</span>
             <span style={{ color: '#fbbf24', fontWeight: 700 }}>
               {formatTimeRange(activeTrip.bookingStartTime, activeTrip.bookingEndTime)}
             </span>
@@ -533,22 +590,45 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
 
           <div style={{ fontSize: '11px', color: '#f1f5f9', display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ color: '#94a3b8' }}>Dự kiến khả dụng:</span>
-            <span style={{ color: '#34d399', fontWeight: 700 }}>
-              {activeTrip.bookingEndTime
-                ? `${new Date(activeTrip.bookingEndTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} (${formatDate(activeTrip.bookingEndTime)})`
+            <span style={{ color: isOverdue ? '#f87171' : '#34d399', fontWeight: 700 }}>
+              {isOverdue
+                ? 'CHUYẾN ĐI ĐANG QUÁ GIỜ'
+                : activeTrip.bookingEndTime
+                ? formatDateTime(activeTrip.bookingEndTime)
                 : 'Sau khi trả xe'}
             </span>
           </div>
 
+          {isOverdue && (
+            <div
+              style={{
+                fontSize: '10.5px',
+                color: '#f87171',
+                background: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                borderRadius: '6px',
+                padding: '5px 8px',
+                marginTop: '2px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+                fontWeight: 700,
+              }}
+            >
+              <AlertTriangle size={12} />
+              <span>CHUYẾN ĐI ĐANG QUÁ GIỜ</span>
+            </div>
+          )}
+
           <div style={{ fontSize: '10.5px', color: '#38bdf8', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '5px' }}>
             <Calendar size={12} color="#38bdf8" />
-            <span>Bạn vẫn có thể đặt lịch tương lai (không trùng thời gian).</span>
+            <span>Bạn vẫn có thể đặt lịch tương lai nếu không trùng thời gian.</span>
           </div>
         </div>
       )}
 
       {/* Phase 10: Trip Start Eligibility Notice (Section 15) */}
-      {!isTripActive && completedHandover && (
+      {!isTripActive && !isVehicleInUse && completedHandover && (
         <div style={{ marginBottom: '14px' }}>
           {tripEligibility?.eligible ? (
             <div
@@ -586,23 +666,51 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
               <AlertTriangle size={15} />
               <span>XE ĐÃ NHẬN — {tripEligibility.message || 'CHƯA ĐẾN THỜI GIAN SỬ DỤNG XE'}</span>
             </div>
+          ) : isEligibilityError ? (
+            <div
+              style={{
+                background: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                borderRadius: '12px',
+                padding: '10px 12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                color: '#f87171',
+                fontSize: '11px',
+                fontWeight: 600,
+              }}
+            >
+              <AlertTriangle size={15} />
+              <span>{eligibilityErrorMessage || 'Không thể kiểm tra điều kiện bắt đầu chuyến đi.'}</span>
+            </div>
           ) : null}
         </div>
       )}
 
       {/* Section 3: Exact Role Actions */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {/* Phase 11: Primary Trip Action - XEM CHUYẾN ĐI (Current Owner Only) */}
+        {/* Phase 11 & 12: Primary Trip Actions - XEM CHUYẾN ĐI & KẾT THÚC CHUYẾN ĐI (Current Owner Only) */}
         {isMyActiveTrip ? (
-          <button
-            type="button"
-            onClick={() => enterVehicleTripVisualizationMode()}
-            style={highlightActionButtonStyle('linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)', '#00f2fe')}
-          >
-            <Compass size={15} />
-            <span>XEM CHUYẾN ĐI</span>
-          </button>
-        ) : !isTripActive && completedHandover && tripEligibility?.eligible ? (
+          <>
+            <button
+              type="button"
+              onClick={() => enterVehicleTripVisualizationMode()}
+              style={highlightActionButtonStyle('linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)', '#00f2fe')}
+            >
+              <Compass size={15} />
+              <span>XEM CHUYẾN ĐI</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => enterVehicleTripVisualizationMode()}
+              style={highlightActionButtonStyle('linear-gradient(135deg, #e11d48 0%, #ef4444 100%)', '#f43f5e')}
+            >
+              <CheckCircle2 size={15} />
+              <span>KẾT THÚC CHUYẾN ĐI</span>
+            </button>
+          </>
+        ) : !isTripActive && !isVehicleInUse && completedHandover && tripEligibility?.eligible ? (
           <button
             type="button"
             onClick={() => setVehicleFeatureMode('TRIP_START')}
@@ -647,6 +755,16 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
         >
           <Search size={14} color="#34d399" />
           <span>KHÁM PHÁ XE</span>
+        </button>
+
+        {/* Phase 13: Read-only damage inspection for completed trips */}
+        <button
+          type="button"
+          onClick={() => setVehicleFeatureMode('DAMAGE_MAPPING')}
+          style={actionButtonStyle()}
+        >
+          <AlertTriangle size={14} color="#f59e0b" />
+          <span>HƯ HỎNG ĐÃ GHI NHẬN</span>
         </button>
 
         {/* Conditional Action: NHẬN XE */}

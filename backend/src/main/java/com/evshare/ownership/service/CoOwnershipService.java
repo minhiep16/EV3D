@@ -8,18 +8,25 @@ import com.evshare.ownership.repository.CoOwnershipGroupRepository;
 import com.evshare.ownership.repository.GroupMemberRepository;
 import com.evshare.ownership.repository.GroupVehicleRepository;
 import com.evshare.ownership.repository.OwnershipShareRepository;
+import com.evshare.security.UserPrincipal;
+import com.evshare.user.entity.Role;
 import com.evshare.user.entity.User;
+import com.evshare.user.entity.UserStatus;
 import com.evshare.user.repository.UserRepository;
 import com.evshare.vehicle.entity.Vehicle;
 import com.evshare.vehicle.repository.VehicleRepository;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class CoOwnershipService {
@@ -129,24 +136,79 @@ public class CoOwnershipService {
                 .toList();
     }
 
-    @Transactional
-    public GroupMemberResponse addMember(UUID groupId, AddMemberRequest request) {
+    @Transactional(readOnly = true)
+    public List<AvailableUserResponse> getAvailableUsers(UUID groupId, String query, UserPrincipal principal) {
         CoOwnershipGroup group = groupRepository.findById(groupId)
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy nhóm đồng sở hữu: " + groupId));
+                .orElseThrow(() -> new ResourceNotFoundException("Nhóm đồng sở hữu không tồn tại: " + groupId));
 
-        User user = userRepository.findById(request.userId())
-                .orElseThrow(() -> new ResourceNotFoundException("Người dùng không tồn tại: " + request.userId()));
+        List<GroupMember> activeMembers = memberRepository.findByGroupIdAndStatus(groupId, MemberStatus.ACTIVE);
+        Set<UUID> activeUserIds = activeMembers.stream()
+                .map(m -> m.getUser().getId())
+                .collect(Collectors.toSet());
 
-        if (memberRepository.existsByGroupIdAndUserId(groupId, user.getId())) {
-            throw new DuplicateResourceException("Người dùng đã là thành viên của nhóm đồng sở hữu này");
+        String searchQuery = (query != null) ? query.trim() : "";
+        List<User> matchingUsers = userRepository.searchEligibleUsers(Role.CO_OWNER, UserStatus.ACTIVE, searchQuery);
+
+        return matchingUsers.stream()
+                .filter(u -> !activeUserIds.contains(u.getId()))
+                .limit(10)
+                .map(u -> new AvailableUserResponse(u.getId(), u.getFullName(), u.getEmail()))
+                .toList();
+    }
+
+    @Transactional
+    public GroupMemberResponse addMember(UUID groupId, AddMemberRequest request, UserPrincipal principal) {
+        CoOwnershipGroup group = groupRepository.findById(groupId)
+                .orElseThrow(() -> new ResourceNotFoundException("Nhóm đồng sở hữu không tồn tại: " + groupId));
+
+        if (principal != null) {
+            validateGroupMembershipManagementPermission(group, principal);
         }
 
-        GroupMemberRole role = request.memberRole() != null ? request.memberRole() : GroupMemberRole.MEMBER;
-        MemberStatus status = request.status() != null ? request.status() : MemberStatus.ACTIVE;
+        if (request == null || (request.userId() == null && (request.email() == null || request.email().isBlank()))) {
+            throw new IllegalArgumentException("Vui lòng cung cấp userId hoặc email của người dùng");
+        }
 
-        GroupMember member = new GroupMember(UUID.randomUUID(), group, user, role, status);
+        User targetUser;
+        if (request.userId() != null) {
+            targetUser = userRepository.findById(request.userId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Người dùng không tồn tại"));
+        } else {
+            targetUser = userRepository.findByEmail(request.email().trim())
+                    .orElseThrow(() -> new ResourceNotFoundException("Người dùng không tồn tại"));
+        }
+
+        if (targetUser.getRole() != Role.CO_OWNER) {
+            throw new IllegalArgumentException("Người dùng không đủ điều kiện tham gia nhóm đồng sở hữu (chỉ chấp nhận vai trò CO_OWNER)");
+        }
+        if (targetUser.getStatus() != UserStatus.ACTIVE) {
+            throw new IllegalArgumentException("Tài khoản người dùng hiện không ở trạng thái hoạt động");
+        }
+
+        Optional<GroupMember> existingMemberOpt = memberRepository.findByGroupIdAndUserId(groupId, targetUser.getId());
+        if (existingMemberOpt.isPresent()) {
+            GroupMember existing = existingMemberOpt.get();
+            if (existing.getStatus() == MemberStatus.ACTIVE) {
+                throw new DuplicateResourceException("Người dùng đã là thành viên của nhóm.");
+            }
+            // Reactivate member previously marked INACTIVE or REMOVED
+            existing.setStatus(MemberStatus.ACTIVE);
+            existing.setMemberRole(GroupMemberRole.MEMBER);
+            existing.setJoinedAt(Instant.now());
+            existing.setRemovedAt(null);
+            GroupMember saved = memberRepository.save(existing);
+            return toMemberResponse(saved, null);
+        }
+
+        // Target user is added with role MEMBER and status ACTIVE without creating ownership share
+        GroupMember member = new GroupMember(UUID.randomUUID(), group, targetUser, GroupMemberRole.MEMBER, MemberStatus.ACTIVE);
         GroupMember saved = memberRepository.save(member);
         return toMemberResponse(saved, null);
+    }
+
+    @Transactional
+    public GroupMemberResponse addMember(UUID groupId, AddMemberRequest request) {
+        return addMember(groupId, request, null);
     }
 
     @Transactional
@@ -170,7 +232,14 @@ public class CoOwnershipService {
     }
 
     @Transactional
-    public void removeMember(UUID groupId, UUID memberId) {
+    public void removeMember(UUID groupId, UUID memberId, UserPrincipal principal) {
+        CoOwnershipGroup group = groupRepository.findById(groupId)
+                .orElseThrow(() -> new ResourceNotFoundException("Nhóm đồng sở hữu không tồn tại: " + groupId));
+
+        if (principal != null) {
+            validateGroupMembershipManagementPermission(group, principal);
+        }
+
         GroupMember member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy thành viên: " + memberId));
 
@@ -178,10 +247,58 @@ public class CoOwnershipService {
             throw new IllegalArgumentException("Thành viên không thuộc nhóm chỉ định");
         }
 
-        // Set status to REMOVED and remove their shares
-        member.setStatus(MemberStatus.REMOVED);
-        shareRepository.deleteByMemberId(memberId);
+        if (member.getStatus() == MemberStatus.INACTIVE || member.getStatus() == MemberStatus.REMOVED) {
+            throw new IllegalStateException("Thành viên đã bị xoá khỏi nhóm trước đó.");
+        }
+
+        // Multi-vehicle safety check: check ownership share across ALL vehicles associated with the group
+        List<OwnershipShare> memberShares = shareRepository.findByMemberId(memberId);
+        boolean hasActiveShare = memberShares.stream()
+                .anyMatch(s -> s.getPercentage() != null && s.getPercentage().compareTo(BigDecimal.ZERO) > 0);
+
+        if (hasActiveShare) {
+            throw new IllegalStateException("Thành viên vẫn còn tỷ lệ sở hữu. Vui lòng chuyển hoặc cập nhật tỷ lệ sở hữu trước khi xoá khỏi nhóm.");
+        }
+
+        // Soft removal: preserve historical records, do not delete past booking/trip/handover history
+        member.setStatus(MemberStatus.INACTIVE);
+        member.setRemovedAt(Instant.now());
         memberRepository.save(member);
+    }
+
+    @Transactional
+    public void removeMember(UUID groupId, UUID memberId) {
+        removeMember(groupId, memberId, null);
+    }
+
+    private void validateGroupMembershipManagementPermission(CoOwnershipGroup group, UserPrincipal principal) {
+        if (principal == null || principal.getUser() == null) {
+            throw new AccessDeniedException("Yêu cầu xác thực tài khoản");
+        }
+
+        User caller = principal.getUser();
+        if (caller.getRole() != Role.CO_OWNER) {
+            throw new AccessDeniedException("Bạn không có quyền quản lý thành viên của nhóm.");
+        }
+
+        UUID callerId = caller.getId();
+
+        // 1. Group creator has management authority
+        if (group.getCreatedBy() != null && group.getCreatedBy().equals(callerId)) {
+            return;
+        }
+
+        // 2. Active member with REPRESENTATIVE or ADMIN role inside this group
+        Optional<GroupMember> callerMemberOpt = memberRepository.findByGroupIdAndUserId(group.getId(), callerId);
+        if (callerMemberOpt.isPresent()) {
+            GroupMember callerMember = callerMemberOpt.get();
+            if (callerMember.getStatus() == MemberStatus.ACTIVE &&
+                    (callerMember.getMemberRole() == GroupMemberRole.REPRESENTATIVE || callerMember.getMemberRole() == GroupMemberRole.ADMIN)) {
+                return;
+            }
+        }
+
+        throw new AccessDeniedException("Bạn không có quyền quản lý thành viên của nhóm.");
     }
 
     // ==========================================
@@ -464,6 +581,7 @@ public class CoOwnershipService {
                 member.getMemberRole(),
                 member.getStatus(),
                 member.getJoinedAt(),
+                member.getRemovedAt(),
                 shareResponse
         );
     }

@@ -4,6 +4,7 @@ import { Html, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
 import { GroupMemberResponse } from '../../../types/coOwnership';
 import { useWorldStore } from '../../../store/worldStore';
+import { INTERACTION_CONFIG } from '../../../config/interactionConfig';
 
 interface OwnerOrb3DProps {
   member: GroupMemberResponse;
@@ -71,6 +72,7 @@ export const OwnerOrb3D: React.FC<OwnerOrb3DProps> = ({
   };
 
   const handleClick = (e: ThreeEvent<MouseEvent> | React.MouseEvent) => {
+    if ('delta' in e && e.delta > INTERACTION_CONFIG.clickDragThresholdPx) return;
     e.stopPropagation();
     selectOwner(isSelected ? null : member.id);
   };

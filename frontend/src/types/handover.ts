@@ -204,14 +204,14 @@ export interface HandoverCheckpoint {
 }
 
 export const HANDOVER_CHECKPOINTS: HandoverCheckpoint[] = [
-  { code: 'BODY', nameVi: 'Thân xe', categoryVi: 'Khung vỏ', localPosition: [0, 0.65, 0] },
-  { code: 'WHEEL_FL', nameVi: 'Bánh trước trái', categoryVi: 'Bánh xe', localPosition: [-0.95, 0.36, 1.35] },
-  { code: 'WHEEL_FR', nameVi: 'Bánh trước phải', categoryVi: 'Bánh xe', localPosition: [0.95, 0.36, 1.35] },
-  { code: 'WHEEL_RL', nameVi: 'Bánh sau trái', categoryVi: 'Bánh xe', localPosition: [-0.95, 0.36, -1.35] },
-  { code: 'WHEEL_RR', nameVi: 'Bánh sau phải', categoryVi: 'Bánh xe', localPosition: [0.95, 0.36, -1.35] },
-  { code: 'WINDSHIELD', nameVi: 'Kính chắn gió', categoryVi: 'Kính & Tầm nhìn', localPosition: [0, 0.95, 0.2] },
-  { code: 'BATTERY', nameVi: 'Bộ pin cao áp', categoryVi: 'Năng lượng', localPosition: [0, 0.22, 0] },
-  { code: 'CHARGING_PORT', nameVi: 'Cổng sạc', categoryVi: 'Hệ thống sạc', localPosition: [-0.95, 0.65, -1.6] },
+  { code: 'BODY', nameVi: 'Thân xe', categoryVi: 'Khung vỏ', localPosition: [0, 0.72, 0] },
+  { code: 'WHEEL_FL', nameVi: 'Bánh trước trái', categoryVi: 'Bánh xe', localPosition: [-0.85, 0.36, 1.31] },
+  { code: 'WHEEL_FR', nameVi: 'Bánh trước phải', categoryVi: 'Bánh xe', localPosition: [0.85, 0.36, 1.31] },
+  { code: 'WHEEL_RL', nameVi: 'Bánh sau trái', categoryVi: 'Bánh xe', localPosition: [-0.85, 0.36, -1.31] },
+  { code: 'WHEEL_RR', nameVi: 'Bánh sau phải', categoryVi: 'Bánh xe', localPosition: [0.85, 0.36, -1.31] },
+  { code: 'WINDSHIELD', nameVi: 'Kính chắn gió', categoryVi: 'Kính & Tầm nhìn', localPosition: [0, 1.15, 0.45] },
+  { code: 'BATTERY', nameVi: 'Bộ pin cao áp', categoryVi: 'Năng lượng', localPosition: [0, 0.20, 0] },
+  { code: 'CHARGING_PORT', nameVi: 'Cổng sạc', categoryVi: 'Hệ thống sạc', localPosition: [-0.92, 0.82, -1.40] },
 ];
 
 export function getCheckpointByCode(code: string): HandoverCheckpoint | undefined {

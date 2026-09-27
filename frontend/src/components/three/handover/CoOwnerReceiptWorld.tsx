@@ -130,8 +130,10 @@ export const CoOwnerReceiptWorld: React.FC<CoOwnerReceiptWorldProps> = ({ vehicl
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandovers', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandover', vehicle.id] }),
-        queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['vehicleBookings', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['bookingHandover'] }),
         queryClient.invalidateQueries({ queryKey: ['tripEligibility'] }),
+        queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['vehicles'] }),
       ]);
     } catch (err: any) {

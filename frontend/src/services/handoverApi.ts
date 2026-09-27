@@ -62,12 +62,21 @@ export async function fetchActiveVehicleHandovers(
 
 export async function fetchBookingHandover(
   bookingId: string
-): Promise<VehicleHandoverData> {
+): Promise<VehicleHandoverData | null> {
   try {
     const res = await authenticatedFetch(`/api/bookings/${bookingId}/handover`);
+    if (res.status === 404 || res.status === 204) {
+      return null;
+    }
     return await safeParseResponse<VehicleHandoverData>(res);
-  } catch (err) {
-    if (err instanceof TypeError || (err instanceof Error && err.message.includes('fetch'))) {
+  } catch (err: any) {
+    if (
+      err?.status === 404 ||
+      (err?.message && (err.message.includes('404') || err.message.includes('Chưa có hồ sơ') || err.message.includes('Không tìm thấy')))
+    ) {
+      return null;
+    }
+    if (err instanceof TypeError || (err instanceof Error && err.message?.includes('fetch'))) {
       throw new Error('Không thể kết nối đến máy chủ quản lý bàn giao xe.');
     }
     throw err;

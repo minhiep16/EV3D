@@ -27,7 +27,8 @@ export type VehicleFeatureMode =
   | 'RECEIPT'
   | 'CO_OWNER_RECEIPT_REVIEW'
   | 'TRIP_START'
-  | 'TRIP_VISUALIZATION';
+  | 'TRIP_VISUALIZATION'
+  | 'DAMAGE_MAPPING';
 
 export type VehicleStatus =
   | 'AVAILABLE'
@@ -54,75 +55,101 @@ export interface CameraPreset {
   position: [number, number, number];
 }
 
-export const ZONE_CAMERA_PRESETS: Record<
-  GarageZone | 'OVERVIEW' | 'VEHICLE_FOCUS' | 'VEHICLE_CO_OWNERSHIP' | 'VEHICLE_BOOKING' | 'VEHICLE_HANDOVER' | 'VEHICLE_TRIP_VISUALIZATION',
-  CameraPreset
-> = {
-  OVERVIEW: {
-    target: [0, 0.5, 2],
-    position: [0, 16, 24],
-  },
+export type PresetKey =
+  | GarageZone
+  | 'OVERVIEW'
+  | 'VEHICLE_FOCUS'
+  | 'VEHICLE_CO_OWNERSHIP'
+  | 'VEHICLE_BOOKING'
+  | 'VEHICLE_HANDOVER'
+  | 'VEHICLE_TRIP_VISUALIZATION';
 
-  VEHICLE: {
-    target: [-5.8, 1.0, 4.0],
-    position: [-5.8, 4.4, 13.2],
-  },
+import {
+  getGarageZoneCameraPreset,
+  overviewCamera,
+  vehicleZoneCamera,
+  chargingZoneCamera,
+  financeZoneCamera,
+  aiZoneCamera,
+  analyticsZoneCamera,
+  maintenanceZoneCamera,
+  governanceZoneCamera,
+} from '../config/garageCameraConfig';
 
-  VEHICLE_FOCUS: {
-    target: [-5.8, 1.0, 4.0],
-    position: [-5.8, 4.4, 13.2],
-  },
-
+export const OPERATIONS_CAMERA_PRESETS: Record<PresetKey, CameraPreset> = {
+  OVERVIEW: overviewCamera('OPERATIONS'),
+  VEHICLE: vehicleZoneCamera('OPERATIONS'),
+  VEHICLE_FOCUS: vehicleZoneCamera('OPERATIONS'),
   VEHICLE_CO_OWNERSHIP: {
-    target: [-7.8, 1.35, 4.0],
-    position: [-7.8, 4.0, 14.8],
+    target: [0.6, 1.45, 0.5],
+    position: [0.6, 3.4, 10.9],
   },
-
   VEHICLE_BOOKING: {
-    target: [-4.6, 1.15, 4.0],
-    position: [-4.6, 4.6, 14.2],
+    target: [1.25, 1.15, 0.5],
+    position: [1.25, 3.3, 11.1],
   },
-
   VEHICLE_HANDOVER: {
-    target: [-5.6, 1.1, 4.0],
-    position: [-5.6, 4.4, 13.5],
+    target: [0.95, 1.09, 0.5],
+    position: [0.95, 3.2, 10.7],
   },
-
   VEHICLE_TRIP_VISUALIZATION: {
-    target: [-5.6, 1.1, 4.0],
-    position: [-4.2, 4.2, 14.5],
+    target: [0.95, 1.09, 0.5],
+    position: [1.3, 3.3, 10.9],
   },
-
-  CHARGING: {
-    target: [8.9, 1.0, 4],
-    position: [8.9, 4.4, 10.5],
-  },
-
-  MAINTENANCE: {
-    target: [0.9, 1.0, 6],
-    position: [0.9, 4.5, 12.5],
-  },
-
-  FINANCE: {
-    target: [-7.1, 1.2, -5],
-    position: [-7.1, 4.4, 0.8],
-  },
-
-  GOVERNANCE: {
-    target: [8.9, 1.2, -5],
-    position: [8.9, 4.4, 0.8],
-  },
-
-  ANALYTICS: {
-    target: [0.9, 1.4, -8],
-    position: [0.9, 4.5, -2.0],
-  },
-
-  AI: {
-    target: [0.85, 1.6, 13],
-    position: [0.85, 4.5, 18.8],
-  },
+  CHARGING: chargingZoneCamera('OPERATIONS'),
+  MAINTENANCE: maintenanceZoneCamera('OPERATIONS'),
+  FINANCE: financeZoneCamera('OPERATIONS'),
+  GOVERNANCE: governanceZoneCamera('OPERATIONS'),
+  ANALYTICS: analyticsZoneCamera('OPERATIONS'),
+  AI: aiZoneCamera('OPERATIONS'),
 };
+
+/**
+ * Dedicated Camera Presets for CO_OWNER Presentation Mode
+ * Reference layout:
+ *                 [ TRỢ LÝ AI (-2.2, -4.2) ]
+ * [ TÀI CHÍNH (-5.4, -0.6) ]         [ PHÂN TÍCH (3.0, -4.0) ]
+ *                   [ EV01 (0.0, 1.8) ]    [ SẠC (5.0, 0.8) ]
+ */
+export const CO_OWNER_CAMERA_PRESETS: Record<PresetKey, CameraPreset> = {
+  OVERVIEW: overviewCamera('CO_OWNER'),
+  VEHICLE: vehicleZoneCamera('CO_OWNER'),
+  VEHICLE_FOCUS: vehicleZoneCamera('CO_OWNER'),
+  VEHICLE_CO_OWNERSHIP: {
+    target: [0.6, 1.45, 1.8],
+    position: [0.6, 3.4, 12.2],
+  },
+  VEHICLE_BOOKING: {
+    target: [1.25, 1.15, 1.8],
+    position: [1.25, 3.3, 12.4],
+  },
+  VEHICLE_HANDOVER: {
+    target: [0.95, 1.09, 1.8],
+    position: [0.95, 3.2, 12.0],
+  },
+  VEHICLE_TRIP_VISUALIZATION: {
+    target: [0.95, 1.09, 1.8],
+    position: [1.3, 3.3, 12.2],
+  },
+  CHARGING: chargingZoneCamera('CO_OWNER'),
+  MAINTENANCE: maintenanceZoneCamera('CO_OWNER'),
+  FINANCE: financeZoneCamera('CO_OWNER'),
+  GOVERNANCE: governanceZoneCamera('CO_OWNER'),
+  ANALYTICS: analyticsZoneCamera('CO_OWNER'),
+  AI: aiZoneCamera('CO_OWNER'),
+};
+
+export const ZONE_CAMERA_PRESETS: Record<PresetKey, CameraPreset> = OPERATIONS_CAMERA_PRESETS;
+
+export function getZoneCameraPreset(presetKey: PresetKey, role?: string): CameraPreset {
+  const isCoOwner = !role || role === 'CO_OWNER';
+  if (presetKey in CO_OWNER_CAMERA_PRESETS || presetKey in OPERATIONS_CAMERA_PRESETS) {
+    return isCoOwner
+      ? CO_OWNER_CAMERA_PRESETS[presetKey] || OPERATIONS_CAMERA_PRESETS[presetKey]
+      : OPERATIONS_CAMERA_PRESETS[presetKey] || CO_OWNER_CAMERA_PRESETS[presetKey];
+  }
+  return getGarageZoneCameraPreset(presetKey, role);
+}
 
 interface WorldState {
   selectedZone: GarageZone | null;
@@ -153,6 +180,11 @@ interface WorldState {
   clearSelection: () => void;
   clearActiveSpatialSelection: () => void;
   setWorldMode: (mode: WorldMode) => void;
+
+  // 360-degree vehicle rotation turntable state
+  vehicleYaw: number;
+  setVehicleYaw: (yaw: number) => void;
+  resetVehicleYaw: () => void;
 
   enterVehicleInspectionMode: () => void;
   exitVehicleInspectionMode: () => void;
@@ -196,6 +228,15 @@ interface WorldState {
   enterVehicleTripVisualizationMode: () => void;
   exitVehicleTripVisualizationMode: () => void;
   selectTripRouteNode: (nodeId: string | null) => void;
+
+  // Phase 13: Pure 3D Damage Mapping Mode
+  vehicleDamageMappingMode: boolean;
+  selectedDamageId: string | null;
+  draftDamage: { partCode: string; localPosition: [number, number, number] } | null;
+  enterVehicleDamageMappingMode: () => void;
+  exitVehicleDamageMappingMode: () => void;
+  selectDamageRecord: (id: string | null) => void;
+  setDraftDamage: (draft: { partCode: string; localPosition: [number, number, number] } | null) => void;
 
   resetExperienceState: () => void;
 
@@ -243,6 +284,14 @@ export const useWorldStore = create<WorldState>((set) => ({
   vehicleTripStartMode: false,
   vehicleTripVisualizationMode: false,
   selectedTripRouteNode: null,
+
+  vehicleDamageMappingMode: false,
+  selectedDamageId: null,
+  draftDamage: null,
+
+  vehicleYaw: -0.32,
+  setVehicleYaw: (yaw) => set({ vehicleYaw: yaw }),
+  resetVehicleYaw: () => set({ vehicleYaw: -0.32 }),
 
   selectZone: (zone) =>
     set((state) => {
@@ -398,10 +447,26 @@ export const useWorldStore = create<WorldState>((set) => ({
       selectedHandoverCheckpoint: null,
       hoveredHandoverCheckpoint: null,
       vehicleTripStartMode: false,
+      vehicleTripVisualizationMode: false,
+      selectedTripRouteNode: null,
+      vehicleDamageMappingMode: false,
+      selectedDamageId: null,
+      draftDamage: null,
+      vehicleYaw: -0.32,
     }),
 
   clearActiveSpatialSelection: () =>
     set((state) => {
+      // 0a-00. In Damage Mapping mode: preserve view and selection (camera movement or neutral click must not deselect)
+      if (state.vehicleDamageMappingMode) {
+        return {};
+      }
+
+      // 0a-0. In Trip Visualization / Checkout mode: preserve view
+      if (state.vehicleTripVisualizationMode) {
+        return {};
+      }
+
       // 0a-1. In Trip Start mode: preserve view
       if (state.vehicleTripStartMode) {
         return {};
@@ -759,6 +824,59 @@ export const useWorldStore = create<WorldState>((set) => ({
       selectedTripRouteNode: nodeId,
     }),
 
+  enterVehicleDamageMappingMode: () =>
+    set((state) => {
+      let role: string | undefined;
+      try {
+        role = useAuthStore.getState().user?.role;
+      } catch {
+        role = 'STAFF';
+      }
+      if (!hasCapability(role, 'canViewDamage') && !hasCapability(role, 'canRecordDamage')) return {};
+      return {
+        vehicleDamageMappingMode: true,
+        selectedDamageId: null,
+        draftDamage: null,
+        vehicleFeatureMode: 'DAMAGE_MAPPING',
+        vehicleMode: 'DAMAGE_MAPPING',
+        vehicleBookingMode: false,
+        vehicleCoOwnershipMode: false,
+        vehicleInspectionMode: false,
+        vehicleHandoverMode: false,
+        vehicleReceiptReviewMode: false,
+        vehicleTripStartMode: false,
+        vehicleTripVisualizationMode: false,
+        selectedTripRouteNode: null,
+        selectedVehicleId: 'EV01',
+        selectedZone: 'VEHICLE',
+        selectedVehiclePartId: null,
+        hoveredVehiclePartId: null,
+        selectedOwnerId: null,
+        hoveredOwnerId: null,
+        selectedHandoverCheckpoint: null,
+        hoveredHandoverCheckpoint: null,
+      };
+    }),
+
+  exitVehicleDamageMappingMode: () =>
+    set({
+      vehicleDamageMappingMode: false,
+      selectedDamageId: null,
+      draftDamage: null,
+    }),
+
+  selectDamageRecord: (id) =>
+    set({
+      selectedDamageId: id,
+      draftDamage: null,
+    }),
+
+  setDraftDamage: (draft) =>
+    set({
+      draftDamage: draft,
+      selectedDamageId: null,
+    }),
+
   resetExperienceState: () =>
     set({
       selectedZone: null,
@@ -787,6 +905,9 @@ export const useWorldStore = create<WorldState>((set) => ({
       vehicleTripStartMode: false,
       vehicleTripVisualizationMode: false,
       selectedTripRouteNode: null,
+      vehicleDamageMappingMode: false,
+      selectedDamageId: null,
+      draftDamage: null,
     }),
 
   setVehicleFeatureMode: (mode) =>
@@ -804,6 +925,7 @@ export const useWorldStore = create<WorldState>((set) => ({
       if ((mode === 'RECEIPT' || mode === 'CO_OWNER_RECEIPT_REVIEW') && !hasCapability(role, 'canConfirmReceipt')) return {};
       if (mode === 'CO_OWNER_MY_BOOKINGS' && !hasCapability(role, 'canViewMyBookings')) return {};
       if (mode === 'TRIP_START' && !hasCapability(role, 'canStartTrip')) return {};
+      if (mode === 'DAMAGE_MAPPING' && !hasCapability(role, 'canViewDamage') && !hasCapability(role, 'canRecordDamage')) return {};
 
       const isReceiptMode = mode === 'RECEIPT' || mode === 'CO_OWNER_RECEIPT_REVIEW';
       return {
@@ -817,6 +939,8 @@ export const useWorldStore = create<WorldState>((set) => ({
         vehicleTripStartMode: mode === 'TRIP_START',
         vehicleTripVisualizationMode: mode === 'TRIP_VISUALIZATION',
         selectedTripRouteNode: mode === 'TRIP_VISUALIZATION' ? (state.selectedTripRouteNode || 'CURRENT_PROGRESS') : null,
+        vehicleDamageMappingMode: mode === 'DAMAGE_MAPPING',
+        selectedDamageId: mode === 'DAMAGE_MAPPING' ? state.selectedDamageId : null,
       };
     }),
 
@@ -835,6 +959,7 @@ export const useWorldStore = create<WorldState>((set) => ({
       if ((mode === 'RECEIPT' || mode === 'CO_OWNER_RECEIPT_REVIEW') && !hasCapability(role, 'canConfirmReceipt')) return {};
       if (mode === 'CO_OWNER_MY_BOOKINGS' && !hasCapability(role, 'canViewMyBookings')) return {};
       if (mode === 'TRIP_START' && !hasCapability(role, 'canStartTrip')) return {};
+      if (mode === 'DAMAGE_MAPPING' && !hasCapability(role, 'canViewDamage') && !hasCapability(role, 'canRecordDamage')) return {};
 
       const isReceiptMode = mode === 'RECEIPT' || mode === 'CO_OWNER_RECEIPT_REVIEW';
       return {
@@ -848,6 +973,8 @@ export const useWorldStore = create<WorldState>((set) => ({
         vehicleTripStartMode: mode === 'TRIP_START',
         vehicleTripVisualizationMode: mode === 'TRIP_VISUALIZATION',
         selectedTripRouteNode: mode === 'TRIP_VISUALIZATION' ? (state.selectedTripRouteNode || 'CURRENT_PROGRESS') : null,
+        vehicleDamageMappingMode: mode === 'DAMAGE_MAPPING',
+        selectedDamageId: mode === 'DAMAGE_MAPPING' ? state.selectedDamageId : null,
       };
     }),
 
@@ -888,6 +1015,9 @@ export const useWorldStore = create<WorldState>((set) => ({
         vehicleTripStartMode: false,
         vehicleTripVisualizationMode: false,
         selectedTripRouteNode: null,
+        vehicleDamageMappingMode: false,
+        selectedDamageId: null,
+        draftDamage: null,
         selectedVehiclePartId: null,
         hoveredVehiclePartId: null,
         selectedOwnerId: null,

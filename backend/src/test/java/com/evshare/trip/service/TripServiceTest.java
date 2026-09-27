@@ -362,4 +362,175 @@ class TripServiceTest {
         Optional<TripResponse> adminRes = tripService.getTripById(tripId, otherUserId, Role.ADMIN);
         assertTrue(adminRes.isPresent());
     }
+
+    // ========================================================================
+    // Phase 12 Tests: Check-out / Complete Trip
+    // ========================================================================
+
+    @Test
+    @DisplayName("20. CO_OWNER completes own ACTIVE trip -> success, vehicle AVAILABLE, booking COMPLETED")
+    void testCompleteTrip_Success() {
+        UUID tripId = UUID.randomUUID();
+        vehicle.setStatus(VehicleStatus.IN_USE);
+        vehicle.setCurrentBatteryLevel(75);
+        vehicle.setOdometer(new BigDecimal("10620.00"));
+
+        Trip activeTrip = new Trip(tripId, booking, vehicle, coOwner, TripStatus.ACTIVE,
+                Instant.now().minus(1, ChronoUnit.HOURS), new BigDecimal("10550.50"), 88);
+
+        when(tripRepository.findById(tripId)).thenReturn(Optional.of(activeTrip));
+        when(vehicleRepository.findById(vehicleId)).thenReturn(Optional.of(vehicle));
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(booking));
+        when(tripRepository.save(any(Trip.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TripResponse res = tripService.completeTrip(tripId, coOwnerId, Role.CO_OWNER);
+
+        assertNotNull(res);
+        assertEquals(TripStatus.COMPLETED, res.getStatus());
+        assertNotNull(res.getEndedAt());
+        assertEquals(75, res.getEndBatteryLevel());
+        assertEquals(new BigDecimal("10620.00"), res.getEndOdometer());
+        assertEquals(13, res.getBatteryUsed()); // 88 - 75 = 13%
+        assertEquals(new BigDecimal("69.50"), res.getDistanceTraveled()); // 10620.00 - 10550.50 = 69.50 km
+        assertNotNull(res.getDurationSeconds());
+        assertTrue(res.getDurationSeconds() >= 3600);
+
+        // Verify Vehicle transitions out of IN_USE to AVAILABLE
+        assertEquals(VehicleStatus.AVAILABLE, vehicle.getStatus());
+        verify(vehicleRepository).save(vehicle);
+
+        // Verify Booking transitions to COMPLETED
+        assertEquals(BookingStatus.COMPLETED, booking.getStatus());
+        verify(bookingRepository).save(booking);
+
+        verify(tripRepository).save(activeTrip);
+    }
+
+    @Test
+    @DisplayName("21. Another CO_OWNER tries to complete trip -> AccessDeniedException")
+    void testCompleteTrip_OtherCoOwner_ThrowsAccessDenied() {
+        UUID tripId = UUID.randomUUID();
+        Trip activeTrip = new Trip(tripId, booking, vehicle, coOwner, TripStatus.ACTIVE,
+                Instant.now().minus(30, ChronoUnit.MINUTES), new BigDecimal("10550.50"), 88);
+
+        when(tripRepository.findById(tripId)).thenReturn(Optional.of(activeTrip));
+
+        AccessDeniedException ex = assertThrows(AccessDeniedException.class, () ->
+                tripService.completeTrip(tripId, otherUserId, Role.CO_OWNER));
+        assertEquals(TripService.MSG_NOT_TRIP_OWNER, ex.getMessage());
+        verify(vehicleRepository, never()).save(any());
+        verify(tripRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("22. STAFF tries to complete CO_OWNER trip -> AccessDeniedException")
+    void testCompleteTrip_Staff_ThrowsAccessDenied() {
+        UUID tripId = UUID.randomUUID();
+
+        AccessDeniedException ex = assertThrows(AccessDeniedException.class, () ->
+                tripService.completeTrip(tripId, coOwnerId, Role.STAFF));
+        assertEquals(TripService.MSG_ONLY_CO_OWNER_CHECKOUT, ex.getMessage());
+        verify(tripRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("23. ADMIN tries to complete trip -> AccessDeniedException")
+    void testCompleteTrip_Admin_ThrowsAccessDenied() {
+        UUID tripId = UUID.randomUUID();
+
+        AccessDeniedException ex = assertThrows(AccessDeniedException.class, () ->
+                tripService.completeTrip(tripId, coOwnerId, Role.ADMIN));
+        assertEquals(TripService.MSG_ONLY_CO_OWNER_CHECKOUT, ex.getMessage());
+        verify(tripRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("24. Completing already COMPLETED trip -> IllegalStateException (idempotent duplicate protection)")
+    void testCompleteTrip_AlreadyCompleted_ThrowsIllegalState() {
+        UUID tripId = UUID.randomUUID();
+        Trip completedTrip = new Trip(tripId, booking, vehicle, coOwner, TripStatus.COMPLETED,
+                Instant.now().minus(2, ChronoUnit.HOURS), new BigDecimal("10550.50"), 88);
+        completedTrip.setEndedAt(Instant.now().minus(1, ChronoUnit.HOURS));
+
+        when(tripRepository.findById(tripId)).thenReturn(Optional.of(completedTrip));
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () ->
+                tripService.completeTrip(tripId, coOwnerId, Role.CO_OWNER));
+        assertEquals(TripService.MSG_TRIP_ALREADY_COMPLETED, ex.getMessage());
+        verify(vehicleRepository, never()).save(any());
+        verify(tripRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("25. ACTIVE trip past booking end time (overtime) -> completion still allowed")
+    void testCompleteTrip_OvertimeTrip_Allowed() {
+        UUID tripId = UUID.randomUUID();
+        // Booking ended 30 minutes ago
+        booking.setStartTime(Instant.now().minus(3, ChronoUnit.HOURS));
+        booking.setEndTime(Instant.now().minus(30, ChronoUnit.MINUTES));
+
+        vehicle.setStatus(VehicleStatus.IN_USE);
+        vehicle.setCurrentBatteryLevel(60);
+        vehicle.setOdometer(new BigDecimal("10700.00"));
+
+        Trip overtimeTrip = new Trip(tripId, booking, vehicle, coOwner, TripStatus.ACTIVE,
+                Instant.now().minus(2, ChronoUnit.HOURS), new BigDecimal("10550.50"), 88);
+
+        when(tripRepository.findById(tripId)).thenReturn(Optional.of(overtimeTrip));
+        when(vehicleRepository.findById(vehicleId)).thenReturn(Optional.of(vehicle));
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(booking));
+        when(tripRepository.save(any(Trip.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TripResponse res = tripService.completeTrip(tripId, coOwnerId, Role.CO_OWNER);
+        assertNotNull(res);
+        assertEquals(TripStatus.COMPLETED, res.getStatus());
+        assertEquals(VehicleStatus.AVAILABLE, vehicle.getStatus());
+        assertEquals(BookingStatus.COMPLETED, booking.getStatus());
+    }
+
+    @Test
+    @DisplayName("26. Repeat completion attempt: original endedAt, endBattery, endOdometer not overwritten, no duplicate Trip created")
+    void testCompleteTrip_RepeatAttempt_PreservesOriginalData() {
+        UUID tripId = UUID.randomUUID();
+        Instant originalEndedAt = Instant.now().minus(1, ChronoUnit.HOURS);
+        Integer originalEndBattery = 70;
+        BigDecimal originalEndOdo = new BigDecimal("10600.00");
+
+        Trip completedTrip = new Trip(tripId, booking, vehicle, coOwner, TripStatus.COMPLETED,
+                Instant.now().minus(2, ChronoUnit.HOURS), new BigDecimal("10550.50"), 88);
+        completedTrip.setEndedAt(originalEndedAt);
+        completedTrip.setEndBatteryLevel(originalEndBattery);
+        completedTrip.setEndOdometer(originalEndOdo);
+
+        when(tripRepository.findById(tripId)).thenReturn(Optional.of(completedTrip));
+
+        // Attempting to complete again must fail with IllegalStateException (HTTP 409)
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () ->
+                tripService.completeTrip(tripId, coOwnerId, Role.CO_OWNER));
+        assertEquals(TripService.MSG_TRIP_ALREADY_COMPLETED, ex.getMessage());
+
+        // Verify original values are UNTOUCHED
+        assertEquals(originalEndedAt, completedTrip.getEndedAt());
+        assertEquals(originalEndBattery, completedTrip.getEndBatteryLevel());
+        assertEquals(originalEndOdo, completedTrip.getEndOdometer());
+        assertEquals(TripStatus.COMPLETED, completedTrip.getStatus());
+
+        // Verify no repository save or duplicate creations occurred
+        verify(vehicleRepository, never()).save(any());
+        verify(bookingRepository, never()).save(any());
+        verify(tripRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("27. Trip not found -> ResourceNotFoundException (404)")
+    void testCompleteTrip_NotFound_ThrowsResourceNotFound() {
+        UUID nonExistentId = UUID.randomUUID();
+        when(tripRepository.findById(nonExistentId)).thenReturn(Optional.empty());
+
+        com.evshare.common.exception.ResourceNotFoundException ex = assertThrows(
+                com.evshare.common.exception.ResourceNotFoundException.class,
+                () -> tripService.completeTrip(nonExistentId, coOwnerId, Role.CO_OWNER)
+        );
+        assertTrue(ex.getMessage().contains("Không tìm thấy chuyến đi"));
+    }
 }

@@ -1,0 +1,32 @@
+-- EVShare 3D - Phase 13 Pure 3D Damage Mapping Schema Migration
+
+CREATE TABLE IF NOT EXISTS damage_records (
+    id CHAR(36) PRIMARY KEY,
+    vehicle_id CHAR(36) NOT NULL,
+    trip_id CHAR(36) NOT NULL,
+    booking_id CHAR(36) NOT NULL,
+    handover_id CHAR(36) NULL,
+    vehicle_part_code VARCHAR(50) NOT NULL,
+    damage_type VARCHAR(50) NOT NULL,
+    severity VARCHAR(50) NOT NULL,
+    note VARCHAR(1000) NULL,
+    local_position_x DECIMAL(10, 4) NOT NULL,
+    local_position_y DECIMAL(10, 4) NOT NULL,
+    local_position_z DECIMAL(10, 4) NOT NULL,
+    created_by_user_id CHAR(36) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_damages_vehicle FOREIGN KEY (vehicle_id) REFERENCES vehicles (id) ON DELETE CASCADE,
+    CONSTRAINT fk_damages_trip FOREIGN KEY (trip_id) REFERENCES trips (id) ON DELETE CASCADE,
+    CONSTRAINT fk_damages_booking FOREIGN KEY (booking_id) REFERENCES bookings (id) ON DELETE CASCADE,
+    CONSTRAINT fk_damages_handover FOREIGN KEY (handover_id) REFERENCES vehicle_handovers (id) ON DELETE SET NULL,
+    CONSTRAINT fk_damages_user FOREIGN KEY (created_by_user_id) REFERENCES users (id) ON DELETE CASCADE,
+    INDEX idx_damages_vehicle (vehicle_id),
+    INDEX idx_damages_trip (trip_id),
+    INDEX idx_damages_booking (booking_id),
+    INDEX idx_damages_handover (handover_id),
+    INDEX idx_damages_part (vehicle_part_code),
+    INDEX idx_damages_type (damage_type),
+    INDEX idx_damages_severity (severity),
+    INDEX idx_damages_user (created_by_user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -14,13 +14,72 @@ import {
   Car,
   Zap,
   Clock,
+  Calendar,
   X,
   Eye,
   Activity,
   Shield,
   Layers,
   CheckCircle,
+  AlertTriangle,
+  User,
+  Mail,
+  Hash,
 } from 'lucide-react';
+
+function formatDate(isoString?: string): string {
+  if (!isoString) return '--/--/----';
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return '--/--/----';
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+  } catch {
+    return '--/--/----';
+  }
+}
+
+function formatDateTime(isoString?: string | null): string {
+  if (!isoString) return '--:-- --/--/----';
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return '--:-- --/--/----';
+    const time = d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${time} ${day}/${month}/${year}`;
+  } catch {
+    return '--:-- --/--/----';
+  }
+}
+
+function formatTimeRange(startIso?: string, endIso?: string): string {
+  if (!startIso || !endIso) return '--:-- - --:--';
+  try {
+    const dStart = new Date(startIso);
+    const dEnd = new Date(endIso);
+    const sh = String(dStart.getHours()).padStart(2, '0');
+    const sm = String(dStart.getMinutes()).padStart(2, '0');
+    const eh = String(dEnd.getHours()).padStart(2, '0');
+    const em = String(dEnd.getMinutes()).padStart(2, '0');
+    return `${sh}:${sm} - ${eh}:${em}`;
+  } catch {
+    return '--:-- - --:--';
+  }
+}
+
+function isTripOverdue(bookingEndTime?: string | null): boolean {
+  if (!bookingEndTime) return false;
+  try {
+    const end = new Date(bookingEndTime).getTime();
+    return !isNaN(end) && end < Date.now();
+  } catch {
+    return false;
+  }
+}
 
 interface AdminVehicleMonitorPanelProps {
   vehicle: VehicleResponse;
@@ -36,6 +95,7 @@ export const AdminVehicleMonitorPanel: React.FC<AdminVehicleMonitorPanelProps> =
   const authReady = isAuthenticated && !!accessToken;
 
   const enterVehicleHandoverMode = useWorldStore((state) => state.enterVehicleHandoverMode);
+  const enterVehicleDamageMappingMode = useWorldStore((state) => state.enterVehicleDamageMappingMode);
 
   // TanStack Query: Fetch all vehicles for fleet overview
   const { data: allVehicles = [] } = useQuery<VehicleResponse[]>({
@@ -69,15 +129,13 @@ export const AdminVehicleMonitorPanel: React.FC<AdminVehicleMonitorPanelProps> =
     refetchInterval: 3000,
   });
 
+  // Authoritative condition
+  const isVehicleInUse = vehicle.status === 'IN_USE';
   const isTripActive = !!activeTrip && activeTrip.status === 'ACTIVE';
+  const isInconsistentInUseState = isVehicleInUse && !isTripActive;
+  const isOverdue = isTripActive && isTripOverdue(activeTrip.bookingEndTime);
 
   const displayCode = 'EV01';
-  const statusConfig = isTripActive
-    ? { label: 'Đang sử dụng', color: '#c084fc' }
-    : VEHICLE_STATUS_LABELS[vehicle.status] || {
-        label: vehicle.status,
-        color: '#a855f7',
-      };
   const formattedOdometer = Number(vehicle.odometer ?? 12450).toLocaleString('vi-VN');
   const estimatedRangeKm = Math.round(((vehicle.currentBatteryLevel || 82) / 100) * 450);
 
@@ -89,14 +147,20 @@ export const AdminVehicleMonitorPanel: React.FC<AdminVehicleMonitorPanelProps> =
   return (
     <div
       onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
       style={{
         width: '340px',
         maxHeight: '86vh',
         overflowY: 'auto',
         background: 'rgba(18, 10, 32, 0.95)',
         backdropFilter: 'blur(20px)',
-        border: '1px solid #a855f7',
-        boxShadow: '0 20px 50px rgba(0, 0, 0, 0.85), 0 0 30px rgba(168, 85, 247, 0.25)',
+        border: `1px solid ${isInconsistentInUseState ? '#ef4444' : isTripActive ? (isOverdue ? '#f59e0b' : '#c084fc') : '#a855f7'}`,
+        boxShadow: isInconsistentInUseState
+          ? '0 20px 50px rgba(0, 0, 0, 0.85), 0 0 30px rgba(239, 68, 68, 0.25)'
+          : isOverdue
+          ? '0 20px 50px rgba(0, 0, 0, 0.85), 0 0 30px rgba(245, 158, 11, 0.25)'
+          : '0 20px 50px rgba(0, 0, 0, 0.85), 0 0 30px rgba(168, 85, 247, 0.25)',
         borderRadius: '16px',
         padding: '20px',
         color: '#ffffff',
@@ -128,360 +192,605 @@ export const AdminVehicleMonitorPanel: React.FC<AdminVehicleMonitorPanelProps> =
         <X size={14} />
       </button>
 
-      {/* Header Label */}
-      <div
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '6px',
-          fontSize: '10px',
-          fontWeight: 700,
-          color: '#c084fc',
-          letterSpacing: '0.08em',
-          textTransform: 'uppercase',
-          marginBottom: '6px',
-        }}
-      >
-        <Car size={13} />
-        Bản Sao Số Xe Điện
-      </div>
-
       {/* Mode Identity Badge */}
       <div
         style={{
           display: 'inline-flex',
           alignItems: 'center',
           gap: '5px',
-          background: 'rgba(124, 58, 237, 0.22)',
-          border: '1px solid rgba(168, 85, 247, 0.45)',
+          background: isInconsistentInUseState ? 'rgba(239, 68, 68, 0.2)' : 'rgba(124, 58, 237, 0.22)',
+          border: `1px solid ${isInconsistentInUseState ? 'rgba(239, 68, 68, 0.45)' : 'rgba(168, 85, 247, 0.45)'}`,
           boxShadow: '0 0 12px rgba(168, 85, 247, 0.25)',
           borderRadius: '6px',
           padding: '3px 8px',
           fontSize: '9.5px',
           fontWeight: 800,
           letterSpacing: '0.07em',
-          color: '#c084fc',
+          color: isInconsistentInUseState ? '#f87171' : '#c084fc',
           textTransform: 'uppercase',
-          marginBottom: '10px',
+          marginBottom: '8px',
           width: 'fit-content',
         }}
       >
-        <Eye size={11} color="#c084fc" />
+        <Eye size={11} color={isInconsistentInUseState ? '#f87171' : '#c084fc'} />
         <span>CHẾ ĐỘ QUẢN TRỊ — ADMIN</span>
       </div>
 
       <h3
         style={{
-          fontSize: '20px',
+          fontSize: '18px',
           fontWeight: 800,
           letterSpacing: '-0.01em',
           margin: '0 0 2px 0',
           color: '#ffffff',
         }}
       >
-        {displayCode}
+        {isTripActive
+          ? 'XE ĐANG ĐƯỢC SỬ DỤNG'
+          : isInconsistentInUseState
+          ? 'CẢNH BÁO TRẠNG THÁI XE'
+          : 'GIÁM SÁT VẬN HÀNH'}
       </h3>
 
       <div
         style={{
           fontSize: '12px',
-          color: '#c084fc',
+          color: isInconsistentInUseState ? '#f87171' : '#c084fc',
           fontWeight: 600,
           marginBottom: '14px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
         }}
       >
-        Giám Sát & Quản Trị Hệ Thống
+        <Car size={13} color={isInconsistentInUseState ? '#f87171' : '#c084fc'} />
+        <span>{displayCode} &bull; {vehicle.name || 'VinFast VF e34'}</span>
       </div>
 
       {/* ======================================================== */}
-      {/* MODULE 1: TỔNG QUAN HỆ THỐNG (Section 20 & 24)          */}
+      {/* CASE 1: AUTHORITATIVE ACTIVE TRIP MONITORING VIEW        */}
       {/* ======================================================== */}
-      <div
-        style={{
-          background: 'rgba(124, 58, 237, 0.1)',
-          border: '1px solid rgba(168, 85, 247, 0.3)',
-          borderRadius: '12px',
-          padding: '12px',
-          marginBottom: '12px',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            fontSize: '11px',
-            fontWeight: 800,
-            color: '#c084fc',
-            letterSpacing: '0.04em',
-            textTransform: 'uppercase',
-            marginBottom: '8px',
-          }}
-        >
-          <Layers size={13} color="#c084fc" />
-          <span>TỔNG QUAN HỆ THỐNG</span>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '11px' }}>
-          <div>
-            <span style={{ color: '#94a3b8', fontSize: '10px' }}>ĐỘI XE HOẠT ĐỘNG</span>
-            <div style={{ fontWeight: 700, color: '#f8fafc' }}>
-              {allVehicles.length || 1} Xe trong garage
-            </div>
-          </div>
-          <div>
-            <span style={{ color: '#94a3b8', fontSize: '10px' }}>NHÓM ĐỒNG SỞ HỮU</span>
-            <div style={{ fontWeight: 700, color: '#c084fc' }}>
-              {coOwnership?.name ? '1 Nhóm hoạt động' : 'Đang tải...'}
-            </div>
-          </div>
-        </div>
-
-        {/* System Warnings / Empty State (Section 24) */}
-        <div
-          style={{
-            marginTop: '10px',
-            background: 'rgba(255, 255, 255, 0.04)',
-            borderRadius: '8px',
-            padding: '8px 10px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            fontSize: '10.5px',
-            color: '#34d399',
-          }}
-        >
-          <CheckCircle size={13} />
-          <span>KHÔNG CÓ CẢNH BÁO VẬN HÀNH</span>
-        </div>
-      </div>
-
-      {/* ======================================================== */}
-      {/* SECTION 20: READ-ONLY OPERATIONAL TRIP STATE             */}
-      {/* ======================================================== */}
-      {isTripActive && activeTrip && (
-        <div
-          style={{
-            background: 'rgba(168, 85, 247, 0.12)',
-            border: '1px solid rgba(168, 85, 247, 0.45)',
-            borderRadius: '12px',
-            padding: '12px',
-            marginBottom: '12px',
-          }}
-        >
+      {isTripActive && activeTrip ? (
+        <>
           <div
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: '6px',
+              background: 'rgba(124, 58, 237, 0.14)',
+              border: `1px solid ${isOverdue ? 'rgba(245, 158, 11, 0.5)' : 'rgba(168, 85, 247, 0.45)'}`,
+              borderRadius: '12px',
+              padding: '12px 14px',
+              marginBottom: '12px',
             }}
           >
-            <span
+            <div
               style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '10px',
+                paddingBottom: '8px',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+              }}
+            >
+              <span
+                style={{
+                  fontSize: '10.5px',
+                  fontWeight: 800,
+                  color: isOverdue ? '#fbbf24' : '#c084fc',
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                }}
+              >
+                CHUYẾN ĐI ĐANG HOẠT ĐỘNG
+              </span>
+              <span
+                style={{
+                  background: isOverdue ? 'rgba(239, 68, 68, 0.25)' : 'rgba(168, 85, 247, 0.25)',
+                  color: isOverdue ? '#f87171' : '#c084fc',
+                  border: `1px solid ${isOverdue ? 'rgba(239, 68, 68, 0.45)' : 'rgba(168, 85, 247, 0.45)'}`,
+                  fontSize: '9px',
+                  fontWeight: 800,
+                  padding: '2px 7px',
+                  borderRadius: '4px',
+                }}
+              >
+                {isOverdue ? 'CHUYẾN ĐI ĐANG QUÁ GIỜ' : 'ACTIVE'}
+              </span>
+            </div>
+
+            <div style={{ fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: '#94a3b8' }}>Người đang sử dụng:</span>
+                <span style={{ fontWeight: 700, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <User size={11} color="#c084fc" />
+                  {activeTrip.userName}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: '#94a3b8' }}>Tài khoản:</span>
+                <span style={{ color: '#94a3b8', fontSize: '10.5px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <Mail size={11} color="#64748b" />
+                  {activeTrip.userEmail || 'Chưa cung cấp'}
+                </span>
+              </div>
+
+              {activeTrip.bookingId && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: '#94a3b8' }}>Mã đặt lịch:</span>
+                  <span style={{ color: '#cbd5e1', fontSize: '10.5px', fontFamily: 'monospace' }}>
+                    {activeTrip.bookingId.slice(0, 8)}...
+                  </span>
+                </div>
+              )}
+
+              {activeTrip.id && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: '#94a3b8' }}>Mã chuyến đi:</span>
+                  <span style={{ color: '#cbd5e1', fontSize: '10.5px', fontFamily: 'monospace' }}>
+                    {activeTrip.id.slice(0, 8)}...
+                  </span>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: '#94a3b8' }}>Bắt đầu:</span>
+                <span style={{ color: '#f8fafc', fontWeight: 600 }}>
+                  {formatDateTime(activeTrip.startedAt)}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: '#94a3b8' }}>Khung giờ đặt:</span>
+                <span style={{ color: '#c084fc', fontWeight: 700 }}>
+                  {formatTimeRange(activeTrip.bookingStartTime, activeTrip.bookingEndTime)}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: '#94a3b8' }}>Pin khi bắt đầu:</span>
+                <span style={{ color: '#38bdf8', fontWeight: 700 }}>{activeTrip.startBatteryLevel}%</span>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: '#94a3b8' }}>Odometer khi bắt đầu:</span>
+                <span style={{ color: '#c084fc', fontWeight: 700 }}>
+                  {Number(activeTrip.startOdometer).toLocaleString()} km
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: '#94a3b8' }}>Trạng thái xe hiện tại:</span>
+                <span style={{ color: '#00f2fe', fontWeight: 800 }}>IN_USE</span>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: '#94a3b8' }}>Dự kiến khả dụng:</span>
+                <span style={{ color: isOverdue ? '#f87171' : '#34d399', fontWeight: 700 }}>
+                  {activeTrip.bookingEndTime ? formatDateTime(activeTrip.bookingEndTime) : 'Sau khi người dùng trả xe'}
+                </span>
+              </div>
+
+              {isOverdue && (
+                <div
+                  style={{
+                    marginTop: '4px',
+                    background: 'rgba(239, 68, 68, 0.16)',
+                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    borderRadius: '8px',
+                    padding: '6px 10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    color: '#f87171',
+                    fontSize: '10px',
+                    fontWeight: 700,
+                  }}
+                >
+                  <AlertTriangle size={13} color="#f87171" />
+                  <span>CHUYẾN ĐI ĐANG QUÁ GIỜ — ĐANG CHỜ NGƯỜI DÙNG TRẢ XE</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Telemetry Row */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '8px',
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid rgba(255, 255, 255, 0.06)',
+              borderRadius: '10px',
+              padding: '8px 12px',
+              marginBottom: '12px',
+            }}
+          >
+            <div>
+              <div style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase' }}>PIN HIỆN TẠI</div>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: '#00f2fe', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Zap size={12} color="#00f2fe" />
+                <span>{vehicle.currentBatteryLevel}%</span>
+                <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 500 }}>(~{estimatedRangeKm} km)</span>
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase' }}>ODOMETER HIỆN TẠI</div>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: '#f8fafc' }}>
+                {formattedOdometer} km
+              </div>
+            </div>
+          </div>
+
+          {/* Read-only Governance Note */}
+          <div
+            style={{
+              background: 'rgba(30, 41, 59, 0.75)',
+              border: '1px solid rgba(148, 163, 184, 0.25)',
+              borderRadius: '10px',
+              padding: '10px 12px',
+              marginBottom: '12px',
+              fontSize: '10.5px',
+              color: '#94a3b8',
+              lineHeight: 1.4,
+              textAlign: 'center',
+            }}
+          >
+            Chế độ giám sát: Chỉ CO_OWNER sở hữu chuyến đi mới có quyền thực hiện kết thúc / trả xe.
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              width: '100%',
+              background: 'rgba(255, 255, 255, 0.06)',
+              border: '1px solid rgba(168, 85, 247, 0.4)',
+              borderRadius: '10px',
+              padding: '10px',
+              color: '#c084fc',
+              fontSize: '11.5px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+            }}
+          >
+            <Eye size={13} />
+            ĐÓNG BẢNG GIÁM SÁT
+          </button>
+        </>
+      ) : isInconsistentInUseState ? (
+        /* ======================================================== */
+        /* CASE 2: INCONSISTENT IN_USE STATE                       */
+        /* ======================================================== */
+        <>
+          <div
+            style={{
+              background: 'rgba(239, 68, 68, 0.14)',
+              border: '1px solid rgba(239, 68, 68, 0.45)',
+              borderRadius: '12px',
+              padding: '12px 14px',
+              marginBottom: '12px',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                color: '#f87171',
+                fontWeight: 800,
+                fontSize: '11.5px',
+                marginBottom: '6px',
+              }}
+            >
+              <AlertTriangle size={15} color="#f87171" />
+              <span>CẢNH BÁO TRẠNG THÁI XE</span>
+            </div>
+            <p style={{ margin: '0 0 8px 0', fontSize: '11px', color: '#fca5a5', lineHeight: 1.4 }}>
+              Xe đang được đánh dấu IN_USE nhưng không tìm thấy chuyến đi đang hoạt động.
+            </p>
+            <div style={{ fontSize: '10px', color: '#94a3b8', lineHeight: 1.3 }}>
+              Hệ thống không tự suy đoán thông tin chuyến đi. Vui lòng kiểm tra lại nhật ký vận hành hoặc đợi đồng bộ dữ liệu.
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              width: '100%',
+              background: 'rgba(255, 255, 255, 0.06)',
+              border: '1px solid rgba(239, 68, 68, 0.4)',
+              borderRadius: '10px',
+              padding: '10px',
+              color: '#f87171',
+              fontSize: '11.5px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+            }}
+          >
+            ĐÓNG BẢNG CẢNH BÁO
+          </button>
+        </>
+      ) : (
+        /* ======================================================== */
+        /* CASE 3: NORMAL AVAILABLE / MONITORING VIEW               */
+        /* ======================================================== */
+        <>
+          {/* MODULE 1: TỔNG QUAN HỆ THỐNG */}
+          <div
+            style={{
+              background: 'rgba(124, 58, 237, 0.1)',
+              border: '1px solid rgba(168, 85, 247, 0.3)',
+              borderRadius: '12px',
+              padding: '12px',
+              marginBottom: '12px',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
                 fontSize: '11px',
                 fontWeight: 800,
                 color: '#c084fc',
                 letterSpacing: '0.04em',
                 textTransform: 'uppercase',
+                marginBottom: '8px',
               }}
             >
-              TRẠNG THÁI VẬN HÀNH
-            </span>
-            <span
-              style={{
-                background: 'rgba(168, 85, 247, 0.25)',
-                color: '#c084fc',
-                fontSize: '9px',
-                fontWeight: 800,
-                padding: '2px 6px',
-                borderRadius: '4px',
-              }}
-            >
-              ĐANG SỬ DỤNG
-            </span>
-          </div>
-          <div style={{ fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#94a3b8' }}>Người sử dụng:</span>
-              <span style={{ fontWeight: 700, color: '#ffffff' }}>{activeTrip.userName}</span>
+              <Layers size={13} color="#c084fc" />
+              <span>TỔNG QUAN HỆ THỐNG</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#94a3b8' }}>Bắt đầu:</span>
-              <span style={{ color: '#f8fafc', fontWeight: 600 }}>
-                {new Date(activeTrip.startedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} ({new Date(activeTrip.startedAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })})
-              </span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#94a3b8' }}>Pin khi bắt đầu:</span>
-              <span style={{ color: '#38bdf8', fontWeight: 700 }}>{activeTrip.startBatteryLevel}%</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#94a3b8' }}>Odometer khi bắt đầu:</span>
-              <span style={{ color: '#c084fc', fontWeight: 700 }}>{Number(activeTrip.startOdometer).toLocaleString()} km</span>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* ======================================================== */}
-      {/* MODULE 2: GIÁM SÁT BÀN GIAO (Section 20)                 */}
-      {/* ======================================================== */}
-      <div
-        style={{
-          background: 'rgba(255, 255, 255, 0.03)',
-          border: '1px solid rgba(255, 255, 255, 0.07)',
-          borderRadius: '12px',
-          padding: '12px',
-          marginBottom: '12px',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: '8px',
-          }}
-        >
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '11px' }}>
+              <div>
+                <span style={{ color: '#94a3b8', fontSize: '10px' }}>ĐỘI XE HOẠT ĐỘNG</span>
+                <div style={{ fontWeight: 700, color: '#f8fafc' }}>
+                  {allVehicles.length || 1} Xe trong garage
+                </div>
+              </div>
+              <div>
+                <span style={{ color: '#94a3b8', fontSize: '10px' }}>NHÓM ĐỒNG SỞ HỮU</span>
+                <div style={{ fontWeight: 700, color: '#c084fc' }}>
+                  {coOwnership?.name ? '1 Nhóm hoạt động' : 'Đang tải...'}
+                </div>
+              </div>
+            </div>
+
+            <div
+              style={{
+                marginTop: '10px',
+                background: 'rgba(255, 255, 255, 0.04)',
+                borderRadius: '8px',
+                padding: '8px 10px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '10.5px',
+                color: '#34d399',
+              }}
+            >
+              <CheckCircle size={13} />
+              <span>KHÔNG CÓ CẢNH BÁO VẬN HÀNH</span>
+            </div>
+          </div>
+
+          {/* MODULE 2: GIÁM SÁT BÀN GIAO */}
           <div
             style={{
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid rgba(255, 255, 255, 0.07)',
+              borderRadius: '12px',
+              padding: '12px',
+              marginBottom: '12px',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '8px',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  color: '#c084fc',
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                }}
+              >
+                <Activity size={13} color="#c084fc" />
+                <span>GIÁM SÁT BÀN GIAO</span>
+              </div>
+              <span
+                style={{
+                  background: 'rgba(168, 85, 247, 0.2)',
+                  color: '#c084fc',
+                  fontSize: '9px',
+                  fontWeight: 700,
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                }}
+              >
+                AUDIT TRAIL
+              </span>
+            </div>
+
+            {activeHandover ? (
+              <div style={{ fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Người nhận:</span>
+                  <span style={{ color: '#ffffff', fontWeight: 600 }}>
+                    {activeHandover.coOwnerName || 'Chưa xác định'}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Nhân viên phụ trách:</span>
+                  <span style={{ color: '#ffffff', fontWeight: 600 }}>
+                    {activeHandover.staffName || 'EVShare Staff'}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Trạng thái quy trình:</span>
+                  <span style={{ color: handoverConfig?.color || '#c084fc', fontWeight: 700 }}>
+                    {handoverConfig?.labelVi || activeHandover.status}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Kiểm tra bộ phận:</span>
+                  <span style={{ color: '#38bdf8', fontWeight: 700 }}>
+                    {activeHandover.inspections?.length ?? 8} / 8 Điểm đã ghi nhận
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div style={{ fontSize: '11px', color: '#94a3b8', textAlign: 'center', padding: '4px 0' }}>
+                Chưa có tiến trình bàn giao nào cần giám sát.
+              </div>
+            )}
+          </div>
+
+          {/* Telemetry Row */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '8px',
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid rgba(255, 255, 255, 0.06)',
+              borderRadius: '10px',
+              padding: '8px 12px',
+              marginBottom: '12px',
+            }}
+          >
+            <div>
+              <div style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase' }}>PIN HIỆN TẠI</div>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: '#00f2fe', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Zap size={12} color="#00f2fe" />
+                <span>{vehicle.currentBatteryLevel}%</span>
+                <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 500 }}>(~{estimatedRangeKm} km)</span>
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase' }}>ODOMETER HIỆN TẠI</div>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: '#f8fafc' }}>
+                {formattedOdometer} km
+              </div>
+            </div>
+          </div>
+
+          {/* MODULE 3: BẢO MẬT & PHÂN QUYỀN */}
+          <div
+            style={{
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid rgba(255, 255, 255, 0.06)',
+              borderRadius: '12px',
+              padding: '10px 12px',
+              marginBottom: '14px',
               display: 'flex',
               alignItems: 'center',
-              gap: '6px',
-              fontSize: '11px',
-              fontWeight: 800,
-              color: '#c084fc',
-              letterSpacing: '0.04em',
-              textTransform: 'uppercase',
+              gap: '8px',
             }}
           >
-            <Activity size={13} color="#c084fc" />
-            <span>GIÁM SÁT BÀN GIAO</span>
-          </div>
-          <span
-            style={{
-              background: 'rgba(168, 85, 247, 0.2)',
-              color: '#c084fc',
-              fontSize: '9px',
-              fontWeight: 700,
-              padding: '2px 6px',
-              borderRadius: '4px',
-            }}
-          >
-            AUDIT TRAIL
-          </span>
-        </div>
-
-        {activeHandover ? (
-          <div style={{ fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#94a3b8' }}>Người nhận:</span>
-              <span style={{ color: '#ffffff', fontWeight: 600 }}>
-                {activeHandover.coOwnerName || 'Chưa xác định'}
-              </span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#94a3b8' }}>Nhân viên phụ trách:</span>
-              <span style={{ color: '#ffffff', fontWeight: 600 }}>
-                {activeHandover.staffName || 'EVShare Staff'}
-              </span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#94a3b8' }}>Trạng thái quy trình:</span>
-              <span style={{ color: handoverConfig?.color || '#c084fc', fontWeight: 700 }}>
-                {handoverConfig?.labelVi || activeHandover.status}
-              </span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#94a3b8' }}>Kiểm tra bộ phận:</span>
-              <span style={{ color: '#38bdf8', fontWeight: 700 }}>
-                {activeHandover.inspections?.length ?? 8} / 8 Điểm đã ghi nhận
-              </span>
+            <Shield size={16} color="#c084fc" />
+            <div style={{ fontSize: '10.5px', color: '#cbd5e1' }}>
+              <strong style={{ color: '#c084fc' }}>RBAC v2 Policy:</strong> Phân quyền nghiêm ngặt theo vai trò CO_OWNER, STAFF, ADMIN.
             </div>
           </div>
-        ) : (
-          <div style={{ fontSize: '11px', color: '#94a3b8', textAlign: 'center', padding: '4px 0' }}>
-            Chưa có tiến trình bàn giao nào cần giám sát.
+
+          {/* Action buttons */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <button
+              type="button"
+              onClick={() => enterVehicleHandoverMode()}
+              style={{
+                width: '100%',
+                background: 'linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)',
+                border: 'none',
+                borderRadius: '10px',
+                padding: '11px',
+                color: '#ffffff',
+                fontSize: '12px',
+                fontWeight: 800,
+                letterSpacing: '0.04em',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                boxShadow: '0 4px 18px rgba(168, 85, 247, 0.35)',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <Eye size={15} />
+              GIÁM SÁT BÀN GIAO
+            </button>
+
+            <button
+              type="button"
+              onClick={() => enterVehicleDamageMappingMode()}
+              style={{
+                width: '100%',
+                background: 'rgba(245, 158, 11, 0.12)',
+                border: '1px solid rgba(245, 158, 11, 0.35)',
+                borderRadius: '10px',
+                padding: '10px',
+                color: '#fbbf24',
+                fontSize: '11.5px',
+                fontWeight: 700,
+                letterSpacing: '0.03em',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <AlertTriangle size={14} color="#f59e0b" />
+              <span>GIÁM SÁT HƯ HỎNG 3D</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(168, 85, 247, 0.3)',
+                borderRadius: '8px',
+                padding: '8px',
+                color: '#c084fc',
+                fontSize: '11px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+              }}
+            >
+              <Activity size={13} />
+              ĐÓNG BẢNG
+            </button>
           </div>
-        )}
-      </div>
-
-      {/* ======================================================== */}
-      {/* MODULE 3: BẢO MẬT & PHÂN QUYỀN (Section 20)             */}
-      {/* ======================================================== */}
-      <div
-        style={{
-          background: 'rgba(255, 255, 255, 0.03)',
-          border: '1px solid rgba(255, 255, 255, 0.06)',
-          borderRadius: '12px',
-          padding: '10px 12px',
-          marginBottom: '14px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-        }}
-      >
-        <Shield size={16} color="#c084fc" />
-        <div style={{ fontSize: '10.5px', color: '#cbd5e1' }}>
-          <strong style={{ color: '#c084fc' }}>RBAC v2 Policy:</strong> Phân quyền nghiêm ngặt theo vai trò CO_OWNER, STAFF, ADMIN.
-        </div>
-      </div>
-
-      {/* ======================================================== */}
-      {/* MODULE 4: PRIMARY CTA CONTAINER (Section 23)             */}
-      {/* ======================================================== */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {/* Primary CTA */}
-        <button
-          type="button"
-          onClick={() => enterVehicleHandoverMode()}
-          style={{
-            width: '100%',
-            background: 'linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)',
-            border: 'none',
-            borderRadius: '10px',
-            padding: '11px',
-            color: '#ffffff',
-            fontSize: '12px',
-            fontWeight: 800,
-            letterSpacing: '0.04em',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px',
-            boxShadow: '0 4px 18px rgba(168, 85, 247, 0.35)',
-            transition: 'all 0.2s ease',
-          }}
-        >
-          <Eye size={15} />
-          GIÁM SÁT BÀN GIAO
-        </button>
-
-        {/* Secondary CTA */}
-        <button
-          type="button"
-          onClick={onClose}
-          style={{
-            background: 'rgba(255, 255, 255, 0.05)',
-            border: '1px solid rgba(168, 85, 247, 0.3)',
-            borderRadius: '8px',
-            padding: '8px',
-            color: '#c084fc',
-            fontSize: '11px',
-            fontWeight: 700,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '6px',
-          }}
-        >
-          <Activity size={13} />
-          GIÁM SÁT ĐỘI XE
-        </button>
-      </div>
+        </>
+      )}
     </div>
   );
 };

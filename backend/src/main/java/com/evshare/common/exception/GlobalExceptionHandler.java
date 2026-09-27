@@ -70,7 +70,7 @@ public class GlobalExceptionHandler {
         response.put("timestamp", Instant.now());
         response.put("status", HttpStatus.FORBIDDEN.value());
         response.put("error", "Forbidden");
-        response.put("message", "Access denied: insufficient permissions");
+        response.put("message", (ex.getMessage() != null && !ex.getMessage().isBlank()) ? ex.getMessage() : "Access denied: insufficient permissions");
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
     }
 

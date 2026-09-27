@@ -24,6 +24,9 @@ export const TripVisualizationWorld: React.FC<TripVisualizationWorldProps> = ({ 
 
   const returnToVehicleOverview = useWorldStore((state) => state.returnToVehicleOverview);
 
+  // Completed trip snapshot state (persists summary view after successful check-out)
+  const [completedTrip, setCompletedTrip] = React.useState<TripData | null>(null);
+
   // TanStack Query: Authoritative fetch of ACTIVE trip for this vehicle
   const {
     data: activeTrip,
@@ -34,11 +37,13 @@ export const TripVisualizationWorld: React.FC<TripVisualizationWorldProps> = ({ 
     queryKey: ['activeTrip', vehicle.id],
     queryFn: () => fetchActiveTripForVehicle(vehicle.id),
     enabled: authReady && !!vehicle.id,
-    refetchInterval: 4000,
+    refetchInterval: completedTrip ? false : 4000,
   });
 
+  const currentTrip = completedTrip || activeTrip;
+
   // 1. Loading State in 3D Space
-  if (isLoading && !activeTrip) {
+  if (isLoading && !currentTrip) {
     return (
       <group position={[0, 1.4, 0]}>
         <Billboard follow={true}>
@@ -141,7 +146,7 @@ export const TripVisualizationWorld: React.FC<TripVisualizationWorldProps> = ({ 
   }
 
   // 3. Precondition: ACTIVE Trip Required (Requirement 1 & 28: KHÔNG CÓ CHUYẾN ĐI ĐANG DIỄN RA)
-  if (!activeTrip || activeTrip.status !== 'ACTIVE') {
+  if (!currentTrip || (!completedTrip && currentTrip.status !== 'ACTIVE')) {
     return (
       <group position={[2.7, 1.45, 0]}>
         <Billboard follow={true}>
@@ -210,8 +215,8 @@ export const TripVisualizationWorld: React.FC<TripVisualizationWorldProps> = ({ 
 
   // 4. Owner Authorization Check (Requirement 1, 17 & 28: BẠN KHÔNG CÓ QUYỀN XEM CHUYẾN ĐI NÀY)
   const isOwner =
-    (user?.id && activeTrip.userId === user.id) ||
-    (user?.email && activeTrip.userEmail === user.email);
+    (user?.id && currentTrip.userId === user.id) ||
+    (user?.email && currentTrip.userEmail === user.email);
   const isOperationsRole = user?.role === 'STAFF' || user?.role === 'ADMIN';
 
   if (!isOwner && !isOperationsRole) {
@@ -294,7 +299,7 @@ export const TripVisualizationWorld: React.FC<TripVisualizationWorldProps> = ({ 
       <SpatialDataLink
         start={vehicleAnchor}
         end={[panelPosition[0] - 0.4, panelPosition[1], panelPosition[2]]}
-        color="#00f2fe"
+        color={completedTrip ? '#10b981' : '#00f2fe'}
         pulseSpeed={2.8}
       />
 
@@ -302,8 +307,9 @@ export const TripVisualizationWorld: React.FC<TripVisualizationWorldProps> = ({ 
       <QueryClientProvider client={queryClient}>
         <TripTelemetryPanel3D
           vehicle={vehicle}
-          trip={activeTrip}
+          trip={currentTrip}
           onBack={returnToVehicleOverview}
+          onTripCompleted={(completed) => setCompletedTrip(completed)}
           panelPosition={panelPosition}
         />
       </QueryClientProvider>

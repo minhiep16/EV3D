@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import * as THREE from 'three';
 import { Html } from '@react-three/drei';
 import { Booking } from '../../../types/booking';
+import { INTERACTION_CONFIG } from '../../../config/interactionConfig';
 
 export type SlotState = 'AVAILABLE' | 'SELECTED' | 'BOOKED' | 'PAST';
 
@@ -228,7 +229,8 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
               receiveShadow
               geometry={slotBoxGeometry}
               userData={{ bookingSlotId: slot.id, hour: slot.hour, timeLabel: slot.timeLabel }}
-              onClick={(e) => {
+              onClick={(e: any) => {
+                if (e && 'delta' in e && e.delta > INTERACTION_CONFIG.clickDragThresholdPx) return;
                 e.stopPropagation();
                 handleSlotClick(slot);
               }}
