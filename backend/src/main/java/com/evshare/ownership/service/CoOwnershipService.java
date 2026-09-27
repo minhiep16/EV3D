@@ -141,6 +141,10 @@ public class CoOwnershipService {
         CoOwnershipGroup group = groupRepository.findById(groupId)
                 .orElseThrow(() -> new ResourceNotFoundException("Nhóm đồng sở hữu không tồn tại: " + groupId));
 
+        if (principal != null) {
+            validateGroupMembershipManagementPermission(group, principal);
+        }
+
         List<GroupMember> activeMembers = memberRepository.findByGroupIdAndStatus(groupId, MemberStatus.ACTIVE);
         Set<UUID> activeUserIds = activeMembers.stream()
                 .map(m -> m.getUser().getId())
@@ -271,6 +275,28 @@ public class CoOwnershipService {
         removeMember(groupId, memberId, null);
     }
 
+    /**
+     * Validates that the authenticated caller is the CURRENT ACTIVE GROUP REPRESENTATIVE (Nhóm trưởng).
+     *
+     * Authoritative business rule:
+     * - Authenticated user: role == Role.CO_OWNER
+     * - GroupMember: status == MemberStatus.ACTIVE
+     * - GroupMember: memberRole == GroupMemberRole.REPRESENTATIVE
+     *
+     * Note: coOwnershipGroup.createdBy represents the group creator ("người tạo nhóm") and is NOT
+     * a permanent management authority. Only the current active representative holds member management rights.
+     *
+     * Architecture & Future Phase Integration Points:
+     * - Phase 21 (Voting): Responsible for election and rotation of the REPRESENTATIVE role through group voting.
+     * - Phase 22 (Contract & Invitation):
+     *     REPRESENTATIVE -> sends invitation
+     *     -> invited CO_OWNER reviews proposed ownership percentage
+     *     -> invited user accepts
+     *     -> electronic contract generated & signed
+     *     -> GroupMember becomes ACTIVE & OwnershipShare becomes effective.
+     *   Future status progression model may utilize:
+     *     INVITATION_SENT -> INVITATION_ACCEPTED -> CONTRACT_PENDING -> CONTRACT_SIGNED -> ACTIVATED (or REJECTED/EXPIRED).
+     */
     private void validateGroupMembershipManagementPermission(CoOwnershipGroup group, UserPrincipal principal) {
         if (principal == null || principal.getUser() == null) {
             throw new AccessDeniedException("Yêu cầu xác thực tài khoản");
@@ -278,27 +304,23 @@ public class CoOwnershipService {
 
         User caller = principal.getUser();
         if (caller.getRole() != Role.CO_OWNER) {
-            throw new AccessDeniedException("Bạn không có quyền quản lý thành viên của nhóm.");
+            throw new AccessDeniedException("Bạn không có quyền quản lý thành viên của nhóm. Chỉ Nhóm trưởng (REPRESENTATIVE) đang hoạt động mới có quyền quản lý.");
         }
 
         UUID callerId = caller.getId();
 
-        // 1. Group creator has management authority
-        if (group.getCreatedBy() != null && group.getCreatedBy().equals(callerId)) {
-            return;
-        }
-
-        // 2. Active member with REPRESENTATIVE or ADMIN role inside this group
+        // Authority belongs EXCLUSIVELY to the current active group representative.
+        // createdBy ("người tạo nhóm") is intentionally NOT a permanent management authority.
         Optional<GroupMember> callerMemberOpt = memberRepository.findByGroupIdAndUserId(group.getId(), callerId);
         if (callerMemberOpt.isPresent()) {
             GroupMember callerMember = callerMemberOpt.get();
             if (callerMember.getStatus() == MemberStatus.ACTIVE &&
-                    (callerMember.getMemberRole() == GroupMemberRole.REPRESENTATIVE || callerMember.getMemberRole() == GroupMemberRole.ADMIN)) {
+                    callerMember.getMemberRole() == GroupMemberRole.REPRESENTATIVE) {
                 return;
             }
         }
 
-        throw new AccessDeniedException("Bạn không có quyền quản lý thành viên của nhóm.");
+        throw new AccessDeniedException("Bạn không có quyền quản lý thành viên của nhóm. Chỉ Nhóm trưởng (REPRESENTATIVE) đang hoạt động mới có quyền quản lý.");
     }
 
     // ==========================================

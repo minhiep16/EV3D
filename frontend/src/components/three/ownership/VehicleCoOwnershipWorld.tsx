@@ -69,16 +69,16 @@ export const VehicleCoOwnershipWorld: React.FC<VehicleCoOwnershipWorldProps> = (
   const canManage = useMemo(() => {
     if (!currentUser || !coOwnership) return false;
     if (currentUser.role !== 'CO_OWNER') return false;
-    // 1. Group creator authority
-    if (coOwnership.createdBy && coOwnership.createdBy === currentUser.id) return true;
-    // 2. Active member with REPRESENTATIVE or ADMIN role inside this group
-    const currentMember = coOwnership.members?.find((m) => m.userId === currentUser.id);
-    if (currentMember && currentMember.status === 'ACTIVE') {
-      if (currentMember.memberRole === 'REPRESENTATIVE' || currentMember.memberRole === 'ADMIN') {
-        return true;
-      }
-    }
-    return false;
+
+    // Future-proof rule: ONLY the CURRENT ACTIVE GROUP REPRESENTATIVE (Nhóm trưởng) has management authority.
+    // coOwnership.createdBy ("người tạo nhóm") is intentionally NOT permanent authority.
+    // Phase 21 will later handle voting/election to update the REPRESENTATIVE.
+    const currentMembership = coOwnership.members?.find((m) => m.userId === currentUser.id);
+    return (
+      currentMembership !== undefined &&
+      currentMembership.status === 'ACTIVE' &&
+      currentMembership.memberRole === 'REPRESENTATIVE'
+    );
   }, [currentUser, coOwnership]);
 
   // Filter only ACTIVE members from database
