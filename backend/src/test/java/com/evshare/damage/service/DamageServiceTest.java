@@ -144,6 +144,30 @@ class DamageServiceTest {
     }
 
     @Test
+    @DisplayName("4b. Success: STAFF creates damage record for DOOR_FR")
+    void testCreateDamage_DoorFR_Success() {
+        CreateDamageRequest request = new CreateDamageRequest(
+                "DOOR_FR", DamageType.OTHER, DamageSeverity.MINOR, "Tray nhe cua truoc phai",
+                new BigDecimal("0.9000"), new BigDecimal("0.7000"), new BigDecimal("0.3000")
+        );
+
+        when(tripRepository.findById(tripId)).thenReturn(Optional.of(completedTrip));
+        when(userRepository.findById(staffId)).thenReturn(Optional.of(staffUser));
+        when(damageRecordRepository.save(any(DamageRecord.class))).thenAnswer(inv -> {
+            DamageRecord r = inv.getArgument(0);
+            r.setCreatedAt(Instant.now());
+            return r;
+        });
+
+        DamageRecordResponse res = damageService.createDamage(tripId, request, staffId, Role.STAFF);
+
+        assertNotNull(res);
+        assertEquals("DOOR_FR", res.getVehiclePartCode());
+        assertEquals(DamageType.OTHER, res.getDamageType());
+        assertEquals(DamageSeverity.MINOR, res.getSeverity());
+    }
+
+    @Test
     @DisplayName("2. CO_OWNER tries to create damage -> AccessDeniedException (403)")
     void testCreateDamage_CoOwnerRole_ThrowsAccessDenied() {
         CreateDamageRequest request = new CreateDamageRequest(

@@ -21,7 +21,7 @@ export function findRelevantCoOwnerBooking(
 
   const now = Date.now();
 
-  // Candidate must belong to authenticated CO_OWNER, EV01, and not be CANCELLED/COMPLETED
+  // Candidate must belong to authenticated CO_OWNER, selected vehicle, and not be CANCELLED/COMPLETED
   const myConfirmed = bookings
     .filter((b) => {
       if (!b || b.status !== 'CONFIRMED') return false;

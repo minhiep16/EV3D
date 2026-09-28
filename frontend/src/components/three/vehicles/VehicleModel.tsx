@@ -1,21 +1,34 @@
 import React, { useMemo, useEffect, useState } from 'react';
 import { useGLTF } from '@react-three/drei';
-import { ThreeEvent } from '@react-three/fiber';
+import { ThreeEvent, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { useWorldStore } from '../../../store/worldStore';
+import { useWorldStore, setTransientInspectionError } from '../../../store/worldStore';
 import { useAuthStore } from '../../../store/authStore';
-import { resolveSemanticPartFromLocalPoint } from '../../../data/vehicleParts';
 import {
+  resolveSemanticPartFromLocalPoint,
+  isPointOnSemanticPart,
+  SEMANTIC_HITBOX_DEFINITIONS,
+} from '../../../data/vehicleParts';
+import {
+  createVehicleDoorVisualBinding,
+  updateDoorAnimation,
+} from './VehiclePartVisualBinding';
+import {
+  EV01_ARTICULATED_MODEL_URL,
   EV01_REALISTIC_MODEL_URL,
   EV01_FALLBACK_MODEL_URL,
+  EV02_STYLIZED_MODEL_URL,
   getModelTransformConfig,
+  resolveVehicleCode,
 } from './vehicleModelConfig';
+import { getVehicleAnchor } from '../../../config/vehicleCameraPresets';
 import { INTERACTION_CONFIG } from '../../../config/interactionConfig';
 import { globalInteractionState, isRecentDragInteraction } from '../GlobalInteractionManager';
 
 interface VehicleModelMeshProps {
   isSelected: boolean;
   isHovered: boolean;
+  isDeEmphasized?: boolean;
   modelUrl: string;
   onSelectVehicle?: () => void;
   onPointerDown?: (e: ThreeEvent<PointerEvent>) => void;
@@ -28,6 +41,7 @@ interface VehicleModelMeshProps {
 const VehicleModelMesh: React.FC<VehicleModelMeshProps> = ({
   isSelected,
   isHovered,
+  isDeEmphasized,
   modelUrl,
   onSelectVehicle,
   onPointerDown,
@@ -69,6 +83,16 @@ const VehicleModelMesh: React.FC<VehicleModelMeshProps> = ({
         const mesh = child as THREE.Mesh;
         const originalMat = originalMaterialsMap.get(mesh);
         if (!originalMat) return;
+
+        if (isDeEmphasized) {
+          const mat = (originalMat as THREE.Material).clone();
+          if ('transparent' in mat) {
+            (mat as any).transparent = true;
+            (mat as any).opacity = 0.52;
+          }
+          mesh.material = mat;
+          return;
+        }
 
         if (isLegacyModel) {
           // Legacy model fallback accents
@@ -155,46 +179,112 @@ const VehicleModelMesh: React.FC<VehicleModelMeshProps> = ({
             tailMat.emissive = new THREE.Color('#ef4444');
             tailMat.emissiveIntensity = isSelected ? 2.0 : isHovered ? 1.5 : 1.1;
             mesh.material = tailMat;
+          } else if (mat.name === 'PD_VehiclePack_bodycolor') {
+            // EV02 Stylized Exterior Body Paint: Vibrant Golden Amber with interaction sheen
+            const bodyMat = new THREE.MeshStandardMaterial();
+            bodyMat.color = new THREE.Color(isSelected ? '#f59e0b' : isHovered ? '#fbbf24' : '#f59e0b');
+            bodyMat.metalness = 0.35;
+            bodyMat.roughness = 0.35;
+            if (isSelected) {
+              bodyMat.emissive = new THREE.Color('#f59e0b');
+              bodyMat.emissiveIntensity = 0.25;
+            } else if (isHovered) {
+              bodyMat.emissive = new THREE.Color('#fbbf24');
+              bodyMat.emissiveIntensity = 0.15;
+            } else {
+              bodyMat.emissive = new THREE.Color('#000000');
+              bodyMat.emissiveIntensity = 0;
+            }
+            mesh.material = bodyMat;
+          } else if (mat.name === 'PD_VehiclePack_MAT') {
+            // EV02 Interior, glass, tires & trim: Clean dark slate PBR finish
+            const trimMat = new THREE.MeshStandardMaterial();
+            trimMat.color = new THREE.Color('#334155');
+            trimMat.metalness = 0.25;
+            trimMat.roughness = 0.55;
+            trimMat.emissive = new THREE.Color('#000000');
+            trimMat.emissiveIntensity = 0;
+            mesh.material = trimMat;
           } else {
             mesh.material = originalMat;
           }
         }
       }
     });
-  }, [clonedScene, originalMaterialsMap, isLegacyModel, isSelected, isHovered]);
+  }, [clonedScene, originalMaterialsMap, isLegacyModel, isSelected, isHovered, isDeEmphasized]);
 
   const user = useAuthStore((state) => state.user);
   const vehicleDamageMappingMode = useWorldStore((state) => state.vehicleDamageMappingMode);
+  const vehicleInspectionMode = useWorldStore((state) => state.vehicleInspectionMode);
+  const selectedVehiclePartCode = useWorldStore((state) => state.selectedVehiclePartCode);
+  const selectedVehiclePartId = useWorldStore((state) => state.selectedVehiclePartId);
+  const selectVehiclePartCode = useWorldStore((state) => state.selectVehiclePartCode);
+  const selectVehiclePartWithPoint = useWorldStore((state) => state.selectVehiclePartWithPoint);
   const setDraftDamage = useWorldStore((state) => state.setDraftDamage);
   const selectDamageRecord = useWorldStore((state) => state.selectDamageRecord);
 
+  // Initialize visual door bindings and hinge adapter
+  const doorBindings = useMemo(() => createVehicleDoorVisualBinding(clonedScene), [clonedScene]);
+
+  // Open doors on the currently selected vehicle when a part is selected during inspection or damage mapping
+  const isDoorActive =
+    (Boolean(vehicleDamageMappingMode) || Boolean(vehicleInspectionMode)) &&
+    Boolean(selectedVehiclePartCode || selectedVehiclePartId) &&
+    isSelected;
+  const activeDoorPartCode = isDoorActive
+    ? selectedVehiclePartCode || (selectedVehiclePartId as string | null)
+    : null;
+
+  // Animate door opening/closing smoothly if model supports separate door meshes
+  useFrame((_, delta) => {
+    updateDoorAnimation(doorBindings, activeDoorPartCode, delta);
+  });
+
   // Passive click fallback: selects vehicle if clicked directly on visual geometry
-  // In DAMAGE_MAPPING mode: allows placing draft damage point directly on visual surface
+  // In DAMAGE_MAPPING mode: allows selecting part or placing draft damage point
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
+    // Only accept left clicks (button === 0)
+    if (e.button !== 0) return;
     // Prevent accidental selection during camera orbit/drag or vehicle turntable drag
     if (isRecentDragInteraction(e.delta)) return;
 
-    if (vehicleDamageMappingMode) {
-      if (user?.role === 'STAFF') {
-        e.stopPropagation();
-        // Operations (STAFF) EV01 is situated at [0.0, 0.14, 0.5]
-        const vx = 0.0;
-        const vy = 0.14;
-        const vz = 0.5;
+    if (vehicleDamageMappingMode || vehicleInspectionMode) {
+      e.stopPropagation();
 
-        const localPoint: [number, number, number] = [
-          Number((e.point.x - vx).toFixed(3)),
-          Number((e.point.y - vy).toFixed(3)),
-          Number((e.point.z - vz).toFixed(3)),
-        ];
-
-        const partCode = resolveSemanticPartFromLocalPoint(localPoint);
-        setDraftDamage({
-          partCode,
-          localPosition: localPoint,
-        });
-        selectDamageRecord(null);
+      // Convert world click point accurately to vehicle turntable-local coordinates
+      const v = e.point.clone();
+      let obj: THREE.Object3D | null = e.object;
+      let turntableObj: THREE.Object3D | null = null;
+      while (obj) {
+        if (obj.name.includes('Turntable')) {
+          turntableObj = obj;
+          break;
+        }
+        obj = obj.parent;
       }
+
+      if (turntableObj && 'worldToLocal' in turntableObj) {
+        turntableObj.worldToLocal(v);
+      } else if (clonedScene.parent && 'worldToLocal' in clonedScene.parent) {
+        clonedScene.parent.worldToLocal(v);
+      } else {
+        const vehicleCode = resolveVehicleCode(modelUrl);
+        const [vx, vy, vz] = getVehicleAnchor(user?.role, vehicleCode);
+        v.sub(new THREE.Vector3(vx, vy, vz));
+        const yaw = useWorldStore.getState().vehicleYaw;
+        v.applyAxisAngle(new THREE.Vector3(0, 1, 0), -yaw);
+      }
+
+      const localPoint: [number, number, number] = [
+        Number(v.x.toFixed(3)),
+        Number(v.y.toFixed(3)),
+        Number(v.z.toFixed(3)),
+      ];
+
+      // Authoritative single-click: atomically select part and exact 3D inspection coordinate
+      const vehicleCode = resolveVehicleCode(modelUrl);
+      const resolvedPart = resolveSemanticPartFromLocalPoint(localPoint, vehicleCode);
+      selectVehiclePartWithPoint(resolvedPart, localPoint);
       return;
     }
 
@@ -216,6 +306,7 @@ const VehicleModelMesh: React.FC<VehicleModelMeshProps> = ({
 };
 
 interface VehicleModelErrorBoundaryProps {
+  activeUrl: string;
   fallbackUrl: string;
   children: React.ReactNode;
   onFallback: () => void;
@@ -233,10 +324,16 @@ class VehicleModelErrorBoundary extends React.Component<
 
   componentDidCatch(error: any) {
     console.warn(
-      'VehicleModel failed to load primary 3D asset. Gracefully switching to fallback model:',
+      `VehicleModel failed to load 3D asset (${this.props.activeUrl}). Gracefully switching to fallback:`,
       error
     );
     this.props.onFallback();
+  }
+
+  componentDidUpdate(prevProps: VehicleModelErrorBoundaryProps) {
+    if (prevProps.activeUrl !== this.props.activeUrl && this.state.hasError) {
+      this.setState({ hasError: false });
+    }
   }
 
   render() {
@@ -250,6 +347,7 @@ class VehicleModelErrorBoundary extends React.Component<
 interface VehicleModelProps {
   isSelected: boolean;
   isHovered: boolean;
+  isDeEmphasized?: boolean;
   modelUrl?: string;
   onSelectVehicle?: () => void;
   onPointerDown?: (e: ThreeEvent<PointerEvent>) => void;
@@ -260,11 +358,12 @@ interface VehicleModelProps {
  *
  * Dedicated to loading, rendering, and shading the 3D EV vehicle asset.
  * Decoupled from semantic business logic (inspection, handover, check-in).
- * Gracefully falls back to legacy GLB if realistic model encounters any loading issue.
+ * Gracefully falls back: articulated GLB -> realistic GLB -> legacy GLB.
  */
 export const VehicleModel: React.FC<VehicleModelProps> = ({
   isSelected,
   isHovered,
+  isDeEmphasized,
   modelUrl = EV01_REALISTIC_MODEL_URL,
   onSelectVehicle,
   onPointerDown,
@@ -275,14 +374,37 @@ export const VehicleModel: React.FC<VehicleModelProps> = ({
     setActiveModelUrl(modelUrl);
   }, [modelUrl]);
 
+  const handleFallback = () => {
+    // Preserve EV01 fallback chain; do NOT fallback EV02 to EV01 (Section 29)
+    if (activeModelUrl.includes('ev02') || activeModelUrl.includes('stylized')) {
+      return;
+    }
+    if (activeModelUrl === EV01_FALLBACK_MODEL_URL) {
+      return;
+    }
+    if (activeModelUrl === EV01_ARTICULATED_MODEL_URL) {
+      setActiveModelUrl(EV01_REALISTIC_MODEL_URL);
+    } else if (activeModelUrl === EV01_REALISTIC_MODEL_URL) {
+      setActiveModelUrl(EV01_FALLBACK_MODEL_URL);
+    }
+  };
+
   return (
     <VehicleModelErrorBoundary
-      fallbackUrl={EV01_FALLBACK_MODEL_URL}
-      onFallback={() => setActiveModelUrl(EV01_FALLBACK_MODEL_URL)}
+      activeUrl={activeModelUrl}
+      fallbackUrl={
+        activeModelUrl.includes('ev02')
+          ? EV02_STYLIZED_MODEL_URL
+          : activeModelUrl === EV01_ARTICULATED_MODEL_URL
+          ? EV01_REALISTIC_MODEL_URL
+          : EV01_FALLBACK_MODEL_URL
+      }
+      onFallback={handleFallback}
     >
       <VehicleModelMesh
         isSelected={isSelected}
         isHovered={isHovered}
+        isDeEmphasized={isDeEmphasized}
         modelUrl={activeModelUrl}
         onSelectVehicle={onSelectVehicle}
         onPointerDown={onPointerDown}
@@ -291,6 +413,7 @@ export const VehicleModel: React.FC<VehicleModelProps> = ({
   );
 };
 
-// Preload both realistic and fallback model assets for instant, seamless rendering
+// Preload proven models (realistic, stylized, and fallback)
 useGLTF.preload(EV01_REALISTIC_MODEL_URL);
+useGLTF.preload(EV02_STYLIZED_MODEL_URL);
 useGLTF.preload(EV01_FALLBACK_MODEL_URL);

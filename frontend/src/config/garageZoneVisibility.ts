@@ -33,6 +33,7 @@ export interface GarageFocusState {
   vehicleDamageMappingMode?: boolean;
   vehicleInspectionMode?: boolean;
   selectedVehiclePartId?: string | null;
+  selectedVehiclePartCode?: string | null;
 }
 
 /**
@@ -52,7 +53,8 @@ export function getActiveFocusedZoneId(state: GarageFocusState): GarageZone | nu
     Boolean(state.vehicleTripVisualizationMode) ||
     Boolean(state.vehicleDamageMappingMode) ||
     Boolean(state.vehicleInspectionMode) ||
-    Boolean(state.selectedVehiclePartId);
+    Boolean(state.selectedVehiclePartId) ||
+    Boolean(state.selectedVehiclePartCode);
 
   if (isVehicleFocused) {
     return 'VEHICLE';
@@ -63,43 +65,66 @@ export function getActiveFocusedZoneId(state: GarageFocusState): GarageZone | nu
 
 /**
  * Checks whether the virtual garage is currently in any focused mode.
+ * isZoneFocused = selectedZoneId != null
  */
 export function isGarageZoneFocused(state: GarageFocusState): boolean {
   return getActiveFocusedZoneId(state) !== null;
 }
 
 /**
- * Centralized rule: Should floating zone label be displayed for the given zoneId?
- * - In overview mode (!isZoneFocused): true for all accessible zones.
- * - In focused mode: true ONLY if activeFocusedZoneId === zoneId.
- * - When vehicle panel is open on 'VEHICLE' zone, EV01 uses its dedicated panel.
+ * Authoritative Rule: Should overview UI (labels, compact summaries, overview indicators) be shown?
+ * shouldShowOverviewZoneUI = selectedZoneId == null
+ *
+ * True ONLY in overview mode when NO zone or vehicle is focused.
+ * Once ANY zone is focused, overview labels & compact summaries disappear entirely.
+ */
+export function shouldShowOverviewZoneUI(state: GarageFocusState): boolean {
+  return getActiveFocusedZoneId(state) === null;
+}
+
+/**
+ * Centralized rule: Should floating zone overview label be displayed for the given zoneId?
+ * shouldShowZoneLabel = (zoneId) => selectedZoneId == null
+ *
+ * - In overview mode (selectedZoneId == null): true for all zones.
+ * - In focused mode (selectedZoneId != null): false for ALL zones (both focused zone and unrelated zones).
+ * The focused zone presents its identity inside the authoritative detail panel, not as a floating overview label.
  */
 export function shouldShowZoneLabel(
   zoneId: GarageZone,
   state: GarageFocusState
+): boolean;
+export function shouldShowZoneLabel(
+  state: GarageFocusState
+): boolean;
+export function shouldShowZoneLabel(
+  zoneIdOrState: GarageZone | GarageFocusState,
+  maybeState?: GarageFocusState
 ): boolean {
-  const activeZoneId = getActiveFocusedZoneId(state);
-  // Default overview mode: show all zone labels
-  if (!activeZoneId) {
-    return true;
-  }
-  // In focused mode: hide labels of all unrelated zones
-  return activeZoneId === zoneId;
+  const state = typeof zoneIdOrState === 'string' ? maybeState : zoneIdOrState;
+  if (!state) return true;
+  return shouldShowOverviewZoneUI(state);
 }
 
 /**
  * Centralized rule: Should compact summary be displayed for the given zoneId?
- * Follows the same focus isolation rule: visible only in overview or on the selected zone.
+ * In overview mode: true for all zones.
+ * In focused mode: false for ALL zones.
  */
 export function shouldShowZoneSummary(
   zoneId: GarageZone,
   state: GarageFocusState
+): boolean;
+export function shouldShowZoneSummary(
+  state: GarageFocusState
+): boolean;
+export function shouldShowZoneSummary(
+  zoneIdOrState: GarageZone | GarageFocusState,
+  maybeState?: GarageFocusState
 ): boolean {
-  const activeZoneId = getActiveFocusedZoneId(state);
-  if (!activeZoneId) {
-    return true;
-  }
-  return activeZoneId === zoneId;
+  const state = typeof zoneIdOrState === 'string' ? maybeState : zoneIdOrState;
+  if (!state) return true;
+  return shouldShowOverviewZoneUI(state);
 }
 
 /**
@@ -107,6 +132,5 @@ export function shouldShowZoneSummary(
  * Visible ONLY in overview mode when NO zone, vehicle, or business mode is focused.
  */
 export function shouldShowVehicleStatusLabel(state: GarageFocusState): boolean {
-  const activeZoneId = getActiveFocusedZoneId(state);
-  return activeZoneId === null;
+  return shouldShowOverviewZoneUI(state);
 }

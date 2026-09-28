@@ -28,7 +28,7 @@ public class CoOwnershipGroup {
     private GroupStatus status = GroupStatus.ACTIVE;
 
     @JdbcTypeCode(SqlTypes.CHAR)
-    @Column(name = "vehicle_id", length = 36, columnDefinition = "CHAR(36)")
+    @Column(name = "vehicle_id", length = 36, columnDefinition = "CHAR(36)", unique = true)
     private UUID vehicleId;
 
     @JdbcTypeCode(SqlTypes.CHAR)
@@ -154,5 +154,19 @@ public class CoOwnershipGroup {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    /**
+     * Authoritative helper resolving the group's single associated vehicle.
+     * Enforces the business invariant: exactly one vehicle per co-ownership group.
+     */
+    public GroupVehicle getActiveGroupVehicle() {
+        if (groupVehicles == null || groupVehicles.isEmpty()) {
+            return null;
+        }
+        if (groupVehicles.size() > 1) {
+            throw new IllegalStateException("Dữ liệu không hợp lệ: Nhóm đồng sở hữu " + id + " có nhiều hơn 1 xe liên kết (" + groupVehicles.size() + " xe). Quy tắc bắt buộc: 1 nhóm = 1 xe.");
+        }
+        return groupVehicles.get(0);
     }
 }

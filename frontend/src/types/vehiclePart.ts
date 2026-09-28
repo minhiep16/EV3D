@@ -1,5 +1,9 @@
 export type VehiclePartId =
   | 'BODY'
+  | 'DOOR_FL'
+  | 'DOOR_FR'
+  | 'DOOR_RL'
+  | 'DOOR_RR'
   | 'HOOD'
   | 'WINDSHIELD'
   | 'ROOF'

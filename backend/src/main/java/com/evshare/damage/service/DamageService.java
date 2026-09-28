@@ -15,6 +15,7 @@ import com.evshare.user.entity.Role;
 import com.evshare.user.entity.User;
 import com.evshare.user.repository.UserRepository;
 import com.evshare.vehicle.entity.Vehicle;
+import com.evshare.vehicle.entity.VehiclePartCode;
 import com.evshare.vehicle.repository.VehicleRepository;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -27,11 +28,7 @@ import java.util.UUID;
 @Service
 public class DamageService {
 
-    public static final Set<String> VALID_SEMANTIC_PARTS = Set.of(
-            "BODY", "HOOD", "WINDSHIELD", "ROOF",
-            "WHEEL_FL", "WHEEL_FR", "WHEEL_RL", "WHEEL_RR",
-            "HEADLIGHTS", "TAILLIGHTS", "BATTERY", "CHARGING_PORT", "DIFFUSER"
-    );
+    public static final Set<String> VALID_SEMANTIC_PARTS = VehiclePartCode.VALID_CODES;
 
     private final DamageRecordRepository damageRecordRepository;
     private final TripRepository tripRepository;
@@ -72,7 +69,7 @@ public class DamageService {
 
         // 3. Semantic part validation
         String partCode = request.getVehiclePartCode() != null ? request.getVehiclePartCode().trim().toUpperCase() : "";
-        if (!VALID_SEMANTIC_PARTS.contains(partCode)) {
+        if (!VehiclePartCode.isValid(partCode)) {
             throw new IllegalArgumentException("Mã bộ phận phương tiện không hợp lệ: " + request.getVehiclePartCode());
         }
 

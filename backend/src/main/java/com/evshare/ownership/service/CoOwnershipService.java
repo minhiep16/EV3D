@@ -93,9 +93,12 @@ public class CoOwnershipService {
         List<GroupVehicle> gvs = groupVehicleRepository.findByVehicleIdAndStatus(vehicleId, GroupVehicleStatus.ACTIVE);
         CoOwnershipGroup group = null;
         if (!gvs.isEmpty()) {
+            if (gvs.size() > 1) {
+                throw new IllegalStateException("Dữ liệu không hợp lệ: Xe " + vehicleId + " thuộc nhiều hơn 1 nhóm đồng sở hữu đang hoạt động. Quy tắc bắt buộc: 1 xe = 1 nhóm.");
+            }
             group = gvs.get(0).getGroup();
         } else {
-            // 2. Fallback to legacy vehicle_id on group
+            // 2. Fallback to vehicle_id on group
             group = groupRepository.findByVehicleId(vehicleId)
                     .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy nhóm đồng sở hữu cho xe: " + vehicleId));
         }
@@ -145,8 +148,10 @@ public class CoOwnershipService {
             validateGroupMembershipManagementPermission(group, principal);
         }
 
-        List<GroupMember> activeMembers = memberRepository.findByGroupIdAndStatus(groupId, MemberStatus.ACTIVE);
-        Set<UUID> activeUserIds = activeMembers.stream()
+        // Invariant: One CO_OWNER user = maximum 1 active contract
+        // Exclude users who already have an active contract in any group
+        Set<UUID> usersWithActiveContracts = memberRepository.findByStatus(MemberStatus.ACTIVE).stream()
+                .filter(m -> m.getRemovedAt() == null && m.getGroup() != null && m.getGroup().getStatus() == GroupStatus.ACTIVE)
                 .map(m -> m.getUser().getId())
                 .collect(Collectors.toSet());
 
@@ -154,10 +159,28 @@ public class CoOwnershipService {
         List<User> matchingUsers = userRepository.searchEligibleUsers(Role.CO_OWNER, UserStatus.ACTIVE, searchQuery);
 
         return matchingUsers.stream()
-                .filter(u -> !activeUserIds.contains(u.getId()))
+                .filter(u -> !usersWithActiveContracts.contains(u.getId()))
                 .limit(10)
                 .map(u -> new AvailableUserResponse(u.getId(), u.getFullName(), u.getEmail()))
                 .toList();
+    }
+
+    /**
+     * Authoritative Rule: ONE CO_OWNER USER = MAXIMUM ONE ACTIVE CO-OWNERSHIP CONTRACT
+     * Validates that the target user does NOT already have an ACTIVE membership in any OTHER group.
+     */
+    private void validateUserHasNoOtherActiveContract(UUID userId, UUID targetGroupId) {
+        List<GroupMember> activeMemberships = memberRepository.findByUserIdAndStatus(userId, MemberStatus.ACTIVE);
+        for (GroupMember existing : activeMemberships) {
+            if (existing.getRemovedAt() == null && !existing.getGroup().getId().equals(targetGroupId)) {
+                CoOwnershipGroup otherGroup = existing.getGroup();
+                if (otherGroup != null && otherGroup.getStatus() == GroupStatus.ACTIVE) {
+                    throw new DuplicateResourceException(
+                            "Người dùng đã có hợp đồng đồng sở hữu đang hoạt động với một phương tiện khác."
+                    );
+                }
+            }
+        }
     }
 
     @Transactional
@@ -188,6 +211,9 @@ public class CoOwnershipService {
         if (targetUser.getStatus() != UserStatus.ACTIVE) {
             throw new IllegalArgumentException("Tài khoản người dùng hiện không ở trạng thái hoạt động");
         }
+
+        // Authoritative single-contract check: User cannot have multiple active contracts
+        validateUserHasNoOtherActiveContract(targetUser.getId(), groupId);
 
         Optional<GroupMember> existingMemberOpt = memberRepository.findByGroupIdAndUserId(groupId, targetUser.getId());
         if (existingMemberOpt.isPresent()) {
@@ -228,6 +254,11 @@ public class CoOwnershipService {
             member.setMemberRole(request.memberRole());
         }
         if (request.status() != null) {
+            if (request.status() == MemberStatus.ACTIVE && member.getStatus() != MemberStatus.ACTIVE) {
+                // Reactivating member in this group: verify no other active contracts exist
+                validateUserHasNoOtherActiveContract(member.getUser().getId(), groupId);
+                member.setRemovedAt(null);
+            }
             member.setStatus(request.status());
         }
 
@@ -345,9 +376,20 @@ public class CoOwnershipService {
         Vehicle vehicle = vehicleRepository.findById(vehicleId)
                 .orElseThrow(() -> new ResourceNotFoundException("Xe không tồn tại: " + vehicleId));
 
-        if (groupVehicleRepository.existsByGroupIdAndVehicleId(groupId, vehicleId)) {
-            throw new DuplicateResourceException("Xe này đã được liên kết với nhóm");
+        // Enforce 1 group = 1 vehicle invariant: A group can only have at most 1 vehicle
+        List<GroupVehicle> existingGroupVehicles = groupVehicleRepository.findByGroupId(groupId);
+        if (!existingGroupVehicles.isEmpty() || group.getVehicleId() != null) {
+            throw new IllegalStateException("Quy tắc kinh doanh: Mỗi nhóm đồng sở hữu chỉ được liên kết với duy nhất 1 xe. Nhóm đã có xe được liên kết.");
         }
+
+        // Enforce 1 vehicle = 1 group invariant: A vehicle can only belong to at most 1 group
+        if (groupVehicleRepository.existsByVehicleIdAndStatus(vehicleId, GroupVehicleStatus.ACTIVE)
+                || groupRepository.existsByVehicleId(vehicleId)) {
+            throw new DuplicateResourceException("Xe này đã được liên kết với một nhóm đồng sở hữu khác");
+        }
+
+        group.setVehicleId(vehicleId);
+        groupRepository.save(group);
 
         GroupVehicle groupVehicle = new GroupVehicle(UUID.randomUUID(), group, vehicle, GroupVehicleStatus.ACTIVE);
         GroupVehicle saved = groupVehicleRepository.save(groupVehicle);
@@ -362,6 +404,12 @@ public class CoOwnershipService {
         // Delete associated shares for this (group, vehicle)
         shareRepository.deleteByGroupIdAndVehicleId(groupId, vehicleId);
         groupVehicleRepository.delete(gv);
+
+        CoOwnershipGroup group = gv.getGroup();
+        if (group != null && vehicleId.equals(group.getVehicleId())) {
+            group.setVehicleId(null);
+            groupRepository.save(group);
+        }
     }
 
     // ==========================================
@@ -403,6 +451,9 @@ public class CoOwnershipService {
         if (member.getStatus() != MemberStatus.ACTIVE) {
             throw new IllegalArgumentException("Thành viên không ở trạng thái ACTIVE");
         }
+
+        // Authoritative single-contract check: User cannot hold active ownership in another vehicle
+        validateUserHasNoOtherActiveContract(member.getUser().getId(), groupId);
 
         BigDecimal percentage = request.percentage().setScale(2, RoundingMode.HALF_UP);
         validatePercentageLimits(percentage);
@@ -525,10 +576,17 @@ public class CoOwnershipService {
     }
 
     private CoOwnershipGroupResponse toGroupResponse(CoOwnershipGroup group, Vehicle targetVehicle) {
+        List<GroupVehicle> allGvs = groupVehicleRepository.findByGroupId(group.getId());
+        if (allGvs.size() > 1) {
+            throw new IllegalStateException("Dữ liệu không hợp lệ: Nhóm đồng sở hữu " + group.getId() + " có nhiều hơn 1 xe liên kết (" + allGvs.size() + " xe). Quy tắc bắt buộc: 1 nhóm = 1 xe.");
+        }
+        List<GroupVehicle> gvs = allGvs.stream()
+                .filter(gv -> gv.getStatus() == GroupVehicleStatus.ACTIVE)
+                .toList();
+
         // Resolve target vehicle if not provided
         Vehicle activeVehicle = targetVehicle;
         if (activeVehicle == null) {
-            List<GroupVehicle> gvs = groupVehicleRepository.findByGroupIdAndStatus(group.getId(), GroupVehicleStatus.ACTIVE);
             if (!gvs.isEmpty()) {
                 activeVehicle = gvs.get(0).getVehicle();
             } else if (group.getVehicleId() != null) {

@@ -90,6 +90,7 @@ export const AdminVehicleMonitorPanel: React.FC<AdminVehicleMonitorPanelProps> =
   vehicle,
   onClose,
 }) => {
+  const user = useAuthStore((state) => state.user);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const accessToken = useAuthStore((state) => state.accessToken);
   const authReady = isAuthenticated && !!accessToken;
@@ -99,7 +100,7 @@ export const AdminVehicleMonitorPanel: React.FC<AdminVehicleMonitorPanelProps> =
 
   // TanStack Query: Fetch all vehicles for fleet overview
   const { data: allVehicles = [] } = useQuery<VehicleResponse[]>({
-    queryKey: ['vehicles'],
+    queryKey: ['vehicles', user?.role, user?.id],
     queryFn: fetchVehicles,
     enabled: authReady,
     refetchInterval: 10000,

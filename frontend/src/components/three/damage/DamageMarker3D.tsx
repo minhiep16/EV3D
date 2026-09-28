@@ -54,7 +54,7 @@ export const DamageMarker3D: React.FC<DamageMarker3DProps> = ({
     if (onClick) onClick();
   };
 
-  const typeLabel = damageType ? DAMAGE_TYPE_LABELS[damageType] : (isDraft ? 'ĐIỂM MỚI' : 'HƯ HỎNG');
+  const typeLabel = damageType ? DAMAGE_TYPE_LABELS[damageType] : (isDraft ? 'ĐIỂM KIỂM TRA' : 'HƯ HỎNG');
   const severityLabel = severityConfig.labelVi;
 
   return (

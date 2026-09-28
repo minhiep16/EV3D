@@ -11,7 +11,8 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "group_vehicles", uniqueConstraints = {
-        @UniqueConstraint(name = "uk_group_vehicle", columnNames = {"group_id", "vehicle_id"})
+        @UniqueConstraint(name = "uk_group_vehicles_group", columnNames = {"group_id"}),
+        @UniqueConstraint(name = "uk_group_vehicles_vehicle", columnNames = {"vehicle_id"})
 })
 public class GroupVehicle {
 

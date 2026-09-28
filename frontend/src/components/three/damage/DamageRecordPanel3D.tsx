@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -10,6 +10,9 @@ import {
   Layers,
   FileText,
   X,
+  ArrowLeft,
+  Wrench,
+  Check,
 } from 'lucide-react';
 import {
   DamageRecordResponse,
@@ -18,23 +21,9 @@ import {
   DAMAGE_SEVERITY_CONFIG,
   DAMAGE_TYPE_LABELS,
 } from '../../../types/damage';
+import { SEMANTIC_PART_LABELS_VI } from '../../../data/vehicleParts';
 import { useAuthStore } from '../../../store/authStore';
-
-const PART_NAMES_VI: Record<string, string> = {
-  BODY: 'Thân xe & Khung gầm',
-  WHEEL_FL: 'Bánh trước trái',
-  WHEEL_FR: 'Bánh trước phải',
-  WHEEL_RL: 'Bánh sau trái',
-  WHEEL_RR: 'Bánh sau phải',
-  WINDSHIELD: 'Kính chắn gió & Cabin',
-  BATTERY: 'Khối pin điện cao áp',
-  CHARGING_PORT: 'Cổng sạc điện thông minh',
-  HOOD: 'Nắp capo trước',
-  ROOF: 'Nóc xe panorama',
-  HEADLIGHTS: 'Dải đèn pha LED trước',
-  TAILLIGHTS: 'Dải đèn hậu LED sau',
-  DIFFUSER: 'Cản sau & Khuếch tán gió',
-};
+import { useWorldStore } from '../../../store/worldStore';
 
 interface DraftDamageInfo {
   partCode: string;
@@ -42,12 +31,15 @@ interface DraftDamageInfo {
 }
 
 interface DamageRecordPanel3DProps {
+  selectedPartCode: string | null;
   draftDamage: DraftDamageInfo | null;
   selectedRecord: DamageRecordResponse | null;
   savedDamages: DamageRecordResponse[];
   isSubmitting: boolean;
   errorMessage: string | null;
   onSelectDamage: (id: string | null) => void;
+  onSelectPart?: (code: string | null) => void;
+  onExitPartInspection: () => void;
   onDiscardDraft: () => void;
   onSaveDamage: (data: {
     partCode: string;
@@ -59,61 +51,135 @@ interface DamageRecordPanel3DProps {
   onClose: () => void;
 }
 
+export type DamageInspectionStage =
+  | 'IDLE'
+  | 'EVALUATING'
+  | 'READY_TO_COMPLETE'
+  | 'PART_SELECTION'
+  | 'LOCATION_SELECTION'
+  | 'CONDITION_EVALUATION';
+
+type InspectionCondition = 'NORMAL' | 'SCRATCH' | 'DENT' | 'CRACK' | 'OTHER';
+
+const CONDITION_OPTIONS: { id: InspectionCondition; label: string; damageType?: DamageType }[] = [
+  { id: 'NORMAL', label: 'BÌNH THƯỜNG' },
+  { id: 'SCRATCH', label: 'TRẦY XƯỚC', damageType: 'SCRATCH' },
+  { id: 'DENT', label: 'MÓP', damageType: 'DENT' },
+  { id: 'CRACK', label: 'NỨT', damageType: 'CRACK' },
+  { id: 'OTHER', label: 'HỎNG KHÁC', damageType: 'OTHER' },
+];
+
 export const DamageRecordPanel3D: React.FC<DamageRecordPanel3DProps> = ({
+  selectedPartCode,
   draftDamage,
   selectedRecord,
   savedDamages,
   isSubmitting,
   errorMessage,
   onSelectDamage,
+  onExitPartInspection,
   onDiscardDraft,
   onSaveDamage,
   onClose,
 }) => {
   const user = useAuthStore((state) => state.user);
   const isStaff = user?.role === 'STAFF';
+  const inspectionError = useWorldStore((state) => state.inspectionError);
 
-  // Form State for draft recording
-  const [selectedType, setSelectedType] = useState<DamageType>('SCRATCH');
+  // Condition selector for active part inspection (enabled immediately on first click)
+  const [selectedCondition, setSelectedCondition] = useState<InspectionCondition | null>(null);
   const [selectedSeverity, setSelectedSeverity] = useState<DamageSeverity>('MINOR');
   const [note, setNote] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
 
-  const handleSave = async () => {
-    if (!draftDamage) return;
+  // Authoritative Validation Rules (Sections 7, 8, 9)
+  const hasValidCoordinate = Boolean(draftDamage && draftDamage.localPosition);
+  const matchedOpt = CONDITION_OPTIONS.find((c) => c.id === selectedCondition);
+  const resolvedDamageType: DamageType | undefined = matchedOpt?.damageType;
+
+  const canCompleteNormal = Boolean(
+    selectedPartCode &&
+    hasValidCoordinate &&
+    selectedCondition === 'NORMAL'
+  );
+
+  const canSaveDamage = Boolean(
+    !isSubmitting &&
+    selectedPartCode &&
+    hasValidCoordinate &&
+    selectedCondition &&
+    selectedCondition !== 'NORMAL' &&
+    resolvedDamageType &&
+    selectedSeverity
+  );
+
+  // Simplified Single-Click State Machine:
+  // IDLE -> EVALUATING -> READY_TO_COMPLETE
+  const damageInspectionStage: DamageInspectionStage = !selectedPartCode
+    ? 'IDLE'
+    : !selectedCondition
+    ? 'EVALUATING'
+    : 'READY_TO_COMPLETE';
+
+  // When switching parts or entering inspection, reset condition & note
+  useEffect(() => {
+    setSelectedCondition(null);
+    setNote('');
     setLocalError(null);
+  }, [selectedPartCode]);
+
+  const handleDiscardPoint = () => {
+    onDiscardDraft();
+    setSelectedCondition(null);
+    setLocalError(null);
+  };
+
+  const handleSave = async () => {
+    if (!selectedPartCode) return;
+    if (!draftDamage || !hasValidCoordinate) {
+      setLocalError('Vui lòng nhấp vào vị trí cần kiểm tra trên mô hình xe 3D.');
+      return;
+    }
+    if (!selectedCondition || selectedCondition === 'NORMAL') {
+      setLocalError('Vui lòng chọn loại hư hỏng cần ghi nhận.');
+      return;
+    }
+    if (!resolvedDamageType || !selectedSeverity) {
+      setLocalError('Vui lòng chọn đầy đủ loại và mức độ hư hỏng.');
+      return;
+    }
+    setLocalError(null);
+
+    const damageType: DamageType = resolvedDamageType;
+
     try {
       await onSaveDamage({
-        partCode: draftDamage.partCode,
-        damageType: selectedType,
+        partCode: selectedPartCode,
+        damageType,
         severity: selectedSeverity,
         note: note.trim() || undefined,
         localPosition: draftDamage.localPosition,
       });
       setNote('');
+      setSelectedCondition(null);
+      // Exit part inspection after successful record
+      onExitPartInspection();
     } catch (err: any) {
       setLocalError(err.message || 'Không thể lưu hư hỏng');
     }
   };
 
-  const damageTypes: DamageType[] = [
-    'SCRATCH',
-    'DENT',
-    'CRACK',
-    'BROKEN',
-    'PAINT_DAMAGE',
-    'GLASS_DAMAGE',
-    'TIRE_DAMAGE',
-    'OTHER',
-  ];
-
   const severities: DamageSeverity[] = ['MINOR', 'MODERATE', 'SEVERE'];
+
+  const partNameVi = selectedPartCode
+    ? SEMANTIC_PART_LABELS_VI[selectedPartCode] || selectedPartCode
+    : '';
 
   return (
     <div
       style={{
-        width: '380px',
-        maxHeight: '520px',
+        width: '100%',
+        maxHeight: 'min(82vh, calc(100vh - 44px))',
         background: 'rgba(8, 14, 26, 0.94)',
         backdropFilter: 'blur(20px)',
         border: '1px solid rgba(56, 189, 248, 0.3)',
@@ -124,39 +190,67 @@ export const DamageRecordPanel3D: React.FC<DamageRecordPanel3DProps> = ({
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
+        pointerEvents: 'auto', // CRITICAL: only this visible panel captures pointer events
       }}
     >
-      {/* 1. Header */}
+      {/* ========================================================================= */}
+      {/* 1. HEADER (Fixed at top) */}
+      {/* ========================================================================= */}
       <div
         style={{
-          padding: '14px 18px',
+          flexShrink: 0,
+          padding: '12px 16px',
           borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          background: 'rgba(15, 23, 42, 0.8)',
+          background: 'rgba(15, 23, 42, 0.92)',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div
-            style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '8px',
-              background: draftDamage
-                ? 'rgba(6, 182, 212, 0.2)'
-                : 'rgba(245, 158, 11, 0.2)',
-              border: `1px solid ${draftDamage ? '#06b6d4' : '#f59e0b'}`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <AlertTriangle
-              size={18}
-              color={draftDamage ? '#06b6d4' : '#f59e0b'}
-            />
-          </div>
+          {selectedPartCode ? (
+            <button
+              type="button"
+              onClick={onExitPartInspection}
+              title="Quay lại kiểm tra xe"
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                background: 'rgba(56, 189, 248, 0.15)',
+                border: '1px solid rgba(56, 189, 248, 0.4)',
+                color: '#38bdf8',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <ArrowLeft size={16} />
+            </button>
+          ) : (
+            <div
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                background: selectedRecord
+                  ? 'rgba(245, 158, 11, 0.2)'
+                  : 'rgba(6, 182, 212, 0.2)',
+                border: `1px solid ${selectedRecord ? '#f59e0b' : '#06b6d4'}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <AlertTriangle
+                size={18}
+                color={selectedRecord ? '#f59e0b' : '#06b6d4'}
+              />
+            </div>
+          )}
+
           <div>
             <div
               style={{
@@ -166,8 +260,8 @@ export const DamageRecordPanel3D: React.FC<DamageRecordPanel3DProps> = ({
                 color: '#ffffff',
               }}
             >
-              {draftDamage
-                ? 'GHI NHẬN HƯ HỎNG 3D'
+              {selectedPartCode
+                ? 'KIỂM TRA BỘ PHẬN'
                 : selectedRecord
                 ? 'CHI TIẾT HƯ HỎNG'
                 : 'DANH SÁCH HƯ HỎNG'}
@@ -178,8 +272,8 @@ export const DamageRecordPanel3D: React.FC<DamageRecordPanel3DProps> = ({
                 color: '#94a3b8',
               }}
             >
-              {draftDamage
-                ? 'Đã gắn điểm trên mô hình xe EV01'
+              {selectedPartCode
+                ? partNameVi
                 : selectedRecord
                 ? `Mã ghi nhận: ${selectedRecord.id.substring(0, 8)}...`
                 : `${savedDamages.length} vị trí đã ghi nhận`}
@@ -206,44 +300,58 @@ export const DamageRecordPanel3D: React.FC<DamageRecordPanel3DProps> = ({
         </button>
       </div>
 
-      {/* 2. Scrollable Body Content */}
+      {/* ========================================================================= */}
+      {/* 2. BODY CONTENT (Scrollable internally) */}
+      {/* ========================================================================= */}
       <div
         style={{
-          padding: '16px',
+          flex: '1 1 auto',
+          minHeight: 0,
+          padding: '14px 16px',
           overflowY: 'auto',
           display: 'flex',
           flexDirection: 'column',
-          gap: '14px',
+          gap: '12px',
         }}
       >
-        {/* Error Banners */}
-        {(errorMessage || localError) && (
+        {/* Error & Warning Banners */}
+        {(errorMessage || localError || inspectionError) && (
           <div
             style={{
               padding: '10px 12px',
               borderRadius: '8px',
-              background: 'rgba(239, 68, 68, 0.15)',
-              border: '1px solid rgba(239, 68, 68, 0.4)',
-              color: '#fca5a5',
+              background: inspectionError && !errorMessage && !localError
+                ? 'rgba(245, 158, 11, 0.15)'
+                : 'rgba(239, 68, 68, 0.15)',
+              border: inspectionError && !errorMessage && !localError
+                ? '1px solid rgba(245, 158, 11, 0.4)'
+                : '1px solid rgba(239, 68, 68, 0.4)',
+              color: inspectionError && !errorMessage && !localError ? '#fcd34d' : '#fca5a5',
               fontSize: '11px',
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
             }}
           >
-            <XCircle size={15} color="#ef4444" />
-            <span>{errorMessage || localError}</span>
+            {inspectionError && !errorMessage && !localError ? (
+              <AlertTriangle size={15} color="#f59e0b" style={{ flexShrink: 0 }} />
+            ) : (
+              <XCircle size={15} color="#ef4444" style={{ flexShrink: 0 }} />
+            )}
+            <span>{inspectionError || errorMessage || localError}</span>
           </div>
         )}
 
-        {/* CASE A: DRAFT DAMAGE FORM (STAFF RECORDING) */}
-        {draftDamage && isStaff && (
-          <>
-            {/* Part Name & 3D Coordinates */}
+        {/* ===================================================================== */}
+        {/* VIEW A: PART INSPECTION MODE (A semantic part is selected) */}
+        {/* ===================================================================== */}
+        {selectedPartCode && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {/* 1. VỊ TRÍ KIỂM TRA (Part Name & Code Banner) */}
             <div
               style={{
                 background: 'rgba(15, 23, 42, 0.6)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
+                border: '1px solid rgba(56, 189, 248, 0.25)',
                 borderRadius: '10px',
                 padding: '10px 12px',
               }}
@@ -253,118 +361,133 @@ export const DamageRecordPanel3D: React.FC<DamageRecordPanel3DProps> = ({
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  marginBottom: '6px',
+                  marginBottom: '4px',
                 }}
               >
                 <span
                   style={{
-                    fontSize: '11px',
+                    fontSize: '10px',
                     color: '#94a3b8',
                     textTransform: 'uppercase',
                     letterSpacing: '0.05em',
                   }}
                 >
-                  Bộ phận phát hiện
+                  Vị trí kiểm tra
                 </span>
                 <span
                   style={{
-                    fontSize: '11px',
+                    fontSize: '10px',
                     fontWeight: 700,
                     color: '#38bdf8',
                     background: 'rgba(56, 189, 248, 0.12)',
                     padding: '2px 8px',
                     borderRadius: '4px',
                     border: '1px solid rgba(56, 189, 248, 0.3)',
+                    fontFamily: 'monospace',
                   }}
                 >
-                  {draftDamage.partCode}
+                  {selectedPartCode}
                 </span>
               </div>
-              <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
-                {PART_NAMES_VI[draftDamage.partCode] || draftDamage.partCode}
-              </div>
-              <div
-                style={{
-                  fontSize: '10px',
-                  color: '#64748b',
-                  marginTop: '6px',
-                  fontFamily: 'monospace',
-                }}
-              >
-                Tọa độ cục bộ: X: {draftDamage.localPosition[0].toFixed(3)} | Y:{' '}
-                {draftDamage.localPosition[1].toFixed(3)} | Z:{' '}
-                {draftDamage.localPosition[2].toFixed(3)}
+              <div style={{ fontSize: '15px', fontWeight: 800, color: '#f8fafc' }}>
+                {partNameVi}
               </div>
             </div>
 
-            {/* Damage Type Selector */}
-            <div>
-              <label
-                style={{
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  color: '#cbd5e1',
-                  display: 'block',
-                  marginBottom: '8px',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.04em',
-                }}
-              >
-                Loại hư hỏng
-              </label>
+            {/* 2. VỊ TRÍ 3D (Authoritative Coordinates Captured on Click - Section 10) */}
+            {hasValidCoordinate && draftDamage ? (
               <div
                 style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(2, 1fr)',
-                  gap: '6px',
+                  background: 'rgba(15, 23, 42, 0.75)',
+                  border: '1px solid rgba(16, 185, 129, 0.45)',
+                  borderRadius: '10px',
+                  padding: '10px 12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
                 }}
               >
-                {damageTypes.map((type) => {
-                  const isSelected = selectedType === type;
-                  return (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => setSelectedType(type)}
-                      style={{
-                        padding: '7px 10px',
-                        borderRadius: '8px',
-                        background: isSelected
-                          ? 'rgba(6, 182, 212, 0.25)'
-                          : 'rgba(30, 41, 59, 0.5)',
-                        border: isSelected
-                          ? '1px solid #06b6d4'
-                          : '1px solid rgba(255, 255, 255, 0.08)',
-                        color: isSelected ? '#ffffff' : '#94a3b8',
-                        fontSize: '11px',
-                        fontWeight: isSelected ? 700 : 500,
-                        cursor: 'pointer',
-                        textAlign: 'center',
-                        transition: 'all 0.15s ease',
-                      }}
-                    >
-                      {DAMAGE_TYPE_LABELS[type]}
-                    </button>
-                  );
-                })}
+                <div>
+                  <div
+                    style={{
+                      fontSize: '10px',
+                      color: '#10b981',
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                      marginBottom: '2px',
+                    }}
+                  >
+                    VỊ TRÍ 3D
+                  </div>
+                  <div
+                    style={{
+                      fontSize: '10.5px',
+                      color: '#94a3b8',
+                      fontFamily: 'monospace',
+                    }}
+                  >
+                    X: {draftDamage.localPosition[0].toFixed(3)} | Y:{' '}
+                    {draftDamage.localPosition[1].toFixed(3)} | Z:{' '}
+                    {draftDamage.localPosition[2].toFixed(3)}
+                  </div>
+                </div>
+                <div
+                  style={{
+                    fontSize: '10px',
+                    color: '#10b981',
+                    background: 'rgba(16, 185, 129, 0.15)',
+                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                    borderRadius: '6px',
+                    padding: '3px 8px',
+                    fontWeight: 700,
+                    letterSpacing: '0.03em',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  ✓ ĐÃ XÁC ĐỊNH VỊ TRÍ
+                </div>
               </div>
-            </div>
-
-            {/* Severity Selector */}
-            <div>
-              <label
+            ) : (
+              <div
                 style={{
+                  background: 'rgba(15, 23, 42, 0.75)',
+                  border: '1px dashed rgba(245, 158, 11, 0.45)',
+                  borderRadius: '10px',
+                  padding: '10px 12px',
+                  color: '#fbbf24',
                   fontSize: '11px',
                   fontWeight: 600,
-                  color: '#cbd5e1',
-                  display: 'block',
-                  marginBottom: '8px',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.04em',
+                  textAlign: 'center',
                 }}
               >
-                Mức độ nghiêm trọng
-              </label>
+                Chưa xác định tọa độ 3D
+              </div>
+            )}
+
+            {/* 3. TÌNH TRẠNG (Condition Evaluation - Enabled when coordinate exists) */}
+            <div>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: '8px',
+                }}
+              >
+                <label
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    color: '#cbd5e1',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  TÌNH TRẠNG
+                </label>
+              </div>
+
               <div
                 style={{
                   display: 'grid',
@@ -372,128 +495,207 @@ export const DamageRecordPanel3D: React.FC<DamageRecordPanel3DProps> = ({
                   gap: '6px',
                 }}
               >
-                {severities.map((sev) => {
-                  const isSelected = selectedSeverity === sev;
-                  const cfg = DAMAGE_SEVERITY_CONFIG[sev];
+                {CONDITION_OPTIONS.map((opt) => {
+                  const isSelected = selectedCondition === opt.id;
+                  const isNormal = opt.id === 'NORMAL';
+                  const activeColor = isNormal ? '#10b981' : '#06b6d4';
                   return (
                     <button
-                      key={sev}
+                      key={opt.id}
                       type="button"
-                      onClick={() => setSelectedSeverity(sev)}
+                      disabled={!hasValidCoordinate}
+                      onClick={() => {
+                        setSelectedCondition(opt.id);
+                      }}
                       style={{
                         padding: '8px 6px',
                         borderRadius: '8px',
                         background: isSelected
-                          ? `${cfg.color}26`
+                          ? `${activeColor}2b`
                           : 'rgba(30, 41, 59, 0.5)',
                         border: isSelected
-                          ? `1px solid ${cfg.color}`
+                          ? `1px solid ${activeColor}`
                           : '1px solid rgba(255, 255, 255, 0.08)',
                         color: isSelected ? '#ffffff' : '#94a3b8',
-                        fontSize: '11px',
+                        fontSize: '10.5px',
                         fontWeight: isSelected ? 700 : 500,
-                        cursor: 'pointer',
+                        cursor: !hasValidCoordinate ? 'not-allowed' : 'pointer',
+                        opacity: !hasValidCoordinate ? 0.45 : 1,
                         textAlign: 'center',
                         transition: 'all 0.15s ease',
                       }}
                     >
-                      {cfg.labelVi}
+                      {opt.label}
                     </button>
                   );
                 })}
               </div>
             </div>
 
-            {/* Note Textarea */}
-            <div>
-              <label
-                style={{
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  color: '#cbd5e1',
-                  display: 'block',
-                  marginBottom: '6px',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.04em',
-                }}
-              >
-                Ghi chú mô tả (Tùy chọn)
-              </label>
-              <textarea
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder="Nhập mô tả cụ thể về vết trầy xước, nứt hoặc biến dạng..."
-                rows={3}
-                style={{
-                  width: '100%',
-                  boxSizing: 'border-box',
-                  background: 'rgba(15, 23, 42, 0.7)',
-                  border: '1px solid rgba(255, 255, 255, 0.12)',
-                  borderRadius: '8px',
-                  padding: '8px 10px',
-                  color: '#ffffff',
-                  fontSize: '11px',
-                  resize: 'none',
-                  outline: 'none',
-                  fontFamily: 'inherit',
-                }}
-              />
-            </div>
+            {/* 4. NORMAL CONDITION (Section 6: ✓ Tình trạng tốt – Bình thường) */}
+            {selectedCondition === 'NORMAL' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div
+                  style={{
+                    background: 'rgba(16, 185, 129, 0.08)',
+                    border: '1px solid rgba(16, 185, 129, 0.28)',
+                    borderRadius: '10px',
+                    padding: '12px 14px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <CheckCircle2 size={16} color="#10b981" />
+                    <span style={{ fontSize: '12.5px', fontWeight: 700, color: '#10b981' }}>
+                      ✓ Tình trạng tốt – Bình thường
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#94a3b8', lineHeight: 1.45 }}>
+                    Bộ phận {partNameVi} đạt tiêu chuẩn, không có hư hỏng. Không cần tạo biên bản ghi nhận hư hỏng.
+                  </div>
+                </div>
 
-            {/* Action Buttons */}
-            <div
-              style={{
-                display: 'flex',
-                gap: '8px',
-                marginTop: '6px',
-              }}
-            >
-              <button
-                type="button"
-                onClick={onDiscardDraft}
-                disabled={isSubmitting}
-                style={{
-                  flex: 1,
-                  padding: '9px 12px',
-                  borderRadius: '8px',
-                  background: 'rgba(30, 41, 59, 0.8)',
-                  border: '1px solid rgba(255, 255, 255, 0.12)',
-                  color: '#cbd5e1',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  cursor: isSubmitting ? 'not-allowed' : 'pointer',
-                }}
-              >
-                HỦY
-              </button>
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={isSubmitting}
-                style={{
-                  flex: 2,
-                  padding: '9px 12px',
-                  borderRadius: '8px',
-                  background: isSubmitting
-                    ? 'rgba(6, 182, 212, 0.4)'
-                    : 'linear-gradient(135deg, #00f2fe 0%, #0284c7 100%)',
-                  border: 'none',
-                  color: '#081018',
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  letterSpacing: '0.04em',
-                  cursor: isSubmitting ? 'wait' : 'pointer',
-                  boxShadow: '0 0 15px rgba(0, 242, 254, 0.35)',
-                }}
-              >
-                {isSubmitting ? 'ĐANG LƯU...' : 'LƯU HƯ HỎNG'}
-              </button>
-            </div>
-          </>
+                {/* Optional Note for Normal Inspection (Section 8) */}
+                <div>
+                  <label
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      color: '#cbd5e1',
+                      display: 'block',
+                      marginBottom: '6px',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                    }}
+                  >
+                    Ghi chú (Tùy chọn)
+                  </label>
+                  <textarea
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    placeholder="Ghi chú thêm về tình trạng bộ phận (nếu có)..."
+                    rows={2}
+                    style={{
+                      width: '100%',
+                      boxSizing: 'border-box',
+                      background: 'rgba(15, 23, 42, 0.7)',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      borderRadius: '8px',
+                      padding: '8px 10px',
+                      color: '#ffffff',
+                      fontSize: '11px',
+                      resize: 'none',
+                      outline: 'none',
+                      fontFamily: 'inherit',
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* 5. DAMAGE CONDITION (Sections 7-8: Severity & Note directly available) */}
+            {selectedCondition && selectedCondition !== 'NORMAL' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {/* Severity Selector: NHẸ / TRUNG BÌNH / NGHIÊM TRỌNG */}
+                <div>
+                  <label
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      color: '#cbd5e1',
+                      display: 'block',
+                      marginBottom: '8px',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                    }}
+                  >
+                    Mức độ
+                  </label>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(3, 1fr)',
+                      gap: '6px',
+                    }}
+                  >
+                    {severities.map((sev) => {
+                      const isSelected = selectedSeverity === sev;
+                      const cfg = DAMAGE_SEVERITY_CONFIG[sev];
+                      return (
+                        <button
+                          key={sev}
+                          type="button"
+                          onClick={() => setSelectedSeverity(sev)}
+                          style={{
+                            padding: '8px 6px',
+                            borderRadius: '8px',
+                            background: isSelected
+                              ? `${cfg.color}26`
+                              : 'rgba(30, 41, 59, 0.5)',
+                            border: isSelected
+                              ? `1px solid ${cfg.color}`
+                              : '1px solid rgba(255, 255, 255, 0.08)',
+                            color: isSelected ? '#ffffff' : '#94a3b8',
+                            fontSize: '11px',
+                            fontWeight: isSelected ? 700 : 500,
+                            cursor: 'pointer',
+                            textAlign: 'center',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          {cfg.labelVi}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Note Textarea (Section 8) */}
+                <div>
+                  <label
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      color: '#cbd5e1',
+                      display: 'block',
+                      marginBottom: '6px',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                    }}
+                  >
+                    Ghi chú
+                  </label>
+                  <textarea
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    placeholder="Mô tả vết hư hỏng, kích thước, đặc điểm..."
+                    rows={2}
+                    style={{
+                      width: '100%',
+                      boxSizing: 'border-box',
+                      background: 'rgba(15, 23, 42, 0.7)',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      borderRadius: '8px',
+                      padding: '8px 10px',
+                      color: '#ffffff',
+                      fontSize: '11px',
+                      resize: 'none',
+                      outline: 'none',
+                      fontFamily: 'inherit',
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
         )}
 
-        {/* CASE B: INSPECTING A SAVED RECORD (OR READ-ONLY) */}
-        {!draftDamage && selectedRecord && (
+        {/* ===================================================================== */}
+        {/* VIEW B: INSPECTING A SAVED PERSISTED RECORD */}
+        {/* ===================================================================== */}
+        {!selectedPartCode && selectedRecord && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {/* Part Name & Code */}
             <div
@@ -537,7 +739,7 @@ export const DamageRecordPanel3D: React.FC<DamageRecordPanel3DProps> = ({
                 </span>
               </div>
               <div style={{ fontSize: '14px', fontWeight: 700, color: '#f8fafc' }}>
-                {PART_NAMES_VI[selectedRecord.vehiclePartCode] ||
+                {SEMANTIC_PART_LABELS_VI[selectedRecord.vehiclePartCode] ||
                   selectedRecord.vehiclePartCode}
               </div>
             </div>
@@ -625,7 +827,7 @@ export const DamageRecordPanel3D: React.FC<DamageRecordPanel3DProps> = ({
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <User size={13} />
-                <span>Người ghi: {selectedRecord.createdByName}</span>
+                <span>Người ghi: {selectedRecord.createdByName || 'Nhân viên bảo trì'}</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <Clock size={13} />
@@ -663,8 +865,10 @@ export const DamageRecordPanel3D: React.FC<DamageRecordPanel3DProps> = ({
           </div>
         )}
 
-        {/* CASE C: NO ACTIVE DRAFT AND NO SPECIFIC DAMAGE SELECTED */}
-        {!draftDamage && !selectedRecord && (
+        {/* ===================================================================== */}
+        {/* VIEW C: DAMAGE LIST OVERVIEW (No part selected, no record selected) */}
+        {/* ===================================================================== */}
+        {!selectedPartCode && !selectedRecord && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <div
               style={{
@@ -678,7 +882,7 @@ export const DamageRecordPanel3D: React.FC<DamageRecordPanel3DProps> = ({
               }}
             >
               {isStaff
-                ? 'Nhấn chuột trái trực tiếp vào bề mặt hoặc bộ phận trên xe EV01 để định vị điểm hư hỏng mới.'
+                ? 'Nhấn chuột trái vào bộ phận xe trên mô hình 3D (Cửa, Bánh xe, Ca-pô, Kính...) để kiểm tra tình trạng chi tiết.'
                 : 'Chế độ xem thông tin hư hỏng sau chuyến đi. Nhấp vào các điểm đánh dấu trên xe để xem chi tiết.'}
             </div>
 
@@ -723,7 +927,7 @@ export const DamageRecordPanel3D: React.FC<DamageRecordPanel3DProps> = ({
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '6px',
-                  maxHeight: '260px',
+                  maxHeight: '280px',
                   overflowY: 'auto',
                 }}
               >
@@ -763,7 +967,7 @@ export const DamageRecordPanel3D: React.FC<DamageRecordPanel3DProps> = ({
                             color: '#f8fafc',
                           }}
                         >
-                          {PART_NAMES_VI[item.vehiclePartCode] ||
+                          {SEMANTIC_PART_LABELS_VI[item.vehiclePartCode] ||
                             item.vehiclePartCode}
                         </div>
                         <div
@@ -798,6 +1002,116 @@ export const DamageRecordPanel3D: React.FC<DamageRecordPanel3DProps> = ({
           </div>
         )}
       </div>
+
+      {/* 3. FOOTER (FOR PART INSPECTION MODE - STICKY/FIXED AT BOTTOM) */}
+      {selectedPartCode && (
+        <div
+          style={{
+            flexShrink: 0,
+            padding: '10px 16px',
+            borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+            background: 'rgba(15, 23, 42, 0.95)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+          }}
+        >
+          {/* Primary Action Button (Sections 6, 7 & 18) */}
+          {!selectedCondition ? (
+            <div
+              style={{
+                width: '100%',
+                padding: '10px 14px',
+                borderRadius: '8px',
+                background: 'rgba(56, 189, 248, 0.08)',
+                border: '1px solid rgba(56, 189, 248, 0.25)',
+                color: '#94a3b8',
+                fontSize: '11.5px',
+                fontWeight: 600,
+                textAlign: 'center',
+                boxSizing: 'border-box',
+              }}
+            >
+              Vui lòng chọn tình trạng bộ phận
+            </div>
+          ) : selectedCondition === 'NORMAL' ? (
+            <button
+              type="button"
+              onClick={onExitPartInspection}
+              disabled={!canCompleteNormal}
+              style={{
+                width: '100%',
+                padding: '10px 14px',
+                borderRadius: '8px',
+                background: !canCompleteNormal
+                  ? 'rgba(16, 185, 129, 0.2)'
+                  : 'linear-gradient(135deg, rgba(16, 185, 129, 0.9) 0%, rgba(5, 150, 105, 0.9) 100%)',
+                border: !canCompleteNormal ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid #10b981',
+                color: !canCompleteNormal ? '#94a3b8' : '#ffffff',
+                fontSize: '12px',
+                fontWeight: 700,
+                letterSpacing: '0.04em',
+                cursor: !canCompleteNormal ? 'not-allowed' : 'pointer',
+                boxShadow: !canCompleteNormal ? 'none' : '0 0 15px rgba(16, 185, 129, 0.4)',
+                textAlign: 'center',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              HOÀN TẤT KIỂM TRA
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={!canSaveDamage}
+              style={{
+                width: '100%',
+                padding: '10px 14px',
+                borderRadius: '8px',
+                background: !canSaveDamage
+                  ? 'rgba(6, 182, 212, 0.2)'
+                  : 'linear-gradient(135deg, #00f2fe 0%, #0284c7 100%)',
+                border: !canSaveDamage ? '1px solid rgba(6, 182, 212, 0.4)' : 'none',
+                color: !canSaveDamage ? '#94a3b8' : '#081018',
+                fontSize: '12px',
+                fontWeight: 700,
+                letterSpacing: '0.04em',
+                cursor: !canSaveDamage ? 'not-allowed' : isSubmitting ? 'wait' : 'pointer',
+                boxShadow: !canSaveDamage ? 'none' : '0 0 16px rgba(0, 242, 254, 0.45)',
+                textAlign: 'center',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              {isSubmitting ? 'ĐANG LƯU HƯ HỎNG...' : 'HOÀN TẤT & GHI NHẬN'}
+            </button>
+          )}
+
+          {/* Secondary Action: QUAY LẠI KIỂM TRA XE */}
+          <button
+            type="button"
+            onClick={onExitPartInspection}
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              borderRadius: '8px',
+              background: 'transparent',
+              border: '1px solid rgba(56, 189, 248, 0.25)',
+              color: '#38bdf8',
+              fontSize: '11px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <ArrowLeft size={13} />
+            QUAY LẠI KIỂM TRA XE
+          </button>
+        </div>
+      )}
     </div>
   );
 };

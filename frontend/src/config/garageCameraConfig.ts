@@ -78,10 +78,10 @@ export const GARAGE_ZONE_ANCHORS: {
 } = {
   CO_OWNER: {
     VEHICLE: [0.0, 0.14, 1.8],
-    CHARGING: [5.0, 0, 0.8],
-    FINANCE: [-5.4, 0, -0.6],
-    ANALYTICS: [3.0, 0, -4.0],
-    AI: [-2.2, 0, -4.2],
+    CHARGING: [5.2, 0, 0.5],
+    FINANCE: [-5.2, 0, 0.5],
+    ANALYTICS: [3.2, 0, -3.8],
+    AI: [-3.2, 0, -3.8],
     MAINTENANCE: [-9.0, 0, 0.5],
     GOVERNANCE: [9.0, 0, -4.5],
   },
@@ -192,8 +192,8 @@ export function panelFriendlyFocusCamera(
  */
 export function overviewCamera(role?: string, viewportWidth?: number): GarageCameraPreset {
   const isCoOwner = !role || role === 'CO_OWNER';
-  const target: [number, number, number] = isCoOwner ? [0.0, 1.2, -0.5] : [0.0, 0.7, 0.5];
-  const position: [number, number, number] = isCoOwner ? [0.0, 6.2, 13.8] : [0.0, 14.5, 19.5];
+  const target: [number, number, number] = isCoOwner ? [0.0, 1.2, 0.5] : [0.0, 0.7, 0.5];
+  const position: [number, number, number] = isCoOwner ? [0.0, 5.2, 13.2] : [0.0, 14.5, 19.5];
 
   const dx = position[0] - target[0];
   const dy = position[1] - target[1];

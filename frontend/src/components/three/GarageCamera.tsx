@@ -3,15 +3,22 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls as DreiOrbitControls } from '@react-three/drei';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import * as THREE from 'three';
+import { useQuery } from '@tanstack/react-query';
 import { useWorldStore, getZoneCameraPreset } from '../../store/worldStore';
 import { useAuthStore } from '../../store/authStore';
 import { getPartById } from '../../data/vehicleParts';
 import {
   resolveActiveCameraPresetKey,
   getVehicleCameraPreset,
+  getVehiclePartInspectionPreset,
   VehicleCameraPreset,
 } from '../../config/vehicleCameraPresets';
 import { getGarageZoneCameraPreset } from '../../config/garageCameraConfig';
+import { fetchVehicles } from '../../services/vehicleApi';
+import { fetchVehicleDamages } from '../../services/damageApi';
+import { resolveVehicleCode } from './vehicles/vehicleModelConfig';
+import { DamageRecordResponse } from '../../types/damage';
+import { VehicleResponse } from '../../types/vehicle';
 import {
   notifyCameraOrbitStart,
   notifyCameraOrbitEnd,
@@ -30,6 +37,9 @@ export const GarageCamera: React.FC = () => {
   const selectedVehiclePartId = useWorldStore(
     (state) => state.selectedVehiclePartId
   );
+  const selectedVehiclePartCode = useWorldStore(
+    (state) => state.selectedVehiclePartCode
+  );
   const vehicleCoOwnershipMode = useWorldStore(
     (state) => state.vehicleCoOwnershipMode
   );
@@ -40,6 +50,67 @@ export const GarageCamera: React.FC = () => {
   const vehicleTripVisualizationMode = useWorldStore((state) => state.vehicleTripVisualizationMode);
   const vehicleDamageMappingMode = useWorldStore((state) => state.vehicleDamageMappingMode);
   const vehicleInspectionMode = useWorldStore((state) => state.vehicleInspectionMode);
+  const draftDamage = useWorldStore((state) => state.draftDamage);
+  const selectedDamageId = useWorldStore((state) => state.selectedDamageId);
+  const vehicleYaw = useWorldStore((state) => state.vehicleYaw);
+
+  // TanStack Query: Read cached vehicles and damages to resolve vehicle code and damage coordinates
+  const { data: vehicles = [] } = useQuery<VehicleResponse[]>({
+    queryKey: ['vehicles', user?.role, user?.id],
+    queryFn: fetchVehicles,
+  });
+  const currentVehicle = vehicles.find((v) => v.id === selectedVehicleId);
+  const resolvedVehicleCode = resolveVehicleCode(currentVehicle || selectedVehicleId);
+
+  const { data: damages = [] } = useQuery<DamageRecordResponse[]>({
+    queryKey: ['vehicleDamages', selectedVehicleId],
+    queryFn: () => (selectedVehicleId ? fetchVehicleDamages(selectedVehicleId) : Promise.resolve([])),
+    enabled: !!selectedVehicleId,
+  });
+
+  const selectedDamageRecord = React.useMemo(() => {
+    if (!selectedDamageId) return null;
+    return damages.find((d) => d.id === selectedDamageId) || null;
+  }, [damages, selectedDamageId]);
+
+  const activeDamagePoint = React.useMemo((): [number, number, number] | null => {
+    if (draftDamage?.localPosition) {
+      return draftDamage.localPosition;
+    }
+    if (selectedDamageRecord) {
+      return [
+        selectedDamageRecord.localPositionX,
+        selectedDamageRecord.localPositionY,
+        selectedDamageRecord.localPositionZ,
+      ];
+    }
+    return null;
+  }, [
+    draftDamage?.localPosition?.[0],
+    draftDamage?.localPosition?.[1],
+    draftDamage?.localPosition?.[2],
+    selectedDamageRecord?.localPositionX,
+    selectedDamageRecord?.localPositionY,
+    selectedDamageRecord?.localPositionZ,
+  ]);
+
+  const clearVehiclePartSelection = useWorldStore((state) => state.clearVehiclePartSelection);
+
+  const activePartCode =
+    (vehicleInspectionMode || vehicleDamageMappingMode)
+      ? (selectedVehiclePartCode ||
+         selectedVehiclePartId ||
+         draftDamage?.partCode ||
+         selectedDamageRecord?.vehiclePartCode ||
+         null)
+      : null;
+
+  // Authoritative Camera Safeguard: Stale selected part is ignored and purged in normal overview
+  useEffect(() => {
+    if (!vehicleInspectionMode && !vehicleDamageMappingMode && (selectedVehiclePartCode || selectedVehiclePartId)) {
+      clearVehiclePartSelection();
+    }
+  }, [vehicleInspectionMode, vehicleDamageMappingMode, selectedVehiclePartCode, selectedVehiclePartId, clearVehiclePartSelection]);
 
   // Initialize with OVERVIEW camera preset
   const initialPreset = getVehicleCameraPreset('OVERVIEW', role, size.width);
@@ -70,7 +141,8 @@ export const GarageCamera: React.FC = () => {
     const isVehicleMode =
       selectedVehicleId != null ||
       selectedZone === 'VEHICLE' ||
-      selectedVehiclePartId != null ||
+      activePartCode != null ||
+      activeDamagePoint != null ||
       vehicleCoOwnershipMode ||
       vehicleBookingMode ||
       vehicleHandoverMode ||
@@ -81,9 +153,10 @@ export const GarageCamera: React.FC = () => {
       vehicleInspectionMode;
 
     let preset: VehicleCameraPreset;
+    const isOperations = role === 'STAFF' || role === 'ADMIN';
 
-    if (selectedZone && selectedZone !== 'VEHICLE' && !isVehicleMode) {
-      // Non-vehicle showroom zone (e.g. Charging, Finance, Maintenance, AI)
+    if (!isOperations && selectedZone && selectedZone !== 'VEHICLE' && !isVehicleMode) {
+      // Non-vehicle showroom zone (e.g. Charging, Finance, Maintenance, AI) for CO_OWNER only
       const zoneConfig = getGarageZoneCameraPreset(selectedZone, role, size.width);
       preset = {
         target: zoneConfig.target,
@@ -104,7 +177,8 @@ export const GarageCamera: React.FC = () => {
       const presetKey = resolveActiveCameraPresetKey({
         selectedZone,
         selectedVehicleId,
-        selectedVehiclePartId,
+        selectedVehiclePartId: activePartCode,
+        selectedVehiclePartCode: activePartCode,
         vehicleCoOwnershipMode,
         vehicleBookingMode,
         vehicleHandoverMode,
@@ -115,25 +189,20 @@ export const GarageCamera: React.FC = () => {
         vehicleInspectionMode,
       });
 
-      preset = getVehicleCameraPreset(presetKey, role, size.width);
-
-      // Part inspection micro-calibration
-      if (selectedVehiclePartId) {
-        const partConfig = getPartById(selectedVehiclePartId);
-        if (partConfig) {
-          const isCoOwner = !role || role === 'CO_OWNER';
-          const offset = isCoOwner ? [1.5, 0, 0.3] : [1.5, 0, -1.0];
-          preset.target = [
-            partConfig.cameraPreset.target[0] + offset[0],
-            partConfig.cameraPreset.target[1],
-            partConfig.cameraPreset.target[2] + offset[2],
-          ];
-          preset.position = [
-            partConfig.cameraPreset.position[0] + offset[0],
-            partConfig.cameraPreset.position[1],
-            partConfig.cameraPreset.position[2] + offset[2],
-          ];
-        }
+      if (
+        (presetKey === 'VEHICLE_PART_INSPECTION' || vehicleDamageMappingMode || activeDamagePoint != null) &&
+        activePartCode
+      ) {
+        preset = getVehiclePartInspectionPreset(
+          activePartCode,
+          role,
+          size.width,
+          activeDamagePoint,
+          vehicleYaw,
+          resolvedVehicleCode
+        );
+      } else {
+        preset = getVehicleCameraPreset(presetKey, role, size.width, resolvedVehicleCode);
       }
     } else {
       // Default Garage Overview
@@ -167,7 +236,10 @@ export const GarageCamera: React.FC = () => {
   }, [
     selectedZone,
     selectedVehicleId,
-    selectedVehiclePartId,
+    resolvedVehicleCode,
+    activePartCode,
+    activeDamagePoint,
+    selectedDamageId,
     vehicleCoOwnershipMode,
     vehicleBookingMode,
     vehicleHandoverMode,
@@ -176,6 +248,7 @@ export const GarageCamera: React.FC = () => {
     vehicleTripVisualizationMode,
     vehicleDamageMappingMode,
     vehicleInspectionMode,
+    vehicleYaw,
     role,
     size.width,
   ]);

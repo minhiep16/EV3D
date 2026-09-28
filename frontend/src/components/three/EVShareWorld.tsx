@@ -33,7 +33,7 @@ export const EVShareWorld: React.FC = () => {
       <div style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden', background: '#eaf1f8' }}>
         <Canvas
           shadows
-          camera={{ position: isCoOwner ? [0.0, 6.2, 13.8] : [0, 14.5, 19.5], fov: 42 }}
+          camera={{ position: isCoOwner ? [0.0, 6.2, 13.8] : [0.2, 3.2, 9.6], fov: 40 }}
           gl={{ antialias: true, alpha: false }}
           style={{ width: '100%', height: '100%' }}
           onPointerMissed={handleNeutralSceneClick}
@@ -55,10 +55,11 @@ export const EVShareWorld: React.FC = () => {
             <GarageFloor />
             <GarageStructure />
 
-            {/* Functional Garage Zones: Filtered by Centralized Role-Zone Capabilities */}
-            {accessibleZones.map((zoneId) => (
-              <GarageZoneObject key={zoneId} zone={getZoneConfig(zoneId, user?.role)} />
-            ))}
+            {/* Functional Garage Zones: Rendered ONLY for CO_OWNER dedicated showroom exploration */}
+            {!isOperationsRole &&
+              accessibleZones.map((zoneId) => (
+                <GarageZoneObject key={zoneId} zone={getZoneConfig(zoneId, user?.role)} />
+              ))}
 
             {/* Role-Specific Experience: CO_OWNER vs OPERATIONS (STAFF + ADMIN) */}
             {isOperationsRole ? <OperationsExperience /> : <CoOwnerExperience />}

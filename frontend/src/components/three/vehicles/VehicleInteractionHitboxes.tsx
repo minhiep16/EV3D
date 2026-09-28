@@ -1,19 +1,25 @@
 import React, { useState } from 'react';
 import { ThreeEvent } from '@react-three/fiber';
-import { useWorldStore } from '../../../store/worldStore';
+import * as THREE from 'three';
+import { useWorldStore, setTransientInspectionError } from '../../../store/worldStore';
 import { useAuthStore } from '../../../store/authStore';
-import { SEMANTIC_HITBOX_DEFINITIONS, SemanticHitboxDef } from '../../../data/vehicleParts';
+import { SEMANTIC_HITBOX_DEFINITIONS, EV02_SEMANTIC_HITBOXES, SemanticHitboxDef, isPointOnSemanticPart } from '../../../data/vehicleParts';
 import { getCheckpointByCode } from '../../../types/handover';
 import { VehiclePartId } from '../../../types/vehiclePart';
 import { INTERACTION_CONFIG } from '../../../config/interactionConfig';
+import { getVehicleAnchor } from '../../../config/vehicleCameraPresets';
 import { globalInteractionState, isRecentDragInteraction } from '../GlobalInteractionManager';
 
 interface VehicleInteractionHitboxesProps {
+  vehicleCode?: 'EV01' | 'EV02';
+  hitboxes?: SemanticHitboxDef[];
   onSelectVehicle?: () => void;
   onPointerDown?: (e: ThreeEvent<PointerEvent>) => void;
 }
 
 export const VehicleInteractionHitboxes: React.FC<VehicleInteractionHitboxesProps> = ({
+  vehicleCode = 'EV01',
+  hitboxes,
   onSelectVehicle,
   onPointerDown,
 }) => {
@@ -29,6 +35,12 @@ export const VehicleInteractionHitboxes: React.FC<VehicleInteractionHitboxesProp
   );
   const hoverVehiclePart = useWorldStore((state) => state.hoverVehiclePart);
   const selectVehiclePart = useWorldStore((state) => state.selectVehiclePart);
+  const clearVehiclePartSelection = useWorldStore(
+    (state) => state.clearVehiclePartSelection
+  );
+  const enterVehicleInspectionMode = useWorldStore(
+    (state) => state.enterVehicleInspectionMode
+  );
   const hoverVehicle = useWorldStore((state) => state.hoverVehicle);
 
   const vehicleHandoverMode = useWorldStore(
@@ -59,46 +71,60 @@ export const VehicleInteractionHitboxes: React.FC<VehicleInteractionHitboxesProp
   const vehicleDamageMappingMode = useWorldStore(
     (state) => state.vehicleDamageMappingMode
   );
+  const selectedVehiclePartCode = useWorldStore(
+    (state) => state.selectedVehiclePartCode
+  );
+  const selectVehiclePartCode = useWorldStore(
+    (state) => state.selectVehiclePartCode
+  );
+  const selectVehiclePartWithPoint = useWorldStore(
+    (state) => state.selectVehiclePartWithPoint
+  );
   const setDraftDamage = useWorldStore((state) => state.setDraftDamage);
   const selectDamageRecord = useWorldStore((state) => state.selectDamageRecord);
   const [hoveredDamagePartId, setHoveredDamagePartId] = useState<string | null>(null);
 
   const handleClick = (e: ThreeEvent<MouseEvent>, hitbox: SemanticHitboxDef) => {
+    // Only accept left clicks (button === 0)
+    if (e.button !== 0) return;
     // Prevent accidental selection during camera orbit/drag or vehicle turntable drag
     if (isRecentDragInteraction(e.delta)) return;
     e.stopPropagation();
 
-    // 0. Phase 13: 3D Damage Mapping Mode (STAFF places draft marker)
+    // 0. Phase 13: 3D Damage Mapping Mode (Single-Click: Semantic Part + Exact 3D Location)
     if (vehicleDamageMappingMode) {
-      if (user?.role === 'STAFF') {
-        const hitMesh = e.object;
-        let localPoint: [number, number, number];
-        const vehicleRoot = hitMesh.parent?.parent?.parent;
-        if (vehicleRoot && 'worldToLocal' in vehicleRoot) {
-          const v = vehicleRoot.worldToLocal(e.point.clone());
-          localPoint = [
-            Number(v.x.toFixed(3)),
-            Number(v.y.toFixed(3)),
-            Number(v.z.toFixed(3)),
-          ];
-        } else {
-          // Operations (STAFF) EV01 is situated at [0.0, 0.14, 0.5]
-          const vx = 0.0;
-          const vy = 0.14;
-          const vz = 0.5;
-          localPoint = [
-            Number((e.point.x - vx).toFixed(3)),
-            Number((e.point.y - vy).toFixed(3)),
-            Number((e.point.z - vz).toFixed(3)),
-          ];
-        }
+      const v = e.point.clone();
 
-        setDraftDamage({
-          partCode: hitbox.id,
-          localPosition: localPoint,
-        });
-        selectDamageRecord(null);
+      // Robust traversal to find the vehicle turntable root
+      let obj: THREE.Object3D | null = e.object;
+      let turntableObj: THREE.Object3D | null = null;
+      while (obj) {
+        if (obj.name && obj.name.includes('Turntable')) {
+          turntableObj = obj;
+          break;
+        }
+        obj = obj.parent;
       }
+
+      if (turntableObj && 'worldToLocal' in turntableObj) {
+        turntableObj.worldToLocal(v);
+      } else if (e.object.parent?.parent?.parent && 'worldToLocal' in e.object.parent.parent.parent) {
+        e.object.parent.parent.parent.worldToLocal(v);
+      } else {
+        const [vx, vy, vz] = getVehicleAnchor(user?.role, vehicleCode);
+        v.sub(new THREE.Vector3(vx, vy, vz));
+        const yaw = useWorldStore.getState().vehicleYaw;
+        v.applyAxisAngle(new THREE.Vector3(0, 1, 0), -yaw);
+      }
+
+      const localPoint: [number, number, number] = [
+        Number(v.x.toFixed(3)),
+        Number(v.y.toFixed(3)),
+        Number(v.z.toFixed(3)),
+      ];
+
+      // Authoritative single-click: atomically select part and exact 3D inspection coordinate
+      selectVehiclePartWithPoint(hitbox.id, localPoint);
       return;
     }
 
@@ -115,17 +141,17 @@ export const VehicleInteractionHitboxes: React.FC<VehicleInteractionHitboxesProp
       return;
     }
 
-    // 2. Vehicle Inspection Mode: Select Vehicle Part
+    // 2. Vehicle Exploration / Inspection Mode: Select Vehicle Part (toggle off if clicked again)
     if (vehicleInspectionMode) {
       if (selectedVehiclePartId === hitbox.id) {
-        selectVehiclePart(null);
+        clearVehiclePartSelection();
       } else {
         selectVehiclePart(hitbox.id);
       }
       return;
     }
 
-    // 3. Normal Mode: Select entire EV01 vehicle
+    // 3. Fallback: In normal mode, do not select parts; select entire vehicle
     if (onSelectVehicle) {
       onSelectVehicle();
     }
@@ -136,7 +162,7 @@ export const VehicleInteractionHitboxes: React.FC<VehicleInteractionHitboxesProp
     document.body.style.cursor = 'pointer';
 
     if (vehicleDamageMappingMode) {
-      if (user?.role === 'STAFF') {
+      if (!selectedVehiclePartCode || selectedVehiclePartCode === hitbox.id) {
         setHoveredDamagePartId(hitbox.id);
       }
       return;
@@ -155,8 +181,8 @@ export const VehicleInteractionHitboxes: React.FC<VehicleInteractionHitboxesProp
       return;
     }
 
-    // Normal mode: hover entire EV01
-    hoverVehicle('EV01');
+    // Normal mode: hover vehicle
+    hoverVehicle(vehicleCode);
   };
 
   const handlePointerOut = (e: ThreeEvent<PointerEvent>, hitbox: SemanticHitboxDef) => {
@@ -199,14 +225,11 @@ export const VehicleInteractionHitboxes: React.FC<VehicleInteractionHitboxesProp
     }
   };
 
-  // In damage mapping mode, CO_OWNER and ADMIN are read-only: hitboxes must NOT intercept raycasts or clicks!
-  if (vehicleDamageMappingMode && user?.role !== 'STAFF') {
-    return null;
-  }
+  const hitboxesToRender = hitboxes || (vehicleCode === 'EV02' ? EV02_SEMANTIC_HITBOXES : SEMANTIC_HITBOX_DEFINITIONS);
 
   return (
-    <group name="VehicleInteractionHitboxes">
-      {SEMANTIC_HITBOX_DEFINITIONS.map((hitbox) => {
+    <group name={`${vehicleCode}InteractionHitboxes`}>
+      {hitboxesToRender.map((hitbox) => {
         // Determine active highlight state in inspection/handover/damage modes
         const isHandoverActive =
           isHandoverOrReceipt &&
@@ -218,14 +241,24 @@ export const VehicleInteractionHitboxes: React.FC<VehicleInteractionHitboxesProp
             hitbox.id === hoveredVehiclePartId);
         const isDamageHovered =
           vehicleDamageMappingMode &&
-          user?.role === 'STAFF' &&
           hoveredDamagePartId === hitbox.id;
+        const isDamageSelected =
+          vehicleDamageMappingMode &&
+          selectedVehiclePartCode === hitbox.id;
 
         const isSelected =
           (isHandoverOrReceipt && hitbox.id === selectedHandoverCheckpoint) ||
-          (vehicleInspectionMode && hitbox.id === selectedVehiclePartId);
+          (vehicleInspectionMode && hitbox.id === selectedVehiclePartId) ||
+          isDamageSelected;
 
-        const isHighlighted = isHandoverActive || isInspectionActive || isDamageHovered;
+        const isHighlighted =
+          isHandoverActive ||
+          isInspectionActive ||
+          isDamageHovered ||
+          isDamageSelected;
+
+        // In damage mapping mode, all semantic hitboxes capture raycasts so any click instantly selects part + 3D point
+        const shouldCaptureRaycast = true;
 
         return (
           <group
@@ -234,15 +267,17 @@ export const VehicleInteractionHitboxes: React.FC<VehicleInteractionHitboxesProp
             rotation={hitbox.rotation}
           >
             {/* Primary Raycast Proxy Volume (Invisible to user) */}
-            <mesh
-              onPointerDown={onPointerDown}
-              onClick={(e) => handleClick(e, hitbox)}
-              onPointerOver={(e) => handlePointerOver(e, hitbox)}
-              onPointerOut={(e) => handlePointerOut(e, hitbox)}
-            >
-              {renderGeometry(hitbox)}
-              <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-            </mesh>
+            {shouldCaptureRaycast && (
+              <mesh
+                onPointerDown={onPointerDown}
+                onClick={(e) => handleClick(e, hitbox)}
+                onPointerOver={(e) => handlePointerOver(e, hitbox)}
+                onPointerOut={(e) => handlePointerOut(e, hitbox)}
+              >
+                {renderGeometry(hitbox)}
+                <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+              </mesh>
+            )}
 
             {/* Non-destructive PBR-friendly Holographic Contour Highlight */}
             {isHighlighted && (
@@ -250,7 +285,9 @@ export const VehicleInteractionHitboxes: React.FC<VehicleInteractionHitboxesProp
                 {renderGeometry(hitbox)}
                 <meshBasicMaterial
                   color={
-                    isDamageHovered
+                    isDamageSelected
+                      ? '#00f2fe'
+                      : isDamageHovered
                       ? '#06b6d4'
                       : isSelected
                       ? '#00f2fe'
@@ -258,7 +295,7 @@ export const VehicleInteractionHitboxes: React.FC<VehicleInteractionHitboxesProp
                   }
                   wireframe
                   transparent
-                  opacity={isDamageHovered ? 0.45 : isSelected ? 0.75 : 0.4}
+                  opacity={isDamageSelected ? 0.8 : isDamageHovered ? 0.45 : isSelected ? 0.75 : 0.4}
                 />
               </mesh>
             )}

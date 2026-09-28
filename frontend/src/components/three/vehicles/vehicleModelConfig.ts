@@ -1,13 +1,23 @@
 /**
- * EV01 3D Visual Model Configuration
+ * Centralized Multi-Vehicle 3D Model Configuration (Phase 13/14)
  *
- * Centralizes model asset paths, fallback hierarchy, and transform configurations.
- * Allows switching between realistic visual GLB and legacy lightweight fallback GLB
- * without modifying business components.
+ * Dedicated configurations for:
+ * - EV01: Realistic automotive digital twin with articulated/fallback assets
+ * - EV02: Stylized cartoon EV with verified physical door node articulation
+ *
+ * Prevents scattering `if (vehicleCode === 'EV02')` across components.
  */
 
+import {
+  SEMANTIC_HITBOX_DEFINITIONS,
+  EV02_SEMANTIC_HITBOXES,
+  SemanticHitboxDef,
+} from '../../../data/vehicleParts';
+
+export const EV01_ARTICULATED_MODEL_URL = '/models/ev01-articulated.glb';
 export const EV01_REALISTIC_MODEL_URL = '/models/ev01-realistic.glb';
 export const EV01_FALLBACK_MODEL_URL = '/models/ev-car.glb';
+export const EV02_STYLIZED_MODEL_URL = '/models/ev02-stylized.glb';
 
 export interface VehicleModelTransformConfig {
   scale: [number, number, number];
@@ -15,16 +25,111 @@ export interface VehicleModelTransformConfig {
   offset: [number, number, number];
 }
 
+export interface VehicleModelDefinition {
+  vehicleCode: 'EV01' | 'EV02';
+  nameVi: string;
+  modelPath: string;
+  articulatedModelPath?: string;
+  fallbackModelPath?: string;
+  scale: [number, number, number];
+  rotation: [number, number, number];
+  offset: [number, number, number];
+  dimensions: {
+    width: number;
+    height: number;
+    length: number;
+    groundOffset: number;
+  };
+  hitboxes: SemanticHitboxDef[];
+  anchors: {
+    CO_OWNER: [number, number, number];
+    OPERATIONS: [number, number, number];
+  };
+  visualBindings: {
+    doorNodes: Record<string, string>;
+    openAngleRad: Record<string, number>;
+  };
+}
+
+export const VEHICLE_MODEL_CONFIGS: Record<'EV01' | 'EV02', VehicleModelDefinition> = {
+  EV01: {
+    vehicleCode: 'EV01',
+    nameVi: 'Xe điện thực tế',
+    modelPath: EV01_REALISTIC_MODEL_URL,
+    articulatedModelPath: EV01_ARTICULATED_MODEL_URL,
+    fallbackModelPath: EV01_FALLBACK_MODEL_URL,
+    scale: [1, 1, 1],
+    rotation: [0, -Math.PI / 2, 0],
+    offset: [0, 0.013, 0.17],
+    dimensions: {
+      width: 1.91,
+      height: 1.54,
+      length: 4.0,
+      groundOffset: 0.14,
+    },
+    hitboxes: SEMANTIC_HITBOX_DEFINITIONS,
+    anchors: {
+      CO_OWNER: [0.0, 0.14, 1.8],
+      OPERATIONS: [0.0, 0.14, 0.5],
+    },
+    visualBindings: {
+      doorNodes: {
+        DOOR_FL: 'Door_FL',
+        DOOR_FR: 'Door_FR',
+        DOOR_RL: 'Door_RL',
+        DOOR_RR: 'Door_RR',
+      },
+      openAngleRad: {
+        DOOR_FL: -0.96,
+        DOOR_FR: 0.96,
+        DOOR_RL: -0.96,
+        DOOR_RR: 0.96,
+      },
+    },
+  },
+
+  EV02: {
+    vehicleCode: 'EV02',
+    nameVi: 'Xe thử nghiệm tương tác',
+    modelPath: EV02_STYLIZED_MODEL_URL,
+    scale: [1, 1, 1],
+    rotation: [0, 0, 0],
+    offset: [0.1775, 0.0, -1.1485],
+    dimensions: {
+      width: 2.10,
+      height: 1.42,
+      length: 5.01,
+      groundOffset: 0.0,
+    },
+    hitboxes: EV02_SEMANTIC_HITBOXES,
+    anchors: {
+      CO_OWNER: [-3.8, 0.14, 3.2],
+      OPERATIONS: [-3.8, 0.14, 3.8],
+    },
+    visualBindings: {
+      doorNodes: {
+        DOOR_FL: 'wagon_A_DoorL.001',
+        DOOR_FR: 'wagon_A_DoorR.001',
+        DOOR_RL: 'wagon_A_DoorL2.001',
+        DOOR_RR: 'wagon_A_DoorR2.001',
+      },
+      openAngleRad: {
+        DOOR_FL: -0.96,
+        DOOR_FR: 0.96,
+        DOOR_RL: -0.96,
+        DOOR_RR: 0.96,
+      },
+    },
+  },
+};
+
 /**
- * Calibrated transforms for realistic EV01 model:
- * 1:1 real-life automotive dimensions (approx 4.0m length x 1.91m width x 1.54m height)
- * Grounded at Y = 0 (wheel bottom sits on floor at y = 0.14 in world space)
- * Facing forward along +Z axis
+ * Calibrated transforms for realistic EV01 model
  */
 export const EV01_REALISTIC_TRANSFORMS: VehicleModelTransformConfig = {
-  scale: [1, 1, 1],
-  rotation: [0, -Math.PI / 2, 0],
-  offset: [0, 0.013, 0.17],
+  scale: VEHICLE_MODEL_CONFIGS.EV01.scale,
+  rotation: VEHICLE_MODEL_CONFIGS.EV01.rotation,
+  offset: VEHICLE_MODEL_CONFIGS.EV01.offset,
 };
 
 /**
@@ -36,13 +141,65 @@ export const EV01_FALLBACK_TRANSFORMS: VehicleModelTransformConfig = {
   offset: [0, 0, 0],
 };
 
+export const EV02_STYLIZED_TRANSFORMS: VehicleModelTransformConfig = {
+  scale: VEHICLE_MODEL_CONFIGS.EV02.scale,
+  rotation: VEHICLE_MODEL_CONFIGS.EV02.rotation,
+  offset: VEHICLE_MODEL_CONFIGS.EV02.offset,
+};
+
 // Default export for backward compatibility
 export const EV01_MODEL_CONFIG = EV01_REALISTIC_TRANSFORMS;
+
+/**
+ * Resolves the vehicle code ('EV01' | 'EV02') from a vehicle object, id, code, or model url.
+ */
+export function resolveVehicleCode(
+  identifier?: { id?: string; code?: string; name?: string; model?: string; model3dUrl?: string; vin?: string } | string | null
+): 'EV01' | 'EV02' {
+  if (!identifier) return 'EV01';
+
+  if (typeof identifier === 'object') {
+    const s = `${identifier.id || ''} ${identifier.code || ''} ${identifier.name || ''} ${identifier.model || ''} ${identifier.model3dUrl || ''} ${identifier.vin || ''}`.toLowerCase();
+    if (s.includes('ev02') || s.includes('stylized') || s.includes('0002') || identifier.id === '11111111-1111-1111-1111-111111111102') {
+      return 'EV02';
+    }
+    return 'EV01';
+  }
+
+  const str = String(identifier).toLowerCase();
+  if (
+    str.includes('ev02') ||
+    str.includes('stylized') ||
+    str === '11111111-1111-1111-1111-111111111102' ||
+    str.includes('0002')
+  ) {
+    return 'EV02';
+  }
+  return 'EV01';
+}
+
+/**
+ * Resolves the full vehicle configuration for a vehicle code, id, or vehicle response.
+ */
+export function getVehicleConfig(
+  identifier?: { id?: string; code?: string; name?: string; model?: string; model3dUrl?: string; vin?: string } | string | null
+): VehicleModelDefinition {
+  const code = resolveVehicleCode(identifier);
+  return VEHICLE_MODEL_CONFIGS[code] || VEHICLE_MODEL_CONFIGS.EV01;
+}
+
+/**
+ * Authoritative alias for resolving model configuration based on vehicle identity/code.
+ */
+export const resolveVehicleModelConfig = getVehicleConfig;
 
 /**
  * Returns the appropriate transform configuration for a given model URL
  */
 export function getModelTransformConfig(modelUrl: string): VehicleModelTransformConfig {
+  if (modelUrl.includes('ev02') || modelUrl.includes('stylized')) {
+    return EV02_STYLIZED_TRANSFORMS;
+  }
   if (modelUrl.includes('ev-car.glb')) {
     return EV01_FALLBACK_TRANSFORMS;
   }
@@ -51,15 +208,37 @@ export function getModelTransformConfig(modelUrl: string): VehicleModelTransform
 
 /**
  * Resolves the active model URL based on available assets and backend configuration.
- * Always prefers the realistic model as the primary EV01 asset.
+ * Authoritative Rule:
+ * EV01 MUST use primary /models/ev01-realistic.glb with fallback /models/ev-car.glb.
+ * EV02 MUST use /models/ev02-stylized.glb.
+ * Model choice must be based on vehicle identity/code, never by user, role, or group.
  */
-export function getVehicleModelUrl(backendModelUrl?: string | null): string {
-  if (backendModelUrl && backendModelUrl === EV01_REALISTIC_MODEL_URL) {
-    return EV01_REALISTIC_MODEL_URL;
+export function getVehicleModelUrl(
+  backendModelUrl?: string | null,
+  identifier?: { id?: string; code?: string; name?: string; model?: string; model3dUrl?: string; vin?: string } | string | null
+): string {
+  const code = resolveVehicleCode(identifier || backendModelUrl);
+  if (code === 'EV02') {
+    return EV02_STYLIZED_MODEL_URL;
   }
-  if (backendModelUrl && backendModelUrl !== EV01_FALLBACK_MODEL_URL) {
+
+  // EV01 Authoritative Model Resolution:
+  if (backendModelUrl) {
+    if (backendModelUrl.includes('ev02') || backendModelUrl.includes('stylized')) {
+      return EV02_STYLIZED_MODEL_URL;
+    }
+    if (backendModelUrl === EV01_ARTICULATED_MODEL_URL) {
+      return EV01_ARTICULATED_MODEL_URL;
+    }
+    if (backendModelUrl === EV01_REALISTIC_MODEL_URL) {
+      return EV01_REALISTIC_MODEL_URL;
+    }
+    // Prevent stale /models/ev-car.glb from overriding EV01 authoritative primary realistic model
+    if (backendModelUrl === EV01_FALLBACK_MODEL_URL || backendModelUrl.includes('ev-car.glb')) {
+      return EV01_REALISTIC_MODEL_URL;
+    }
     return backendModelUrl;
   }
-  // Primary default is the realistic EV01 model
   return EV01_REALISTIC_MODEL_URL;
 }
+

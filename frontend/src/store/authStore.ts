@@ -22,21 +22,32 @@ interface AuthState {
 const STORAGE_KEY = 'evshare_auth_session';
 
 const getInitialState = () => {
+  // Purge legacy shared localStorage key so it never leaks across tabs
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      if (parsed.accessToken && parsed.user) {
-        return {
-          user: parsed.user,
-          accessToken: parsed.accessToken,
-          refreshToken: parsed.refreshToken || null,
-          isAuthenticated: true,
-        };
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  } catch {
+    // Ignore storage errors in restricted environments
+  }
+
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      const stored = sessionStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.accessToken && parsed.user) {
+          return {
+            user: parsed.user,
+            accessToken: parsed.accessToken,
+            refreshToken: parsed.refreshToken || null,
+            isAuthenticated: true,
+          };
+        }
       }
     }
   } catch (e) {
-    console.error('Failed to restore auth session', e);
+    console.error('Failed to restore auth session from sessionStorage', e);
   }
   return {
     user: null,
@@ -53,10 +64,16 @@ export const useAuthStore = create<AuthState>((set) => {
     ...initial,
 
     setAuth: (user, accessToken, refreshToken) => {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({ user, accessToken, refreshToken })
-      );
+      try {
+        if (typeof sessionStorage !== 'undefined') {
+          sessionStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify({ user, accessToken, refreshToken })
+          );
+        }
+      } catch (e) {
+        console.error('Failed to persist auth session to sessionStorage', e);
+      }
       set({
         user,
         accessToken,
@@ -72,21 +89,36 @@ export const useAuthStore = create<AuthState>((set) => {
           accessToken,
         };
         if (state.user) {
-          localStorage.setItem(
-            STORAGE_KEY,
-            JSON.stringify({
-              user: state.user,
-              accessToken,
-              refreshToken: state.refreshToken,
-            })
-          );
+          try {
+            if (typeof sessionStorage !== 'undefined') {
+              sessionStorage.setItem(
+                STORAGE_KEY,
+                JSON.stringify({
+                  user: state.user,
+                  accessToken,
+                  refreshToken: state.refreshToken,
+                })
+              );
+            }
+          } catch (e) {
+            console.error('Failed to update accessToken in sessionStorage', e);
+          }
         }
         return updated;
       });
     },
 
     logout: () => {
-      localStorage.removeItem(STORAGE_KEY);
+      try {
+        if (typeof sessionStorage !== 'undefined') {
+          sessionStorage.removeItem(STORAGE_KEY);
+        }
+        if (typeof localStorage !== 'undefined') {
+          localStorage.removeItem(STORAGE_KEY);
+        }
+      } catch (e) {
+        console.error('Failed to remove auth session', e);
+      }
       set({
         user: null,
         accessToken: null,

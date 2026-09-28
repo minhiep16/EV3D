@@ -14,6 +14,14 @@
  */
 
 import { VEHICLE_INTERACTION_CONFIG } from './interactionConfig';
+import {
+  getPartById,
+  SEMANTIC_HITBOX_DEFINITIONS,
+  EV02_SEMANTIC_HITBOXES,
+} from '../data/vehicleParts';
+import { resolveVehicleCode } from '../components/three/vehicles/vehicleModelConfig';
+import { getVehicleBaySlot } from './garageSlotConfig';
+import { STAFF_GARAGE_LAYOUT } from './staffGarageLayout';
 export * from './garageCameraConfig';
 
 export { VEHICLE_INTERACTION_CONFIG };
@@ -136,13 +144,15 @@ export const VEHICLE_EXPLORE_CAMERA: VehicleCameraPreset = {
 };
 
 /**
- * Resolves the primary ground anchor of EV01 based on user role.
- * - CO_OWNER: [0.0, 0.14, 1.8] (Reference Showcase Hero Center)
- * - OPERATIONS (STAFF / ADMIN): [0.0, 0.14, 0.5]
+ * Resolves the primary ground anchor of a vehicle using the centralized garage slot architecture.
+ * Automatically adapts for role, vehicle status, and dedicated bay assignment.
  */
-export function getVehicleAnchor(role?: string): [number, number, number] {
-  const isCoOwner = !role || role === 'CO_OWNER';
-  return isCoOwner ? [0.0, 0.14, 1.8] : [0.0, 0.14, 0.5];
+export function getVehicleAnchor(role?: string, vehicleCode?: string | null): [number, number, number] {
+  const isOperations = role === 'STAFF' || role === 'ADMIN';
+  if (isOperations) {
+    return STAFF_GARAGE_LAYOUT.heroAnchor;
+  }
+  return getVehicleBaySlot(vehicleCode, role).position;
 }
 
 /**
@@ -152,6 +162,7 @@ export function resolveActiveCameraPresetKey(state: {
   selectedZone?: string | null;
   selectedVehicleId?: string | null;
   selectedVehiclePartId?: string | null;
+  selectedVehiclePartCode?: string | null;
   vehicleCoOwnershipMode?: boolean;
   vehicleBookingMode?: boolean;
   vehicleHandoverMode?: boolean;
@@ -162,6 +173,9 @@ export function resolveActiveCameraPresetKey(state: {
   vehicleInspectionMode?: boolean;
 }): VehiclePresetKey {
   if (state.vehicleDamageMappingMode) {
+    if (state.selectedVehiclePartCode || state.selectedVehiclePartId) {
+      return 'VEHICLE_PART_INSPECTION';
+    }
     return 'DAMAGE_MAPPING';
   }
   if (state.vehicleTripVisualizationMode) {
@@ -179,8 +193,11 @@ export function resolveActiveCameraPresetKey(state: {
   if (state.vehicleCoOwnershipMode) {
     return 'VEHICLE_CO_OWNERSHIP';
   }
-  if (state.selectedVehiclePartId || state.vehicleInspectionMode) {
-    return 'VEHICLE_PART_INSPECTION';
+  if (state.vehicleInspectionMode) {
+    if (state.selectedVehiclePartId || state.selectedVehiclePartCode) {
+      return 'VEHICLE_PART_INSPECTION';
+    }
+    return 'VEHICLE_EXPLORE';
   }
   if (state.selectedVehicleId) {
     return 'VEHICLE_WITH_RIGHT_PANEL';
@@ -195,10 +212,12 @@ export function resolveActiveCameraPresetKey(state: {
 export function getVehicleCameraPreset(
   presetKey: VehiclePresetKey,
   role?: string,
-  viewportWidth?: number
+  viewportWidth?: number,
+  vehicleCode?: string | null
 ): VehicleCameraPreset {
   const isCoOwner = !role || role === 'CO_OWNER';
-  const [vx, vy, vz] = getVehicleAnchor(role);
+  const isOperationsRole = role === 'STAFF' || role === 'ADMIN';
+  const [vx, vy, vz] = getVehicleAnchor(role, vehicleCode);
 
   // Responsive distance scale for narrower viewports (< 1280px)
   const responsiveFactor =
@@ -213,12 +232,12 @@ export function getVehicleCameraPreset(
   switch (presetKey) {
     case 'OVERVIEW':
       return {
-        target: isCoOwner ? [0.0, 1.2, -0.5] : [0.0, 0.7, 0.5],
-        position: isCoOwner ? [0.0, 6.2, 13.8] : [0.0, 14.5, 19.5],
-        minDistance: 4.0,
-        maxDistance: isCoOwner ? 24.0 : 28.0,
-        minPolarAngle: 0.1,
-        maxPolarAngle: Math.PI / 2 - 0.05,
+        target: isCoOwner ? [-1.9, 1.15, 2.2] : STAFF_GARAGE_LAYOUT.camera.target,
+        position: isCoOwner ? [-1.9, 6.5, 15.5] : STAFF_GARAGE_LAYOUT.camera.position,
+        minDistance: isCoOwner ? 4.0 : STAFF_GARAGE_LAYOUT.camera.minDistance,
+        maxDistance: isCoOwner ? 26.0 : STAFF_GARAGE_LAYOUT.camera.maxDistance,
+        minPolarAngle: isCoOwner ? 0.1 : STAFF_GARAGE_LAYOUT.camera.minPolarAngle,
+        maxPolarAngle: isCoOwner ? Math.PI / 2 - 0.05 : STAFF_GARAGE_LAYOUT.camera.maxPolarAngle,
         enableRotate: true,
         enableZoom: true,
         enablePan: true,
@@ -227,6 +246,21 @@ export function getVehicleCameraPreset(
       };
 
     case 'VEHICLE_WITH_RIGHT_PANEL': {
+      if (!isCoOwner) {
+        return {
+          target: STAFF_GARAGE_LAYOUT.camera.target,
+          position: STAFF_GARAGE_LAYOUT.camera.position,
+          minDistance: STAFF_GARAGE_LAYOUT.camera.minDistance,
+          maxDistance: STAFF_GARAGE_LAYOUT.camera.maxDistance,
+          minPolarAngle: STAFF_GARAGE_LAYOUT.camera.minPolarAngle,
+          maxPolarAngle: STAFF_GARAGE_LAYOUT.camera.maxPolarAngle,
+          enableRotate: true,
+          enableZoom: true,
+          enablePan: true,
+          panelSide: 'right',
+          transitionDuration: 0.65,
+        };
+      }
       // Spacious framing: EV01 on center-left 38-42%, Right Detail Panel on right, with clear room breathing space
       const panelOffsetX = 1.45;
       const baseDistZ = 12.7 * responsiveFactor;
@@ -247,6 +281,21 @@ export function getVehicleCameraPreset(
     }
 
     case 'VEHICLE_FOCUS': {
+      if (!isCoOwner) {
+        return {
+          target: STAFF_GARAGE_LAYOUT.camera.target,
+          position: STAFF_GARAGE_LAYOUT.camera.position,
+          minDistance: STAFF_GARAGE_LAYOUT.camera.minDistance,
+          maxDistance: STAFF_GARAGE_LAYOUT.camera.maxDistance,
+          minPolarAngle: STAFF_GARAGE_LAYOUT.camera.minPolarAngle,
+          maxPolarAngle: STAFF_GARAGE_LAYOUT.camera.maxPolarAngle,
+          enableRotate: true,
+          enableZoom: true,
+          enablePan: true,
+          panelSide: 'none',
+          transitionDuration: 0.65,
+        };
+      }
       // Pure vehicle focus without right panel - generous wide framing showing surrounding garage room
       const baseDistZ = 13.2 * responsiveFactor;
       return {
@@ -265,7 +314,23 @@ export function getVehicleCameraPreset(
     }
 
     case 'VEHICLE_EXPLORE':
-    case 'VEHICLE_PART_INSPECTION': {
+    case 'VEHICLE_PART_INSPECTION':
+    case 'MAINTENANCE': {
+      if (!isCoOwner) {
+        return {
+          target: STAFF_GARAGE_LAYOUT.camera.target,
+          position: STAFF_GARAGE_LAYOUT.camera.position,
+          minDistance: STAFF_GARAGE_LAYOUT.camera.minDistance,
+          maxDistance: STAFF_GARAGE_LAYOUT.camera.maxDistance,
+          minPolarAngle: STAFF_GARAGE_LAYOUT.camera.minPolarAngle,
+          maxPolarAngle: STAFF_GARAGE_LAYOUT.camera.maxPolarAngle,
+          enableRotate: true,
+          enableZoom: true,
+          enablePan: true,
+          panelSide: 'right',
+          transitionDuration: 0.65,
+        };
+      }
       const baseDistZ = 12.0 * responsiveFactor;
       return {
         target: [vx, vy + 0.95, vz],
@@ -343,7 +408,23 @@ export function getVehicleCameraPreset(
     }
 
     case 'DAMAGE_MAPPING': {
-      // Damage surface clicking + inspector
+      if (isOperationsRole || !isCoOwner) {
+        // STAFF / ADMIN panel-safe damage / inspection camera logic with fixed right panel
+        return {
+          target: STAFF_GARAGE_LAYOUT.camera.target,
+          position: STAFF_GARAGE_LAYOUT.camera.position,
+          minDistance: STAFF_GARAGE_LAYOUT.camera.minDistance,
+          maxDistance: STAFF_GARAGE_LAYOUT.camera.maxDistance,
+          minPolarAngle: STAFF_GARAGE_LAYOUT.camera.minPolarAngle,
+          maxPolarAngle: STAFF_GARAGE_LAYOUT.camera.maxPolarAngle,
+          enableRotate: true,
+          enableZoom: true,
+          enablePan: true,
+          panelSide: 'right',
+          transitionDuration: 0.65,
+        };
+      }
+      // CO_OWNER existing spatial behavior: Damage surface clicking + inspector
       const panelOffsetX = 1.25;
       const baseDistZ = 12.2 * responsiveFactor;
       return {
@@ -400,4 +481,335 @@ export function getVehicleCameraPreset(
       };
     }
   }
+}
+
+/**
+ * Dedicated part-aware inspection camera configurations (Sections 11, 12).
+ * Each semantic part defines:
+ * - targetOffset: local coordinate of the part center on EV01
+ * - cameraOffset: ideal viewing position providing direct line-of-sight from the appropriate side,
+ *                 ensuring no occlusion through the vehicle body.
+ */
+export const PART_INSPECTION_CAMERA_CONFIGS: Record<
+  string,
+  {
+    targetOffset: [number, number, number];
+    cameraOffset: [number, number, number];
+  }
+> = {
+  // Left Front Door: left-front three-quarter view
+  DOOR_FL: {
+    targetOffset: [-0.88, 0.80, 0.55],
+    cameraOffset: [-4.2, 1.5, 2.2],
+  },
+  // Right Front Door: right-front three-quarter view (direct line-of-sight from right side)
+  DOOR_FR: {
+    targetOffset: [0.88, 0.80, 0.55],
+    cameraOffset: [4.2, 1.5, 2.2],
+  },
+  // Left Rear Door: left-rear three-quarter view
+  DOOR_RL: {
+    targetOffset: [-0.88, 0.80, -0.50],
+    cameraOffset: [-4.2, 1.5, -1.8],
+  },
+  // Right Rear Door: right-rear three-quarter view
+  DOOR_RR: {
+    targetOffset: [0.88, 0.80, -0.50],
+    cameraOffset: [4.2, 1.5, -1.8],
+  },
+  // Hood: front-upper three-quarter elevated view (comfortable distance, +Z front)
+  HOOD: {
+    targetOffset: [0.0, 0.82, 1.25],
+    cameraOffset: [-2.2, 2.2, 4.4],
+  },
+  // Windshield: front-upper medium distance view (facing front +Z, directly looking into windshield)
+  WINDSHIELD: {
+    targetOffset: [0.0, 1.15, 0.45],
+    cameraOffset: [-2.0, 2.4, 4.2],
+  },
+  // Left Front Wheel: left-front lower angle view
+  WHEEL_FL: {
+    targetOffset: [-0.80, 0.36, 1.31],
+    cameraOffset: [-3.4, 0.9, 2.6],
+  },
+  // Right Front Wheel: right-front lower angle view
+  WHEEL_FR: {
+    targetOffset: [0.80, 0.36, 1.31],
+    cameraOffset: [3.4, 0.9, 2.6],
+  },
+  // Left Rear Wheel: left-rear lower angle view
+  WHEEL_RL: {
+    targetOffset: [-0.80, 0.36, -1.31],
+    cameraOffset: [-3.4, 0.9, -2.6],
+  },
+  // Right Rear Wheel: right-rear lower angle view
+  WHEEL_RR: {
+    targetOffset: [0.80, 0.36, -1.31],
+    cameraOffset: [3.4, 0.9, -2.6],
+  },
+  // Charging Port: left-rear side view
+  CHARGING_PORT: {
+    targetOffset: [-0.92, 0.82, -1.40],
+    cameraOffset: [-3.6, 1.4, -2.4],
+  },
+  // Taillights: rear three-quarter view (-Z rear)
+  TAILLIGHTS: {
+    targetOffset: [0.0, 0.95, -1.82],
+    cameraOffset: [-2.6, 1.8, -4.6],
+  },
+  // Diffuser: rear low view (-Z rear)
+  DIFFUSER: {
+    targetOffset: [0.0, 0.32, -1.80],
+    cameraOffset: [-2.4, 1.0, -4.2],
+  },
+  // Headlights: front three-quarter view (+Z front)
+  HEADLIGHTS: {
+    targetOffset: [0.0, 0.75, 1.78],
+    cameraOffset: [-2.6, 1.6, 4.6],
+  },
+  // Roof: upper three-quarter medium distance view
+  ROOF: {
+    targetOffset: [0.0, 1.45, -0.30],
+    cameraOffset: [-2.4, 3.8, 2.0],
+  },
+  // Battery: low underbody side view
+  BATTERY: {
+    targetOffset: [0.0, 0.20, 0.0],
+    cameraOffset: [-3.8, 0.8, 1.2],
+  },
+  // Body: three-quarter side view with visible context (Section 9)
+  BODY: {
+    targetOffset: [0.0, 0.72, 0.0],
+    cameraOffset: [-4.2, 1.8, 2.6],
+  },
+};
+
+export const PART_INSPECTION_CAMERA_CONFIGS_EV02: Record<
+  string,
+  {
+    targetOffset: [number, number, number];
+    cameraOffset: [number, number, number];
+  }
+> = {
+  // Left Front Door: left-front view (+X is left on EV02, exterior viewing from +X)
+  DOOR_FL: {
+    targetOffset: [0.87, 0.76, 0.21],
+    cameraOffset: [3.8, 1.5, 1.8],
+  },
+  // Right Front Door: right-front view (-X is right on EV02, exterior viewing from -X)
+  DOOR_FR: {
+    targetOffset: [-0.87, 0.76, 0.21],
+    cameraOffset: [-3.8, 1.5, 1.8],
+  },
+  // Left Rear Door: left-rear view
+  DOOR_RL: {
+    targetOffset: [0.79, 0.76, -0.69],
+    cameraOffset: [3.8, 1.5, -1.8],
+  },
+  // Right Rear Door: right-rear view
+  DOOR_RR: {
+    targetOffset: [-0.79, 0.76, -0.69],
+    cameraOffset: [-3.8, 1.5, -1.8],
+  },
+  // Hood: front-upper view
+  HOOD: {
+    targetOffset: [0.0, 0.80, 1.60],
+    cameraOffset: [-2.2, 2.4, 4.6],
+  },
+  // Windshield: front-upper medium distance view
+  WINDSHIELD: {
+    targetOffset: [0.0, 1.05, 0.55],
+    cameraOffset: [-2.0, 2.4, 4.2],
+  },
+  // Left Front Wheel
+  WHEEL_FL: {
+    targetOffset: [0.77, 0.30, 1.37],
+    cameraOffset: [3.4, 0.9, 2.6],
+  },
+  // Right Front Wheel
+  WHEEL_FR: {
+    targetOffset: [-0.77, 0.30, 1.37],
+    cameraOffset: [-3.4, 0.9, 2.6],
+  },
+  // Left Rear Wheel
+  WHEEL_RL: {
+    targetOffset: [0.77, 0.30, -1.27],
+    cameraOffset: [3.4, 0.9, -2.6],
+  },
+  // Right Rear Wheel
+  WHEEL_RR: {
+    targetOffset: [-0.77, 0.30, -1.27],
+    cameraOffset: [-3.4, 0.9, -2.6],
+  },
+  // Charging Port
+  CHARGING_PORT: {
+    targetOffset: [0.86, 0.80, -1.65],
+    cameraOffset: [3.4, 1.4, -2.4],
+  },
+  // Taillights
+  TAILLIGHTS: {
+    targetOffset: [0.0, 0.78, -2.42],
+    cameraOffset: [-2.6, 1.8, -5.2],
+  },
+  // Headlights
+  HEADLIGHTS: {
+    targetOffset: [0.0, 0.68, 2.38],
+    cameraOffset: [-2.6, 1.6, 5.2],
+  },
+  // Roof
+  ROOF: {
+    targetOffset: [0.0, 1.36, -0.50],
+    cameraOffset: [-2.4, 3.8, 2.0],
+  },
+  // Battery
+  BATTERY: {
+    targetOffset: [0.0, 0.18, 0.0],
+    cameraOffset: [-3.8, 0.8, 1.2],
+  },
+  // Body
+  BODY: {
+    targetOffset: [0.0, 0.65, 0.0],
+    cameraOffset: [-4.2, 1.8, 2.6],
+  },
+};
+
+/**
+ * Computes part-specific inspection camera preset (Sections 7-14).
+ * - Rotates vehicle-local offsets by vehicleYaw so framing is preserved regardless of turntable orientation.
+ * - Chooses part-aware viewing side ensuring direct line-of-sight without vehicle body occlusion.
+ * - Applies balanced lateral projection offset so the selected part sits squarely
+ *   in the left safe area (~28%–38% of viewport width) with clear margins from screen edge and panel.
+ * - Leaves the right safe area (65%–95%) open for the inspection detail panel.
+ * - Subtly refines focus toward exact 3D inspection location when draftDamage is present.
+ */
+export function getVehiclePartInspectionPreset(
+  partId: string,
+  role?: string,
+  viewportWidth?: number,
+  inspectionPosition?: [number, number, number] | null,
+  vehicleYaw?: number,
+  vehicleCode?: string | null
+): VehicleCameraPreset {
+  const isOperations = role === 'STAFF' || role === 'ADMIN';
+  const code = resolveVehicleCode(vehicleCode);
+  const isEv02 = code === 'EV02';
+
+  // 1. Authoritative Anchor in world space
+  const [vx, vy, vz] = getVehicleAnchor(role, code);
+
+  // 2. Part configuration map (EV02 has calibrated custom coordinates)
+  const cfgMap = isEv02 ? PART_INSPECTION_CAMERA_CONFIGS_EV02 : PART_INSPECTION_CAMERA_CONFIGS;
+  const cfg = cfgMap[partId] || {
+    targetOffset: [0.0, 0.72, 0.0],
+    cameraOffset: [-4.2, 1.8, 2.6],
+  };
+
+  // 3. Current vehicle yaw (default 0.0 for operations, -0.32 for co-owner)
+  const defaultYaw = isOperations ? 0.0 : -0.32;
+  const yaw = vehicleYaw ?? defaultYaw;
+  const cosY = Math.cos(yaw);
+  const sinY = Math.sin(yaw);
+
+  // Rotate local coordinate around Y by vehicleYaw
+  const rotY = (x: number, z: number): [number, number] => [
+    x * cosY + z * sinY,
+    -x * sinY + z * cosY,
+  ];
+
+  // 4. Authoritative focus point in vehicle-local space with strict 4-level target priority:
+  // 1) exact part anchor / coordinate (inspectionPosition)
+  // 2) semantic hitbox center (hitbox.position)
+  // 3) fallback calibrated part preset (cfg.targetOffset)
+  // 4) vehicle center focus preset ([0.0, 0.8, 0.0])
+  const hitboxes = isEv02 ? EV02_SEMANTIC_HITBOXES : SEMANTIC_HITBOX_DEFINITIONS;
+  const hitbox = hitboxes.find((h) => h.id === partId);
+
+  const focusLocal: [number, number, number] = inspectionPosition
+    ? [inspectionPosition[0], inspectionPosition[1], inspectionPosition[2]]
+    : hitbox?.position
+    ? [hitbox.position[0], hitbox.position[1], hitbox.position[2]]
+    : cfg.targetOffset
+    ? cfg.targetOffset
+    : [0.0, 0.8, 0.0];
+
+  // 5. Transform focus point to world space
+  const [fRotX, fRotZ] = rotY(focusLocal[0], focusLocal[2]);
+  const focusWorldPos: [number, number, number] = [
+    vx + fRotX,
+    vy + focusLocal[1],
+    vz + fRotZ,
+  ];
+
+  // 6. Camera position in vehicle-local space maintaining exterior line-of-sight
+  const relCamX = cfg.cameraOffset[0] - cfg.targetOffset[0];
+  const relCamY = cfg.cameraOffset[1] - cfg.targetOffset[1];
+  const relCamZ = cfg.cameraOffset[2] - cfg.targetOffset[2];
+
+  const camLocal: [number, number, number] = [
+    focusLocal[0] + relCamX,
+    focusLocal[1] + relCamY,
+    focusLocal[2] + relCamZ,
+  ];
+
+  // Transform camera position to world space
+  const [cRotX, cRotZ] = rotY(camLocal[0], camLocal[2]);
+  const camWorldPos: [number, number, number] = [
+    vx + cRotX,
+    vy + camLocal[1],
+    vz + cRotZ,
+  ];
+
+  // 7. Calculate forward view vector (from camera to target)
+  const fx = focusWorldPos[0] - camWorldPos[0];
+  const fy = focusWorldPos[1] - camWorldPos[1];
+  const fz = focusWorldPos[2] - camWorldPos[2];
+  const dist = Math.sqrt(fx * fx + fy * fy + fz * fz) || 1.0;
+  const forward = [fx / dist, fy / dist, fz / dist];
+
+  // 8. Screen right vector = forward x up [0, 1, 0]
+  let rx = -forward[2];
+  let rz = forward[0];
+  const rlen = Math.sqrt(rx * rx + rz * rz);
+  if (rlen > 0.001) {
+    rx /= rlen;
+    rz /= rlen;
+  } else {
+    rx = 1;
+    rz = 0;
+  }
+
+  // 9. Panel-Safe Framing Offset:
+  // Both OPERATIONS and CO_OWNER use a fixed right-side detail panel (~360px wide).
+  // Shifting target and position along screen-right ensures the focused part
+  // appears in the clear center-left region (approx 38%–44% viewport width)
+  // and is NEVER hidden, occluded, or clipped under the fixed right panel.
+  const lateralFactor = 0.14;
+  const lateralOffset = dist * lateralFactor;
+
+  const target: [number, number, number] = [
+    focusWorldPos[0] + rx * lateralOffset,
+    focusWorldPos[1],
+    focusWorldPos[2] + rz * lateralOffset,
+  ];
+
+  const position: [number, number, number] = [
+    camWorldPos[0] + rx * lateralOffset,
+    camWorldPos[1],
+    camWorldPos[2] + rz * lateralOffset,
+  ];
+
+  return {
+    target,
+    position,
+    minDistance: 2.2,
+    maxDistance: 16.0,
+    minPolarAngle: 0.35,
+    maxPolarAngle: 1.45,
+    enableRotate: true,
+    enableZoom: true,
+    enablePan: true,
+    panelSide: 'right',
+    panelOffsetX: lateralOffset,
+    transitionDuration: 0.65,
+  };
 }

@@ -7,11 +7,25 @@ import com.evshare.vehicle.dto.UpdateVehicleRequest;
 import com.evshare.vehicle.dto.VehicleResponse;
 import com.evshare.vehicle.entity.Vehicle;
 import com.evshare.vehicle.repository.VehicleRepository;
+import com.evshare.ownership.entity.CoOwnershipGroup;
+import com.evshare.ownership.entity.GroupMember;
+import com.evshare.ownership.entity.GroupStatus;
+import com.evshare.ownership.entity.GroupVehicle;
+import com.evshare.ownership.entity.GroupVehicleStatus;
+import com.evshare.ownership.entity.MemberStatus;
+import com.evshare.ownership.repository.GroupMemberRepository;
+import com.evshare.ownership.repository.GroupVehicleRepository;
+import com.evshare.security.UserPrincipal;
+import com.evshare.user.entity.Role;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -19,9 +33,17 @@ import java.util.stream.Collectors;
 public class VehicleService {
 
     private final VehicleRepository vehicleRepository;
+    private final GroupMemberRepository memberRepository;
+    private final GroupVehicleRepository groupVehicleRepository;
 
-    public VehicleService(VehicleRepository vehicleRepository) {
+    public VehicleService(
+            VehicleRepository vehicleRepository,
+            GroupMemberRepository memberRepository,
+            GroupVehicleRepository groupVehicleRepository
+    ) {
         this.vehicleRepository = vehicleRepository;
+        this.memberRepository = memberRepository;
+        this.groupVehicleRepository = groupVehicleRepository;
     }
 
     @Transactional(readOnly = true)
@@ -32,9 +54,90 @@ public class VehicleService {
     }
 
     @Transactional(readOnly = true)
+    public List<VehicleResponse> getAllVehicles(UserPrincipal principal) {
+        if (principal == null) {
+            return getAllVehicles();
+        }
+
+        Role userRole = principal.getUser().getRole();
+        if (userRole == Role.STAFF || userRole == Role.ADMIN) {
+            return getAllVehicles();
+        }
+
+        // CO_OWNER: Only return vehicles associated with groups where user is an ACTIVE member
+        // Authoritative Rule: ONE CO_OWNER = MAXIMUM ONE ACTIVE CONTRACT = MAXIMUM ONE VEHICLE
+        UUID userId = principal.getId();
+        List<GroupMember> activeMemberships = memberRepository.findByUserIdAndStatus(userId, MemberStatus.ACTIVE);
+
+        Set<UUID> visibleVehicleIds = new LinkedHashSet<>();
+        for (GroupMember member : activeMemberships) {
+            if (member.getRemovedAt() != null) {
+                continue;
+            }
+            CoOwnershipGroup group = member.getGroup();
+            if (group != null && group.getStatus() == GroupStatus.ACTIVE) {
+                // Authoritative Domain Rule: 1 CoOwnershipGroup = exactly 1 Vehicle
+                if (group.getVehicleId() != null) {
+                    visibleVehicleIds.add(group.getVehicleId());
+                } else {
+                    List<GroupVehicle> gvs = groupVehicleRepository.findByGroupIdAndStatus(group.getId(), GroupVehicleStatus.ACTIVE);
+                    if (!gvs.isEmpty() && gvs.get(0).getVehicle() != null) {
+                        visibleVehicleIds.add(gvs.get(0).getVehicle().getId());
+                    }
+                }
+            }
+        }
+
+        if (visibleVehicleIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // Strict Single Active Contract: Return at most 1 vehicle for CO_OWNER
+        return vehicleRepository.findAllById(visibleVehicleIds).stream()
+                .limit(1)
+                .map(VehicleResponse::fromEntity)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
     public VehicleResponse getVehicleById(UUID id) {
+        return getVehicleById(id, null);
+    }
+
+    @Transactional(readOnly = true)
+    public VehicleResponse getVehicleById(UUID id, UserPrincipal principal) {
         Vehicle vehicle = vehicleRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found with id: " + id));
+
+        if (principal != null) {
+            Role userRole = principal.getUser().getRole();
+            if (userRole == Role.CO_OWNER) {
+                UUID userId = principal.getId();
+                List<GroupMember> activeMemberships = memberRepository.findByUserIdAndStatus(userId, MemberStatus.ACTIVE);
+                boolean hasAccess = false;
+                for (GroupMember member : activeMemberships) {
+                    CoOwnershipGroup group = member.getGroup();
+                    if (group != null && group.getStatus() == GroupStatus.ACTIVE) {
+                        if (id.equals(group.getVehicleId())) {
+                            hasAccess = true;
+                            break;
+                        }
+                        List<GroupVehicle> gvs = groupVehicleRepository.findByGroupIdAndStatus(group.getId(), GroupVehicleStatus.ACTIVE);
+                        for (GroupVehicle gv : gvs) {
+                            if (gv.getVehicle() != null && id.equals(gv.getVehicle().getId())) {
+                                hasAccess = true;
+                                break;
+                            }
+                        }
+                        if (hasAccess) break;
+                    }
+                }
+                if (!hasAccess) {
+                    throw new AccessDeniedException("Bạn không có quyền truy cập thông tin của xe này");
+                }
+            }
+        }
+
         return VehicleResponse.fromEntity(vehicle);
     }
 

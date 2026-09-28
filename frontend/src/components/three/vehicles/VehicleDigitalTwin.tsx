@@ -1,4 +1,4 @@
-import React, { Suspense, useRef, useEffect } from 'react';
+import React, { Suspense, useRef, useEffect, useMemo } from 'react';
 import { ThreeEvent, useFrame } from '@react-three/fiber';
 import { Html, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
@@ -10,11 +10,13 @@ import { fetchVehicles } from '../../../services/vehicleApi';
 import { VehicleResponse } from '../../../types/vehicle';
 import { VehicleModel } from './VehicleModel';
 import { VehicleInteractionHitboxes } from './VehicleInteractionHitboxes';
-import { getVehicleModelUrl } from './vehicleModelConfig';
+import { getVehicleModelUrl, resolveVehicleCode } from './vehicleModelConfig';
+import { resolveVehicleSlot, GarageSlotDef, DEFAULT_GARAGE_SLOT } from '../../../config/garageSlotConfig';
+import { STAFF_GARAGE_LAYOUT } from '../../../config/staffGarageLayout';
+import { FleetPreviewRow3D } from '../../fleet/FleetPreviewRow3D';
 import { VehicleStatusLabel } from './VehicleStatusLabel';
 import { VehicleSelectionEffect } from './VehicleSelectionEffect';
 import { VehicleInspectionGuide } from './VehicleInspectionGuide';
-import { SpatialVehiclePartPanel } from './SpatialVehiclePartPanel';
 import { SpatialDataLink } from '../SpatialDataLink';
 import { HolographicPanelFrame3D } from '../HolographicPanelFrame3D';
 import { VehicleCoOwnershipWorld } from '../ownership/VehicleCoOwnershipWorld';
@@ -29,6 +31,7 @@ import { CoOwnerVehiclePanel } from './CoOwnerVehiclePanel';
 import { StaffOperationsPanel } from './StaffOperationsPanel';
 import { AdminVehicleMonitorPanel } from './AdminVehicleMonitorPanel';
 import { shouldShowVehicleStatusLabel } from '../../../config/garageZoneVisibility';
+import { GarageZone } from '../../../store/worldStore';
 import {
   Car,
   Sparkles,
@@ -49,53 +52,153 @@ export interface VehicleDigitalTwinProps {
   renderPanel?: (vehicle: VehicleResponse, onClose: () => void) => React.ReactNode;
 }
 
-export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPanel }) => {
-  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  const accessToken = useAuthStore((state) => state.accessToken);
-  const refreshToken = useAuthStore((state) => state.refreshToken);
-  const authReady = isAuthenticated && (!!accessToken || !!refreshToken);
+/**
+ * Dedicated Architectural Display Platform for Vehicle Bays (Non-Hero Slots)
+ * Provides individual luxury pad geometry with zone-specific accent styling.
+ */
+const VehicleBayPlatformPad: React.FC<{
+  vehicleSlot?: GarageSlotDef;
+  slot?: GarageSlotDef;
+  isSelected: boolean;
+  isHovered: boolean;
+}> = ({ vehicleSlot: propVehicleSlot, slot: propSlot, isSelected, isHovered }) => {
+  const activeSlot = propVehicleSlot || propSlot || DEFAULT_GARAGE_SLOT;
+  const accent = isSelected ? '#f59e0b' : activeSlot.accentColor || '#38bdf8';
+  return (
+    <group position={[0, -0.14, 0]}>
+      {/* Base Stepped Turntable Pad */}
+      <mesh position={[0, 0.035, 0]} receiveShadow>
+        <cylinderGeometry args={[2.15, 2.22, 0.07, 48]} />
+        <meshStandardMaterial color="#f8fafc" roughness={0.2} metalness={0.25} />
+      </mesh>
 
-  const selectedZone = useWorldStore((state) => state.selectedZone);
-  const selectedVehicleId = useWorldStore((state) => state.selectedVehicleId);
-  const hoveredVehicleId = useWorldStore((state) => state.hoveredVehicleId);
-  const vehicleInspectionMode = useWorldStore(
-    (state) => state.vehicleInspectionMode
+      {/* Outer Polished Aluminum Bevel Rim */}
+      <mesh position={[0, 0.072, 0]}>
+        <cylinderGeometry args={[2.12, 2.18, 0.015, 48]} />
+        <meshStandardMaterial color="#94a3b8" roughness={0.2} metalness={0.8} />
+      </mesh>
+
+      {/* Outer Recessed Thin Emissive Neon Ring */}
+      <mesh position={[0, 0.076, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[2.02, 2.12, 48]} />
+        <meshBasicMaterial
+          color={accent}
+          transparent
+          opacity={isSelected ? 0.95 : isHovered ? 0.85 : 0.65}
+        />
+      </mesh>
+
+      {/* Middle Elevated Stepped Tier */}
+      <mesh position={[0, 0.09, 0]} receiveShadow>
+        <cylinderGeometry args={[1.92, 2.02, 0.035, 48]} />
+        <meshStandardMaterial color="#eef2f6" roughness={0.22} metalness={0.25} />
+      </mesh>
+
+      {/* Inner Recessed Thin Emissive LED Ring */}
+      <mesh position={[0, 0.11, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[1.72, 1.80, 48]} />
+        <meshBasicMaterial
+          color={accent}
+          transparent
+          opacity={0.65}
+        />
+      </mesh>
+
+      {/* Top Glossy Vehicle Turntable Surface */}
+      <mesh position={[0, 0.114, 0]} receiveShadow>
+        <cylinderGeometry args={[1.72, 1.72, 0.012, 48]} />
+        <meshStandardMaterial color="#ffffff" roughness={0.16} metalness={0.22} />
+      </mesh>
+    </group>
   );
-  const vehicleCoOwnershipMode = useWorldStore(
-    (state) => state.vehicleCoOwnershipMode
-  );
-  const user = useAuthStore((state) => state.user);
-  const isCoOwner = !user?.role || user?.role === 'CO_OWNER';
-  const vehiclePosition: [number, number, number] = isCoOwner
-    ? [0.0, 0.14, 1.8]
-    : [0.0, 0.14, 0.5];
-  const vehicleBookingMode = useWorldStore((state) => state.vehicleBookingMode);
-  const vehicleHandoverMode = useWorldStore((state) => state.vehicleHandoverMode);
-  const vehicleReceiptReviewMode = useWorldStore((state) => state.vehicleReceiptReviewMode);
-  const vehicleTripStartMode = useWorldStore((state) => state.vehicleTripStartMode);
-  const vehicleTripVisualizationMode = useWorldStore((state) => state.vehicleTripVisualizationMode);
-  const vehicleDamageMappingMode = useWorldStore((state) => state.vehicleDamageMappingMode);
-  const selectedVehiclePartId = useWorldStore(
-    (state) => state.selectedVehiclePartId
-  );
-  const selectVehicle = useWorldStore((state) => state.selectVehicle);
-  const hoverVehicle = useWorldStore((state) => state.hoverVehicle);
-  const clearSelection = useWorldStore((state) => state.clearSelection);
+};
+
+interface VehicleBayProps {
+  vehicle: VehicleResponse;
+  vehicleCode: 'EV01' | 'EV02';
+  vehicleSlot?: GarageSlotDef;
+  slot?: GarageSlotDef;
+  position?: [number, number, number];
+  isSelected: boolean;
+  isHovered: boolean;
+  isAnyVehicleSelected?: boolean;
+  isCoOwner: boolean;
+  role: string;
+  isBusinessModeActive: boolean;
+  selectedZone: GarageZone | null;
+  selectedVehicleId: string | null;
+  isVehicleSelected: boolean;
+  vehicleBookingMode: boolean;
+  vehicleCoOwnershipMode: boolean;
+  vehicleHandoverMode: boolean;
+  vehicleReceiptReviewMode: boolean;
+  vehicleTripStartMode: boolean;
+  vehicleTripVisualizationMode: boolean;
+  vehicleDamageMappingMode: boolean;
+  vehicleInspectionMode: boolean;
+  selectedVehiclePartId: string | null;
+  renderPanel?: (vehicle: VehicleResponse, onClose: () => void) => React.ReactNode;
+  onSelect: (vehicle: VehicleResponse) => void;
+  onHover: (code: string | null) => void;
+  onClearSelection: () => void;
+}
+
+const VehicleBay: React.FC<VehicleBayProps> = ({
+  vehicle,
+  vehicleCode,
+  vehicleSlot: propVehicleSlot,
+  slot: propSlot,
+  position: propPosition,
+  isSelected,
+  isHovered,
+  isAnyVehicleSelected: propIsAnyVehicleSelected,
+  isCoOwner,
+  role,
+  isBusinessModeActive,
+  selectedZone,
+  selectedVehicleId,
+  isVehicleSelected,
+  vehicleBookingMode,
+  vehicleCoOwnershipMode,
+  vehicleHandoverMode,
+  vehicleReceiptReviewMode,
+  vehicleTripStartMode,
+  vehicleTripVisualizationMode,
+  vehicleDamageMappingMode,
+  vehicleInspectionMode,
+  selectedVehiclePartId,
+  renderPanel,
+  onSelect,
+  onHover,
+  onClearSelection,
+}) => {
+  // Authoritative derivation of fleet-wide selection state
+  const isAnyVehicleSelected =
+    propIsAnyVehicleSelected ?? Boolean(selectedVehicleId || isVehicleSelected);
+
+  const isDeEmphasized = isAnyVehicleSelected && !isSelected;
+
+  // Authoritative slot resolver with deterministic fallback
+  const vehicleSlot = useMemo(() => {
+    const candidateSlot = propVehicleSlot || propSlot;
+    if (candidateSlot) return candidateSlot;
+    try {
+      const resolved = resolveVehicleSlot(vehicle, role);
+      if (resolved) return resolved;
+    } catch (err) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn(`[VehicleBay] Failed to resolve slot for vehicle ${vehicle?.id || vehicleCode}:`, err);
+      }
+    }
+    return DEFAULT_GARAGE_SLOT;
+  }, [propVehicleSlot, propSlot, vehicle, role, vehicleCode]);
+
+  const effectivePosition: [number, number, number] = propPosition || vehicleSlot.position;
+
   const vehicleMode = useWorldStore((state) => state.vehicleMode);
-  const isVehicleSelected = useWorldStore((state) => state.isVehicleSelected);
   const vehicleYaw = useWorldStore((state) => state.vehicleYaw);
   const setVehicleYaw = useWorldStore((state) => state.setVehicleYaw);
 
-  // TanStack Query: Fetch vehicles from Spring Boot API / MySQL
-  // Enabled ONLY when authentication state is ready and token exists
-  const { data: vehicles, isLoading, isError, error, refetch } = useQuery<VehicleResponse[]>({
-    queryKey: ['vehicles'],
-    queryFn: fetchVehicles,
-    enabled: authReady,
-    refetchInterval: authReady ? 6000 : false,
-  });
-
-  // Section 2: EV01 360-Degree Turntable Rotation State & Ref (Unconditional Top-Level Hooks)
   const defaultYaw = isCoOwner
     ? VEHICLE_INTERACTION_CONFIG.defaultCoOwnerYaw
     : VEHICLE_INTERACTION_CONFIG.defaultOperationsYaw;
@@ -107,12 +210,12 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
   const pointerDownPos = useRef<{ x: number; y: number } | null>(null);
   const lastPointerX = useRef(0);
 
-  // Synchronize target yaw when worldStore resets yaw (e.g. on return to overview)
+  // Synchronize target yaw when worldStore resets yaw and this vehicle is selected
   useEffect(() => {
-    if (vehicleYaw !== undefined) {
+    if (isSelected && vehicleYaw !== undefined) {
       targetYaw.current = vehicleYaw;
     }
-  }, [vehicleYaw]);
+  }, [isSelected, vehicleYaw]);
 
   // Smooth 60fps damped turntable rotation around vertical Y axis
   useFrame((_, delta) => {
@@ -159,7 +262,9 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
     const handlePointerUp = () => {
       if (isVehicleDraggingRef.current) {
         notifyVehicleDragEnd();
-        setVehicleYaw(targetYaw.current);
+        if (isSelected) {
+          setVehicleYaw(targetYaw.current);
+        }
       }
       notifyVehiclePointerUp();
       pointerDownPos.current = null;
@@ -172,10 +277,353 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
     window.addEventListener('pointerup', handlePointerUp);
   };
 
-  // 1. Loading State in 3D Space (also shown while auth is initializing)
+  const handleClick = (e: ThreeEvent<MouseEvent>) => {
+    // Prevent accidental selection during camera orbit/drag or vehicle turntable drag
+    if (isRecentDragInteraction(e.delta) || isVehicleDraggingRef.current) return;
+    if (isBusinessModeActive) return;
+    e.stopPropagation();
+    onSelect(vehicle);
+  };
+
+  const handlePointerOver = (e: ThreeEvent<PointerEvent>) => {
+    if (isBusinessModeActive) return;
+    e.stopPropagation();
+    onHover(vehicleCode);
+    document.body.style.cursor = 'grab';
+  };
+
+  const handlePointerOut = (e: ThreeEvent<PointerEvent>) => {
+    if (isBusinessModeActive) return;
+    e.stopPropagation();
+    onHover(null);
+    if (!isVehicleDraggingRef.current) {
+      document.body.style.cursor = 'auto';
+    }
+  };
+
+  const selectedPart = getPartById(selectedVehiclePartId);
+
+  const shouldRenderCoOwnerPanel =
+    role === 'CO_OWNER' &&
+    selectedVehicleId != null &&
+    (vehicleMode === 'CO_OWNER_VEHICLE_OVERVIEW' ||
+      vehicleMode === 'CO_OWNER_VEHICLE_INFO' ||
+      vehicleMode === 'CO_OWNER_MY_BOOKINGS');
+
+  const shouldRenderStaffPanel =
+    role === 'STAFF' &&
+    selectedVehicleId != null &&
+    vehicleMode === 'STAFF_VEHICLE_OVERVIEW';
+
+  const shouldRenderAdminPanel =
+    role === 'ADMIN' &&
+    selectedVehicleId != null &&
+    vehicleMode === 'ADMIN_VEHICLE_OVERVIEW';
+
+  const shouldRenderVehicleOverview =
+    (shouldRenderCoOwnerPanel ||
+      shouldRenderStaffPanel ||
+      shouldRenderAdminPanel ||
+      isSelected) &&
+    !isBusinessModeActive;
+
+  const displayName = vehicleCode === 'EV01' ? 'Xe điện thực tế' : 'Xe thử nghiệm tương tác';
+
+  return (
+    <group position={effectivePosition} name={`${vehicleCode}Bay`}>
+      {/* Platform Pad for non-hero slots (EV01 is seated on hero turntable) */}
+      {vehicleSlot.id !== 'BAY_READY_01' && (
+        <VehicleBayPlatformPad vehicleSlot={vehicleSlot} slot={vehicleSlot} isSelected={isSelected} isHovered={isHovered} />
+      )}
+
+      {/* 360-Degree Interactive Vehicle Turntable Group */}
+      <group
+        ref={turntableRef}
+        name={`${vehicleCode}Turntable`}
+        rotation={[0, currentYaw.current, 0]}
+        onPointerDown={handleTurntablePointerDown}
+        onClick={handleClick}
+        onPointerOver={handlePointerOver}
+        onPointerOut={handlePointerOut}
+      >
+        {/* Selection & Hover Halo */}
+        <VehicleSelectionEffect isSelected={isSelected} isHovered={isHovered} />
+
+        {/* 3D GLB Model (Visual Only) */}
+        <Suspense fallback={null}>
+          <VehicleModel
+            isSelected={isSelected}
+            isHovered={isHovered}
+            isDeEmphasized={isDeEmphasized}
+            modelUrl={getVehicleModelUrl(vehicle.model3dUrl, vehicle)}
+            onSelectVehicle={() => onSelect(vehicle)}
+            onPointerDown={handleTurntablePointerDown}
+          />
+        </Suspense>
+
+        {/* Semantic Interaction Hitboxes (rotates with car) - Active ONLY during explore/inspection, damage mapping, or handover */}
+        {(vehicleInspectionMode || vehicleDamageMappingMode || vehicleHandoverMode || vehicleReceiptReviewMode) && (
+          <VehicleInteractionHitboxes
+            vehicleCode={vehicleCode}
+            onSelectVehicle={() => onSelect(vehicle)}
+            onPointerDown={handleTurntablePointerDown}
+          />
+        )}
+      </group>
+
+      {/* Floating 3D Status Pill Indicator (shown in overview mode when not focused) */}
+      {!isSelected &&
+        !vehicleInspectionMode &&
+        !vehicleCoOwnershipMode &&
+        shouldShowVehicleStatusLabel({
+          selectedZone,
+          selectedVehicleId,
+          isVehicleSelected,
+          vehicleBookingMode,
+          vehicleCoOwnershipMode,
+          vehicleHandoverMode,
+          vehicleReceiptReviewMode,
+          vehicleTripStartMode,
+          vehicleTripVisualizationMode,
+          vehicleDamageMappingMode,
+          vehicleInspectionMode,
+          selectedVehiclePartId,
+        }) && (
+          <VehicleStatusLabel
+            id={vehicleCode}
+            name={displayName}
+            status={vehicle.status}
+            batteryLevel={vehicle.currentBatteryLevel}
+            isSelected={isSelected}
+            isHovered={isHovered}
+          />
+        )}
+
+      {/* World-Space Spatial Vehicle Information Card with 3D Holographic Frame & Connector */}
+      {isCoOwner && isSelected && shouldRenderVehicleOverview && (
+        <>
+          <SpatialDataLink
+            start={[0, 0.7, 0]}
+            end={[2.6 - 0.45, 1.35, 0]}
+            color={role === 'ADMIN' ? '#a855f7' : role === 'CO_OWNER' ? '#10b981' : '#00f2fe'}
+          />
+
+          <group position={[2.6, 1.35, 0]}>
+            <Billboard follow={true}>
+              <HolographicPanelFrame3D
+                width={2.55}
+                height={3.4}
+                color={role === 'ADMIN' ? '#a855f7' : role === 'CO_OWNER' ? '#10b981' : '#00f2fe'}
+              />
+              <Html
+                center
+                distanceFactor={8.8}
+                style={{ pointerEvents: 'auto', userSelect: 'none' }}
+              >
+                <QueryClientProvider client={queryClient}>
+                  {renderPanel ? (
+                    renderPanel(vehicle, onClearSelection)
+                  ) : role === 'ADMIN' ? (
+                    <AdminVehicleMonitorPanel
+                      vehicle={vehicle}
+                      onClose={onClearSelection}
+                    />
+                  ) : role === 'STAFF' ? (
+                    <StaffOperationsPanel
+                      vehicle={vehicle}
+                      onClose={onClearSelection}
+                    />
+                  ) : (
+                    <CoOwnerVehiclePanel
+                      vehicle={vehicle}
+                      onClose={onClearSelection}
+                    />
+                  )}
+                </QueryClientProvider>
+              </Html>
+            </Billboard>
+          </group>
+        </>
+      )}
+
+      {/* Sub-Worlds rendered ONLY for the selected vehicle (Spatial HTML cards only for CO_OWNER) */}
+      {isSelected && vehicleInspectionMode && !selectedVehiclePartId && isCoOwner && (
+        <VehicleInspectionGuide />
+      )}
+
+      {isSelected && vehicleCoOwnershipMode && (
+        <VehicleCoOwnershipWorld vehicle={vehicle} />
+      )}
+
+      {isSelected && vehicleBookingMode && (
+        <VehicleBookingWorld vehicle={vehicle} />
+      )}
+
+      {isSelected && vehicleReceiptReviewMode && (
+        <CoOwnerReceiptWorld vehicle={vehicle} />
+      )}
+
+      {isSelected && vehicleHandoverMode && (
+        <VehicleHandoverWorld vehicle={vehicle} />
+      )}
+
+      {isSelected && vehicleTripStartMode && (
+        <TripStartWorld vehicle={vehicle} />
+      )}
+
+      {isSelected && vehicleTripVisualizationMode && (
+        <TripVisualizationWorld vehicle={vehicle} />
+      )}
+
+      {isSelected && vehicleDamageMappingMode && (
+        <VehicleDamageWorld vehicle={vehicle} />
+      )}
+    </group>
+  );
+};
+
+export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPanel }) => {
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const accessToken = useAuthStore((state) => state.accessToken);
+  const refreshToken = useAuthStore((state) => state.refreshToken);
+  const authReady = isAuthenticated && (!!accessToken || !!refreshToken);
+
+  const selectedZone = useWorldStore((state) => state.selectedZone);
+  const selectedVehicleId = useWorldStore((state) => state.selectedVehicleId);
+  const hoveredVehicleId = useWorldStore((state) => state.hoveredVehicleId);
+  const vehicleInspectionMode = useWorldStore((state) => state.vehicleInspectionMode);
+  const vehicleCoOwnershipMode = useWorldStore((state) => state.vehicleCoOwnershipMode);
+  const user = useAuthStore((state) => state.user);
+  const role = user?.role || 'CO_OWNER';
+  const isStaff = user?.role === 'STAFF';
+  const isAdmin = user?.role === 'ADMIN';
+  const isOperationsRole = isStaff || isAdmin;
+  const isCoOwner = !user?.role || user?.role === 'CO_OWNER';
+
+  const defaultVehiclePosition: [number, number, number] = isCoOwner
+    ? [0.0, 0.14, 1.8]
+    : [0.0, 0.14, 0.5];
+
+  const vehicleBookingMode = useWorldStore((state) => state.vehicleBookingMode);
+  const vehicleHandoverMode = useWorldStore((state) => state.vehicleHandoverMode);
+  const vehicleReceiptReviewMode = useWorldStore((state) => state.vehicleReceiptReviewMode);
+  const vehicleTripStartMode = useWorldStore((state) => state.vehicleTripStartMode);
+  const vehicleTripVisualizationMode = useWorldStore((state) => state.vehicleTripVisualizationMode);
+  const vehicleDamageMappingMode = useWorldStore((state) => state.vehicleDamageMappingMode);
+  const selectedVehiclePartId = useWorldStore((state) => state.selectedVehiclePartId);
+  const selectVehicle = useWorldStore((state) => state.selectVehicle);
+  const hoverVehicle = useWorldStore((state) => state.hoverVehicle);
+  const clearSelection = useWorldStore((state) => state.clearSelection);
+  const isVehicleSelected = useWorldStore((state) => state.isVehicleSelected);
+
+  // TanStack Query: Fetch vehicles from Spring Boot API / MySQL (scoped per role and user)
+  const { data: vehicles = [], isLoading, isError, error, refetch } = useQuery<VehicleResponse[]>({
+    queryKey: ['vehicles', user?.role, user?.id],
+    queryFn: fetchVehicles,
+    enabled: authReady,
+    refetchInterval: authReady ? 6000 : false,
+  });
+
+  // Maximum number of vehicles to simultaneously instantiate in 3D showroom bays
+  const MAX_CONCURRENT_3D_BAYS = 8;
+
+  // Scalable Fleet 3D Projection:
+  // 1. In CO_OWNER mode: exactly ONE vehicle is rendered in 3D space (authoritative single ownership context)
+  // 2. In operations mode (STAFF/ADMIN): prioritize EV01/EV02, support fleet preview row & up to 8 bays
+  const effectiveVehicles = useMemo(() => {
+    if (!vehicles || vehicles.length === 0) return [];
+
+    if (!isOperationsRole) {
+      if (vehicles.length > 1) {
+        console.error(
+          `[Domain Invariant Violation] CO_OWNER has ${vehicles.length} active vehicles. Expected at most 1:`,
+          vehicles.map((v) => v.id)
+        );
+      }
+      return [vehicles[0]];
+    }
+
+    const sorted = [...vehicles].sort((a, b) => {
+      const codeA = resolveVehicleCode(a);
+      const codeB = resolveVehicleCode(b);
+      if (codeA === 'EV01' && codeB !== 'EV01') return -1;
+      if (codeA !== 'EV01' && codeB === 'EV01') return 1;
+      return 0;
+    });
+
+    if (sorted.length <= MAX_CONCURRENT_3D_BAYS) {
+      return sorted;
+    }
+
+    const baySubset = sorted.slice(0, MAX_CONCURRENT_3D_BAYS);
+
+    if (selectedVehicleId) {
+      const isAlreadyMounted = baySubset.some((v) => {
+        const code = resolveVehicleCode(v);
+        return v.id === selectedVehicleId || code === selectedVehicleId;
+      });
+
+      if (!isAlreadyMounted) {
+        const targetVehicle = sorted.find((v) => {
+          const code = resolveVehicleCode(v);
+          return v.id === selectedVehicleId || code === selectedVehicleId;
+        });
+
+        if (targetVehicle) {
+          // Mount the selected vehicle into the active 3D set so it renders seamlessly
+          return [...baySubset.slice(0, MAX_CONCURRENT_3D_BAYS - 1), targetVehicle];
+        }
+      }
+    }
+
+    return baySubset;
+  }, [vehicles, selectedVehicleId, isOperationsRole]);
+
+  // Synchronize selection: If selected vehicle is not in authorized backend vehicles, reset selection
+  useEffect(() => {
+    if (selectedVehicleId && vehicles.length > 0) {
+      const isStillAvailable = vehicles.some((v) => {
+        const code = resolveVehicleCode(v);
+        return v.id === selectedVehicleId || code === selectedVehicleId;
+      });
+      if (!isStillAvailable) {
+        clearSelection();
+      }
+    }
+  }, [selectedVehicleId, vehicles, clearSelection]);
+
+  const isBusinessModeActive =
+    vehicleInspectionMode ||
+    vehicleCoOwnershipMode ||
+    vehicleBookingMode ||
+    vehicleHandoverMode ||
+    vehicleReceiptReviewMode ||
+    vehicleTripStartMode ||
+    vehicleTripVisualizationMode ||
+    vehicleDamageMappingMode;
+
+  const handleVehicleSelect = (selectedVehicle: VehicleResponse) => {
+    selectVehicle(selectedVehicle.id, role);
+  };
+
+  // For operations role, derive the foreground hero vehicle (selected vehicle or first vehicle)
+  // All hooks must execute unconditionally BEFORE any early returns
+  const heroVehicle = useMemo(() => {
+    if (!effectiveVehicles || effectiveVehicles.length === 0) return null;
+    if (selectedVehicleId) {
+      const match = effectiveVehicles.find((v) => {
+        const code = resolveVehicleCode(v);
+        return v.id === selectedVehicleId || code === selectedVehicleId;
+      });
+      if (match) return match;
+    }
+    return effectiveVehicles[0];
+  }, [effectiveVehicles, selectedVehicleId]);
+
+  // Loading State in 3D Space (all hooks have now been called unconditionally)
   if (!authReady || isLoading) {
     return (
-      <group position={vehiclePosition}>
+      <group position={defaultVehiclePosition}>
         <Html position={[0, 1.8, 0]} center distanceFactor={8.5} style={{ pointerEvents: 'none', userSelect: 'none' }}>
           <div
             style={{
@@ -204,10 +652,10 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
     );
   }
 
-  // 2. Error State in 3D Space
+  // Error State in 3D Space
   if (isError) {
     return (
-      <group position={vehiclePosition}>
+      <group position={defaultVehiclePosition}>
         <Html position={[0, 1.8, 0]} center distanceFactor={8.5} style={{ pointerEvents: 'auto', userSelect: 'none' }}>
           <div
             style={{
@@ -239,31 +687,7 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
               <span>KHÔNG THỂ TẢI DỮ LIỆU XE</span>
             </div>
             <p style={{ fontSize: '11px', color: '#94a3b8', margin: '0 0 12px 0' }}>
-              {(() => {
-                const rawMsg = (error as Error)?.message || '';
-                if (
-                  rawMsg.includes('Authentication token') ||
-                  rawMsg.includes('Unauthorized') ||
-                  rawMsg.includes('token is missing') ||
-                  rawMsg.includes('Phiên đăng nhập')
-                ) {
-                  return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
-                }
-                if (rawMsg.includes('quyền truy cập') || rawMsg.includes('Forbidden')) {
-                  return 'Bạn không có quyền truy cập dữ liệu xe.';
-                }
-                if (
-                  rawMsg.includes('CORS') ||
-                  rawMsg.includes('Unexpected token') ||
-                  rawMsg.includes('JSON') ||
-                  rawMsg.includes('Network') ||
-                  rawMsg.includes('Failed to fetch') ||
-                  rawMsg.includes('kết nối')
-                ) {
-                  return 'Không thể kết nối đến máy chủ. Vui lòng thử lại sau.';
-                }
-                return 'Không thể kết nối đến máy chủ. Vui lòng thử lại sau.';
-              })()}
+              Không thể kết nối đến máy chủ. Vui lòng thử lại sau.
             </p>
             <button
               type="button"
@@ -292,10 +716,10 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
     );
   }
 
-  // 3. Empty State in 3D Space (No vehicles found in database)
-  if (!vehicles || vehicles.length === 0) {
+  // Empty State: CO_OWNER without active group memberships or no vehicles available
+  if (effectiveVehicles.length === 0) {
     return (
-      <group position={vehiclePosition}>
+      <group position={defaultVehiclePosition}>
         <Html position={[0, 1.8, 0]} center distanceFactor={8.5} style={{ pointerEvents: 'none', userSelect: 'none' }}>
           <div
             style={{
@@ -316,248 +740,124 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
             }}
           >
             <Car size={14} />
-            <span>CHƯA CÓ XE TRONG HỆ THỐNG</span>
+            <span>
+              {isCoOwner
+                ? 'BẠN CHƯA THAM GIA NHÓM ĐỒNG SỞ HỮU XE NÀO'
+                : 'CHƯA CÓ XE TRONG HỆ THỐNG'}
+            </span>
           </div>
         </Html>
       </group>
     );
   }
 
-  // Connected State: Use the primary vehicle from API
-  const vehicle = vehicles[0];
-  const displayCode = 'EV01';
-  const role = user?.role || 'CO_OWNER';
+  // Operations Role Layout: Horizontal Preview Row in background + Large Hero Vehicle in center-foreground
+  if (isOperationsRole && heroVehicle) {
+    const heroCode = resolveVehicleCode(heroVehicle);
 
-  const isSelected =
-    isVehicleSelected ||
-    selectedZone === 'VEHICLE' ||
-    selectedVehicleId === vehicle.id ||
-    selectedVehicleId === displayCode ||
-    selectedVehicleId === 'EV01';
-  const isHovered = hoveredVehicleId === vehicle.id || hoveredVehicleId === displayCode;
+    return (
+      <group name="StaffFleetHeroAndPreviewContainer">
+        {/* Horizontal Secondary Fleet Preview Row (Background Lineup) */}
+        <FleetPreviewRow3D
+          vehicles={effectiveVehicles}
+          selectedVehicleId={heroVehicle.id}
+          onSelectVehicle={handleVehicleSelect}
+          visible={!isBusinessModeActive}
+        />
 
-  const selectedPart = getPartById(selectedVehiclePartId);
-
-  const isBusinessModeActive =
-    vehicleInspectionMode ||
-    vehicleCoOwnershipMode ||
-    vehicleBookingMode ||
-    vehicleHandoverMode ||
-    vehicleReceiptReviewMode ||
-    vehicleTripStartMode ||
-    vehicleTripVisualizationMode ||
-    vehicleDamageMappingMode;
-
-  const handleVehicleSelect = (selectedVehicle: VehicleResponse) => {
-    selectVehicle(selectedVehicle.id, role);
-  };
-
-  const handleClick = (e: ThreeEvent<MouseEvent>) => {
-    // Prevent accidental selection during camera orbit/drag or vehicle turntable drag
-    if (isRecentDragInteraction(e.delta) || isVehicleDraggingRef.current) return;
-    if (isBusinessModeActive) return;
-    e.stopPropagation();
-    handleVehicleSelect(vehicle);
-  };
-
-  const handlePointerOver = (e: ThreeEvent<PointerEvent>) => {
-    if (isBusinessModeActive) return;
-    e.stopPropagation();
-    hoverVehicle(displayCode);
-    document.body.style.cursor = 'grab';
-  };
-
-  const handlePointerOut = (e: ThreeEvent<PointerEvent>) => {
-    if (isBusinessModeActive) return;
-    e.stopPropagation();
-    if (hoveredVehicleId === vehicle.id || hoveredVehicleId === displayCode) {
-      hoverVehicle(null);
-    }
-    if (!isVehicleDraggingRef.current) {
-      document.body.style.cursor = 'auto';
-    }
-  };
-
-  // Section 4: Panel Render Condition
-  // CoOwnerVehiclePanel should render when:
-  // role === "CO_OWNER" AND selectedVehicleId != null AND vehicleMode === "CO_OWNER_VEHICLE_OVERVIEW"
-  const shouldRenderCoOwnerPanel =
-    role === 'CO_OWNER' &&
-    selectedVehicleId != null &&
-    (vehicleMode === 'CO_OWNER_VEHICLE_OVERVIEW' ||
-      vehicleMode === 'CO_OWNER_VEHICLE_INFO' ||
-      vehicleMode === 'CO_OWNER_MY_BOOKINGS');
-
-  const shouldRenderStaffPanel =
-    role === 'STAFF' &&
-    selectedVehicleId != null &&
-    vehicleMode === 'STAFF_VEHICLE_OVERVIEW';
-
-  const shouldRenderAdminPanel =
-    role === 'ADMIN' &&
-    selectedVehicleId != null &&
-    vehicleMode === 'ADMIN_VEHICLE_OVERVIEW';
-
-  const shouldRenderVehicleOverview =
-    (shouldRenderCoOwnerPanel ||
-      shouldRenderStaffPanel ||
-      shouldRenderAdminPanel ||
-      isSelected) &&
-    !isBusinessModeActive;
-
-  return (
-    // Situated on the Vehicle Zone parking pad
-    <group position={vehiclePosition}>
-      {/* 360-Degree Interactive Vehicle Turntable Group */}
-      <group
-        ref={turntableRef}
-        rotation={[0, currentYaw.current, 0]}
-        onPointerDown={handleTurntablePointerDown}
-        onClick={handleClick}
-        onPointerOver={handlePointerOver}
-        onPointerOut={handlePointerOut}
-      >
-        {/* 1. Selection & Hover Underglow Halo */}
-        <VehicleSelectionEffect isSelected={isSelected} isHovered={isHovered} />
-
-        {/* 2. Real EV 3D GLB Model (Visual Only) */}
-        <Suspense fallback={null}>
-          <VehicleModel
-            isSelected={isSelected}
-            isHovered={isHovered}
-            modelUrl={getVehicleModelUrl(vehicle.model3dUrl)}
-            onSelectVehicle={() => handleVehicleSelect(vehicle)}
-            onPointerDown={handleTurntablePointerDown}
-          />
-        </Suspense>
-
-        {/* 2b. Decoupled Semantic Interaction Hitbox Layer (rotates with car) */}
-        <VehicleInteractionHitboxes
-          onSelectVehicle={() => handleVehicleSelect(vehicle)}
-          onPointerDown={handleTurntablePointerDown}
+        {/* Large Foreground Hero Vehicle (Interactive Turntable, Full Detail) */}
+        <VehicleBay
+          key={heroVehicle.id || heroCode}
+          vehicle={heroVehicle}
+          vehicleCode={heroCode}
+          position={STAFF_GARAGE_LAYOUT.heroAnchor}
+          isSelected={true}
+          isHovered={false}
+          isAnyVehicleSelected={true}
+          isCoOwner={false}
+          role={role}
+          isBusinessModeActive={isBusinessModeActive}
+          selectedZone={selectedZone}
+          selectedVehicleId={selectedVehicleId || heroVehicle.id}
+          isVehicleSelected={true}
+          vehicleBookingMode={vehicleBookingMode}
+          vehicleCoOwnershipMode={vehicleCoOwnershipMode}
+          vehicleHandoverMode={vehicleHandoverMode}
+          vehicleReceiptReviewMode={vehicleReceiptReviewMode}
+          vehicleTripStartMode={vehicleTripStartMode}
+          vehicleTripVisualizationMode={vehicleTripVisualizationMode}
+          vehicleDamageMappingMode={vehicleDamageMappingMode}
+          vehicleInspectionMode={vehicleInspectionMode}
+          selectedVehiclePartId={selectedVehiclePartId}
+          renderPanel={renderPanel}
+          onSelect={handleVehicleSelect}
+          onHover={hoverVehicle}
+          onClearSelection={clearSelection}
         />
       </group>
+    );
+  }
 
-      {/* 3. Floating 3D Status Pill Indicator (shown only in overview mode when no zone/vehicle is focused) */}
-      {!isSelected &&
-        !vehicleInspectionMode &&
-        !vehicleCoOwnershipMode &&
-        shouldShowVehicleStatusLabel({
-          selectedZone,
-          selectedVehicleId,
-          isVehicleSelected,
-          vehicleBookingMode,
-          vehicleCoOwnershipMode,
-          vehicleHandoverMode,
-          vehicleReceiptReviewMode,
-          vehicleTripStartMode,
-          vehicleTripVisualizationMode,
-          vehicleDamageMappingMode,
-          vehicleInspectionMode,
-          selectedVehiclePartId,
-        }) && (
-          <VehicleStatusLabel
-            id={displayCode}
-            name={vehicle.name}
-            status={vehicle.status}
-            batteryLevel={vehicle.currentBatteryLevel}
+  const isAnyVehicleSelected = Boolean(selectedVehicleId || isVehicleSelected);
+
+  return (
+    <group name="VehicleFleetTwinContainer">
+      {effectiveVehicles.map((vehicle) => {
+        const vehicleCode = resolveVehicleCode(vehicle);
+        let vehicleSlot: GarageSlotDef;
+        try {
+          vehicleSlot = resolveVehicleSlot(vehicle, role, effectiveVehicles);
+        } catch (err) {
+          if (process.env.NODE_ENV !== 'production') {
+            console.warn(`[VehicleFleetTwinContainer] Failed resolving slot for ${vehicleCode}:`, err);
+          }
+          vehicleSlot = DEFAULT_GARAGE_SLOT;
+        }
+
+        const isSelected = selectedVehicleId
+          ? selectedVehicleId === vehicle.id ||
+            selectedVehicleId === vehicleCode
+          : isCoOwner
+            ? Boolean(isVehicleSelected || selectedZone === 'VEHICLE')
+            : vehicleCode === 'EV01' && (isVehicleSelected || selectedZone === 'VEHICLE');
+
+        const isHovered =
+          hoveredVehicleId === vehicle.id ||
+          hoveredVehicleId === vehicleCode;
+
+        return (
+          <VehicleBay
+            key={vehicle.id || vehicleCode}
+            vehicle={vehicle}
+            vehicleCode={vehicleCode}
+            vehicleSlot={vehicleSlot}
+            slot={vehicleSlot}
+            position={vehicleSlot.position}
             isSelected={isSelected}
             isHovered={isHovered}
+            isAnyVehicleSelected={isAnyVehicleSelected}
+            isCoOwner={isCoOwner}
+            role={role}
+            isBusinessModeActive={isBusinessModeActive}
+            selectedZone={selectedZone}
+            selectedVehicleId={selectedVehicleId}
+            isVehicleSelected={isVehicleSelected}
+            vehicleBookingMode={vehicleBookingMode}
+            vehicleCoOwnershipMode={vehicleCoOwnershipMode}
+            vehicleHandoverMode={vehicleHandoverMode}
+            vehicleReceiptReviewMode={vehicleReceiptReviewMode}
+            vehicleTripStartMode={vehicleTripStartMode}
+            vehicleTripVisualizationMode={vehicleTripVisualizationMode}
+            vehicleDamageMappingMode={vehicleDamageMappingMode}
+            vehicleInspectionMode={vehicleInspectionMode}
+            selectedVehiclePartId={selectedVehiclePartId}
+            renderPanel={renderPanel}
+            onSelect={handleVehicleSelect}
+            onHover={hoverVehicle}
+            onClearSelection={clearSelection}
           />
-        )}
-
-      {/* 4. World-Space Spatial Vehicle Information Card with 3D Holographic Frame & Connector */}
-      {shouldRenderVehicleOverview && (
-        <>
-          {/* Visible 3D Laser Connector linking EV01 to detailed panel */}
-          <SpatialDataLink
-            start={[0, 0.7, 0]}
-            end={[2.6 - 0.45, 1.35, 0]}
-            color={role === 'ADMIN' ? '#a855f7' : role === 'CO_OWNER' ? '#10b981' : '#00f2fe'}
-          />
-
-          <group position={[2.6, 1.35, 0]}>
-            <Billboard follow={true}>
-              <HolographicPanelFrame3D
-                width={2.55}
-                height={3.4}
-                color={role === 'ADMIN' ? '#a855f7' : role === 'CO_OWNER' ? '#10b981' : '#00f2fe'}
-              />
-              <Html
-                center
-                distanceFactor={8.8}
-                style={{ pointerEvents: 'auto', userSelect: 'none' }}
-              >
-                <QueryClientProvider client={queryClient}>
-                  {renderPanel ? (
-                    renderPanel(vehicle, () => clearSelection())
-                  ) : role === 'ADMIN' ? (
-                    <AdminVehicleMonitorPanel
-                      vehicle={vehicle}
-                      onClose={() => clearSelection()}
-                    />
-                  ) : role === 'STAFF' ? (
-                    <StaffOperationsPanel
-                      vehicle={vehicle}
-                      onClose={() => clearSelection()}
-                    />
-                  ) : (
-                    <CoOwnerVehiclePanel
-                      vehicle={vehicle}
-                      onClose={() => clearSelection()}
-                    />
-                  )}
-                </QueryClientProvider>
-              </Html>
-            </Billboard>
-          </group>
-        </>
-      )}
-
-      {/* 5. Vehicle Inspection Mode: Floating Instruction Guide */}
-      {vehicleInspectionMode && !selectedVehiclePartId && (
-        <VehicleInspectionGuide />
-      )}
-
-      {/* 6. Vehicle Inspection Mode: Detailed Spatial Vehicle Part Panel */}
-      {vehicleInspectionMode && selectedPart && (
-        <SpatialVehiclePartPanel part={selectedPart} />
-      )}
-
-      {/* 7. Phase 07: Vehicle 3D Co-Ownership View */}
-      {vehicleCoOwnershipMode && (
-        <VehicleCoOwnershipWorld vehicle={vehicle} />
-      )}
-
-      {/* 8. Phase 08: Pure 3D Vehicle Booking View */}
-      {vehicleBookingMode && (
-        <VehicleBookingWorld vehicle={vehicle} />
-      )}
-
-      {/* 9a. Phase 09: Dedicated CO_OWNER Receipt Review View */}
-      {vehicleReceiptReviewMode && (
-        <CoOwnerReceiptWorld vehicle={vehicle} />
-      )}
-
-      {/* 9b. Phase 09: 3D Vehicle Handover & Check-in View (STAFF/ADMIN) */}
-      {vehicleHandoverMode && (
-        <VehicleHandoverWorld vehicle={vehicle} />
-      )}
-
-      {/* 10. Phase 10: Pure 3D Trip Start View */}
-      {vehicleTripStartMode && (
-        <TripStartWorld vehicle={vehicle} />
-      )}
-
-      {/* 11. Phase 11: Pure 3D Trip Visualization View */}
-      {vehicleTripVisualizationMode && (
-        <TripVisualizationWorld vehicle={vehicle} />
-      )}
-
-      {/* 12. Phase 13: Pure 3D Damage Mapping View */}
-      {vehicleDamageMappingMode && (
-        <VehicleDamageWorld vehicle={vehicle} />
-      )}
+        );
+      })}
     </group>
   );
 };

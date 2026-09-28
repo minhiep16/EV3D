@@ -24,6 +24,7 @@ import { INTERACTION_CONFIG } from '../../config/interactionConfig';
 import {
   shouldShowZoneLabel,
   shouldShowZoneSummary,
+  shouldShowOverviewZoneUI,
   isGarageZoneFocused,
 } from '../../config/garageZoneVisibility';
 
@@ -136,7 +137,7 @@ export const CO_OWNER_ZONE_CONFIGS: Record<GarageZone, ZoneConfig> = {
   },
   CHARGING: {
     ...OPERATIONS_ZONE_CONFIGS.CHARGING,
-    position: [5.0, 0, 0.8],
+    position: [5.2, 0, 0.5],
   },
   MAINTENANCE: {
     ...OPERATIONS_ZONE_CONFIGS.MAINTENANCE,
@@ -144,7 +145,7 @@ export const CO_OWNER_ZONE_CONFIGS: Record<GarageZone, ZoneConfig> = {
   },
   FINANCE: {
     ...OPERATIONS_ZONE_CONFIGS.FINANCE,
-    position: [-5.4, 0, -0.6],
+    position: [-5.2, 0, 0.5],
   },
   GOVERNANCE: {
     ...OPERATIONS_ZONE_CONFIGS.GOVERNANCE,
@@ -152,11 +153,11 @@ export const CO_OWNER_ZONE_CONFIGS: Record<GarageZone, ZoneConfig> = {
   },
   ANALYTICS: {
     ...OPERATIONS_ZONE_CONFIGS.ANALYTICS,
-    position: [3.0, 0, -4.0],
+    position: [3.2, 0, -3.8],
   },
   AI: {
     ...OPERATIONS_ZONE_CONFIGS.AI,
-    position: [-2.2, 0, -4.2],
+    position: [-3.2, 0, -3.8],
   },
 };
 
@@ -217,6 +218,7 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
   const vehicleDamageMappingMode = useWorldStore((state) => state.vehicleDamageMappingMode);
   const isVehicleSelected = useWorldStore((state) => state.isVehicleSelected);
   const selectedVehiclePartId = useWorldStore((state) => state.selectedVehiclePartId);
+  const selectedVehiclePartCode = useWorldStore((state) => state.selectedVehiclePartCode);
 
   const focusState = React.useMemo(
     () => ({
@@ -232,6 +234,7 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
       vehicleDamageMappingMode,
       vehicleInspectionMode,
       selectedVehiclePartId,
+      selectedVehiclePartCode,
     }),
     [
       selectedZone,
@@ -246,6 +249,7 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
       vehicleDamageMappingMode,
       vehicleInspectionMode,
       selectedVehiclePartId,
+      selectedVehiclePartCode,
     ]
   );
 
@@ -332,8 +336,9 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
   }, [zone.id, zone.compactSummary, isAdmin, user?.role, isOperationsRole]);
 
   // Centralized focus visibility logic:
-  // - In overview mode: all zone labels & summaries are shown
-  // - In focused mode: ONLY the focused zone shows its label/card; all unrelated zones are hidden
+  // - In overview mode (selectedZoneId == null): all zone labels & summaries are shown
+  // - In focused mode (selectedZoneId != null): ALL overview labels & summaries are hidden (unmounted)
+  //   The focused zone detail panel is the sole authoritative information surface.
   const showZoneLabel = shouldShowZoneLabel(zone.id, focusState);
   const showZoneSummary = shouldShowZoneSummary(zone.id, focusState);
   const showZoneLabelAndSummary =
@@ -419,7 +424,7 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
         <group position={[0, 0, 0]}>
           {/* Base Stepped Turntable Pad */}
           <mesh position={[0, 0.035, 0]} receiveShadow>
-            <cylinderGeometry args={[3.55, 3.65, 0.07, 64]} />
+            <cylinderGeometry args={[2.85, 2.95, 0.07, 64]} />
             <meshStandardMaterial
               color="#f8fafc"
               roughness={0.2}
@@ -429,7 +434,7 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
 
           {/* Outer Polished Aluminum Bevel Rim */}
           <mesh position={[0, 0.072, 0]}>
-            <cylinderGeometry args={[3.52, 3.56, 0.015, 64]} />
+            <cylinderGeometry args={[2.80, 2.86, 0.015, 64]} />
             <meshStandardMaterial
               color="#94a3b8"
               roughness={0.2}
@@ -439,7 +444,7 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
 
           {/* Outer Recessed Thin Cyan Emissive Neon Halo */}
           <mesh position={[0, 0.076, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-            <ringGeometry args={[3.42, 3.50, 64]} />
+            <ringGeometry args={[2.72, 2.80, 64]} />
             <meshBasicMaterial
               color="#00f2fe"
               transparent
@@ -449,7 +454,7 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
 
           {/* Middle Elevated Stepped Tier */}
           <mesh position={[0, 0.09, 0]} receiveShadow>
-            <cylinderGeometry args={[3.2, 3.28, 0.035, 64]} />
+            <cylinderGeometry args={[2.55, 2.62, 0.035, 64]} />
             <meshStandardMaterial
               color="#eef2f6"
               roughness={0.22}
@@ -459,7 +464,7 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
 
           {/* Inner Recessed Thin Cyan LED Ring */}
           <mesh position={[0, 0.11, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-            <ringGeometry args={[2.62, 2.70, 64]} />
+            <ringGeometry args={[2.38, 2.44, 64]} />
             <meshBasicMaterial
               color="#00f2fe"
               transparent
@@ -469,7 +474,7 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
 
           {/* Top Glossy Vehicle Turntable Surface */}
           <mesh position={[0, 0.114, 0]} receiveShadow>
-            <cylinderGeometry args={[2.6, 2.6, 0.012, 64]} />
+            <cylinderGeometry args={[2.40, 2.40, 0.012, 64]} />
             <meshStandardMaterial
               color="#ffffff"
               roughness={0.16}

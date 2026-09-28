@@ -4,10 +4,12 @@ import com.evshare.vehicle.dto.CreateVehicleRequest;
 import com.evshare.vehicle.dto.UpdateVehicleRequest;
 import com.evshare.vehicle.dto.VehicleResponse;
 import com.evshare.vehicle.service.VehicleService;
+import com.evshare.security.UserPrincipal;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -24,14 +26,19 @@ public class VehicleController {
     }
 
     @GetMapping
-    public ResponseEntity<List<VehicleResponse>> getAllVehicles() {
-        List<VehicleResponse> vehicles = vehicleService.getAllVehicles();
+    public ResponseEntity<List<VehicleResponse>> getAllVehicles(
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        List<VehicleResponse> vehicles = vehicleService.getAllVehicles(principal);
         return ResponseEntity.ok(vehicles);
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<VehicleResponse> getVehicleById(@PathVariable UUID id) {
-        VehicleResponse vehicle = vehicleService.getVehicleById(id);
+    public ResponseEntity<VehicleResponse> getVehicleById(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        VehicleResponse vehicle = vehicleService.getVehicleById(id, principal);
         return ResponseEntity.ok(vehicle);
     }
 

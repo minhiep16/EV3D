@@ -1,5 +1,4 @@
 import React from 'react';
-import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 
 /**
@@ -113,100 +112,6 @@ export const GarageStructure: React.FC = () => {
           <cylinderGeometry args={[15.9, 15.9, 0.06, 64, 1, true, Math.PI * 0.72, Math.PI * 0.56]} />
           <meshBasicMaterial color="#00f2fe" side={THREE.BackSide} />
         </mesh>
-
-        {/* Central Brand Signage Plate */}
-        <mesh position={[0, 0.6, 0.18]}>
-          <planeGeometry args={[10.5, 2.0]} />
-          <meshBasicMaterial color="#ffffff" transparent opacity={0.0} />
-        </mesh>
-
-        {/* 3D Branded Typography Matching Reference Image */}
-        <Html
-          position={[0, 0.7, 0.22]}
-          center
-          distanceFactor={13}
-          style={{ pointerEvents: 'none', userSelect: 'none' }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              whiteSpace: 'nowrap',
-              fontFamily: 'var(--font-family)',
-            }}
-          >
-            {/* Glowing EV Logo + EVShare Title */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                fontSize: '28px',
-                fontWeight: 900,
-                letterSpacing: '0.04em',
-                color: '#0f172a',
-                textTransform: 'none',
-              }}
-            >
-              {/* Cyan Geometric EV Monogram */}
-              <span
-                style={{
-                  color: '#00f2fe',
-                  fontSize: '32px',
-                  fontWeight: 950,
-                  textShadow: '0 0 16px rgba(0, 242, 254, 0.8)',
-                  display: 'flex',
-                  alignItems: 'center',
-                }}
-              >
-                EV
-              </span>
-              <span style={{ color: '#0f172a' }}>EVShare</span>
-            </div>
-
-            {/* Slogan */}
-            <div
-              style={{
-                fontSize: '9px',
-                fontWeight: 800,
-                letterSpacing: '0.28em',
-                color: '#64748b',
-                textTransform: 'uppercase',
-                marginTop: '4px',
-              }}
-            >
-              DRIVE A CLEANER TOMORROW
-            </div>
-          </div>
-        </Html>
-
-        {/* Top-Right Showroom Plan Badge "PHƯƠNG ÁN C" (Matching Reference) */}
-        <Html
-          position={[5.6, 1.25, 0.25]}
-          center
-          distanceFactor={13}
-          style={{ pointerEvents: 'none', userSelect: 'none' }}
-        >
-          <div
-            style={{
-              background: 'rgba(15, 23, 42, 0.88)',
-              backdropFilter: 'blur(12px)',
-              border: '1px solid rgba(56, 189, 248, 0.35)',
-              borderRadius: '9999px',
-              padding: '4px 14px',
-              color: '#ffffff',
-              fontSize: '10px',
-              fontWeight: 800,
-              letterSpacing: '0.06em',
-              whiteSpace: 'nowrap',
-              textTransform: 'uppercase',
-            }}
-          >
-            PHƯƠNG ÁN C
-          </div>
-        </Html>
       </group>
 
       {/* =========================================================================

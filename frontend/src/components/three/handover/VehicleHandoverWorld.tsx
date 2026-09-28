@@ -378,8 +378,9 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
     }
   };
 
-  // Loading State - Initial load only, keep existing data visible during background refetches
+  // Loading State - Initial load only, keep existing data visible during background refetches (CO_OWNER only)
   if ((isHandoversLoading || isEligibilityLoading) && activeHandovers.length === 0 && !eligibility) {
+    if (!isCoOwner) return null;
     return (
       <group position={[0, 1.4, 0]}>
         <Html center distanceFactor={8.5} style={{ pointerEvents: 'none', userSelect: 'none' }}>
@@ -429,13 +430,13 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
       handover.status === 'COMPLETED');
 
   const shouldRenderStateCard =
-    reason === 'NO_BOOKING' ||
-    reason === 'BOOKING_EXPIRED' ||
-    reason === 'TOO_EARLY' ||
-    reason === 'VEHICLE_IN_USE' ||
-    (reason === 'HANDED_OVER' && isStaff) ||
-    (reason === 'READY_FOR_PREPARATION' && !isInspectionStarted) ||
-    !handover;
+    isCoOwner &&
+    (reason === 'NO_BOOKING' ||
+      reason === 'BOOKING_EXPIRED' ||
+      reason === 'TOO_EARLY' ||
+      reason === 'VEHICLE_IN_USE' ||
+      (reason === 'READY_FOR_PREPARATION' && !isInspectionStarted) ||
+      !handover);
 
   if (shouldRenderStateCard) {
     const config = HANDOVER_ELIGIBILITY_CONFIG[reason];
@@ -1010,22 +1011,7 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
         position={[0, 1.85, 0.2]}
       />
 
-      {/* 3. Role-Based Right Holographic Panel (Section 11, 15, 19) */}
-      {isStaff && (
-        <StaffInspectionPanel3D
-          handover={handover}
-          activeHandovers={activeHandovers}
-          onSelectBookingId={(id) => setSelectedBookingId(id)}
-          selectedCheckpoint={currentCheckpointObj}
-          onCloseCheckpoint={clearHandoverCheckpointSelection}
-          onStartInspection={handleStartInspection}
-          onSubmitInspection={handleSubmitInspection}
-          onMarkReady={handleMarkReady}
-          onConfirmHandover={handleConfirmHandover}
-          isSubmitting={isSubmitting}
-        />
-      )}
-
+      {/* 3. Role-Based Right Holographic Panel (Rendered only for CO_OWNER; STAFF/ADMIN use screen-space panel) */}
       {isCoOwner && (
         <CoOwnerReceiptPanel3D
           handover={handover}
@@ -1037,7 +1023,7 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
         />
       )}
 
-      {isAdmin && (
+      {false && isAdmin && (
         /* ADMIN Read-only Monitoring Panel (Section 11, 24) */
         <group position={[2.7, 1.35, 0]}>
           <Billboard follow={true}>

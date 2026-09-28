@@ -231,12 +231,19 @@ interface WorldState {
 
   // Phase 13: Pure 3D Damage Mapping Mode
   vehicleDamageMappingMode: boolean;
+  selectedVehiclePartCode: string | null;
   selectedDamageId: string | null;
   draftDamage: { partCode: string; localPosition: [number, number, number] } | null;
+  inspectionError: string | null;
   enterVehicleDamageMappingMode: () => void;
   exitVehicleDamageMappingMode: () => void;
+  selectVehiclePartCode: (code: string | null) => void;
+  selectVehiclePartWithPoint: (partCode: string, localPosition: [number, number, number]) => void;
+  clearVehiclePartCode: () => void;
+  exitPartInspection: () => void;
   selectDamageRecord: (id: string | null) => void;
   setDraftDamage: (draft: { partCode: string; localPosition: [number, number, number] } | null) => void;
+  setInspectionError: (err: string | null) => void;
 
   resetExperienceState: () => void;
 
@@ -286,8 +293,10 @@ export const useWorldStore = create<WorldState>((set) => ({
   selectedTripRouteNode: null,
 
   vehicleDamageMappingMode: false,
+  selectedVehiclePartCode: null,
   selectedDamageId: null,
   draftDamage: null,
+  inspectionError: null,
 
   vehicleYaw: -0.32,
   setVehicleYaw: (yaw) => set({ vehicleYaw: yaw }),
@@ -328,7 +337,9 @@ export const useWorldStore = create<WorldState>((set) => ({
         vehicleMode: isVeh ? vehicleTargetMode : 'NONE',
         vehicleInspectionMode: false,
         selectedVehiclePartId: null,
+        selectedVehiclePartCode: null,
         hoveredVehiclePartId: null,
+        draftDamage: null,
         vehicleCoOwnershipMode: false,
         selectedOwnerId: null,
         hoveredOwnerId: null,
@@ -395,7 +406,9 @@ export const useWorldStore = create<WorldState>((set) => ({
         isVehicleSelected: true,
         vehicleInspectionMode: false,
         selectedVehiclePartId: null,
+        selectedVehiclePartCode: null,
         hoveredVehiclePartId: null,
+        draftDamage: null,
         vehicleCoOwnershipMode: false,
         selectedOwnerId: null,
         hoveredOwnerId: null,
@@ -450,8 +463,10 @@ export const useWorldStore = create<WorldState>((set) => ({
       vehicleTripVisualizationMode: false,
       selectedTripRouteNode: null,
       vehicleDamageMappingMode: false,
+      selectedVehiclePartCode: null,
       selectedDamageId: null,
       draftDamage: null,
+      inspectionError: null,
       vehicleYaw: -0.32,
     }),
 
@@ -532,8 +547,11 @@ export const useWorldStore = create<WorldState>((set) => ({
         vehicleFeatureMode: 'NONE',
         vehicleMode: 'NONE',
         isVehicleSelected: false,
+        vehicleInspectionMode: false,
         selectedVehiclePartId: null,
+        selectedVehiclePartCode: null,
         hoveredVehiclePartId: null,
+        draftDamage: null,
         selectedOwnerId: null,
         hoveredOwnerId: null,
         selectedHandoverCheckpoint: null,
@@ -559,22 +577,45 @@ export const useWorldStore = create<WorldState>((set) => ({
       if (!hasCapability(role, 'canExploreVehicle')) return {};
       return {
         vehicleInspectionMode: true,
+        vehicleFeatureMode: 'VEHICLE_EXPLORE',
+        vehicleMode: 'VEHICLE_EXPLORE',
         vehicleCoOwnershipMode: false,
         vehicleBookingMode: false,
-        selectedVehicleId: 'EV01',
+        selectedVehicleId: state.selectedVehicleId || 'EV01',
         selectedZone: 'VEHICLE',
         selectedVehiclePartId: null,
+        selectedVehiclePartCode: null,
         hoveredVehiclePartId: null,
+        draftDamage: null,
         selectedOwnerId: null,
         hoveredOwnerId: null,
       };
     }),
 
   exitVehicleInspectionMode: () =>
-    set({
-      vehicleInspectionMode: false,
-      selectedVehiclePartId: null,
-      hoveredVehiclePartId: null,
+    set((state) => {
+      let role: string | undefined;
+      try {
+        role = useAuthStore.getState().user?.role;
+      } catch {
+        role = 'CO_OWNER';
+      }
+      const targetMode: VehicleFeatureMode =
+        role === 'STAFF'
+          ? 'STAFF_VEHICLE_OVERVIEW'
+          : role === 'ADMIN'
+          ? 'ADMIN_VEHICLE_OVERVIEW'
+          : 'CO_OWNER_VEHICLE_OVERVIEW';
+
+      return {
+        vehicleInspectionMode: false,
+        vehicleFeatureMode: targetMode,
+        vehicleMode: targetMode,
+        selectedVehiclePartId: null,
+        selectedVehiclePartCode: null,
+        hoveredVehiclePartId: null,
+        draftDamage: null,
+      };
     }),
 
   hoverVehiclePart: (id) =>
@@ -583,14 +624,27 @@ export const useWorldStore = create<WorldState>((set) => ({
     }),
 
   selectVehiclePart: (id) =>
-    set({
-      selectedVehiclePartId: id,
+    set((state) => {
+      // Semantic part selection only permitted during explore/inspection or damage mapping mode
+      if (!state.vehicleInspectionMode && !state.vehicleDamageMappingMode) {
+        return {};
+      }
+      return {
+        selectedVehiclePartId: id,
+        selectedVehiclePartCode: id || null,
+        selectedZone: 'VEHICLE',
+        isVehicleSelected: true,
+        selectedVehicleId: state.selectedVehicleId || 'EV01',
+        draftDamage: state.draftDamage?.partCode === id ? state.draftDamage : null,
+      };
     }),
 
   clearVehiclePartSelection: () =>
     set({
       selectedVehiclePartId: null,
+      selectedVehiclePartCode: null,
       hoveredVehiclePartId: null,
+      draftDamage: null,
     }),
 
   enterVehicleCoOwnershipMode: () =>
@@ -606,7 +660,7 @@ export const useWorldStore = create<WorldState>((set) => ({
         vehicleCoOwnershipMode: true,
         vehicleInspectionMode: false,
         vehicleBookingMode: false,
-        selectedVehicleId: 'EV01',
+        selectedVehicleId: state.selectedVehicleId || 'EV01',
         selectedZone: 'VEHICLE',
         selectedVehiclePartId: null,
         hoveredVehiclePartId: null,
@@ -635,7 +689,7 @@ export const useWorldStore = create<WorldState>((set) => ({
         vehicleBookingMode: true,
         vehicleCoOwnershipMode: false,
         vehicleInspectionMode: false,
-        selectedVehicleId: 'EV01',
+        selectedVehicleId: state.selectedVehicleId || 'EV01',
         selectedZone: 'VEHICLE',
         selectedVehiclePartId: null,
         hoveredVehiclePartId: null,
@@ -686,7 +740,7 @@ export const useWorldStore = create<WorldState>((set) => ({
         vehicleBookingMode: false,
         vehicleCoOwnershipMode: false,
         vehicleInspectionMode: false,
-        selectedVehicleId: 'EV01',
+        selectedVehicleId: state.selectedVehicleId || 'EV01',
         selectedZone: 'VEHICLE',
         selectedVehiclePartId: null,
         hoveredVehiclePartId: null,
@@ -723,7 +777,7 @@ export const useWorldStore = create<WorldState>((set) => ({
         vehicleTripVisualizationMode: false,
         vehicleFeatureMode: 'CO_OWNER_RECEIPT_REVIEW',
         vehicleMode: 'CO_OWNER_RECEIPT_REVIEW',
-        selectedVehicleId: 'EV01',
+        selectedVehicleId: state.selectedVehicleId || 'EV01',
         selectedZone: 'VEHICLE',
         selectedHandoverCheckpoint: null,
         hoveredHandoverCheckpoint: null,
@@ -773,7 +827,7 @@ export const useWorldStore = create<WorldState>((set) => ({
         vehicleInspectionMode: false,
         vehicleHandoverMode: false,
         vehicleReceiptReviewMode: false,
-        selectedVehicleId: 'EV01',
+        selectedVehicleId: state.selectedVehicleId || 'EV01',
         selectedZone: 'VEHICLE',
         selectedVehiclePartId: null,
         hoveredVehiclePartId: null,
@@ -801,7 +855,7 @@ export const useWorldStore = create<WorldState>((set) => ({
         vehicleInspectionMode: false,
         vehicleHandoverMode: false,
         vehicleReceiptReviewMode: false,
-        selectedVehicleId: 'EV01',
+        selectedVehicleId: state.selectedVehicleId || 'EV01',
         selectedZone: 'VEHICLE',
         selectedVehiclePartId: null,
         hoveredVehiclePartId: null,
@@ -835,6 +889,7 @@ export const useWorldStore = create<WorldState>((set) => ({
       if (!hasCapability(role, 'canViewDamage') && !hasCapability(role, 'canRecordDamage')) return {};
       return {
         vehicleDamageMappingMode: true,
+        selectedVehiclePartCode: null,
         selectedDamageId: null,
         draftDamage: null,
         vehicleFeatureMode: 'DAMAGE_MAPPING',
@@ -847,7 +902,7 @@ export const useWorldStore = create<WorldState>((set) => ({
         vehicleTripStartMode: false,
         vehicleTripVisualizationMode: false,
         selectedTripRouteNode: null,
-        selectedVehicleId: 'EV01',
+        selectedVehicleId: state.selectedVehicleId || 'EV01',
         selectedZone: 'VEHICLE',
         selectedVehiclePartId: null,
         hoveredVehiclePartId: null,
@@ -861,20 +916,68 @@ export const useWorldStore = create<WorldState>((set) => ({
   exitVehicleDamageMappingMode: () =>
     set({
       vehicleDamageMappingMode: false,
+      selectedVehiclePartCode: null,
       selectedDamageId: null,
       draftDamage: null,
     }),
 
-  selectDamageRecord: (id) =>
+  selectVehiclePartCode: (code) =>
     set({
-      selectedDamageId: id,
-      draftDamage: null,
+      selectedVehiclePartCode: code,
+      selectedVehiclePartId: (code as VehiclePartId) || null,
+      selectedDamageId: null,
+      inspectionError: null,
     }),
+
+  selectVehiclePartWithPoint: (partCode, localPosition) =>
+    set((state) => ({
+      selectedVehiclePartCode: partCode,
+      selectedVehiclePartId: (partCode as VehiclePartId) || null,
+      selectedZone: 'VEHICLE',
+      isVehicleSelected: true,
+      selectedVehicleId: state.selectedVehicleId || 'EV01',
+      draftDamage: {
+        partCode,
+        localPosition,
+      },
+      selectedDamageId: null,
+      inspectionError: null,
+    })),
+
+  clearVehiclePartCode: () =>
+    set({
+      selectedVehiclePartCode: null,
+      selectedVehiclePartId: null,
+      draftDamage: null,
+      inspectionError: null,
+    }),
+
+  exitPartInspection: () =>
+    set({
+      selectedVehiclePartCode: null,
+      selectedVehiclePartId: null,
+      draftDamage: null,
+      selectedDamageId: null,
+      inspectionError: null,
+    }),
+
+  selectDamageRecord: (id) =>
+    set((state) => ({
+      selectedDamageId: id,
+      draftDamage: id ? null : state.draftDamage,
+      inspectionError: null,
+    })),
 
   setDraftDamage: (draft) =>
     set({
       draftDamage: draft,
       selectedDamageId: null,
+      inspectionError: null,
+    }),
+
+  setInspectionError: (err) =>
+    set({
+      inspectionError: err,
     }),
 
   resetExperienceState: () =>
@@ -906,8 +1009,10 @@ export const useWorldStore = create<WorldState>((set) => ({
       vehicleTripVisualizationMode: false,
       selectedTripRouteNode: null,
       vehicleDamageMappingMode: false,
+      selectedVehiclePartCode: null,
       selectedDamageId: null,
       draftDamage: null,
+      inspectionError: null,
     }),
 
   setVehicleFeatureMode: (mode) =>
@@ -941,6 +1046,10 @@ export const useWorldStore = create<WorldState>((set) => ({
         selectedTripRouteNode: mode === 'TRIP_VISUALIZATION' ? (state.selectedTripRouteNode || 'CURRENT_PROGRESS') : null,
         vehicleDamageMappingMode: mode === 'DAMAGE_MAPPING',
         selectedDamageId: mode === 'DAMAGE_MAPPING' ? state.selectedDamageId : null,
+        selectedVehiclePartId: mode === 'DAMAGE_MAPPING' ? state.selectedVehiclePartId : null,
+        selectedVehiclePartCode: mode === 'DAMAGE_MAPPING' ? state.selectedVehiclePartCode : null,
+        hoveredVehiclePartId: null,
+        draftDamage: mode === 'DAMAGE_MAPPING' ? state.draftDamage : null,
       };
     }),
 
@@ -975,6 +1084,10 @@ export const useWorldStore = create<WorldState>((set) => ({
         selectedTripRouteNode: mode === 'TRIP_VISUALIZATION' ? (state.selectedTripRouteNode || 'CURRENT_PROGRESS') : null,
         vehicleDamageMappingMode: mode === 'DAMAGE_MAPPING',
         selectedDamageId: mode === 'DAMAGE_MAPPING' ? state.selectedDamageId : null,
+        selectedVehiclePartId: mode === 'DAMAGE_MAPPING' ? state.selectedVehiclePartId : null,
+        selectedVehiclePartCode: mode === 'DAMAGE_MAPPING' ? state.selectedVehiclePartCode : null,
+        hoveredVehiclePartId: null,
+        draftDamage: mode === 'DAMAGE_MAPPING' ? state.draftDamage : null,
       };
     }),
 
@@ -1016,6 +1129,7 @@ export const useWorldStore = create<WorldState>((set) => ({
         vehicleTripVisualizationMode: false,
         selectedTripRouteNode: null,
         vehicleDamageMappingMode: false,
+        selectedVehiclePartCode: null,
         selectedDamageId: null,
         draftDamage: null,
         selectedVehiclePartId: null,
@@ -1026,7 +1140,17 @@ export const useWorldStore = create<WorldState>((set) => ({
         hoveredHandoverCheckpoint: null,
         selectedZone: 'VEHICLE',
         selectedVehicleId: state.selectedVehicleId || 'EV01',
+        inspectionError: null,
       };
     }),
 }));
+
+let inspectionErrorTimer: any = null;
+export const setTransientInspectionError = (msg: string) => {
+  useWorldStore.getState().setInspectionError(msg);
+  if (inspectionErrorTimer) clearTimeout(inspectionErrorTimer);
+  inspectionErrorTimer = setTimeout(() => {
+    useWorldStore.getState().setInspectionError(null);
+  }, 3500);
+};
 

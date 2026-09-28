@@ -42,6 +42,13 @@ export interface AddMemberPayload {
   email?: string;
 }
 
+/**
+ * Authoritative Business Rule:
+ * 1 CoOwnershipGroup = exactly 1 Vehicle.
+ * A group represents the people jointly owning ONE specific vehicle.
+ * `vehicleId` and `vehicleCode` are the direct 1-to-1 vehicle identity.
+ * `vehicles` list is maintained for backward compatibility with length <= 1.
+ */
 export interface CoOwnershipGroupResponse {
   id: string;
   name: string;

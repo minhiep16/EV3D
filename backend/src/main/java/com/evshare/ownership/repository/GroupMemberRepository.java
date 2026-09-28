@@ -13,6 +13,8 @@ import java.util.UUID;
 public interface GroupMemberRepository extends JpaRepository<GroupMember, UUID> {
     List<GroupMember> findByGroupId(UUID groupId);
     List<GroupMember> findByGroupIdAndStatus(UUID groupId, MemberStatus status);
+    List<GroupMember> findByUserIdAndStatus(UUID userId, MemberStatus status);
+    List<GroupMember> findByStatus(MemberStatus status);
     Optional<GroupMember> findByGroupIdAndUserId(UUID groupId, UUID userId);
     boolean existsByGroupIdAndUserId(UUID groupId, UUID userId);
     boolean existsByGroupIdAndUserIdAndStatus(UUID groupId, UUID userId, MemberStatus status);
