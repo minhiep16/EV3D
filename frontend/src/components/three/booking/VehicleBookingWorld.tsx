@@ -1,11 +1,15 @@
-import React, { useState } from 'react';
+import React, { useMemo } from 'react';
 import { Html, Billboard } from '@react-three/drei';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useThree } from '@react-three/fiber';
+import { useQuery } from '@tanstack/react-query';
 import { VehicleResponse } from '../../../types/vehicle';
-import { fetchVehicleBookings, createVehicleBooking } from '../../../services/bookingApi';
+import { fetchVehicleBookings } from '../../../services/bookingApi';
 import { SpatialDateSelector3D } from './SpatialDateSelector3D';
-import { BookingTimeline3D } from './BookingTimeline3D';
-import { HolographicBookingSummary } from './HolographicBookingSummary';
+import {
+  BookingTimeline3D,
+  computeBookingLayoutMetrics,
+} from './BookingTimeline3D';
+import { useWorldStore } from '../../../store/worldStore';
 import { Sparkles, AlertTriangle, RefreshCw } from 'lucide-react';
 
 interface VehicleBookingWorldProps {
@@ -13,22 +17,13 @@ interface VehicleBookingWorldProps {
 }
 
 export const VehicleBookingWorld: React.FC<VehicleBookingWorldProps> = ({ vehicle }) => {
-  const queryClient = useQueryClient();
+  const { size, camera } = useThree();
 
-  const [selectedDate, setSelectedDate] = useState<Date>(() => {
-    const d = new Date();
-    // If past 20:00, default to tomorrow for immediate availability convenience
-    if (d.getHours() >= 20) {
-      d.setDate(d.getDate() + 1);
-    }
-    return d;
-  });
-
-  const [startHour, setStartHour] = useState<number | null>(null);
-  const [endHour, setEndHour] = useState<number | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const bookingSelectedDate = useWorldStore((state) => state.bookingSelectedDate);
+  const bookingStartHour = useWorldStore((state) => state.bookingStartHour);
+  const bookingEndHour = useWorldStore((state) => state.bookingEndHour);
+  const setBookingSelectedDate = useWorldStore((state) => state.setBookingSelectedDate);
+  const setBookingSlot = useWorldStore((state) => state.setBookingSlot);
 
   const {
     data: bookings = [],
@@ -43,41 +38,38 @@ export const VehicleBookingWorld: React.FC<VehicleBookingWorldProps> = ({ vehicl
     refetchInterval: 1000 * 45,
   });
 
+  // Calculate panel-safe 3D bounds at timeline depth using authoritative layout metrics
+  const safeMetrics = useMemo(() => {
+    return computeBookingLayoutMetrics(size.width, size.height, camera, 2.4);
+  }, [size.width, size.height, camera]);
+
   const handleSelectDate = (date: Date) => {
-    setSelectedDate(date);
-    setStartHour(null);
-    setEndHour(null);
-    setErrorMessage(null);
-    setSuccessMessage(null);
+    setBookingSelectedDate(date);
+    setBookingSlot(null, null);
   };
 
   const handleSelectSlot = (hour: number) => {
-    setErrorMessage(null);
-    setSuccessMessage(null);
-
-    if (startHour === null) {
-      setStartHour(hour);
-      setEndHour(hour + 1);
+    if (bookingStartHour === null) {
+      setBookingSlot(hour, hour + 1);
       return;
     }
 
-    if (hour < startHour) {
-      setStartHour(hour);
-      setEndHour(hour + 1);
+    if (hour < bookingStartHour) {
+      setBookingSlot(hour, hour + 1);
       return;
     }
 
-    if (hour === startHour) {
-      setEndHour(hour + 1);
+    if (hour === bookingStartHour) {
+      setBookingSlot(hour, hour + 1);
       return;
     }
 
     // Check intermediate slots for existing bookings
     let hasConflict = false;
-    for (let h = startHour; h < hour; h++) {
-      const slotStart = new Date(selectedDate);
+    for (let h = bookingStartHour; h < hour; h++) {
+      const slotStart = new Date(bookingSelectedDate);
       slotStart.setHours(h, 0, 0, 0);
-      const slotEnd = new Date(selectedDate);
+      const slotEnd = new Date(bookingSelectedDate);
       slotEnd.setHours(h + 1, 0, 0, 0);
 
       const isBooked = bookings.some((b) => {
@@ -94,60 +86,17 @@ export const VehicleBookingWorld: React.FC<VehicleBookingWorldProps> = ({ vehicl
     }
 
     if (hasConflict) {
-      setErrorMessage('Khung giờ này đã được đặt. Vui lòng chọn thời gian khác.');
-      setStartHour(hour);
-      setEndHour(hour + 1);
+      setBookingSlot(hour, hour + 1);
       return;
     }
 
-    setEndHour(hour + 1);
-  };
-
-  const handleConfirmBooking = async () => {
-    if (startHour === null || endHour === null) return;
-    setIsSubmitting(true);
-    setErrorMessage(null);
-    setSuccessMessage(null);
-
-    try {
-      const startTime = new Date(selectedDate);
-      startTime.setHours(startHour, 0, 0, 0);
-
-      const endTime = new Date(selectedDate);
-      endTime.setHours(endHour, 0, 0, 0);
-
-      await createVehicleBooking(vehicle.id, {
-        startTime: startTime.toISOString(),
-        endTime: endTime.toISOString(),
-        purpose: 'Đặt lịch sử dụng xe điện EV01',
-      });
-
-      setSuccessMessage('ĐẶT XE THÀNH CÔNG');
-      await queryClient.invalidateQueries({ queryKey: ['bookings', vehicle.id] });
-
-      setTimeout(() => {
-        setStartHour(null);
-        setEndHour(null);
-        setSuccessMessage(null);
-      }, 2500);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Khung giờ này đã được đặt. Vui lòng chọn thời gian khác.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleCancelSelection = () => {
-    setStartHour(null);
-    setEndHour(null);
-    setErrorMessage(null);
-    setSuccessMessage(null);
+    setBookingSlot(bookingStartHour, hour + 1);
   };
 
   // 1. Loading State in 3D Space
   if (isLoading) {
     return (
-      <group position={[3.2, 1.5, 2.4]}>
+      <group position={[safeMetrics.safeCenterX, 2.45, 0.6]}>
         <Billboard follow={true}>
           <Html center distanceFactor={8.5} style={{ pointerEvents: 'none', userSelect: 'none' }}>
             <div
@@ -178,7 +127,7 @@ export const VehicleBookingWorld: React.FC<VehicleBookingWorldProps> = ({ vehicl
   // 2. Error State in 3D Space
   if (isError) {
     return (
-      <group position={[3.2, 1.5, 2.4]}>
+      <group position={[safeMetrics.safeCenterX, 2.45, 0.6]}>
         <Billboard follow={true}>
           <Html center distanceFactor={8.5} style={{ pointerEvents: 'auto', userSelect: 'none' }}>
             <div
@@ -240,43 +189,27 @@ export const VehicleBookingWorld: React.FC<VehicleBookingWorldProps> = ({ vehicl
     );
   }
 
-  const hasSelection = startHour !== null && endHour !== null;
-
   return (
     <group>
-      {/* 1. Spatial 3D Date Selector (positioned as cohesive cluster above timeline) */}
+      {/* 1. Spatial 3D Date Selector (positioned as cohesive cluster above timeline in safe area) */}
       <SpatialDateSelector3D
-        selectedDate={selectedDate}
+        selectedDate={bookingSelectedDate}
         onSelectDate={handleSelectDate}
-        position={[3.2, 2.15, 2.4]}
+        position={[safeMetrics.safeCenterX, 3.25, 0.6]}
       />
 
-      {/* 2. Pure 3D Interactive Booking Timeline (centered in viewport beside EV01) */}
+      {/* 2. Pure 3D Interactive Booking Timeline (centered in panel-safe viewport beside EV01) */}
       <BookingTimeline3D
-        selectedDate={selectedDate}
+        selectedDate={bookingSelectedDate}
         bookings={bookings}
-        startHour={startHour}
-        endHour={endHour}
+        startHour={bookingStartHour}
+        endHour={bookingEndHour}
         onSelectSlot={handleSelectSlot}
-        position={[3.2, 1.25, 2.4]}
+        position={[safeMetrics.safeCenterX, 2.35, 0.6]}
+        safeCenterX={safeMetrics.safeCenterX}
+        usableSafeWidth={safeMetrics.usableSafeWidth}
+        rightSafeX={safeMetrics.rightSafeX}
       />
-
-      {/* 3. Holographic Booking Summary Panel & Spatial Laser Link */}
-      {hasSelection && (
-        <HolographicBookingSummary
-          vehicleName={vehicle.name || 'EV01 - VinFast VF e34'}
-          selectedDate={selectedDate}
-          startHour={startHour}
-          endHour={endHour}
-          isSubmitting={isSubmitting}
-          errorMessage={errorMessage}
-          successMessage={successMessage}
-          onConfirm={handleConfirmBooking}
-          onCancel={handleCancelSelection}
-          timelinePosition={[4.8, 1.25, 2.4]}
-          panelPosition={[7.3, 1.55, 0.8]}
-        />
-      )}
     </group>
   );
 };

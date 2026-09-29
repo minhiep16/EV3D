@@ -97,6 +97,7 @@ export const AdminVehicleMonitorPanel: React.FC<AdminVehicleMonitorPanelProps> =
 
   const enterVehicleHandoverMode = useWorldStore((state) => state.enterVehicleHandoverMode);
   const enterVehicleDamageMappingMode = useWorldStore((state) => state.enterVehicleDamageMappingMode);
+  const enterVehicleDamageHistoryMode = useWorldStore((state) => state.enterVehicleDamageHistoryMode);
 
   // TanStack Query: Fetch all vehicles for fleet overview
   const { data: allVehicles = [] } = useQuery<VehicleResponse[]>({
@@ -147,10 +148,12 @@ export const AdminVehicleMonitorPanel: React.FC<AdminVehicleMonitorPanelProps> =
 
   return (
     <div
+      data-ui-interactive="true"
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
       style={{
+        pointerEvents: 'auto',
         width: '340px',
         maxHeight: '86vh',
         overflowY: 'auto',
@@ -167,6 +170,7 @@ export const AdminVehicleMonitorPanel: React.FC<AdminVehicleMonitorPanelProps> =
         color: '#ffffff',
         fontFamily: 'var(--font-family)',
         position: 'relative',
+        zIndex: 20,
       }}
     >
       {/* Close button */}
@@ -188,6 +192,8 @@ export const AdminVehicleMonitorPanel: React.FC<AdminVehicleMonitorPanelProps> =
           justifyContent: 'center',
           color: '#94a3b8',
           cursor: 'pointer',
+          zIndex: 30,
+          pointerEvents: 'auto',
         }}
       >
         <X size={14} />
@@ -766,6 +772,32 @@ export const AdminVehicleMonitorPanel: React.FC<AdminVehicleMonitorPanelProps> =
             >
               <AlertTriangle size={14} color="#f59e0b" />
               <span>GIÁM SÁT HƯ HỎNG 3D</span>
+            </button>
+
+            {/* Phase 14: Lịch sử hư hỏng 3D */}
+            <button
+              type="button"
+              onClick={() => enterVehicleDamageHistoryMode()}
+              style={{
+                width: '100%',
+                background: 'rgba(0, 242, 254, 0.12)',
+                border: '1px solid rgba(0, 242, 254, 0.35)',
+                borderRadius: '10px',
+                padding: '10px',
+                color: '#00f2fe',
+                fontSize: '11.5px',
+                fontWeight: 700,
+                letterSpacing: '0.03em',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <AlertTriangle size={14} color="#00f2fe" />
+              <span>LỊCH SỬ HƯ HỎNG 3D</span>
             </button>
 
             <button

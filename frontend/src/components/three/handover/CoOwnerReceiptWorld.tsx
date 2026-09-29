@@ -189,10 +189,11 @@ export const CoOwnerReceiptWorld: React.FC<CoOwnerReceiptWorldProps> = ({ vehicl
     return (
       <group position={[0, 1.4, 0]}>
         <Billboard follow={true}>
-          <Html center distanceFactor={8.5} style={{ pointerEvents: 'auto', userSelect: 'none' }}>
+          <Html center distanceFactor={8.5} style={{ pointerEvents: 'none', userSelect: 'none' }}>
             <div
               onClick={(e) => e.stopPropagation()}
               style={{
+                pointerEvents: 'auto',
                 background: 'rgba(8, 14, 26, 0.96)',
                 backdropFilter: 'blur(20px)',
                 border: '1px solid rgba(56, 189, 248, 0.5)',

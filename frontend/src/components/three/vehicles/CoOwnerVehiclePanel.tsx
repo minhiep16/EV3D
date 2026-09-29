@@ -7,6 +7,16 @@ import { TripData, TripStartEligibilityData } from '../../../types/trip';
 import { fetchActiveVehicleHandovers } from '../../../services/handoverApi';
 import { fetchVehicleBookings } from '../../../services/bookingApi';
 import { fetchActiveTripForVehicle, fetchTripStartEligibility } from '../../../services/tripApi';
+import {
+  fetchVehicleMaintenance,
+  fetchMaintenanceApproval,
+} from '../../../services/maintenanceApi';
+import {
+  MaintenanceResponse,
+  MaintenanceApprovalResponse,
+  MAINTENANCE_TYPE_CONFIG,
+  MAINTENANCE_PRIORITY_CONFIG,
+} from '../../../types/maintenance';
 import { useAuthStore } from '../../../store/authStore';
 import { useWorldStore, VEHICLE_STATUS_LABELS } from '../../../store/worldStore';
 import { useCoOwnerTripPrerequisites } from '../../../hooks/useCoOwnerTripPrerequisites';
@@ -26,6 +36,7 @@ import {
   AlertTriangle,
   MapPin,
   Compass,
+  Wrench,
 } from 'lucide-react';
 
 function formatDate(isoString?: string): string {
@@ -82,6 +93,173 @@ function isTripOverdue(bookingEndTime?: string | null): boolean {
   }
 }
 
+interface PendingApprovalMaintenanceNoticeProps {
+  maintenance: MaintenanceResponse;
+  onOpenMaintenance: () => void;
+}
+
+const PendingApprovalMaintenanceNotice: React.FC<PendingApprovalMaintenanceNoticeProps> = ({
+  maintenance,
+  onOpenMaintenance,
+}) => {
+  const { data: approvalData } = useQuery<MaintenanceApprovalResponse>({
+    queryKey: ['maintenanceApproval', maintenance.id],
+    queryFn: () => fetchMaintenanceApproval(maintenance.id),
+    refetchInterval: 4000,
+  });
+
+  const typeCfg = MAINTENANCE_TYPE_CONFIG[maintenance.maintenanceType];
+  const prioCfg = MAINTENANCE_PRIORITY_CONFIG[maintenance.priority];
+  const approveWeight = approvalData?.approveWeight ?? 0;
+  const threshold = approvalData?.requiredThreshold ?? 50.0;
+
+  return (
+    <div
+      style={{
+        background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(180, 83, 9, 0.2) 100%)',
+        border: '1.5px solid rgba(245, 158, 11, 0.65)',
+        boxShadow: '0 0 20px rgba(245, 158, 11, 0.25)',
+        borderRadius: '12px',
+        padding: '12px',
+        marginBottom: '14px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '7px',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div
+            style={{
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              background: '#f59e0b',
+              boxShadow: '0 0 10px #f59e0b',
+              animation: 'pulse 1.5s infinite',
+            }}
+          />
+          <span style={{ fontSize: '11px', fontWeight: 800, color: '#fbbf24', letterSpacing: '0.04em' }}>
+            YÊU CẦU BẢO DƯỠNG ĐANG CHỜ PHÊ DUYỆT
+          </span>
+        </div>
+      </div>
+
+      <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#ffffff' }}>
+        {maintenance.title}
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', fontSize: '10px' }}>
+        <span
+          style={{
+            background: typeCfg?.bg || 'rgba(255, 255, 255, 0.1)',
+            border: `1px solid ${typeCfg?.color || '#94a3b8'}`,
+            color: typeCfg?.color || '#ffffff',
+            padding: '1px 6px',
+            borderRadius: '4px',
+            fontWeight: 700,
+          }}
+        >
+          {typeCfg?.labelVi || maintenance.maintenanceType}
+        </span>
+        <span
+          style={{
+            background: prioCfg?.bg || 'rgba(255, 255, 255, 0.1)',
+            color: prioCfg?.color || '#ffffff',
+            padding: '1px 6px',
+            borderRadius: '4px',
+            fontWeight: 700,
+          }}
+        >
+          {prioCfg?.labelVi || maintenance.priority}
+        </span>
+      </div>
+
+      {maintenance.description && (
+        <div style={{ fontSize: '11px', color: '#cbd5e1', lineHeight: '1.4' }}>
+          <span style={{ color: '#94a3b8' }}>Lý do: </span>
+          {maintenance.description}
+        </div>
+      )}
+
+      {maintenance.damageRecords && maintenance.damageRecords.length > 0 && (
+        <div style={{ fontSize: '10.5px', color: '#fbbf24' }}>
+          Hư hỏng liên quan: <strong>{maintenance.damageRecords.length} điểm</strong>
+        </div>
+      )}
+
+      <div style={{ fontSize: '10px', color: '#94a3b8', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+        <div>Người tạo: <strong style={{ color: '#e2e8f0' }}>{maintenance.createdByName || 'STAFF'}</strong></div>
+        <div>Thời gian tạo: <strong style={{ color: '#e2e8f0' }}>{formatDateTime(maintenance.createdAt)}</strong></div>
+        {maintenance.scheduledAt && (
+          <div>Lịch dự kiến: <strong style={{ color: '#38bdf8' }}>{formatDateTime(maintenance.scheduledAt)}</strong></div>
+        )}
+      </div>
+
+      {/* Approval progress */}
+      <div
+        style={{
+          background: 'rgba(0, 0, 0, 0.35)',
+          borderRadius: '8px',
+          padding: '7px 9px',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', marginBottom: '4px' }}>
+          <span style={{ color: '#fbbf24', fontWeight: 700 }}>
+            PHÊ DUYỆT: {approveWeight}%
+          </span>
+          <span style={{ color: '#94a3b8', fontSize: '10px' }}>
+            cần &gt; {threshold}%
+          </span>
+        </div>
+        <div
+          style={{
+            height: '6px',
+            background: 'rgba(255, 255, 255, 0.1)',
+            borderRadius: '999px',
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            style={{
+              height: '100%',
+              width: `${Math.min(100, approveWeight)}%`,
+              background: approveWeight > threshold ? '#10b981' : '#f59e0b',
+              transition: 'width 0.3s ease',
+            }}
+          />
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={onOpenMaintenance}
+        style={{
+          width: '100%',
+          marginTop: '2px',
+          background: 'linear-gradient(135deg, #d97706 0%, #f59e0b 100%)',
+          border: 'none',
+          borderRadius: '8px',
+          padding: '8px 12px',
+          color: '#ffffff',
+          fontSize: '11px',
+          fontWeight: 800,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '6px',
+          boxShadow: '0 2px 10px rgba(245, 158, 11, 0.3)',
+        }}
+      >
+        <Wrench size={13} />
+        <span>XEM & BIỂU QUYẾT BẢO DƯỠNG</span>
+      </button>
+    </div>
+  );
+};
+
 interface CoOwnerVehiclePanelProps {
   vehicle: VehicleResponse;
   onClose: () => void;
@@ -99,6 +277,8 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
   const setVehicleFeatureMode = useWorldStore((state) => state.setVehicleFeatureMode);
   const enterVehicleReceiptReviewMode = useWorldStore((state) => state.enterVehicleReceiptReviewMode);
   const enterVehicleTripVisualizationMode = useWorldStore((state) => state.enterVehicleTripVisualizationMode);
+  const enterVehicleDamageHistoryMode = useWorldStore((state) => state.enterVehicleDamageHistoryMode);
+  const enterVehicleMaintenanceMode = useWorldStore((state) => state.enterVehicleMaintenanceMode);
 
   // TanStack Query: Fetch active handovers to evaluate eligibility for check-in
   const { data: activeHandovers = [] } = useQuery<VehicleHandoverData[]>({
@@ -123,6 +303,18 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
     enabled: authReady && !!vehicle.id,
     refetchInterval: 3000,
   });
+
+  // TanStack Query: Fetch vehicle maintenance proposals for approval visibility
+  const { data: vehicleMaintenanceList = [] } = useQuery<MaintenanceResponse[]>({
+    queryKey: ['vehicleMaintenance', vehicle.id],
+    queryFn: () => fetchVehicleMaintenance(vehicle.id),
+    enabled: authReady && !!vehicle.id,
+    refetchInterval: 5000,
+  });
+
+  const pendingApprovalMaintenance = React.useMemo(() => {
+    return vehicleMaintenanceList.find((m) => m.status === 'PENDING_APPROVAL') || null;
+  }, [vehicleMaintenanceList]);
 
   const isVehicleInUse = vehicle.status === 'IN_USE';
   const isTripActive = !!activeTrip && activeTrip.status === 'ACTIVE';
@@ -183,10 +375,12 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
 
   return (
     <div
+      data-ui-interactive="true"
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
       style={{
+        pointerEvents: 'auto',
         width: '330px',
         maxHeight: '86vh',
         overflowY: 'auto',
@@ -199,6 +393,7 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
         color: '#ffffff',
         fontFamily: 'var(--font-family)',
         position: 'relative',
+        zIndex: 20,
       }}
     >
       {/* Close button */}
@@ -220,6 +415,8 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
           justifyContent: 'center',
           color: '#94a3b8',
           cursor: 'pointer',
+          zIndex: 30,
+          pointerEvents: 'auto',
         }}
       >
         <X size={14} />
@@ -438,6 +635,14 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
           </div>
         )}
       </div>
+
+      {/* Phase 15 Extension: Pending Maintenance Proposal Notice & Voting Gate */}
+      {pendingApprovalMaintenance && (
+        <PendingApprovalMaintenanceNotice
+          maintenance={pendingApprovalMaintenance}
+          onOpenMaintenance={() => enterVehicleMaintenanceMode()}
+        />
+      )}
 
       {/* Phase 10: Active Trip Restoration Card (Section 18 & 19) */}
       {/* Phase 11: Active Trip State for My Trip vs Other Co-Owner (Section 5 & 17) */}
@@ -690,6 +895,33 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
 
       {/* Section 3: Exact Role Actions */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {/* Phase 15: Active Maintenance Notice (Requirement 19) */}
+        {vehicle.status === 'MAINTENANCE' && (
+          <div
+            style={{
+              background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.18) 0%, rgba(217, 119, 6, 0.12) 100%)',
+              border: '1px solid rgba(245, 158, 11, 0.5)',
+              borderRadius: '12px',
+              padding: '10px 12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              color: '#fbbf24',
+              marginBottom: '4px',
+            }}
+          >
+            <Wrench size={18} color="#f59e0b" style={{ flexShrink: 0 }} />
+            <div>
+              <div style={{ fontSize: '12px', fontWeight: 800, color: '#fbbf24' }}>
+                Xe đang được bảo dưỡng
+              </div>
+              <div style={{ fontSize: '10.5px', color: '#cbd5e1', lineHeight: 1.35 }}>
+                Chức năng đặt lịch sử dụng và bắt đầu chuyến đi tạm thời bị khóa.
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Phase 11 & 12: Primary Trip Actions - XEM CHUYẾN ĐI & KẾT THÚC CHUYẾN ĐI (Current Owner Only) */}
         {isMyActiveTrip ? (
           <>
@@ -710,7 +942,7 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
               <span>KẾT THÚC CHUYẾN ĐI</span>
             </button>
           </>
-        ) : !isTripActive && !isVehicleInUse && completedHandover && tripEligibility?.eligible ? (
+        ) : !isTripActive && !isVehicleInUse && vehicle.status !== 'MAINTENANCE' && completedHandover && tripEligibility?.eligible ? (
           <button
             type="button"
             onClick={() => setVehicleFeatureMode('TRIP_START')}
@@ -732,8 +964,20 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
 
         <button
           type="button"
-          onClick={() => setVehicleFeatureMode('BOOKING')}
-          style={primaryActionButtonStyle('linear-gradient(135deg, #059669 0%, #10b981 100%)')}
+          disabled={vehicle.status === 'MAINTENANCE'}
+          onClick={() => {
+            if (vehicle.status !== 'MAINTENANCE') setVehicleFeatureMode('BOOKING');
+          }}
+          style={{
+            ...primaryActionButtonStyle(
+              vehicle.status === 'MAINTENANCE'
+                ? 'linear-gradient(135deg, #475569 0%, #334155 100%)'
+                : 'linear-gradient(135deg, #059669 0%, #10b981 100%)'
+            ),
+            opacity: vehicle.status === 'MAINTENANCE' ? 0.6 : 1,
+            cursor: vehicle.status === 'MAINTENANCE' ? 'not-allowed' : 'pointer',
+          }}
+          title={vehicle.status === 'MAINTENANCE' ? 'Xe đang bảo dưỡng kỹ thuật' : undefined}
         >
           <Calendar size={14} />
           <span>ĐẶT LỊCH SỬ DỤNG</span>
@@ -757,14 +1001,24 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
           <span>KHÁM PHÁ XE</span>
         </button>
 
-        {/* Phase 13: Read-only damage inspection for completed trips */}
+        {/* Phase 14: Dedicated 3D Damage History for Co-Owners */}
         <button
           type="button"
-          onClick={() => setVehicleFeatureMode('DAMAGE_MAPPING')}
+          onClick={() => enterVehicleDamageHistoryMode()}
           style={actionButtonStyle()}
         >
           <AlertTriangle size={14} color="#f59e0b" />
           <span>HƯ HỎNG ĐÃ GHI NHẬN</span>
+        </button>
+
+        {/* Phase 15: Dedicated Maintenance History for Co-Owners */}
+        <button
+          type="button"
+          onClick={() => enterVehicleMaintenanceMode()}
+          style={actionButtonStyle()}
+        >
+          <Wrench size={14} color="#34d399" />
+          <span>LỊCH SỬ BẢO DƯỠNG</span>
         </button>
 
         {/* Conditional Action: NHẬN XE */}
@@ -785,6 +1039,7 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
 
 function actionButtonStyle(): React.CSSProperties {
   return {
+    pointerEvents: 'auto',
     width: '100%',
     background: 'rgba(255, 255, 255, 0.05)',
     border: '1px solid rgba(255, 255, 255, 0.12)',
@@ -804,6 +1059,7 @@ function actionButtonStyle(): React.CSSProperties {
 
 function primaryActionButtonStyle(gradient: string): React.CSSProperties {
   return {
+    pointerEvents: 'auto',
     width: '100%',
     background: gradient,
     border: 'none',
@@ -825,6 +1081,7 @@ function primaryActionButtonStyle(gradient: string): React.CSSProperties {
 
 function highlightActionButtonStyle(gradient: string, glowColor: string): React.CSSProperties {
   return {
+    pointerEvents: 'auto',
     width: '100%',
     background: gradient,
     border: `1px solid ${glowColor}`,

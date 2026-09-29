@@ -86,6 +86,8 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
   // WorldStore operational selectors & actions
   const enterVehicleHandoverMode = useWorldStore((state) => state.enterVehicleHandoverMode);
   const enterVehicleDamageMappingMode = useWorldStore((state) => state.enterVehicleDamageMappingMode);
+  const enterVehicleDamageHistoryMode = useWorldStore((state) => state.enterVehicleDamageHistoryMode);
+  const enterVehicleMaintenanceMode = useWorldStore((state) => state.enterVehicleMaintenanceMode);
   const enterVehicleInspectionMode = useWorldStore((state) => state.enterVehicleInspectionMode);
   const exitVehicleInspectionMode = useWorldStore((state) => state.exitVehicleInspectionMode);
   const clearVehiclePartSelection = useWorldStore((state) => state.clearVehiclePartSelection);
@@ -165,6 +167,10 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
 
   return (
     <div
+      data-ui-interactive="true"
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
       style={{
         position: 'fixed',
         top: '88px',
@@ -340,6 +346,29 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
 
               {/* Action Buttons */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
+                <button
+                  type="button"
+                  onClick={() => enterVehicleDamageMappingMode(selectedPart.id)}
+                  style={{
+                    width: '100%',
+                    background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.25) 0%, rgba(217, 119, 6, 0.35) 100%)',
+                    border: '1px solid rgba(245, 158, 11, 0.6)',
+                    color: '#fbbf24',
+                    borderRadius: '8px',
+                    padding: '9px',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    boxShadow: '0 2px 10px rgba(245, 158, 11, 0.25)',
+                  }}
+                >
+                  <AlertTriangle size={13} color="#f59e0b" />
+                  <span>GHI NHẬN HƯ HỎNG BỘ PHẬN NÀY</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => clearVehiclePartSelection()}
@@ -1243,6 +1272,33 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
               <div style={{ color: '#94a3b8', marginBottom: '8px' }}>
                 Đã ghi nhận: <span style={{ color: '#00f2fe', fontWeight: 700 }}>{damages.length}</span> vị trí hư hỏng
               </div>
+
+              {/* Phase 15: Open dedicated Maintenance Management Panel */}
+              <button
+                type="button"
+                onClick={() => enterVehicleMaintenanceMode()}
+                style={{
+                  width: '100%',
+                  marginBottom: '8px',
+                  background: 'linear-gradient(135deg, #d97706 0%, #f59e0b 100%)',
+                  border: 'none',
+                  color: '#ffffff',
+                  borderRadius: '8px',
+                  padding: '8px',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  boxShadow: '0 2px 10px rgba(245, 158, 11, 0.3)',
+                }}
+              >
+                <Wrench size={13} />
+                <span>QUẢN LÝ BẢO DƯỠNG XE</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => enterVehicleDamageMappingMode()}
@@ -1259,6 +1315,26 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
                 }}
               >
                 Ghi nhận hư hỏng 3D
+              </button>
+
+              {/* Phase 14: Dedicated 3D Damage History */}
+              <button
+                type="button"
+                onClick={() => enterVehicleDamageHistoryMode()}
+                style={{
+                  width: '100%',
+                  marginTop: '6px',
+                  background: 'rgba(0, 242, 254, 0.15)',
+                  border: '1px solid rgba(0, 242, 254, 0.4)',
+                  color: '#00f2fe',
+                  borderRadius: '8px',
+                  padding: '7px',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Lịch sử hư hỏng 3D
               </button>
             </div>
           )}
@@ -1304,7 +1380,7 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
             <button
               type="button"
-              onClick={() => enterVehicleDamageMappingMode()}
+              onClick={() => enterVehicleMaintenanceMode()}
               style={{
                 background: 'rgba(15, 23, 42, 0.85)',
                 border: '1px solid rgba(56, 189, 248, 0.3)',
@@ -1335,7 +1411,7 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
 
             <button
               type="button"
-              onClick={() => enterVehicleInspectionMode()}
+              onClick={() => enterVehicleInspectionMode(vehicle?.id)}
               style={{
                 background: 'rgba(15, 23, 42, 0.85)',
                 border: '1px solid rgba(56, 189, 248, 0.3)',

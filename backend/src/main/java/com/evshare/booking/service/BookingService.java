@@ -9,6 +9,7 @@ import com.evshare.common.exception.ResourceNotFoundException;
 import com.evshare.user.entity.User;
 import com.evshare.user.repository.UserRepository;
 import com.evshare.vehicle.entity.Vehicle;
+import com.evshare.vehicle.entity.VehicleStatus;
 import com.evshare.vehicle.repository.VehicleRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -91,6 +92,11 @@ public class BookingService {
             if (!coOwnershipService.isUserActiveMemberForVehicle(userId, vehicleId)) {
                 throw new AccessDeniedException("Bạn không phải là thành viên hoạt động của nhóm đồng sở hữu xe này.");
             }
+        }
+
+        // 3c. Verify Vehicle Availability for Maintenance (Phase 15)
+        if (vehicle.getStatus() == VehicleStatus.MAINTENANCE) {
+            throw new IllegalArgumentException("Xe đang trong quá trình bảo dưỡng, không thể đặt lịch mới.");
         }
 
         // 4. Overlap & Conflict detection

@@ -54,6 +54,17 @@ public class DamageRecord {
     @Column(name = "note", length = 1000)
     private String note;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", length = 30, nullable = false)
+    private DamageStatus status = DamageStatus.OPEN;
+
+    @Column(name = "resolved_at")
+    private Instant resolvedAt;
+
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "resolved_by_maintenance_request_id", length = 36, columnDefinition = "CHAR(36)")
+    private UUID resolvedByMaintenanceRequestId;
+
     @Column(name = "local_position_x", precision = 10, scale = 4, nullable = false)
     private BigDecimal localPositionX;
 
@@ -199,6 +210,30 @@ public class DamageRecord {
 
     public void setCreatedBy(User createdBy) {
         this.createdBy = createdBy;
+    }
+
+    public DamageStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(DamageStatus status) {
+        this.status = status != null ? status : DamageStatus.OPEN;
+    }
+
+    public Instant getResolvedAt() {
+        return resolvedAt;
+    }
+
+    public void setResolvedAt(Instant resolvedAt) {
+        this.resolvedAt = resolvedAt;
+    }
+
+    public UUID getResolvedByMaintenanceRequestId() {
+        return resolvedByMaintenanceRequestId;
+    }
+
+    public void setResolvedByMaintenanceRequestId(UUID resolvedByMaintenanceRequestId) {
+        this.resolvedByMaintenanceRequestId = resolvedByMaintenanceRequestId;
     }
 
     public Instant getCreatedAt() {

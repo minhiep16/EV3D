@@ -2,6 +2,7 @@ package com.evshare.damage.dto;
 
 import com.evshare.damage.entity.DamageRecord;
 import com.evshare.damage.entity.DamageSeverity;
+import com.evshare.damage.entity.DamageStatus;
 import com.evshare.damage.entity.DamageType;
 
 import java.math.BigDecimal;
@@ -24,6 +25,9 @@ public class DamageRecordResponse {
     private BigDecimal localPositionZ;
     private UUID createdByUserId;
     private String createdByName;
+    private DamageStatus status;
+    private Instant resolvedAt;
+    private UUID resolvedByMaintenanceRequestId;
     private Instant createdAt;
 
     public DamageRecordResponse() {
@@ -41,6 +45,9 @@ public class DamageRecordResponse {
         res.setDamageType(record.getDamageType());
         res.setSeverity(record.getSeverity());
         res.setNote(record.getNote());
+        res.setStatus(record.getStatus());
+        res.setResolvedAt(record.getResolvedAt());
+        res.setResolvedByMaintenanceRequestId(record.getResolvedByMaintenanceRequestId());
         res.setLocalPositionX(record.getLocalPositionX());
         res.setLocalPositionY(record.getLocalPositionY());
         res.setLocalPositionZ(record.getLocalPositionZ());
@@ -162,6 +169,30 @@ public class DamageRecordResponse {
 
     public void setCreatedByName(String createdByName) {
         this.createdByName = createdByName;
+    }
+
+    public DamageStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(DamageStatus status) {
+        this.status = status;
+    }
+
+    public Instant getResolvedAt() {
+        return resolvedAt;
+    }
+
+    public void setResolvedAt(Instant resolvedAt) {
+        this.resolvedAt = resolvedAt;
+    }
+
+    public UUID getResolvedByMaintenanceRequestId() {
+        return resolvedByMaintenanceRequestId;
+    }
+
+    public void setResolvedByMaintenanceRequestId(UUID resolvedByMaintenanceRequestId) {
+        this.resolvedByMaintenanceRequestId = resolvedByMaintenanceRequestId;
     }
 
     public Instant getCreatedAt() {

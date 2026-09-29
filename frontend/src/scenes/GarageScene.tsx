@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { EVShareWorld } from '../components/three/EVShareWorld';
@@ -23,6 +23,10 @@ import { StaffGarageFleetSidebar } from '../components/fleet/StaffGarageFleetSid
 import { StaffVehicleDetailPanel } from '../components/fleet/StaffVehicleDetailPanel';
 import { FleetHeroNavigator } from '../components/fleet/FleetHeroNavigator';
 import { CoOwnerVehiclePartPanel } from '../components/three/vehicles/CoOwnerVehiclePartPanel';
+import { DamageHistoryPanel } from '../components/three/damage/DamageHistoryPanel';
+import { CoOwnerBookingPanel } from '../components/three/booking/CoOwnerBookingPanel';
+import { StaffMaintenancePanel } from '../components/three/maintenance/StaffMaintenancePanel';
+import { CoOwnerMaintenancePanel } from '../components/three/maintenance/CoOwnerMaintenancePanel';
 
 export const GarageScene: React.FC = () => {
   const navigate = useNavigate();
@@ -42,6 +46,7 @@ export const GarageScene: React.FC = () => {
   const selectedVehicleId = useWorldStore((state) => state.selectedVehicleId);
   const selectedZone = useWorldStore((state) => state.selectedZone);
   const clearSelection = useWorldStore((state) => state.clearSelection);
+  const returnToGarageOverview = useWorldStore((state) => state.returnToGarageOverview);
   const selectVehicle = useWorldStore((state) => state.selectVehicle);
   const returnToVehicleOverview = useWorldStore((state) => state.returnToVehicleOverview);
   const vehicleCoOwnershipMode = useWorldStore((state) => state.vehicleCoOwnershipMode);
@@ -51,6 +56,8 @@ export const GarageScene: React.FC = () => {
   const vehicleTripStartMode = useWorldStore((state) => state.vehicleTripStartMode);
   const vehicleTripVisualizationMode = useWorldStore((state) => state.vehicleTripVisualizationMode);
   const vehicleDamageMappingMode = useWorldStore((state) => state.vehicleDamageMappingMode);
+  const vehicleDamageHistoryMode = useWorldStore((state) => state.vehicleDamageHistoryMode);
+  const vehicleMaintenanceMode = useWorldStore((state) => state.vehicleMaintenanceMode);
   const vehicleInspectionMode = useWorldStore((state) => state.vehicleInspectionMode);
   const selectedVehiclePartId = useWorldStore((state) => state.selectedVehiclePartId);
   const selectedVehiclePartCode = useWorldStore((state) => state.selectedVehiclePartCode);
@@ -128,20 +135,36 @@ export const GarageScene: React.FC = () => {
 
   // Ensure stale selected part state does not survive in normal vehicle overview
   useEffect(() => {
-    if (!vehicleInspectionMode && !vehicleDamageMappingMode) {
+    if (!vehicleInspectionMode && !vehicleDamageMappingMode && !vehicleDamageHistoryMode) {
       if (selectedVehiclePartId || selectedVehiclePartCode) {
         clearVehiclePartSelection();
       }
     }
-  }, [vehicleInspectionMode, vehicleDamageMappingMode, selectedVehiclePartId, selectedVehiclePartCode, clearVehiclePartSelection]);
+  }, [vehicleInspectionMode, vehicleDamageMappingMode, vehicleDamageHistoryMode, selectedVehiclePartId, selectedVehiclePartCode, clearVehiclePartSelection]);
 
+  const initialOperationsSelectDone = useRef(false);
   // For STAFF / ADMIN, auto-select EV01 or first vehicle on initial load to match reference composition
   useEffect(() => {
-    if (isOperationsRole && !selectedVehicleId && vehicles.length > 0) {
-      const defaultVehicle = vehicles.find((v) => resolveVehicleCode(v) === 'EV01') || vehicles[0];
-      selectVehicle(defaultVehicle.id, user?.role);
+    if (isOperationsRole && !initialOperationsSelectDone.current && vehicles.length > 0) {
+      initialOperationsSelectDone.current = true;
+      if (!selectedVehicleId) {
+        const defaultVehicle = vehicles.find((v) => resolveVehicleCode(v) === 'EV01') || vehicles[0];
+        selectVehicle(defaultVehicle.id, user?.role);
+      }
     }
   }, [isOperationsRole, selectedVehicleId, vehicles, selectVehicle, user?.role]);
+
+  // For CO_OWNER, auto-select vehicle only when explicitly entering booking mode without a selection
+  useEffect(() => {
+    if (!isOperationsRole && vehicles.length > 0) {
+      const targetVehicle = currentCoOwnerVehicle || vehicles[0];
+      if (vehicleBookingMode) {
+        if (targetVehicle && selectedVehicleId !== targetVehicle.id) {
+          selectVehicle(targetVehicle.id, user?.role);
+        }
+      }
+    }
+  }, [isOperationsRole, vehicleBookingMode, vehicles, currentCoOwnerVehicle, selectedVehicleId, selectVehicle, user?.role]);
 
   const showBackToVehicle =
     vehicleCoOwnershipMode ||
@@ -151,6 +174,8 @@ export const GarageScene: React.FC = () => {
     vehicleTripStartMode ||
     vehicleTripVisualizationMode ||
     vehicleDamageMappingMode ||
+    vehicleDamageHistoryMode ||
+    vehicleMaintenanceMode ||
     vehicleInspectionMode ||
     vehicleFeatureMode === 'CO_OWNER_VEHICLE_INFO' ||
     vehicleFeatureMode === 'CO_OWNER_MY_BOOKINGS';
@@ -473,10 +498,26 @@ export const GarageScene: React.FC = () => {
           )}
 
           {/* D. Right Selected Vehicle Operational Panel (Authoritative Screen-Space Shell) */}
-          {heroVehicle && (
+          {heroVehicle && !vehicleDamageHistoryMode && !vehicleMaintenanceMode && (
             <StaffVehicleDetailPanel
               vehicle={heroVehicle}
               onClose={() => clearSelection()}
+            />
+          )}
+
+          {/* Dedicated Phase 14 Screen-Space Damage History Panel */}
+          {heroVehicle && vehicleDamageHistoryMode && (
+            <DamageHistoryPanel
+              vehicle={heroVehicle}
+              onClose={returnToVehicleOverview}
+            />
+          )}
+
+          {/* Dedicated Phase 15 Screen-Space Maintenance Management Panel */}
+          {heroVehicle && vehicleMaintenanceMode && (
+            <StaffMaintenancePanel
+              vehicle={heroVehicle}
+              onClose={returnToVehicleOverview}
             />
           )}
         </>
@@ -492,7 +533,7 @@ export const GarageScene: React.FC = () => {
                 position: 'absolute',
                 top: '20px',
                 left: '24px',
-                zIndex: 12,
+                zIndex: 30,
                 pointerEvents: 'auto',
               }}
             >
@@ -531,13 +572,13 @@ export const GarageScene: React.FC = () => {
                 position: 'absolute',
                 top: '20px',
                 left: '24px',
-                zIndex: 12,
+                zIndex: 30,
                 pointerEvents: 'auto',
               }}
             >
               <button
                 type="button"
-                onClick={() => clearSelection()}
+                onClick={() => returnToGarageOverview()}
                 title="Quay lại toàn cảnh garage"
                 style={{
                   background: 'rgba(13, 27, 42, 0.88)',
@@ -762,6 +803,30 @@ export const GarageScene: React.FC = () => {
 
           {/* Screen-Space Fixed CO_OWNER Part Inspection Panel */}
           {vehicleInspectionMode && <CoOwnerVehiclePartPanel />}
+
+          {/* Dedicated Phase 14 Screen-Space Damage History Panel for CO_OWNER */}
+          {vehicleDamageHistoryMode && currentCoOwnerVehicle && (
+            <DamageHistoryPanel
+              vehicle={currentCoOwnerVehicle}
+              onClose={returnToVehicleOverview}
+            />
+          )}
+
+          {/* Dedicated Phase 15 Screen-Space Maintenance History Panel for CO_OWNER */}
+          {vehicleMaintenanceMode && currentCoOwnerVehicle && (
+            <CoOwnerMaintenancePanel
+              vehicle={currentCoOwnerVehicle}
+              onClose={returnToVehicleOverview}
+            />
+          )}
+
+          {/* Dedicated Screen-Space Fixed CO_OWNER Booking Detail Panel */}
+          {vehicleBookingMode && (currentCoOwnerVehicle || vehicles[0]) && (
+            <CoOwnerBookingPanel
+              vehicle={currentCoOwnerVehicle || vehicles[0]}
+              onClose={returnToVehicleOverview}
+            />
+          )}
         </>
       )}
     </div>

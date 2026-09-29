@@ -35,17 +35,29 @@ public class DamageService {
     private final VehicleRepository vehicleRepository;
     private final VehicleHandoverRepository handoverRepository;
     private final UserRepository userRepository;
+    private final com.evshare.vehicle.service.VehicleService vehicleService;
 
     public DamageService(DamageRecordRepository damageRecordRepository,
                          TripRepository tripRepository,
                          VehicleRepository vehicleRepository,
                          VehicleHandoverRepository handoverRepository,
                          UserRepository userRepository) {
+        this(damageRecordRepository, tripRepository, vehicleRepository, handoverRepository, userRepository, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public DamageService(DamageRecordRepository damageRecordRepository,
+                         TripRepository tripRepository,
+                         VehicleRepository vehicleRepository,
+                         VehicleHandoverRepository handoverRepository,
+                         UserRepository userRepository,
+                         @org.springframework.context.annotation.Lazy com.evshare.vehicle.service.VehicleService vehicleService) {
         this.damageRecordRepository = damageRecordRepository;
         this.tripRepository = tripRepository;
         this.vehicleRepository = vehicleRepository;
         this.handoverRepository = handoverRepository;
         this.userRepository = userRepository;
+        this.vehicleService = vehicleService;
     }
 
     /**
@@ -54,18 +66,14 @@ public class DamageService {
      */
     @Transactional
     public DamageRecordResponse createDamage(UUID tripId, CreateDamageRequest request, UUID currentUserId, Role currentUserRole) {
-        // 1. Role validation: STAFF only
-        if (currentUserRole != Role.STAFF) {
-            throw new AccessDeniedException("Chỉ nhân viên vận hành (STAFF) mới có quyền ghi nhận hư hỏng");
+        // 1. Role validation: STAFF or CO_OWNER (vehicle inspection)
+        if (currentUserRole != Role.STAFF && currentUserRole != Role.CO_OWNER) {
+            throw new AccessDeniedException("Chỉ nhân viên vận hành hoặc đồng sở hữu mới có quyền ghi nhận hư hỏng");
         }
 
         // 2. Trip existence and status validation
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy chuyến đi với mã: " + tripId));
-
-        if (trip.getStatus() != TripStatus.COMPLETED) {
-            throw new IllegalStateException("Chuyến đi chưa hoàn tất. Chỉ có thể ghi nhận hư hỏng sau khi chuyến đi đã kết thúc.");
-        }
 
         // 3. Semantic part validation
         String partCode = request.getVehiclePartCode() != null ? request.getVehiclePartCode().trim().toUpperCase() : "";
@@ -118,14 +126,15 @@ public class DamageService {
      */
     @Transactional
     public DamageRecordResponse createDamageForVehicle(UUID vehicleId, CreateDamageRequest request, UUID currentUserId, Role currentUserRole) {
-        if (currentUserRole != Role.STAFF) {
-            throw new AccessDeniedException("Chỉ nhân viên vận hành (STAFF) mới có quyền ghi nhận hư hỏng");
+        if (currentUserRole != Role.STAFF && currentUserRole != Role.CO_OWNER) {
+            throw new AccessDeniedException("Chỉ nhân viên vận hành hoặc đồng sở hữu mới có quyền ghi nhận hư hỏng");
         }
 
-        Trip recentCompletedTrip = tripRepository.findFirstByVehicleIdAndStatusOrderByEndedAtDesc(vehicleId, TripStatus.COMPLETED)
-                .orElseThrow(() -> new IllegalStateException("Phương tiện chưa có chuyến đi nào hoàn tất để ghi nhận hư hỏng"));
+        Trip recentTrip = tripRepository.findFirstByVehicleIdAndStatusOrderByEndedAtDesc(vehicleId, TripStatus.COMPLETED)
+                .or(() -> tripRepository.findFirstByVehicleIdOrderByCreatedAtDesc(vehicleId))
+                .orElseThrow(() -> new IllegalStateException("Phương tiện chưa có dữ liệu chuyến đi để ghi nhận hư hỏng"));
 
-        return createDamage(recentCompletedTrip.getId(), request, currentUserId, currentUserRole);
+        return createDamage(recentTrip.getId(), request, currentUserId, currentUserRole);
     }
 
     /**
@@ -152,17 +161,31 @@ public class DamageService {
 
     /**
      * Retrieve damage records for a vehicle (operational overview / inspection history).
+     * Authorizes CO_OWNER against their co-owned vehicle, allows STAFF/ADMIN operational access.
      */
     @Transactional(readOnly = true)
-    public List<DamageRecordResponse> getDamagesByVehicle(UUID vehicleId) {
+    public List<DamageRecordResponse> getDamagesByVehicle(UUID vehicleId, com.evshare.security.UserPrincipal principal) {
         if (!vehicleRepository.existsById(vehicleId)) {
             throw new ResourceNotFoundException("Không tìm thấy phương tiện với mã: " + vehicleId);
+        }
+
+        if (principal != null && principal.getUser() != null) {
+            Role userRole = principal.getUser().getRole();
+            if (userRole == Role.CO_OWNER && vehicleService != null) {
+                // Throws AccessDeniedException if CO_OWNER is not an active member of active group owning vehicleId
+                vehicleService.getVehicleById(vehicleId, principal);
+            }
         }
 
         return damageRecordRepository.findByVehicleIdOrderByCreatedAtDesc(vehicleId)
                 .stream()
                 .map(DamageRecordResponse::fromEntity)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<DamageRecordResponse> getDamagesByVehicle(UUID vehicleId) {
+        return getDamagesByVehicle(vehicleId, null);
     }
 
     private void validateCoordinates(CreateDamageRequest request) {

@@ -42,6 +42,12 @@ export const VehicleDamageWorld: React.FC<VehicleDamageWorldProps> = ({ vehicle 
     staleTime: 5000,
   });
 
+  // Requirement 19 & 22: Default active damage view shows only OPEN and UNDER_MAINTENANCE.
+  // Repaired/RESOLVED markers disappear from active vehicle view without deleting history.
+  const activeDamages = React.useMemo(() => {
+    return damages.filter((item) => item.status !== 'RESOLVED');
+  }, [damages]);
+
   const selectedRecord = React.useMemo(() => {
     if (!selectedDamageId) return null;
     return damages.find((d) => d.id === selectedDamageId) || null;
@@ -55,8 +61,8 @@ export const VehicleDamageWorld: React.FC<VehicleDamageWorldProps> = ({ vehicle 
     note?: string;
     localPosition: [number, number, number];
   }) => {
-    if (!isStaff) {
-      setErrorMessage('Bạn không có quyền ghi nhận hư hỏng');
+    if (!user) {
+      setErrorMessage('Vui lòng đăng nhập để ghi nhận hư hỏng');
       return;
     }
 
@@ -102,7 +108,7 @@ export const VehicleDamageWorld: React.FC<VehicleDamageWorldProps> = ({ vehicle 
     <group name="VehicleDamageWorld">
       {/* 1. Persisted 3D Damage Markers locked to vehicle turntable */}
       <group rotation={[0, vehicleYaw, 0]}>
-        {damages.map((item) => (
+        {activeDamages.map((item) => (
           <DamageMarker3D
             key={item.id}
             id={item.id}
@@ -110,6 +116,7 @@ export const VehicleDamageWorld: React.FC<VehicleDamageWorldProps> = ({ vehicle 
             partCode={item.vehiclePartCode}
             damageType={item.damageType}
             severity={item.severity}
+            status={item.status}
             note={item.note}
             isSelected={selectedDamageId === item.id}
             onClick={() => {
@@ -152,7 +159,7 @@ export const VehicleDamageWorld: React.FC<VehicleDamageWorldProps> = ({ vehicle 
               selectedPartCode={selectedVehiclePartCode}
               draftDamage={draftDamage}
               selectedRecord={selectedRecord}
-              savedDamages={damages}
+              savedDamages={activeDamages}
               isSubmitting={isSubmitting}
               errorMessage={errorMessage}
               onSelectDamage={(id) => {

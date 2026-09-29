@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import * as THREE from 'three';
+import { useThree } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import { Booking } from '../../../types/booking';
 import { INTERACTION_CONFIG } from '../../../config/interactionConfig';
@@ -20,6 +21,86 @@ export interface BookingTimelineSlot {
   yOffset: number;
 }
 
+// Authoritative right booking panel dimensions and safe area in screen space
+export const BOOKING_PANEL_WIDTH_PX = 350;
+export const BOOKING_PANEL_RIGHT_GAP_PX = 20;
+export const BOOKING_PANEL_SAFE_GAP_PX = 24;
+
+export const RESERVED_RIGHT_PANEL_WIDTH_PX =
+  BOOKING_PANEL_WIDTH_PX + BOOKING_PANEL_RIGHT_GAP_PX + BOOKING_PANEL_SAFE_GAP_PX; // 394px
+
+export const BOOKING_LEFT_MARGIN_PX = 24; // px left boundary margin
+export const BOOKING_PANEL_CLEARANCE_PX = 28; // px visual clearance from panel boundary
+
+// Backwards-compatible aliases
+export const BOOKING_PANEL_WIDTH = BOOKING_PANEL_WIDTH_PX;
+export const BOOKING_PANEL_GAP = BOOKING_PANEL_RIGHT_GAP_PX + BOOKING_PANEL_SAFE_GAP_PX;
+export const RESERVED_RIGHT_PANEL_WIDTH = RESERVED_RIGHT_PANEL_WIDTH_PX;
+
+/**
+ * Authoritative 3D projection & safe-area layout resolver:
+ * Converts usable screen viewport (excluding the fixed right-side booking panel)
+ * into precise world-space boundaries and safe composition center.
+ */
+export function computeBookingLayoutMetrics(
+  viewportWidth: number,
+  viewportHeight: number,
+  camera: THREE.Camera,
+  planeZ: number = 2.4,
+  overrides?: {
+    propSafeCenterX?: number;
+    propUsableSafeWidth?: number;
+    propRightSafeX?: number;
+  }
+) {
+  const camZ = camera.position.z;
+  const distance = Math.max(1, camZ - planeZ);
+  const fovRad = (((camera as THREE.PerspectiveCamera).fov || 40) * Math.PI) / 180;
+  const visibleHeight3D = 2 * Math.tan(fovRad / 2) * distance;
+  const aspect = viewportWidth / Math.max(1, viewportHeight);
+  const visibleWidth3D = visibleHeight3D * aspect;
+
+  const pixelToWorld = visibleWidth3D / Math.max(1, viewportWidth);
+
+  // Screen space boundaries:
+  // Usable screen area: [BOOKING_LEFT_MARGIN_PX, viewportWidth - RESERVED_RIGHT_PANEL_WIDTH_PX]
+  const screenLeftPx = BOOKING_LEFT_MARGIN_PX;
+  const screenRightPx = Math.max(screenLeftPx + 100, viewportWidth - RESERVED_RIGHT_PANEL_WIDTH_PX);
+  const usableWidthPx = screenRightPx - screenLeftPx;
+  const safeCenterScreenPx = screenLeftPx + usableWidthPx / 2;
+
+  // Convert to world coordinates at timeline depth planeZ
+  const camX = camera.position.x;
+  const leftFrustumX = camX - visibleWidth3D / 2;
+
+  const computedRightSafeX = leftFrustumX + (screenRightPx / viewportWidth) * visibleWidth3D;
+  const computedLeftSafeX = leftFrustumX + (screenLeftPx / viewportWidth) * visibleWidth3D;
+  const computedSafeCenterX = leftFrustumX + (safeCenterScreenPx / viewportWidth) * visibleWidth3D;
+  const computedUsableWidth = computedRightSafeX - computedLeftSafeX;
+
+  const rightSafeX = overrides?.propRightSafeX ?? computedRightSafeX;
+  const leftSafeX = computedLeftSafeX;
+  const usableSafeWidth = overrides?.propUsableSafeWidth ?? computedUsableWidth;
+  const safeCenterX = overrides?.propSafeCenterX ?? computedSafeCenterX;
+
+  const clearance3D = BOOKING_PANEL_CLEARANCE_PX * pixelToWorld;
+
+  return {
+    planeZ,
+    visibleWidth3D,
+    visibleHeight3D,
+    pixelToWorld,
+    screenLeftPx,
+    screenRightPx,
+    usableWidthPx,
+    leftSafeX,
+    rightSafeX,
+    safeCenterX,
+    usableSafeWidth,
+    clearance3D,
+  };
+}
+
 interface BookingTimeline3DProps {
   selectedDate: Date;
   bookings: Booking[];
@@ -27,12 +108,15 @@ interface BookingTimeline3DProps {
   endHour: number | null;
   onSelectSlot: (hour: number) => void;
   position?: [number, number, number];
+  safeCenterX?: number;
+  usableSafeWidth?: number;
+  rightSafeX?: number;
 }
 
-const SLOT_WIDTH = 0.52;
-const SLOT_HEIGHT = 0.46;
+const BASE_SLOT_WIDTH = 0.48;
+const BASE_SLOT_HEIGHT = 0.46;
 const SLOT_DEPTH = 0.08;
-const GAP_X = 0.10;
+const BASE_GAP_X = 0.06;
 const ROW_GAP_Y = 0.68;
 
 export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
@@ -41,15 +125,93 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
   startHour,
   endHour,
   onSelectSlot,
-  position = [3.2, 1.25, 2.4],
+  position = [0.0, 2.45, 2.4],
+  safeCenterX: propSafeCenterX,
+  usableSafeWidth: propUsableSafeWidth,
+  rightSafeX: propRightSafeX,
 }) => {
+  const { size, camera } = useThree();
+
   // Stable slot ID tracked on hover (matches exact clicked slot ID)
   const [hoveredSlotId, setHoveredSlotId] = useState<string | null>(null);
 
+  // Operational hours: 07:00 to 21:00 (15 hours)
+  const HOURS = useMemo(() => Array.from({ length: 15 }, (_, i) => i + 7), []);
+  const row1Hours = useMemo(() => HOURS.slice(0, 7), [HOURS]); // 07:00 - 13:00 (7 slots)
+  const row2Hours = useMemo(() => HOURS.slice(7), [HOURS]);    // 14:00 - 21:00 (8 slots)
+  const maxSlotsInRow = Math.max(row1Hours.length, row2Hours.length); // 8 slots
+
+  // Calculate 3D viewport safe boundaries at timeline plane depth (world Z = 2.4)
+  const layoutMetrics = useMemo(() => {
+    const worldPlaneZ = (position[2] !== undefined && position[2] < 1.5) ? position[2] + 1.8 : (position[2] ?? 2.4);
+    return computeBookingLayoutMetrics(size.width, size.height, camera, worldPlaneZ, {
+      propSafeCenterX,
+      propUsableSafeWidth,
+      propRightSafeX,
+    });
+  }, [position, camera, size.width, size.height, propSafeCenterX, propUsableSafeWidth, propRightSafeX]);
+
+  // Compute dynamic slot sizing & layout that strictly guarantees all slots fit inside usable safe width
+  const {
+    slotWidth,
+    slotHeight,
+    gapX,
+    row1TotalWidth,
+    row2TotalWidth,
+    row1StartX,
+    row2StartX,
+    effectiveCenterX,
+  } = useMemo(() => {
+    const maxTimelineWidth = Math.min(layoutMetrics.usableSafeWidth - layoutMetrics.clearance3D * 2, 4.60);
+    const baseTotal = maxSlotsInRow * BASE_SLOT_WIDTH + (maxSlotsInRow - 1) * BASE_GAP_X; // ~4.26
+
+    let w = BASE_SLOT_WIDTH;
+    let g = BASE_GAP_X;
+
+    if (baseTotal > maxTimelineWidth) {
+      const shrinkRatio = Math.max(0.68, maxTimelineWidth / baseTotal);
+      w = Math.max(0.32, BASE_SLOT_WIDTH * shrinkRatio);
+      g = Math.max(0.04, BASE_GAP_X * shrinkRatio);
+    } else {
+      const expandRatio = Math.min(1.08, maxTimelineWidth / baseTotal);
+      w = BASE_SLOT_WIDTH * expandRatio;
+      g = BASE_GAP_X * expandRatio;
+    }
+
+    const h = (w / BASE_SLOT_WIDTH) * BASE_SLOT_HEIGHT;
+
+    const r1Width = row1Hours.length * w + (row1Hours.length - 1) * g;
+    const r2Width = row2Hours.length * w + (row2Hours.length - 1) * g;
+    const maxRowWidth = Math.max(r1Width, r2Width);
+
+    const r1StartX = -r1Width / 2 + w / 2;
+    const r2StartX = -r2Width / 2 + w / 2;
+
+    // Panel-safe center: centers the timeline within the usable screen area
+    const rawSafeCenter = layoutMetrics.safeCenterX;
+
+    // Strictly enforce that timeline right edge (effectiveCenterX + maxRowWidth / 2) does NOT cross (rightSafeX - clearance3D)
+    const maxAllowedCenter = layoutMetrics.rightSafeX - maxRowWidth / 2 - layoutMetrics.clearance3D;
+    const minAllowedCenter = layoutMetrics.leftSafeX + maxRowWidth / 2 + layoutMetrics.clearance3D;
+
+    const clampedCenter = Math.max(minAllowedCenter, Math.min(rawSafeCenter, maxAllowedCenter));
+
+    return {
+      slotWidth: w,
+      slotHeight: h,
+      gapX: g,
+      row1TotalWidth: r1Width,
+      row2TotalWidth: r2Width,
+      row1StartX: r1StartX,
+      row2StartX: r2StartX,
+      effectiveCenterX: clampedCenter,
+    };
+  }, [layoutMetrics, row1Hours.length, row2Hours.length, maxSlotsInRow]);
+
   // Memoized box & edges geometries: shared across all slot meshes for performance & zero memory leaks
   const slotBoxGeometry = useMemo(
-    () => new THREE.BoxGeometry(SLOT_WIDTH, SLOT_HEIGHT, SLOT_DEPTH),
-    []
+    () => new THREE.BoxGeometry(slotWidth, slotHeight, SLOT_DEPTH),
+    [slotWidth, slotHeight]
   );
   const slotEdgesGeometry = useMemo(
     () => new THREE.EdgesGeometry(slotBoxGeometry),
@@ -63,17 +225,6 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
     const d = String(selectedDate.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
   }, [selectedDate]);
-
-  // Operational hours: 07:00 to 21:00 (15 hours)
-  const HOURS = useMemo(() => Array.from({ length: 15 }, (_, i) => i + 7), []);
-  const row1Hours = useMemo(() => HOURS.slice(0, 7), [HOURS]); // 07:00 - 13:00 (7 slots)
-  const row2Hours = useMemo(() => HOURS.slice(7), [HOURS]);    // 14:00 - 21:00 (8 slots)
-
-  const row1TotalWidth = 7 * SLOT_WIDTH + 6 * GAP_X; // 4.24
-  const row2TotalWidth = 8 * SLOT_WIDTH + 7 * GAP_X; // 4.86
-
-  const row1StartX = -row1TotalWidth / 2 + SLOT_WIDTH / 2;
-  const row2StartX = -row2TotalWidth / 2 + SLOT_WIDTH / 2;
 
   // Build full array of first-class slot objects with stable IDs and precise coordinates
   const slots = useMemo<BookingTimelineSlot[]>(() => {
@@ -122,7 +273,7 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
         }
       }
 
-      const xOffset = startX + colIndex * (SLOT_WIDTH + GAP_X);
+      const xOffset = startX + colIndex * (slotWidth + gapX);
 
       return {
         id,
@@ -152,7 +303,7 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
     });
 
     return result;
-  }, [dateKey, selectedDate, bookings, startHour, endHour, row1Hours, row2Hours, row1StartX, row2StartX]);
+  }, [dateKey, selectedDate, bookings, startHour, endHour, row1Hours, row2Hours, row1StartX, row2StartX, slotWidth, gapX]);
 
   const handleSlotClick = (slot: BookingTimelineSlot) => {
     if (slot.state === 'PAST' || slot.state === 'BOOKED') {
@@ -175,8 +326,14 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
     document.body.style.cursor = 'auto';
   };
 
+  const timelineGroupPosition: [number, number, number] = [
+    effectiveCenterX,
+    position[1] ?? 2.45,
+    position[2] ?? 2.4,
+  ];
+
   return (
-    <group position={position}>
+    <group position={timelineGroupPosition}>
       {slots.map((slot) => {
         const isHovered = hoveredSlotId === slot.id;
 
@@ -231,10 +388,18 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
               userData={{ bookingSlotId: slot.id, hour: slot.hour, timeLabel: slot.timeLabel }}
               onClick={(e: any) => {
                 if (e && 'delta' in e && e.delta > INTERACTION_CONFIG.clickDragThresholdPx) return;
+                // Strict input safety: ignore clicks if pointer falls within reserved right panel area
+                if (e && typeof e.clientX === 'number' && e.clientX >= size.width - RESERVED_RIGHT_PANEL_WIDTH_PX) {
+                  return;
+                }
                 e.stopPropagation();
                 handleSlotClick(slot);
               }}
-              onPointerOver={(e) => {
+              onPointerOver={(e: any) => {
+                // Strict input safety: ignore hover if pointer is within reserved right panel area
+                if (e && typeof e.clientX === 'number' && e.clientX >= size.width - RESERVED_RIGHT_PANEL_WIDTH_PX) {
+                  return;
+                }
                 e.stopPropagation();
                 handleSlotPointerOver(slot);
               }}
@@ -261,13 +426,13 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
             <Html
               position={[0, 0, 0.05]}
               center
-              distanceFactor={8.8}
+              distanceFactor={8.0}
               pointerEvents="none"
               style={{ pointerEvents: 'none', userSelect: 'none' }}
             >
               <div
                 style={{
-                  width: '54px',
+                  width: '64px',
                   textAlign: 'center',
                   fontFamily: 'var(--font-family)',
                   color: '#ffffff',
@@ -276,12 +441,12 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
               >
                 <div
                   style={{
-                    fontSize: '13px',
-                    fontWeight: 800,
+                    fontSize: '15px',
+                    fontWeight: 900,
                     letterSpacing: '-0.02em',
                     color: slot.state === 'SELECTED' ? '#f3e8ff' : '#ffffff',
                     textShadow: '0 2px 8px rgba(0, 0, 0, 0.9)',
-                    lineHeight: 1.1,
+                    lineHeight: 1.15,
                     pointerEvents: 'none',
                   }}
                 >
@@ -291,12 +456,12 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
                 <div
                   style={{
                     marginTop: '4px',
-                    fontSize: '8px',
-                    fontWeight: 700,
+                    fontSize: '9.5px',
+                    fontWeight: 800,
                     color: badgeColor,
                     background: badgeBg,
                     borderRadius: '4px',
-                    padding: '1px 3px',
+                    padding: '2px 4px',
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',

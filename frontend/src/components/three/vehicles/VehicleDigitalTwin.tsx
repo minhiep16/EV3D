@@ -26,6 +26,7 @@ import { CoOwnerReceiptWorld } from '../handover/CoOwnerReceiptWorld';
 import { TripStartWorld } from '../trip/TripStartWorld';
 import { TripVisualizationWorld } from '../trip/TripVisualizationWorld';
 import { VehicleDamageWorld } from '../damage/VehicleDamageWorld';
+import { VehicleDamageHistoryWorld } from '../damage/VehicleDamageHistoryWorld';
 import { getPartById } from '../../../data/vehicleParts';
 import { CoOwnerVehiclePanel } from './CoOwnerVehiclePanel';
 import { StaffOperationsPanel } from './StaffOperationsPanel';
@@ -46,7 +47,7 @@ import {
   notifyVehicleDragStart,
   notifyVehicleDragEnd,
   isRecentDragInteraction,
-} from '../GlobalInteractionManager';
+} from '../globalInteractionState';
 
 export interface VehicleDigitalTwinProps {
   renderPanel?: (vehicle: VehicleResponse, onClose: () => void) => React.ReactNode;
@@ -135,6 +136,8 @@ interface VehicleBayProps {
   vehicleTripStartMode: boolean;
   vehicleTripVisualizationMode: boolean;
   vehicleDamageMappingMode: boolean;
+  vehicleDamageHistoryMode?: boolean;
+  vehicleMaintenanceMode?: boolean;
   vehicleInspectionMode: boolean;
   selectedVehiclePartId: string | null;
   renderPanel?: (vehicle: VehicleResponse, onClose: () => void) => React.ReactNode;
@@ -165,6 +168,8 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
   vehicleTripStartMode,
   vehicleTripVisualizationMode,
   vehicleDamageMappingMode,
+  vehicleDamageHistoryMode,
+  vehicleMaintenanceMode,
   vehicleInspectionMode,
   selectedVehiclePartId,
   renderPanel,
@@ -174,7 +179,7 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
 }) => {
   // Authoritative derivation of fleet-wide selection state
   const isAnyVehicleSelected =
-    propIsAnyVehicleSelected ?? Boolean(selectedVehicleId || isVehicleSelected);
+    propIsAnyVehicleSelected ?? Boolean(selectedVehicleId);
 
   const isDeEmphasized = isAnyVehicleSelected && !isSelected;
 
@@ -323,8 +328,7 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
   const shouldRenderVehicleOverview =
     (shouldRenderCoOwnerPanel ||
       shouldRenderStaffPanel ||
-      shouldRenderAdminPanel ||
-      isSelected) &&
+      shouldRenderAdminPanel) &&
     !isBusinessModeActive;
 
   const displayName = vehicleCode === 'EV01' ? 'Xe điện thực tế' : 'Xe thử nghiệm tương tác';
@@ -418,7 +422,7 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
               <Html
                 center
                 distanceFactor={8.8}
-                style={{ pointerEvents: 'auto', userSelect: 'none' }}
+                style={{ pointerEvents: 'none', userSelect: 'none' }}
               >
                 <QueryClientProvider client={queryClient}>
                   {renderPanel ? (
@@ -478,6 +482,54 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
       {isSelected && vehicleDamageMappingMode && (
         <VehicleDamageWorld vehicle={vehicle} />
       )}
+
+      {isSelected && (vehicleDamageHistoryMode || vehicleMaintenanceMode) && (
+        <VehicleDamageHistoryWorld vehicle={vehicle} />
+      )}
+
+      {/* Subtle 3D Maintenance Status Badge on Turntable Platform (Requirement 15) */}
+      {isSelected && vehicle.status === 'MAINTENANCE' && (
+        <group position={[0, 0.28, 2.35]}>
+          <Billboard follow={true}>
+            <Html center distanceFactor={10} style={{ pointerEvents: 'none', userSelect: 'none' }}>
+              <div
+                style={{
+                  background: 'rgba(245, 158, 11, 0.22)',
+                  backdropFilter: 'blur(8px)',
+                  border: '1px solid rgba(245, 158, 11, 0.65)',
+                  borderRadius: '20px',
+                  padding: '4px 12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 0 15px rgba(245, 158, 11, 0.4)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <div
+                  style={{
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '50%',
+                    background: '#f59e0b',
+                    boxShadow: '0 0 8px #f59e0b',
+                  }}
+                />
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    color: '#fbbf24',
+                    letterSpacing: '0.05em',
+                  }}
+                >
+                  ĐANG BẢO DƯỠNG
+                </span>
+              </div>
+            </Html>
+          </Billboard>
+        </group>
+      )}
     </group>
   );
 };
@@ -510,6 +562,8 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
   const vehicleTripStartMode = useWorldStore((state) => state.vehicleTripStartMode);
   const vehicleTripVisualizationMode = useWorldStore((state) => state.vehicleTripVisualizationMode);
   const vehicleDamageMappingMode = useWorldStore((state) => state.vehicleDamageMappingMode);
+  const vehicleDamageHistoryMode = useWorldStore((state) => state.vehicleDamageHistoryMode);
+  const vehicleMaintenanceMode = useWorldStore((state) => state.vehicleMaintenanceMode);
   const selectedVehiclePartId = useWorldStore((state) => state.selectedVehiclePartId);
   const selectVehicle = useWorldStore((state) => state.selectVehicle);
   const hoverVehicle = useWorldStore((state) => state.hoverVehicle);
@@ -600,7 +654,9 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
     vehicleReceiptReviewMode ||
     vehicleTripStartMode ||
     vehicleTripVisualizationMode ||
-    vehicleDamageMappingMode;
+    vehicleDamageMappingMode ||
+    vehicleDamageHistoryMode ||
+    vehicleMaintenanceMode;
 
   const handleVehicleSelect = (selectedVehicle: VehicleResponse) => {
     selectVehicle(selectedVehicle.id, role);
@@ -656,9 +712,10 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
   if (isError) {
     return (
       <group position={defaultVehiclePosition}>
-        <Html position={[0, 1.8, 0]} center distanceFactor={8.5} style={{ pointerEvents: 'auto', userSelect: 'none' }}>
+        <Html position={[0, 1.8, 0]} center distanceFactor={8.5} style={{ pointerEvents: 'none', userSelect: 'none' }}>
           <div
             style={{
+              pointerEvents: 'auto',
               width: '280px',
               background: 'rgba(15, 10, 20, 0.94)',
               backdropFilter: 'blur(16px)',
@@ -787,6 +844,8 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
           vehicleTripStartMode={vehicleTripStartMode}
           vehicleTripVisualizationMode={vehicleTripVisualizationMode}
           vehicleDamageMappingMode={vehicleDamageMappingMode}
+          vehicleDamageHistoryMode={vehicleDamageHistoryMode}
+          vehicleMaintenanceMode={vehicleMaintenanceMode}
           vehicleInspectionMode={vehicleInspectionMode}
           selectedVehiclePartId={selectedVehiclePartId}
           renderPanel={renderPanel}
@@ -798,7 +857,7 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
     );
   }
 
-  const isAnyVehicleSelected = Boolean(selectedVehicleId || isVehicleSelected);
+  const isAnyVehicleSelected = Boolean(selectedVehicleId);
 
   return (
     <group name="VehicleFleetTwinContainer">
@@ -814,12 +873,10 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
           vehicleSlot = DEFAULT_GARAGE_SLOT;
         }
 
-        const isSelected = selectedVehicleId
-          ? selectedVehicleId === vehicle.id ||
-            selectedVehicleId === vehicleCode
-          : isCoOwner
-            ? Boolean(isVehicleSelected || selectedZone === 'VEHICLE')
-            : vehicleCode === 'EV01' && (isVehicleSelected || selectedZone === 'VEHICLE');
+        const isSelected = Boolean(
+          selectedVehicleId &&
+            (selectedVehicleId === vehicle.id || selectedVehicleId === vehicleCode)
+        );
 
         const isHovered =
           hoveredVehicleId === vehicle.id ||
@@ -849,6 +906,8 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
             vehicleTripStartMode={vehicleTripStartMode}
             vehicleTripVisualizationMode={vehicleTripVisualizationMode}
             vehicleDamageMappingMode={vehicleDamageMappingMode}
+            vehicleDamageHistoryMode={vehicleDamageHistoryMode}
+            vehicleMaintenanceMode={vehicleMaintenanceMode}
             vehicleInspectionMode={vehicleInspectionMode}
             selectedVehiclePartId={selectedVehiclePartId}
             renderPanel={renderPanel}

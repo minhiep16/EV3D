@@ -11,7 +11,7 @@ interface SpatialDateSelector3DProps {
 export const SpatialDateSelector3D: React.FC<SpatialDateSelector3DProps> = ({
   selectedDate,
   onSelectDate,
-  position = [3.2, 2.15, 2.4],
+  position = [0.0, 3.35, 2.4],
 }) => {
   const isToday = (date: Date) => {
     const today = new Date();
@@ -66,18 +66,18 @@ export const SpatialDateSelector3D: React.FC<SpatialDateSelector3DProps> = ({
   return (
     <group position={position}>
       <Billboard follow={true}>
-        <Html center distanceFactor={8.5} style={{ pointerEvents: 'auto', userSelect: 'none' }}>
+        <Html center distanceFactor={8.0} style={{ pointerEvents: 'auto', userSelect: 'none' }}>
           <div
             style={{
-              background: 'rgba(8, 12, 22, 0.92)',
-              backdropFilter: 'blur(16px)',
-              border: '1px solid rgba(0, 242, 254, 0.45)',
+              background: 'rgba(8, 14, 26, 0.94)',
+              backdropFilter: 'blur(20px)',
+              border: '1.5px solid rgba(0, 242, 254, 0.55)',
               borderRadius: '9999px',
-              padding: '6px 14px',
+              padding: '8px 20px',
               display: 'flex',
               alignItems: 'center',
-              gap: '10px',
-              boxShadow: '0 8px 24px rgba(0, 0, 0, 0.7), 0 0 15px rgba(0, 242, 254, 0.25)',
+              gap: '12px',
+              boxShadow: '0 10px 30px rgba(0, 0, 0, 0.8), 0 0 20px rgba(0, 242, 254, 0.3)',
               color: '#ffffff',
               fontFamily: 'var(--font-family)',
               whiteSpace: 'nowrap',
@@ -89,11 +89,11 @@ export const SpatialDateSelector3D: React.FC<SpatialDateSelector3DProps> = ({
               onClick={handlePrevDay}
               title="Ngày trước"
               style={{
-                background: canGoPrev ? 'rgba(0, 242, 254, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid ' + (canGoPrev ? 'rgba(0, 242, 254, 0.4)' : 'rgba(255, 255, 255, 0.1)'),
+                background: canGoPrev ? 'rgba(0, 242, 254, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid ' + (canGoPrev ? 'rgba(0, 242, 254, 0.5)' : 'rgba(255, 255, 255, 0.1)'),
                 borderRadius: '50%',
-                width: '26px',
-                height: '26px',
+                width: '30px',
+                height: '30px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -102,12 +102,12 @@ export const SpatialDateSelector3D: React.FC<SpatialDateSelector3DProps> = ({
                 transition: 'all 0.2s',
               }}
             >
-              <ChevronLeft size={15} />
+              <ChevronLeft size={17} />
             </button>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 4px' }}>
-              <CalendarIcon size={14} color="#00f2fe" />
-              <span style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '0.02em', color: '#e2e8f0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 6px' }}>
+              <CalendarIcon size={16} color="#00f2fe" />
+              <span style={{ fontSize: '14px', fontWeight: 800, letterSpacing: '0.02em', color: '#f8fafc' }}>
                 {formatVietnameseDate(selectedDate)}
               </span>
             </div>
@@ -117,11 +117,11 @@ export const SpatialDateSelector3D: React.FC<SpatialDateSelector3DProps> = ({
               onClick={handleNextDay}
               title="Ngày sau"
               style={{
-                background: 'rgba(0, 242, 254, 0.15)',
-                border: '1px solid rgba(0, 242, 254, 0.4)',
+                background: 'rgba(0, 242, 254, 0.2)',
+                border: '1px solid rgba(0, 242, 254, 0.5)',
                 borderRadius: '50%',
-                width: '26px',
-                height: '26px',
+                width: '30px',
+                height: '30px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -130,7 +130,7 @@ export const SpatialDateSelector3D: React.FC<SpatialDateSelector3DProps> = ({
                 transition: 'all 0.2s',
               }}
             >
-              <ChevronRight size={15} />
+              <ChevronRight size={17} />
             </button>
           </div>
         </Html>

@@ -46,6 +46,9 @@ export const CoOwnerVehiclePartPanel: React.FC = () => {
   const exitVehicleInspectionMode = useWorldStore(
     (state) => state.exitVehicleInspectionMode
   );
+  const enterVehicleDamageMappingMode = useWorldStore(
+    (state) => state.enterVehicleDamageMappingMode
+  );
 
   const activePartCode = selectedVehiclePartCode || selectedVehiclePartId;
   const part = getPartById(activePartCode);
@@ -464,6 +467,42 @@ export const CoOwnerVehiclePartPanel: React.FC = () => {
           gap: '8px',
         }}
       >
+        {/* Action: Record damage for this inspected part */}
+        <button
+          type="button"
+          onClick={() => {
+            enterVehicleDamageMappingMode(activePartCode);
+          }}
+          style={{
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '7px',
+            padding: '10px 14px',
+            borderRadius: '9px',
+            border: '1px solid rgba(245, 158, 11, 0.5)',
+            background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(217, 119, 6, 0.28) 100%)',
+            color: '#fbbf24',
+            fontSize: '11.5px',
+            fontWeight: 800,
+            cursor: 'pointer',
+            boxShadow: '0 4px 14px rgba(245, 158, 11, 0.2)',
+            transition: 'all 0.2s',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'linear-gradient(135deg, rgba(245, 158, 11, 0.3) 0%, rgba(217, 119, 6, 0.4) 100%)';
+            e.currentTarget.style.borderColor = '#fbbf24';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(217, 119, 6, 0.28) 100%)';
+            e.currentTarget.style.borderColor = 'rgba(245, 158, 11, 0.5)';
+          }}
+        >
+          <AlertTriangle size={14} color="#f59e0b" />
+          <span>GHI NHẬN HƯ HỎNG</span>
+        </button>
+
         <div
           style={{
             display: 'grid',

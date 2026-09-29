@@ -23,7 +23,7 @@ import {
 } from './vehicleModelConfig';
 import { getVehicleAnchor } from '../../../config/vehicleCameraPresets';
 import { INTERACTION_CONFIG } from '../../../config/interactionConfig';
-import { globalInteractionState, isRecentDragInteraction } from '../GlobalInteractionManager';
+import { globalInteractionState, isRecentDragInteraction } from '../globalInteractionState';
 
 interface VehicleModelMeshProps {
   isSelected: boolean;
@@ -323,10 +323,17 @@ class VehicleModelErrorBoundary extends React.Component<
   }
 
   componentDidCatch(error: any) {
-    console.warn(
-      `VehicleModel failed to load 3D asset (${this.props.activeUrl}). Gracefully switching to fallback:`,
-      error
-    );
+    if (
+      this.props.activeUrl === EV01_REALISTIC_MODEL_URL ||
+      this.props.activeUrl === EV01_ARTICULATED_MODEL_URL
+    ) {
+      console.warn('EV01 primary GLB failed to load; using fallback.', error);
+    } else {
+      console.warn(
+        `VehicleModel failed to load 3D asset (${this.props.activeUrl}). Gracefully switching to fallback:`,
+        error
+      );
+    }
     this.props.onFallback();
   }
 
@@ -383,8 +390,10 @@ export const VehicleModel: React.FC<VehicleModelProps> = ({
       return;
     }
     if (activeModelUrl === EV01_ARTICULATED_MODEL_URL) {
+      console.warn('EV01 primary GLB failed to load; using fallback.');
       setActiveModelUrl(EV01_REALISTIC_MODEL_URL);
     } else if (activeModelUrl === EV01_REALISTIC_MODEL_URL) {
+      console.warn('EV01 primary GLB failed to load; using fallback.');
       setActiveModelUrl(EV01_FALLBACK_MODEL_URL);
     }
   };
@@ -401,14 +410,17 @@ export const VehicleModel: React.FC<VehicleModelProps> = ({
       }
       onFallback={handleFallback}
     >
-      <VehicleModelMesh
-        isSelected={isSelected}
-        isHovered={isHovered}
-        isDeEmphasized={isDeEmphasized}
-        modelUrl={activeModelUrl}
-        onSelectVehicle={onSelectVehicle}
-        onPointerDown={onPointerDown}
-      />
+      <React.Suspense fallback={null}>
+        <VehicleModelMesh
+          key={activeModelUrl}
+          isSelected={isSelected}
+          isHovered={isHovered}
+          isDeEmphasized={isDeEmphasized}
+          modelUrl={activeModelUrl}
+          onSelectVehicle={onSelectVehicle}
+          onPointerDown={onPointerDown}
+        />
+      </React.Suspense>
     </VehicleModelErrorBoundary>
   );
 };

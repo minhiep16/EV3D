@@ -19,6 +19,11 @@ export interface FeatureCapabilities {
   canRecordDamage: boolean;
   canViewDamage: boolean;
 
+  // Phase 15: Vehicle Maintenance Capabilities
+  canCreateMaintenance: boolean;
+  canManageMaintenance: boolean;
+  canViewMaintenance: boolean;
+
   // ADMIN Monitoring & Governance Capabilities (Section 22)
   canMonitorFleet: boolean;
   canMonitorHandover: boolean;
@@ -38,8 +43,12 @@ export const FEATURE_CAPABILITIES: Record<UserRole, FeatureCapabilities> = {
     canInspectForHandover: false,
     canConfirmHandover: false,
 
-    canRecordDamage: false,
+    canRecordDamage: true,
     canViewDamage: true,
+
+    canCreateMaintenance: false,
+    canManageMaintenance: false,
+    canViewMaintenance: true,
 
     canMonitorFleet: false,
     canMonitorHandover: false,
@@ -49,7 +58,7 @@ export const FEATURE_CAPABILITIES: Record<UserRole, FeatureCapabilities> = {
     canBookVehicle: false,
     canViewMyBookings: false,
     canViewOwnership: false,
-    canExploreVehicle: false,
+    canExploreVehicle: true,
     canConfirmReceipt: false,
     canStartTrip: false,
 
@@ -60,6 +69,10 @@ export const FEATURE_CAPABILITIES: Record<UserRole, FeatureCapabilities> = {
     canRecordDamage: true,
     canViewDamage: true,
 
+    canCreateMaintenance: true,
+    canManageMaintenance: true,
+    canViewMaintenance: true,
+
     canMonitorFleet: false,
     canMonitorHandover: false,
     canAccessAdministration: false,
@@ -68,7 +81,7 @@ export const FEATURE_CAPABILITIES: Record<UserRole, FeatureCapabilities> = {
     canBookVehicle: false,
     canViewMyBookings: false,
     canViewOwnership: false,
-    canExploreVehicle: false,
+    canExploreVehicle: true,
     canConfirmReceipt: false,
     canStartTrip: false,
 
@@ -78,6 +91,10 @@ export const FEATURE_CAPABILITIES: Record<UserRole, FeatureCapabilities> = {
 
     canRecordDamage: false,
     canViewDamage: true,
+
+    canCreateMaintenance: true,
+    canManageMaintenance: true,
+    canViewMaintenance: true,
 
     canMonitorFleet: true,
     canMonitorHandover: true,

@@ -53,7 +53,7 @@ public class DamageController {
      * STAFF records a new 3D damage for a vehicle (associates to latest completed trip).
      */
     @PostMapping("/vehicles/{vehicleId}/damages")
-    @PreAuthorize("hasRole('STAFF')")
+    @PreAuthorize("hasAnyRole('STAFF', 'CO_OWNER')")
     public ResponseEntity<DamageRecordResponse> recordVehicleDamage(
             @PathVariable UUID vehicleId,
             @Valid @RequestBody CreateDamageRequest request,
@@ -102,9 +102,10 @@ public class DamageController {
     @GetMapping("/vehicles/{vehicleId}/damages")
     @PreAuthorize("hasAnyRole('STAFF', 'ADMIN', 'CO_OWNER')")
     public ResponseEntity<List<DamageRecordResponse>> getDamagesByVehicle(
-            @PathVariable UUID vehicleId
+            @PathVariable UUID vehicleId,
+            @AuthenticationPrincipal UserPrincipal principal
     ) {
-        List<DamageRecordResponse> damages = damageService.getDamagesByVehicle(vehicleId);
+        List<DamageRecordResponse> damages = damageService.getDamagesByVehicle(vehicleId, principal);
         return ResponseEntity.ok(damages);
     }
 }

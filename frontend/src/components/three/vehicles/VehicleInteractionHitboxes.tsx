@@ -8,7 +8,7 @@ import { getCheckpointByCode } from '../../../types/handover';
 import { VehiclePartId } from '../../../types/vehiclePart';
 import { INTERACTION_CONFIG } from '../../../config/interactionConfig';
 import { getVehicleAnchor } from '../../../config/vehicleCameraPresets';
-import { globalInteractionState, isRecentDragInteraction } from '../GlobalInteractionManager';
+import { globalInteractionState, isRecentDragInteraction } from '../globalInteractionState';
 
 interface VehicleInteractionHitboxesProps {
   vehicleCode?: 'EV01' | 'EV02';

@@ -88,10 +88,12 @@ export const MyBookingsPanel: React.FC<MyBookingsPanelProps> = ({
 
   return (
     <div
+      data-ui-interactive="true"
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
       style={{
+        pointerEvents: 'auto',
         width: '340px',
         maxHeight: '86vh',
         overflowY: 'auto',
@@ -104,6 +106,7 @@ export const MyBookingsPanel: React.FC<MyBookingsPanelProps> = ({
         color: '#ffffff',
         fontFamily: 'var(--font-family)',
         position: 'relative',
+        zIndex: 20,
       }}
     >
       {/* Close button */}
@@ -125,6 +128,8 @@ export const MyBookingsPanel: React.FC<MyBookingsPanelProps> = ({
           justifyContent: 'center',
           color: '#94a3b8',
           cursor: 'pointer',
+          zIndex: 30,
+          pointerEvents: 'auto',
         }}
       >
         <X size={14} />
@@ -343,6 +348,7 @@ export const MyBookingsPanel: React.FC<MyBookingsPanelProps> = ({
           type="button"
           onClick={() => setVehicleFeatureMode('BOOKING')}
           style={{
+            pointerEvents: 'auto',
             width: '100%',
             background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
             border: 'none',
@@ -367,6 +373,7 @@ export const MyBookingsPanel: React.FC<MyBookingsPanelProps> = ({
           type="button"
           onClick={() => returnToVehicleOverview()}
           style={{
+            pointerEvents: 'auto',
             width: '100%',
             background: 'rgba(255, 255, 255, 0.06)',
             border: '1px solid rgba(255, 255, 255, 0.12)',

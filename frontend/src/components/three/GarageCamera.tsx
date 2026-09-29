@@ -23,7 +23,7 @@ import {
   notifyCameraOrbitStart,
   notifyCameraOrbitEnd,
   globalInteractionState,
-} from './GlobalInteractionManager';
+} from './globalInteractionState';
 
 export const GarageCamera: React.FC = () => {
   const controlsRef = useRef<OrbitControlsImpl>(null);
@@ -49,6 +49,8 @@ export const GarageCamera: React.FC = () => {
   const vehicleTripStartMode = useWorldStore((state) => state.vehicleTripStartMode);
   const vehicleTripVisualizationMode = useWorldStore((state) => state.vehicleTripVisualizationMode);
   const vehicleDamageMappingMode = useWorldStore((state) => state.vehicleDamageMappingMode);
+  const vehicleDamageHistoryMode = useWorldStore((state) => state.vehicleDamageHistoryMode);
+  const vehicleMaintenanceMode = useWorldStore((state) => state.vehicleMaintenanceMode);
   const vehicleInspectionMode = useWorldStore((state) => state.vehicleInspectionMode);
   const draftDamage = useWorldStore((state) => state.draftDamage);
   const selectedDamageId = useWorldStore((state) => state.selectedDamageId);
@@ -97,7 +99,7 @@ export const GarageCamera: React.FC = () => {
   const clearVehiclePartSelection = useWorldStore((state) => state.clearVehiclePartSelection);
 
   const activePartCode =
-    (vehicleInspectionMode || vehicleDamageMappingMode)
+    (vehicleInspectionMode || vehicleDamageMappingMode || vehicleDamageHistoryMode)
       ? (selectedVehiclePartCode ||
          selectedVehiclePartId ||
          draftDamage?.partCode ||
@@ -107,10 +109,10 @@ export const GarageCamera: React.FC = () => {
 
   // Authoritative Camera Safeguard: Stale selected part is ignored and purged in normal overview
   useEffect(() => {
-    if (!vehicleInspectionMode && !vehicleDamageMappingMode && (selectedVehiclePartCode || selectedVehiclePartId)) {
+    if (!vehicleInspectionMode && !vehicleDamageMappingMode && !vehicleDamageHistoryMode && (selectedVehiclePartCode || selectedVehiclePartId)) {
       clearVehiclePartSelection();
     }
-  }, [vehicleInspectionMode, vehicleDamageMappingMode, selectedVehiclePartCode, selectedVehiclePartId, clearVehiclePartSelection]);
+  }, [vehicleInspectionMode, vehicleDamageMappingMode, vehicleDamageHistoryMode, selectedVehiclePartCode, selectedVehiclePartId, clearVehiclePartSelection]);
 
   // Initialize with OVERVIEW camera preset
   const initialPreset = getVehicleCameraPreset('OVERVIEW', role, size.width);
@@ -150,6 +152,7 @@ export const GarageCamera: React.FC = () => {
       vehicleTripStartMode ||
       vehicleTripVisualizationMode ||
       vehicleDamageMappingMode ||
+      vehicleDamageHistoryMode ||
       vehicleInspectionMode;
 
     let preset: VehicleCameraPreset;
@@ -179,6 +182,7 @@ export const GarageCamera: React.FC = () => {
         selectedVehicleId,
         selectedVehiclePartId: activePartCode,
         selectedVehiclePartCode: activePartCode,
+        selectedDamageId,
         vehicleCoOwnershipMode,
         vehicleBookingMode,
         vehicleHandoverMode,
@@ -186,11 +190,17 @@ export const GarageCamera: React.FC = () => {
         vehicleTripStartMode,
         vehicleTripVisualizationMode,
         vehicleDamageMappingMode,
+        vehicleDamageHistoryMode,
+        vehicleMaintenanceMode,
         vehicleInspectionMode,
       });
 
       if (
-        (presetKey === 'VEHICLE_PART_INSPECTION' || vehicleDamageMappingMode || activeDamagePoint != null) &&
+        (presetKey === 'VEHICLE_PART_INSPECTION' ||
+          vehicleDamageMappingMode ||
+          vehicleDamageHistoryMode ||
+          vehicleMaintenanceMode ||
+          activeDamagePoint != null) &&
         activePartCode
       ) {
         preset = getVehiclePartInspectionPreset(
@@ -247,6 +257,8 @@ export const GarageCamera: React.FC = () => {
     vehicleTripStartMode,
     vehicleTripVisualizationMode,
     vehicleDamageMappingMode,
+    vehicleDamageHistoryMode,
+    vehicleMaintenanceMode,
     vehicleInspectionMode,
     vehicleYaw,
     role,

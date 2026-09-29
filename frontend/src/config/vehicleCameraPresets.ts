@@ -66,7 +66,8 @@ export type VehiclePresetKey =
   | 'VEHICLE_BOOKING'
   | 'VEHICLE_CO_OWNERSHIP'
   | 'BATTERY_XRAY'
-  | 'MAINTENANCE';
+  | 'MAINTENANCE'
+  | 'DAMAGE_HISTORY';
 
 /**
  * Standard Reusable Camera Preset: Full Garage Overview
@@ -163,6 +164,7 @@ export function resolveActiveCameraPresetKey(state: {
   selectedVehicleId?: string | null;
   selectedVehiclePartId?: string | null;
   selectedVehiclePartCode?: string | null;
+  selectedDamageId?: string | null;
   vehicleCoOwnershipMode?: boolean;
   vehicleBookingMode?: boolean;
   vehicleHandoverMode?: boolean;
@@ -170,8 +172,22 @@ export function resolveActiveCameraPresetKey(state: {
   vehicleTripStartMode?: boolean;
   vehicleTripVisualizationMode?: boolean;
   vehicleDamageMappingMode?: boolean;
+  vehicleDamageHistoryMode?: boolean;
   vehicleInspectionMode?: boolean;
+  vehicleMaintenanceMode?: boolean;
 }): VehiclePresetKey {
+  if (state.vehicleMaintenanceMode) {
+    if (state.selectedDamageId || state.selectedVehiclePartCode || state.selectedVehiclePartId) {
+      return 'VEHICLE_PART_INSPECTION';
+    }
+    return 'VEHICLE_FOCUS';
+  }
+  if (state.vehicleDamageHistoryMode) {
+    if (state.selectedDamageId || state.selectedVehiclePartCode || state.selectedVehiclePartId) {
+      return 'VEHICLE_PART_INSPECTION';
+    }
+    return 'DAMAGE_HISTORY';
+  }
   if (state.vehicleDamageMappingMode) {
     if (state.selectedVehiclePartCode || state.selectedVehiclePartId) {
       return 'VEHICLE_PART_INSPECTION';
@@ -348,14 +364,15 @@ export function getVehicleCameraPreset(
     }
 
     case 'VEHICLE_BOOKING': {
-      // 3D Date Selector + Timeline on right side - wide, comfortable view
-      const panelOffsetX = 1.45;
-      const baseDistZ = 12.8 * responsiveFactor;
+      // Balanced hero framing: EV01 clearly visible in center-left (~35% focus) with base grounded,
+      // ample vertical headroom for floating 3D timeline, clear breathing room from fixed right booking panel
+      const panelOffsetX = 0.95;
+      const baseDistZ = 11.5 * responsiveFactor;
       return {
-        target: [vx + panelOffsetX, vy + 1.05, vz],
-        position: [vx + panelOffsetX, vy + 3.6, vz + baseDistZ],
+        target: [vx + panelOffsetX, vy + 1.15, vz],
+        position: [vx + panelOffsetX, vy + 3.2, vz + baseDistZ],
         minDistance: 6.5,
-        maxDistance: 24.0,
+        maxDistance: 22.0,
         minPolarAngle: defaultMinPolar,
         maxPolarAngle: defaultMaxPolar,
         enableRotate: true,
@@ -407,6 +424,7 @@ export function getVehicleCameraPreset(
       };
     }
 
+    case 'DAMAGE_HISTORY':
     case 'DAMAGE_MAPPING': {
       if (isOperationsRole || !isCoOwner) {
         // STAFF / ADMIN panel-safe damage / inspection camera logic with fixed right panel

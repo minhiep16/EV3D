@@ -31,6 +31,8 @@ export interface GarageFocusState {
   vehicleTripStartMode?: boolean;
   vehicleTripVisualizationMode?: boolean;
   vehicleDamageMappingMode?: boolean;
+  vehicleDamageHistoryMode?: boolean;
+  vehicleMaintenanceMode?: boolean;
   vehicleInspectionMode?: boolean;
   selectedVehiclePartId?: string | null;
   selectedVehiclePartCode?: string | null;
@@ -52,6 +54,8 @@ export function getActiveFocusedZoneId(state: GarageFocusState): GarageZone | nu
     Boolean(state.vehicleTripStartMode) ||
     Boolean(state.vehicleTripVisualizationMode) ||
     Boolean(state.vehicleDamageMappingMode) ||
+    Boolean(state.vehicleDamageHistoryMode) ||
+    Boolean(state.vehicleMaintenanceMode) ||
     Boolean(state.vehicleInspectionMode) ||
     Boolean(state.selectedVehiclePartId) ||
     Boolean(state.selectedVehiclePartCode);

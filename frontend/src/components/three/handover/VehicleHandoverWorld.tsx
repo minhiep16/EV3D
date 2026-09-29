@@ -444,10 +444,11 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
     return (
       <group position={[0, 1.4, 0]}>
         <Billboard follow={true}>
-          <Html center distanceFactor={8.5} style={{ pointerEvents: 'auto', userSelect: 'none' }}>
+          <Html center distanceFactor={8.5} style={{ pointerEvents: 'none', userSelect: 'none' }}>
             <div
               onClick={(e) => e.stopPropagation()}
               style={{
+                pointerEvents: 'auto',
                 background: 'rgba(8, 14, 26, 0.96)',
                 backdropFilter: 'blur(20px)',
                 border: `1px solid ${config.border}`,
@@ -947,9 +948,10 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
       {errorMessage && (
         <group position={[0, 2.2, 0]}>
           <Billboard follow={true}>
-            <Html center distanceFactor={8.5} style={{ pointerEvents: 'auto', userSelect: 'none' }}>
+            <Html center distanceFactor={8.5} style={{ pointerEvents: 'none', userSelect: 'none' }}>
               <div
                 style={{
+                  pointerEvents: 'auto',
                   background: 'rgba(239, 68, 68, 0.95)',
                   backdropFilter: 'blur(16px)',
                   border: '1px solid rgba(254, 202, 202, 0.5)',

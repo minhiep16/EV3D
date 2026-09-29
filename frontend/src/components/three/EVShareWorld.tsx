@@ -7,16 +7,15 @@ import { WorldEnvironment } from './WorldEnvironment';
 import { GarageFloor } from './GarageFloor';
 import { GarageStructure } from './GarageStructure';
 import { GarageCamera } from './GarageCamera';
-import { GarageZoneObject, getZoneConfig } from './GarageZoneObject';
+import { GarageZoneObject } from './GarageZoneObject';
+import { getZoneConfig } from '../../config/garageZoneConfigs';
 import { GarageZone } from '../../store/worldStore';
 import { useAuthStore } from '../../store/authStore';
 import { getAccessibleZones } from '../../utils/roleCapabilities';
 import { CoOwnerExperience } from './experiences/CoOwnerExperience';
 import { OperationsExperience } from './experiences/OperationsExperience';
-import {
-  GlobalInteractionManager,
-  handleNeutralSceneClick,
-} from './GlobalInteractionManager';
+import { GlobalInteractionManager } from './GlobalInteractionManager';
+import { handleNeutralSceneClick } from './globalInteractionState';
 
 export const EVShareWorld: React.FC = () => {
   const user = useAuthStore((state) => state.user);
