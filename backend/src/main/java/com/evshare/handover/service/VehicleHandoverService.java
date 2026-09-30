@@ -206,12 +206,12 @@ public class VehicleHandoverService {
             resp.setVehicleCode("EV01");
         }
 
-        // 2. Check VEHICLE_IN_USE
-        boolean isVehicleInUse = (vehicle != null && vehicle.getStatus() == VehicleStatus.IN_USE) ||
+        // 2. Check VEHICLE_IN_USE or CHARGING
+        boolean isVehicleUnavailable = (vehicle != null && (vehicle.getStatus() == VehicleStatus.IN_USE || vehicle.getStatus() == VehicleStatus.CHARGING)) ||
                 (tripRepository != null && tripRepository.existsByVehicleIdAndStatus(vehicleId, TripStatus.ACTIVE));
-        if (isVehicleInUse) {
+        if (isVehicleUnavailable) {
             resp.setReason(HandoverEligibilityReason.VEHICLE_IN_USE);
-            resp.setMessage("XE ĐANG ĐƯỢC SỬ DỤNG");
+            resp.setMessage(vehicle != null && vehicle.getStatus() == VehicleStatus.CHARGING ? "XE ĐANG TRONG QUÁ TRÌNH SẠC" : "XE ĐANG ĐƯỢC SỬ DỤNG");
             resp.setEligibleForInspection(false);
             return resp;
         }
@@ -384,6 +384,9 @@ public class VehicleHandoverService {
 
         if (booking.getVehicle() != null && booking.getVehicle().getStatus() == VehicleStatus.IN_USE) {
             throw new IllegalStateException("Xe đang được sử dụng trong chuyến đi, không thể tiến hành bàn giao lại");
+        }
+        if (booking.getVehicle() != null && booking.getVehicle().getStatus() == VehicleStatus.CHARGING) {
+            throw new IllegalStateException("Xe đang trong quá trình sạc pin, vui lòng ngắt sạc trước khi tiến hành bàn giao");
         }
 
         User staff = userRepository.findById(staffId)
@@ -559,6 +562,9 @@ public class VehicleHandoverService {
 
         if (handover.getVehicle() != null && handover.getVehicle().getStatus() == VehicleStatus.IN_USE) {
             throw new IllegalStateException("Xe đang được sử dụng trong chuyến đi, không thể bàn giao xe lúc này");
+        }
+        if (handover.getVehicle() != null && handover.getVehicle().getStatus() == VehicleStatus.CHARGING) {
+            throw new IllegalStateException("Xe đang trong quá trình sạc pin, vui lòng ngắt sạc trước khi bàn giao xe");
         }
 
         User staff = userRepository.findById(staffId)

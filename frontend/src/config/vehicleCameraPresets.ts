@@ -66,6 +66,9 @@ export type VehiclePresetKey =
   | 'VEHICLE_BOOKING'
   | 'VEHICLE_CO_OWNERSHIP'
   | 'BATTERY_XRAY'
+  | 'BATTERY_DETAIL'
+  | 'CHARGING_OVERVIEW'
+  | 'CHARGING_PORT_DETAIL'
   | 'MAINTENANCE'
   | 'DAMAGE_HISTORY';
 
@@ -175,7 +178,21 @@ export function resolveActiveCameraPresetKey(state: {
   vehicleDamageHistoryMode?: boolean;
   vehicleInspectionMode?: boolean;
   vehicleMaintenanceMode?: boolean;
+  vehicleBatteryXrayMode?: boolean;
+  vehicleChargingMode?: boolean;
 }): VehiclePresetKey {
+  if (state.vehicleChargingMode) {
+    if (state.selectedVehiclePartId === 'CHARGING_PORT' || state.selectedVehiclePartCode === 'CHARGING_PORT') {
+      return 'CHARGING_PORT_DETAIL';
+    }
+    return 'CHARGING_OVERVIEW';
+  }
+  if (state.vehicleBatteryXrayMode) {
+    if (state.selectedVehiclePartId === 'BATTERY' || state.selectedVehiclePartCode === 'BATTERY') {
+      return 'BATTERY_DETAIL';
+    }
+    return 'BATTERY_XRAY';
+  }
   if (state.vehicleMaintenanceMode) {
     if (state.selectedDamageId || state.selectedVehiclePartCode || state.selectedVehiclePartId) {
       return 'VEHICLE_PART_INSPECTION';
@@ -473,6 +490,91 @@ export function getVehicleCameraPreset(
         maxDistance: 22.0,
         minPolarAngle: defaultMinPolar,
         maxPolarAngle: defaultMaxPolar,
+        enableRotate: true,
+        enableZoom: true,
+        enablePan: true,
+        panelSide: 'right',
+        panelOffsetX,
+        transitionDuration: 0.65,
+      };
+    }
+
+    case 'BATTERY_XRAY': {
+      // Dedicated 3D X-Ray Inspection preset:
+      // Shows vehicle body context, underfloor battery pack, right panel safe area
+      // Composition: center-left vehicle (panelOffsetX = 1.35), elevated looking down into battery pack
+      const panelOffsetX = 1.35;
+      const baseDistZ = 10.6 * responsiveFactor;
+      return {
+        target: [vx + panelOffsetX, vy + 0.65, vz],
+        position: [vx + panelOffsetX, vy + 2.85, vz + baseDistZ],
+        minDistance: 4.8,
+        maxDistance: 19.0,
+        minPolarAngle: 0.62,
+        maxPolarAngle: 1.38, // Floor-safe: never below floor
+        enableRotate: true,
+        enableZoom: true,
+        enablePan: true,
+        panelSide: 'right',
+        panelOffsetX,
+        transitionDuration: 0.65,
+      };
+    }
+
+    case 'BATTERY_DETAIL': {
+      // Optional close-up inspection preset when battery pack is focused/clicked:
+      // Closer, slightly lower angle, still above floor, battery pack fully visible
+      const panelOffsetX = 1.15;
+      const baseDistZ = 7.2 * responsiveFactor;
+      return {
+        target: [vx + panelOffsetX, vy + 0.38, vz],
+        position: [vx + panelOffsetX, vy + 1.85, vz + baseDistZ],
+        minDistance: 3.5,
+        maxDistance: 14.0,
+        minPolarAngle: 0.70,
+        maxPolarAngle: 1.35, // Floor-safe
+        enableRotate: true,
+        enableZoom: true,
+        enablePan: true,
+        panelSide: 'right',
+        panelOffsetX,
+        transitionDuration: 0.65,
+      };
+    }
+
+    case 'CHARGING_OVERVIEW': {
+      // Dedicated 3D Charging Mode Overview:
+      // Composition: center-left vehicle, charger kiosk visible, panel safe on right
+      const panelOffsetX = 1.35;
+      const baseDistZ = 11.2 * responsiveFactor;
+      return {
+        target: [vx + panelOffsetX, vy + 0.95, vz],
+        position: [vx + panelOffsetX, vy + 3.1, vz + baseDistZ],
+        minDistance: 5.0,
+        maxDistance: 20.0,
+        minPolarAngle: 0.58,
+        maxPolarAngle: 1.40,
+        enableRotate: true,
+        enableZoom: true,
+        enablePan: true,
+        panelSide: 'right',
+        panelOffsetX,
+        transitionDuration: 0.65,
+      };
+    }
+
+    case 'CHARGING_PORT_DETAIL': {
+      // Close-up charging port inspection preset:
+      // Focuses left-rear quarter charging port and cable connection
+      const panelOffsetX = 1.10;
+      const baseDistZ = 7.5 * responsiveFactor;
+      return {
+        target: [vx + panelOffsetX - 0.45, vy + 0.82, vz - 0.9],
+        position: [vx + panelOffsetX - 2.8, vy + 1.8, vz + baseDistZ - 3.2],
+        minDistance: 3.8,
+        maxDistance: 15.0,
+        minPolarAngle: 0.65,
+        maxPolarAngle: 1.38,
         enableRotate: true,
         enableZoom: true,
         enablePan: true,

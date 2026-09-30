@@ -293,6 +293,13 @@ public class TripService {
         Vehicle vehicle = vehicleRepository.findById(booking.getVehicle().getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy phương tiện"));
 
+        if (vehicle.getStatus() == VehicleStatus.CHARGING) {
+            throw new IllegalStateException("Xe đang trong quá trình sạc pin, vui lòng ngắt sạc trước khi bắt đầu chuyến đi.");
+        }
+        if (vehicle.getStatus() == VehicleStatus.MAINTENANCE) {
+            throw new IllegalStateException("Xe đang trong quá trình bảo dưỡng, không thể bắt đầu chuyến đi.");
+        }
+
         // 11. Create Trip (Section 2 & 12)
         Trip trip = new Trip(
                 UUID.randomUUID(),

@@ -37,6 +37,7 @@ import {
   MapPin,
   Compass,
   Wrench,
+  BatteryCharging,
 } from 'lucide-react';
 
 function formatDate(isoString?: string): string {
@@ -279,6 +280,8 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
   const enterVehicleTripVisualizationMode = useWorldStore((state) => state.enterVehicleTripVisualizationMode);
   const enterVehicleDamageHistoryMode = useWorldStore((state) => state.enterVehicleDamageHistoryMode);
   const enterVehicleMaintenanceMode = useWorldStore((state) => state.enterVehicleMaintenanceMode);
+  const enterBatteryXrayMode = useWorldStore((state) => state.enterBatteryXrayMode);
+  const enterChargingMode = useWorldStore((state) => state.enterChargingMode);
 
   // TanStack Query: Fetch active handovers to evaluate eligibility for check-in
   const { data: activeHandovers = [] } = useQuery<VehicleHandoverData[]>({
@@ -1019,6 +1022,26 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
         >
           <Wrench size={14} color="#34d399" />
           <span>LỊCH SỬ BẢO DƯỠNG</span>
+        </button>
+
+        {/* Phase 16: Dedicated 3D X-Ray Battery Health & High-Voltage System */}
+        <button
+          type="button"
+          onClick={() => enterBatteryXrayMode(vehicle.id)}
+          style={actionButtonStyle()}
+        >
+          <Zap size={14} color="#00f2fe" />
+          <span>X-RAY PIN</span>
+        </button>
+
+        {/* Phase 17: Dedicated 3D Charging Management */}
+        <button
+          type="button"
+          onClick={() => enterChargingMode(vehicle.id)}
+          style={actionButtonStyle()}
+        >
+          <BatteryCharging size={14} color="#00f2fe" />
+          <span>SẠC XE</span>
         </button>
 
         {/* Conditional Action: NHẬN XE */}

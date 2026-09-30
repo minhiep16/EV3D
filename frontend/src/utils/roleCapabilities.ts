@@ -24,6 +24,12 @@ export interface FeatureCapabilities {
   canManageMaintenance: boolean;
   canViewMaintenance: boolean;
 
+  // Phase 16: Vehicle Battery Health & High-Voltage X-Ray Capabilities
+  canViewBatteryHealth: boolean;
+
+  // Phase 17: 3D EV Charging Management Capabilities
+  canManageCharging: boolean;
+
   // ADMIN Monitoring & Governance Capabilities (Section 22)
   canMonitorFleet: boolean;
   canMonitorHandover: boolean;
@@ -50,6 +56,9 @@ export const FEATURE_CAPABILITIES: Record<UserRole, FeatureCapabilities> = {
     canManageMaintenance: false,
     canViewMaintenance: true,
 
+    canViewBatteryHealth: true,
+    canManageCharging: true,
+
     canMonitorFleet: false,
     canMonitorHandover: false,
     canAccessAdministration: false,
@@ -73,6 +82,9 @@ export const FEATURE_CAPABILITIES: Record<UserRole, FeatureCapabilities> = {
     canManageMaintenance: true,
     canViewMaintenance: true,
 
+    canViewBatteryHealth: true,
+    canManageCharging: true,
+
     canMonitorFleet: false,
     canMonitorHandover: false,
     canAccessAdministration: false,
@@ -95,6 +107,9 @@ export const FEATURE_CAPABILITIES: Record<UserRole, FeatureCapabilities> = {
     canCreateMaintenance: true,
     canManageMaintenance: true,
     canViewMaintenance: true,
+
+    canViewBatteryHealth: true,
+    canManageCharging: true,
 
     canMonitorFleet: true,
     canMonitorHandover: true,

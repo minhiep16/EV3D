@@ -51,6 +51,8 @@ export const GarageCamera: React.FC = () => {
   const vehicleDamageMappingMode = useWorldStore((state) => state.vehicleDamageMappingMode);
   const vehicleDamageHistoryMode = useWorldStore((state) => state.vehicleDamageHistoryMode);
   const vehicleMaintenanceMode = useWorldStore((state) => state.vehicleMaintenanceMode);
+  const vehicleBatteryXrayMode = useWorldStore((state) => state.vehicleBatteryXrayMode);
+  const vehicleChargingMode = useWorldStore((state) => state.vehicleChargingMode);
   const vehicleInspectionMode = useWorldStore((state) => state.vehicleInspectionMode);
   const draftDamage = useWorldStore((state) => state.draftDamage);
   const selectedDamageId = useWorldStore((state) => state.selectedDamageId);
@@ -153,6 +155,9 @@ export const GarageCamera: React.FC = () => {
       vehicleTripVisualizationMode ||
       vehicleDamageMappingMode ||
       vehicleDamageHistoryMode ||
+      vehicleMaintenanceMode ||
+      vehicleBatteryXrayMode ||
+      vehicleChargingMode ||
       vehicleInspectionMode;
 
     let preset: VehicleCameraPreset;
@@ -192,6 +197,8 @@ export const GarageCamera: React.FC = () => {
         vehicleDamageMappingMode,
         vehicleDamageHistoryMode,
         vehicleMaintenanceMode,
+        vehicleBatteryXrayMode,
+        vehicleChargingMode,
         vehicleInspectionMode,
       });
 

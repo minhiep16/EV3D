@@ -29,6 +29,7 @@ interface VehicleModelMeshProps {
   isSelected: boolean;
   isHovered: boolean;
   isDeEmphasized?: boolean;
+  isBatteryXray?: boolean;
   modelUrl: string;
   onSelectVehicle?: () => void;
   onPointerDown?: (e: ThreeEvent<PointerEvent>) => void;
@@ -42,6 +43,7 @@ const VehicleModelMesh: React.FC<VehicleModelMeshProps> = ({
   isSelected,
   isHovered,
   isDeEmphasized,
+  isBatteryXray,
   modelUrl,
   onSelectVehicle,
   onPointerDown,
@@ -83,6 +85,35 @@ const VehicleModelMesh: React.FC<VehicleModelMeshProps> = ({
         const mesh = child as THREE.Mesh;
         const originalMat = originalMaterialsMap.get(mesh);
         if (!originalMat) return;
+
+        // Phase 16: 3D X-Ray Battery Health inspection mode
+        if (isBatteryXray) {
+          const isWheelOrTire =
+            mesh.name.toLowerCase().includes('tire') ||
+            mesh.name.toLowerCase().includes('wheel') ||
+            mesh.name.toLowerCase().includes('rim') ||
+            (originalMat as any).name === 'Material.011' ||
+            (originalMat as any).name === 'MA_tire_003.001';
+
+          const mat = (originalMat as THREE.Material).clone();
+          if ('transparent' in mat) {
+            (mat as any).transparent = true;
+            (mat as any).depthWrite = false;
+            if (isWheelOrTire) {
+              // Preserve wheels and structural chassis silhouette for clear vehicle spatial context
+              (mat as any).opacity = 0.42;
+            } else {
+              // Exterior vehicle body shell & glass: semi-transparent ghost shell
+              (mat as any).opacity = 0.22;
+              if ('color' in mat && 'emissive' in mat) {
+                (mat as any).emissive = new THREE.Color('#00f2fe');
+                (mat as any).emissiveIntensity = 0.05;
+              }
+            }
+          }
+          mesh.material = mat;
+          return;
+        }
 
         if (isDeEmphasized) {
           const mat = (originalMat as THREE.Material).clone();
@@ -211,7 +242,7 @@ const VehicleModelMesh: React.FC<VehicleModelMeshProps> = ({
         }
       }
     });
-  }, [clonedScene, originalMaterialsMap, isLegacyModel, isSelected, isHovered, isDeEmphasized]);
+  }, [clonedScene, originalMaterialsMap, isLegacyModel, isSelected, isHovered, isDeEmphasized, isBatteryXray]);
 
   const user = useAuthStore((state) => state.user);
   const vehicleDamageMappingMode = useWorldStore((state) => state.vehicleDamageMappingMode);
@@ -355,6 +386,7 @@ interface VehicleModelProps {
   isSelected: boolean;
   isHovered: boolean;
   isDeEmphasized?: boolean;
+  isBatteryXray?: boolean;
   modelUrl?: string;
   onSelectVehicle?: () => void;
   onPointerDown?: (e: ThreeEvent<PointerEvent>) => void;
@@ -371,6 +403,7 @@ export const VehicleModel: React.FC<VehicleModelProps> = ({
   isSelected,
   isHovered,
   isDeEmphasized,
+  isBatteryXray,
   modelUrl = EV01_REALISTIC_MODEL_URL,
   onSelectVehicle,
   onPointerDown,
@@ -416,6 +449,7 @@ export const VehicleModel: React.FC<VehicleModelProps> = ({
           isSelected={isSelected}
           isHovered={isHovered}
           isDeEmphasized={isDeEmphasized}
+          isBatteryXray={isBatteryXray}
           modelUrl={activeModelUrl}
           onSelectVehicle={onSelectVehicle}
           onPointerDown={onPointerDown}

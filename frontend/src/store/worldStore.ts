@@ -31,7 +31,9 @@ export type VehicleFeatureMode =
   | 'TRIP_VISUALIZATION'
   | 'DAMAGE_MAPPING'
   | 'DAMAGE_HISTORY'
-  | 'VEHICLE_MAINTENANCE';
+  | 'VEHICLE_MAINTENANCE'
+  | 'BATTERY_XRAY'
+  | 'CHARGING';
 
 export type VehicleStatus =
   | 'AVAILABLE'
@@ -274,6 +276,18 @@ interface WorldState {
   exitVehicleMaintenanceMode: () => void;
   selectMaintenanceRecord: (id: string | null) => void;
 
+  // Phase 16: Pure 3D X-Ray Battery Health & High-Voltage System Mode
+  vehicleBatteryXrayMode: boolean;
+  enterBatteryXrayMode: (vehicleId?: string | null) => void;
+  exitBatteryXrayMode: () => void;
+
+  // Phase 17: 3D EV Charging Management Mode
+  vehicleChargingMode: boolean;
+  selectedChargingStationId: string | null;
+  enterChargingMode: (vehicleId?: string | null, stationId?: string | null) => void;
+  exitChargingMode: () => void;
+  setSelectedChargingStation: (stationId: string | null) => void;
+
   resetExperienceState: () => void;
 
   // Explicit Vehicle Feature Mode (Single source of truth)
@@ -302,6 +316,10 @@ export const useWorldStore = create<WorldState>((set) => ({
   vehicleMode: 'NONE',
   activeExperience: null,
   isVehicleSelected: false,
+
+  vehicleBatteryXrayMode: false,
+  vehicleChargingMode: false,
+  selectedChargingStationId: null,
 
   vehicleInspectionMode: false,
   hoveredVehiclePartId: null,
@@ -524,12 +542,20 @@ export const useWorldStore = create<WorldState>((set) => ({
       selectedVehiclePartCode: null,
       selectedDamageId: null,
       draftDamage: null,
+      vehicleBatteryXrayMode: false,
+      vehicleChargingMode: false,
+      selectedChargingStationId: null,
       inspectionError: null,
       vehicleYaw: -0.32,
     }),
 
   clearActiveSpatialSelection: () =>
     set((state) => {
+      // 0a-00000. In Charging mode: preserve charging view
+      if (state.vehicleChargingMode) {
+        return {};
+      }
+
       // 0a-0000. In Vehicle Maintenance mode: neutral click deselects selected damage record or maintenance record while keeping maintenance view open
       if (state.vehicleMaintenanceMode) {
         if (state.selectedDamageId || state.selectedMaintenanceId) {
@@ -557,6 +583,11 @@ export const useWorldStore = create<WorldState>((set) => ({
 
       // 0a-00. In Damage Mapping mode: preserve view and selection (camera movement or neutral click must not deselect)
       if (state.vehicleDamageMappingMode) {
+        return {};
+      }
+
+      // 0a-00000. In Charging mode: preserve charging view
+      if (state.vehicleChargingMode) {
         return {};
       }
 
@@ -649,6 +680,9 @@ export const useWorldStore = create<WorldState>((set) => ({
         maintenanceDraftPreselectedDamageId: null,
         maintenanceDraftPreselectedPartCode: null,
         selectedDamageId: null,
+        vehicleBatteryXrayMode: false,
+        vehicleChargingMode: false,
+        selectedChargingStationId: null,
       };
     }),
 
@@ -1193,6 +1227,156 @@ export const useWorldStore = create<WorldState>((set) => ({
       selectedMaintenanceId: id,
     }),
 
+  enterBatteryXrayMode: (vehicleId) =>
+    set((state) => {
+      let role: string | undefined;
+      try {
+        role = useAuthStore.getState().user?.role;
+      } catch {
+        role = 'CO_OWNER';
+      }
+      if (!hasCapability(role, 'canViewBatteryHealth')) return {};
+
+      const targetVehicleId = vehicleId || state.selectedVehicleId || 'EV01';
+      return {
+        vehicleBatteryXrayMode: true,
+        vehicleFeatureMode: 'BATTERY_XRAY',
+        vehicleMode: 'BATTERY_XRAY',
+        isVehicleSelected: true,
+        selectedVehicleId: targetVehicleId,
+        selectedZone: 'VEHICLE',
+        selectedVehiclePartId: 'BATTERY',
+        selectedVehiclePartCode: 'BATTERY',
+        hoveredVehiclePartId: null,
+        vehicleBookingMode: false,
+        bookingStartHour: null,
+        bookingEndHour: null,
+        vehicleCoOwnershipMode: false,
+        vehicleInspectionMode: false,
+        vehicleHandoverMode: false,
+        vehicleReceiptReviewMode: false,
+        vehicleTripStartMode: false,
+        vehicleTripVisualizationMode: false,
+        selectedTripRouteNode: null,
+        vehicleDamageMappingMode: false,
+        vehicleDamageHistoryMode: false,
+        vehicleMaintenanceMode: false,
+        selectedMaintenanceId: null,
+        maintenanceDraftPreselectedDamageId: null,
+        maintenanceDraftPreselectedPartCode: null,
+        selectedDamageId: null,
+        draftDamage: null,
+        inspectionError: null,
+        selectedOwnerId: null,
+        hoveredOwnerId: null,
+        selectedHandoverCheckpoint: null,
+        hoveredHandoverCheckpoint: null,
+      };
+    }),
+
+  exitBatteryXrayMode: () =>
+    set((state) => {
+      let role: string | undefined;
+      try {
+        role = useAuthStore.getState().user?.role;
+      } catch {
+        role = 'CO_OWNER';
+      }
+      const targetMode: VehicleFeatureMode =
+        role === 'STAFF'
+          ? 'STAFF_VEHICLE_OVERVIEW'
+          : role === 'ADMIN'
+          ? 'ADMIN_VEHICLE_OVERVIEW'
+          : 'CO_OWNER_VEHICLE_OVERVIEW';
+      return {
+        vehicleBatteryXrayMode: false,
+        vehicleFeatureMode: targetMode,
+        vehicleMode: targetMode,
+        selectedVehiclePartId: null,
+        selectedVehiclePartCode: null,
+        hoveredVehiclePartId: null,
+      };
+    }),
+
+  enterChargingMode: (vehicleId, stationId) =>
+    set((state) => {
+      let role: string | undefined;
+      try {
+        role = useAuthStore.getState().user?.role;
+      } catch {
+        role = 'CO_OWNER';
+      }
+      if (!hasCapability(role, 'canManageCharging')) return {};
+
+      const targetVehicleId = vehicleId || state.selectedVehicleId || 'EV01';
+      return {
+        vehicleChargingMode: true,
+        selectedChargingStationId: stationId || state.selectedChargingStationId || 'CS01',
+        vehicleFeatureMode: 'CHARGING',
+        vehicleMode: 'CHARGING',
+        isVehicleSelected: true,
+        selectedVehicleId: targetVehicleId,
+        selectedZone: 'VEHICLE',
+        selectedVehiclePartId: 'CHARGING_PORT',
+        selectedVehiclePartCode: 'CHARGING_PORT',
+        hoveredVehiclePartId: null,
+        vehicleBatteryXrayMode: false,
+        vehicleBookingMode: false,
+        bookingStartHour: null,
+        bookingEndHour: null,
+        vehicleCoOwnershipMode: false,
+        vehicleInspectionMode: false,
+        vehicleHandoverMode: false,
+        vehicleReceiptReviewMode: false,
+        vehicleTripStartMode: false,
+        vehicleTripVisualizationMode: false,
+        selectedTripRouteNode: null,
+        vehicleDamageMappingMode: false,
+        vehicleDamageHistoryMode: false,
+        vehicleMaintenanceMode: false,
+        selectedMaintenanceId: null,
+        maintenanceDraftPreselectedDamageId: null,
+        maintenanceDraftPreselectedPartCode: null,
+        selectedDamageId: null,
+        draftDamage: null,
+        inspectionError: null,
+        selectedOwnerId: null,
+        hoveredOwnerId: null,
+        selectedHandoverCheckpoint: null,
+        hoveredHandoverCheckpoint: null,
+      };
+    }),
+
+  exitChargingMode: () =>
+    set((state) => {
+      let role: string | undefined;
+      try {
+        role = useAuthStore.getState().user?.role;
+      } catch {
+        role = 'CO_OWNER';
+      }
+      const targetMode: VehicleFeatureMode =
+        role === 'STAFF'
+          ? 'STAFF_VEHICLE_OVERVIEW'
+          : role === 'ADMIN'
+          ? 'ADMIN_VEHICLE_OVERVIEW'
+          : 'CO_OWNER_VEHICLE_OVERVIEW';
+      return {
+        vehicleChargingMode: false,
+        selectedChargingStationId: null,
+        vehicleFeatureMode: targetMode,
+        vehicleMode: targetMode,
+        selectedVehiclePartId: null,
+        selectedVehiclePartCode: null,
+        hoveredVehiclePartId: null,
+      };
+    }),
+
+  setSelectedChargingStation: (stationId) =>
+    set({
+      selectedChargingStationId: stationId,
+    }),
+
   selectVehiclePartCode: (code) =>
     set({
       selectedVehiclePartCode: code,
@@ -1266,6 +1450,9 @@ export const useWorldStore = create<WorldState>((set) => ({
       vehicleMode: 'NONE',
       activeExperience: null,
       isVehicleSelected: false,
+      vehicleBatteryXrayMode: false,
+      vehicleChargingMode: false,
+      selectedChargingStationId: null,
       vehicleInspectionMode: false,
       hoveredVehiclePartId: null,
       selectedVehiclePartId: null,
@@ -1312,9 +1499,13 @@ export const useWorldStore = create<WorldState>((set) => ({
       if (mode === 'DAMAGE_MAPPING' && !hasCapability(role, 'canViewDamage') && !hasCapability(role, 'canRecordDamage')) return {};
       if (mode === 'DAMAGE_HISTORY' && !hasCapability(role, 'canViewDamage')) return {};
       if (mode === 'VEHICLE_MAINTENANCE' && !hasCapability(role, 'canViewMaintenance')) return {};
+      if (mode === 'BATTERY_XRAY' && !hasCapability(role, 'canViewBatteryHealth')) return {};
+      if (mode === 'CHARGING' && !hasCapability(role, 'canManageCharging')) return {};
 
       const isReceiptMode = mode === 'RECEIPT' || mode === 'CO_OWNER_RECEIPT_REVIEW';
       const isBooking = mode === 'BOOKING';
+      const isBatteryXray = mode === 'BATTERY_XRAY';
+      const isCharging = mode === 'CHARGING';
       const today = new Date();
       if (today.getHours() >= 20) {
         today.setDate(today.getDate() + 1);
@@ -1322,10 +1513,13 @@ export const useWorldStore = create<WorldState>((set) => ({
       return {
         vehicleFeatureMode: mode,
         vehicleMode: mode,
+        vehicleBatteryXrayMode: isBatteryXray,
+        vehicleChargingMode: isCharging,
+        selectedChargingStationId: isCharging ? (state.selectedChargingStationId || 'CS01') : null,
         vehicleBookingMode: isBooking,
-        isVehicleSelected: isBooking ? true : state.isVehicleSelected,
-        selectedZone: isBooking ? 'VEHICLE' : state.selectedZone,
-        selectedVehicleId: isBooking ? (state.selectedVehicleId || 'EV01') : state.selectedVehicleId,
+        isVehicleSelected: (isBooking || isBatteryXray || isCharging) ? true : state.isVehicleSelected,
+        selectedZone: (isBooking || isBatteryXray || isCharging) ? 'VEHICLE' : state.selectedZone,
+        selectedVehicleId: (isBooking || isBatteryXray || isCharging) ? (state.selectedVehicleId || 'EV01') : state.selectedVehicleId,
         bookingSelectedDate: isBooking ? (state.bookingSelectedDate || today) : state.bookingSelectedDate,
         bookingStartHour: isBooking ? null : state.bookingStartHour,
         bookingEndHour: isBooking ? null : state.bookingEndHour,
@@ -1345,8 +1539,8 @@ export const useWorldStore = create<WorldState>((set) => ({
         damageHistorySeverityFilter: mode === 'DAMAGE_HISTORY' ? state.damageHistorySeverityFilter : 'ALL',
         damageHistoryPartFilter: mode === 'DAMAGE_HISTORY' ? state.damageHistoryPartFilter : 'ALL',
         selectedDamageId: (mode === 'DAMAGE_MAPPING' || mode === 'DAMAGE_HISTORY' || mode === 'VEHICLE_MAINTENANCE') ? state.selectedDamageId : null,
-        selectedVehiclePartId: (mode === 'DAMAGE_MAPPING' || mode === 'DAMAGE_HISTORY' || mode === 'VEHICLE_MAINTENANCE') ? state.selectedVehiclePartId : null,
-        selectedVehiclePartCode: (mode === 'DAMAGE_MAPPING' || mode === 'DAMAGE_HISTORY' || mode === 'VEHICLE_MAINTENANCE') ? state.selectedVehiclePartCode : null,
+        selectedVehiclePartId: isCharging ? 'CHARGING_PORT' : (isBatteryXray ? 'BATTERY' : ((mode === 'DAMAGE_MAPPING' || mode === 'DAMAGE_HISTORY' || mode === 'VEHICLE_MAINTENANCE') ? state.selectedVehiclePartId : null)),
+        selectedVehiclePartCode: isCharging ? 'CHARGING_PORT' : (isBatteryXray ? 'BATTERY' : ((mode === 'DAMAGE_MAPPING' || mode === 'DAMAGE_HISTORY' || mode === 'VEHICLE_MAINTENANCE') ? state.selectedVehiclePartCode : null)),
         hoveredVehiclePartId: null,
         draftDamage: mode === 'DAMAGE_MAPPING' ? state.draftDamage : null,
       };
@@ -1370,9 +1564,13 @@ export const useWorldStore = create<WorldState>((set) => ({
       if (mode === 'DAMAGE_MAPPING' && !hasCapability(role, 'canViewDamage') && !hasCapability(role, 'canRecordDamage')) return {};
       if (mode === 'DAMAGE_HISTORY' && !hasCapability(role, 'canViewDamage')) return {};
       if (mode === 'VEHICLE_MAINTENANCE' && !hasCapability(role, 'canViewMaintenance')) return {};
+      if (mode === 'BATTERY_XRAY' && !hasCapability(role, 'canViewBatteryHealth')) return {};
+      if (mode === 'CHARGING' && !hasCapability(role, 'canManageCharging')) return {};
 
       const isReceiptMode = mode === 'RECEIPT' || mode === 'CO_OWNER_RECEIPT_REVIEW';
       const isBooking = mode === 'BOOKING';
+      const isBatteryXray = mode === 'BATTERY_XRAY';
+      const isCharging = mode === 'CHARGING';
       const today = new Date();
       if (today.getHours() >= 20) {
         today.setDate(today.getDate() + 1);
@@ -1380,10 +1578,13 @@ export const useWorldStore = create<WorldState>((set) => ({
       return {
         vehicleFeatureMode: mode,
         vehicleMode: mode,
+        vehicleBatteryXrayMode: isBatteryXray,
+        vehicleChargingMode: isCharging,
+        selectedChargingStationId: isCharging ? (state.selectedChargingStationId || 'CS01') : null,
         vehicleBookingMode: isBooking,
-        isVehicleSelected: isBooking ? true : state.isVehicleSelected,
-        selectedZone: isBooking ? 'VEHICLE' : state.selectedZone,
-        selectedVehicleId: isBooking ? (state.selectedVehicleId || 'EV01') : state.selectedVehicleId,
+        isVehicleSelected: (isBooking || isBatteryXray || isCharging) ? true : state.isVehicleSelected,
+        selectedZone: (isBooking || isBatteryXray || isCharging) ? 'VEHICLE' : state.selectedZone,
+        selectedVehicleId: (isBooking || isBatteryXray || isCharging) ? (state.selectedVehicleId || 'EV01') : state.selectedVehicleId,
         bookingSelectedDate: isBooking ? (state.bookingSelectedDate || today) : state.bookingSelectedDate,
         bookingStartHour: isBooking ? null : state.bookingStartHour,
         bookingEndHour: isBooking ? null : state.bookingEndHour,
@@ -1403,8 +1604,8 @@ export const useWorldStore = create<WorldState>((set) => ({
         damageHistorySeverityFilter: mode === 'DAMAGE_HISTORY' ? state.damageHistorySeverityFilter : 'ALL',
         damageHistoryPartFilter: mode === 'DAMAGE_HISTORY' ? state.damageHistoryPartFilter : 'ALL',
         selectedDamageId: (mode === 'DAMAGE_MAPPING' || mode === 'DAMAGE_HISTORY' || mode === 'VEHICLE_MAINTENANCE') ? state.selectedDamageId : null,
-        selectedVehiclePartId: (mode === 'DAMAGE_MAPPING' || mode === 'DAMAGE_HISTORY' || mode === 'VEHICLE_MAINTENANCE') ? state.selectedVehiclePartId : null,
-        selectedVehiclePartCode: (mode === 'DAMAGE_MAPPING' || mode === 'DAMAGE_HISTORY' || mode === 'VEHICLE_MAINTENANCE') ? state.selectedVehiclePartCode : null,
+        selectedVehiclePartId: isCharging ? 'CHARGING_PORT' : (isBatteryXray ? 'BATTERY' : ((mode === 'DAMAGE_MAPPING' || mode === 'DAMAGE_HISTORY' || mode === 'VEHICLE_MAINTENANCE') ? state.selectedVehiclePartId : null)),
+        selectedVehiclePartCode: isCharging ? 'CHARGING_PORT' : (isBatteryXray ? 'BATTERY' : ((mode === 'DAMAGE_MAPPING' || mode === 'DAMAGE_HISTORY' || mode === 'VEHICLE_MAINTENANCE') ? state.selectedVehiclePartCode : null)),
         hoveredVehiclePartId: null,
         draftDamage: mode === 'DAMAGE_MAPPING' ? state.draftDamage : null,
       };
@@ -1439,6 +1640,9 @@ export const useWorldStore = create<WorldState>((set) => ({
         vehicleMode: targetMode,
         activeExperience: activeExp,
         isVehicleSelected: true,
+        vehicleBatteryXrayMode: false,
+        vehicleChargingMode: false,
+        selectedChargingStationId: null,
         vehicleBookingMode: false,
         bookingStartHour: null,
         bookingEndHour: null,
@@ -1482,6 +1686,9 @@ export const useWorldStore = create<WorldState>((set) => ({
       vehicleMode: 'NONE',
       activeExperience: null,
       isVehicleSelected: false,
+      vehicleBatteryXrayMode: false,
+      vehicleChargingMode: false,
+      selectedChargingStationId: null,
       vehicleInspectionMode: false,
       selectedVehiclePartId: null,
       hoveredVehiclePartId: null,

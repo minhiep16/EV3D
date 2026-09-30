@@ -89,6 +89,8 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
   const enterVehicleDamageHistoryMode = useWorldStore((state) => state.enterVehicleDamageHistoryMode);
   const enterVehicleMaintenanceMode = useWorldStore((state) => state.enterVehicleMaintenanceMode);
   const enterVehicleInspectionMode = useWorldStore((state) => state.enterVehicleInspectionMode);
+  const enterBatteryXrayMode = useWorldStore((state) => state.enterBatteryXrayMode);
+  const enterChargingMode = useWorldStore((state) => state.enterChargingMode);
   const exitVehicleInspectionMode = useWorldStore((state) => state.exitVehicleInspectionMode);
   const clearVehiclePartSelection = useWorldStore((state) => state.clearVehiclePartSelection);
   const selectVehiclePart = useWorldStore((state) => state.selectVehiclePart);
@@ -1059,6 +1061,80 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
                 }}
               />
             </div>
+
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginTop: '8px',
+                paddingTop: '6px',
+                borderTop: '1px solid rgba(255, 255, 255, 0.06)',
+              }}
+            >
+              <span style={{ fontSize: '10px', color: '#94a3b8' }}>Hệ thống sạc & pin:</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => enterChargingMode(vehicle?.id)}
+                  style={{
+                    background: 'rgba(16, 185, 129, 0.15)',
+                    border: '1px solid rgba(16, 185, 129, 0.45)',
+                    color: '#34d399',
+                    borderRadius: '6px',
+                    padding: '3px 8px',
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#10b981';
+                    e.currentTarget.style.background = 'rgba(16, 185, 129, 0.25)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.45)';
+                    e.currentTarget.style.background = 'rgba(16, 185, 129, 0.15)';
+                  }}
+                >
+                  <BatteryCharging size={11} color="#10b981" />
+                  <span>SẠC XE</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => enterBatteryXrayMode(vehicle?.id)}
+                  style={{
+                    background: 'rgba(6, 182, 212, 0.15)',
+                    border: '1px solid rgba(6, 182, 212, 0.4)',
+                    color: '#38bdf8',
+                    borderRadius: '6px',
+                    padding: '3px 8px',
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#00f2fe';
+                    e.currentTarget.style.background = 'rgba(0, 242, 254, 0.25)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = 'rgba(6, 182, 212, 0.4)';
+                    e.currentTarget.style.background = 'rgba(6, 182, 212, 0.15)';
+                  }}
+                >
+                  <Zap size={11} color="#00f2fe" />
+                  <span>X-RAY PIN</span>
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Telemetry Specs Rows */}
@@ -1376,7 +1452,75 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
             <ChevronRight size={16} style={{ marginLeft: 'auto' }} />
           </button>
 
-          {/* Secondary Actions Row */}
+          {/* Secondary Actions Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+            <button
+              type="button"
+              onClick={() => enterChargingMode(vehicle?.id)}
+              style={{
+                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.22) 0%, rgba(5, 150, 105, 0.15) 100%)',
+                border: '1px solid rgba(16, 185, 129, 0.5)',
+                color: '#34d399',
+                borderRadius: '10px',
+                padding: '9px 10px',
+                fontSize: '11px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                transition: 'all 0.18s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = '#10b981';
+                e.currentTarget.style.background = 'rgba(16, 185, 129, 0.28)';
+                e.currentTarget.style.color = '#fff';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.5)';
+                e.currentTarget.style.background = 'linear-gradient(135deg, rgba(16, 185, 129, 0.22) 0%, rgba(5, 150, 105, 0.15) 100%)';
+                e.currentTarget.style.color = '#34d399';
+              }}
+            >
+              <BatteryCharging size={13} color="#10b981" />
+              <span>SẠC XE</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => enterBatteryXrayMode(vehicle?.id)}
+              style={{
+                background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.22) 0%, rgba(14, 165, 233, 0.15) 100%)',
+                border: '1px solid rgba(6, 182, 212, 0.5)',
+                color: '#38bdf8',
+                borderRadius: '10px',
+                padding: '9px 10px',
+                fontSize: '11px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                transition: 'all 0.18s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = '#00f2fe';
+                e.currentTarget.style.background = 'rgba(0, 242, 254, 0.25)';
+                e.currentTarget.style.color = '#fff';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = 'rgba(6, 182, 212, 0.5)';
+                e.currentTarget.style.background = 'linear-gradient(135deg, rgba(6, 182, 212, 0.22) 0%, rgba(14, 165, 233, 0.15) 100%)';
+                e.currentTarget.style.color = '#38bdf8';
+              }}
+            >
+              <Zap size={13} color="#00f2fe" />
+              <span>X-RAY PIN</span>
+            </button>
+          </div>
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
             <button
               type="button"

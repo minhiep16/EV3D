@@ -27,6 +27,10 @@ import { TripStartWorld } from '../trip/TripStartWorld';
 import { TripVisualizationWorld } from '../trip/TripVisualizationWorld';
 import { VehicleDamageWorld } from '../damage/VehicleDamageWorld';
 import { VehicleDamageHistoryWorld } from '../damage/VehicleDamageHistoryWorld';
+import { BatteryPack3D } from '../battery/BatteryPack3D';
+import { ChargingPortVisual3D } from '../charging/ChargingPortVisual3D';
+import { fetchVehicleBatteryHealth } from '../../../services/batteryApi';
+import { BatteryHealthResponse } from '../../../types/battery';
 import { getPartById } from '../../../data/vehicleParts';
 import { CoOwnerVehiclePanel } from './CoOwnerVehiclePanel';
 import { StaffOperationsPanel } from './StaffOperationsPanel';
@@ -201,8 +205,16 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
   const effectivePosition: [number, number, number] = propPosition || vehicleSlot.position;
 
   const vehicleMode = useWorldStore((state) => state.vehicleMode);
+  const vehicleBatteryXrayMode = useWorldStore((state) => state.vehicleBatteryXrayMode);
   const vehicleYaw = useWorldStore((state) => state.vehicleYaw);
   const setVehicleYaw = useWorldStore((state) => state.setVehicleYaw);
+
+  // Authoritative TanStack Query for technical battery health in X-Ray mode
+  const { data: batteryHealth } = useQuery<BatteryHealthResponse | null>({
+    queryKey: ['vehicleBatteryHealth', vehicle?.id],
+    queryFn: () => (vehicle?.id ? fetchVehicleBatteryHealth(vehicle.id) : Promise.resolve(null)),
+    enabled: Boolean(vehicle?.id && isSelected && vehicleBatteryXrayMode),
+  });
 
   const defaultYaw = isCoOwner
     ? VEHICLE_INTERACTION_CONFIG.defaultCoOwnerYaw
@@ -359,11 +371,28 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
             isSelected={isSelected}
             isHovered={isHovered}
             isDeEmphasized={isDeEmphasized}
+            isBatteryXray={isSelected && vehicleBatteryXrayMode}
             modelUrl={getVehicleModelUrl(vehicle.model3dUrl, vehicle)}
             onSelectVehicle={() => onSelect(vehicle)}
             onPointerDown={handleTurntablePointerDown}
           />
         </Suspense>
+
+        {/* Phase 16: Dedicated 3D X-Ray Battery Pack & High-Voltage System */}
+        {isSelected && vehicleBatteryXrayMode && (
+          <BatteryPack3D
+            vehicleCode={vehicleCode}
+            batteryHealth={batteryHealth}
+            selected={selectedVehiclePartId === 'BATTERY'}
+            xrayEnabled={vehicleBatteryXrayMode}
+          />
+        )}
+
+        {/* Phase 17: Charging Port Socket & Status LED Ring */}
+        <ChargingPortVisual3D
+          vehicleCode={vehicleCode}
+          isCharging={vehicle.status === 'CHARGING'}
+        />
 
         {/* Semantic Interaction Hitboxes (rotates with car) - Active ONLY during explore/inspection, damage mapping, or handover */}
         {(vehicleInspectionMode || vehicleDamageMappingMode || vehicleHandoverMode || vehicleReceiptReviewMode) && (
@@ -564,6 +593,8 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
   const vehicleDamageMappingMode = useWorldStore((state) => state.vehicleDamageMappingMode);
   const vehicleDamageHistoryMode = useWorldStore((state) => state.vehicleDamageHistoryMode);
   const vehicleMaintenanceMode = useWorldStore((state) => state.vehicleMaintenanceMode);
+  const vehicleBatteryXrayMode = useWorldStore((state) => state.vehicleBatteryXrayMode);
+  const vehicleChargingMode = useWorldStore((state) => state.vehicleChargingMode);
   const selectedVehiclePartId = useWorldStore((state) => state.selectedVehiclePartId);
   const selectVehicle = useWorldStore((state) => state.selectVehicle);
   const hoverVehicle = useWorldStore((state) => state.hoverVehicle);
@@ -656,7 +687,9 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
     vehicleTripVisualizationMode ||
     vehicleDamageMappingMode ||
     vehicleDamageHistoryMode ||
-    vehicleMaintenanceMode;
+    vehicleMaintenanceMode ||
+    vehicleBatteryXrayMode ||
+    vehicleChargingMode;
 
   const handleVehicleSelect = (selectedVehicle: VehicleResponse) => {
     selectVehicle(selectedVehicle.id, role);

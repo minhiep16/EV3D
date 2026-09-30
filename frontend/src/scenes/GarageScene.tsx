@@ -27,6 +27,8 @@ import { DamageHistoryPanel } from '../components/three/damage/DamageHistoryPane
 import { CoOwnerBookingPanel } from '../components/three/booking/CoOwnerBookingPanel';
 import { StaffMaintenancePanel } from '../components/three/maintenance/StaffMaintenancePanel';
 import { CoOwnerMaintenancePanel } from '../components/three/maintenance/CoOwnerMaintenancePanel';
+import { BatteryHealthPanel } from '../components/three/battery/BatteryHealthPanel';
+import { ChargingPanel } from '../components/three/charging/ChargingPanel';
 
 export const GarageScene: React.FC = () => {
   const navigate = useNavigate();
@@ -59,6 +61,8 @@ export const GarageScene: React.FC = () => {
   const vehicleDamageHistoryMode = useWorldStore((state) => state.vehicleDamageHistoryMode);
   const vehicleMaintenanceMode = useWorldStore((state) => state.vehicleMaintenanceMode);
   const vehicleInspectionMode = useWorldStore((state) => state.vehicleInspectionMode);
+  const vehicleBatteryXrayMode = useWorldStore((state) => state.vehicleBatteryXrayMode);
+  const vehicleChargingMode = useWorldStore((state) => state.vehicleChargingMode);
   const selectedVehiclePartId = useWorldStore((state) => state.selectedVehiclePartId);
   const selectedVehiclePartCode = useWorldStore((state) => state.selectedVehiclePartCode);
   const clearVehiclePartSelection = useWorldStore((state) => state.clearVehiclePartSelection);
@@ -177,6 +181,8 @@ export const GarageScene: React.FC = () => {
     vehicleDamageHistoryMode ||
     vehicleMaintenanceMode ||
     vehicleInspectionMode ||
+    vehicleBatteryXrayMode ||
+    vehicleChargingMode ||
     vehicleFeatureMode === 'CO_OWNER_VEHICLE_INFO' ||
     vehicleFeatureMode === 'CO_OWNER_MY_BOOKINGS';
 
@@ -498,7 +504,7 @@ export const GarageScene: React.FC = () => {
           )}
 
           {/* D. Right Selected Vehicle Operational Panel (Authoritative Screen-Space Shell) */}
-          {heroVehicle && !vehicleDamageHistoryMode && !vehicleMaintenanceMode && (
+          {heroVehicle && !vehicleDamageHistoryMode && !vehicleMaintenanceMode && !vehicleBatteryXrayMode && !vehicleChargingMode && (
             <StaffVehicleDetailPanel
               vehicle={heroVehicle}
               onClose={() => clearSelection()}
@@ -516,6 +522,22 @@ export const GarageScene: React.FC = () => {
           {/* Dedicated Phase 15 Screen-Space Maintenance Management Panel */}
           {heroVehicle && vehicleMaintenanceMode && (
             <StaffMaintenancePanel
+              vehicle={heroVehicle}
+              onClose={returnToVehicleOverview}
+            />
+          )}
+
+          {/* Dedicated Phase 16 Screen-Space Battery Health / X-Ray Panel */}
+          {heroVehicle && vehicleBatteryXrayMode && (
+            <BatteryHealthPanel
+              vehicle={heroVehicle}
+              onClose={returnToVehicleOverview}
+            />
+          )}
+
+          {/* Dedicated Phase 17 Screen-Space Charging Panel */}
+          {heroVehicle && vehicleChargingMode && (
+            <ChargingPanel
               vehicle={heroVehicle}
               onClose={returnToVehicleOverview}
             />
@@ -823,6 +845,22 @@ export const GarageScene: React.FC = () => {
           {/* Dedicated Screen-Space Fixed CO_OWNER Booking Detail Panel */}
           {vehicleBookingMode && (currentCoOwnerVehicle || vehicles[0]) && (
             <CoOwnerBookingPanel
+              vehicle={currentCoOwnerVehicle || vehicles[0]}
+              onClose={returnToVehicleOverview}
+            />
+          )}
+
+          {/* Dedicated Phase 16 Screen-Space Battery Health / X-Ray Panel for CO_OWNER */}
+          {vehicleBatteryXrayMode && (currentCoOwnerVehicle || vehicles[0]) && (
+            <BatteryHealthPanel
+              vehicle={currentCoOwnerVehicle || vehicles[0]}
+              onClose={returnToVehicleOverview}
+            />
+          )}
+
+          {/* Dedicated Phase 17 Screen-Space Charging Panel for CO_OWNER */}
+          {vehicleChargingMode && (currentCoOwnerVehicle || vehicles[0]) && (
+            <ChargingPanel
               vehicle={currentCoOwnerVehicle || vehicles[0]}
               onClose={returnToVehicleOverview}
             />

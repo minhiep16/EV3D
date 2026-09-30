@@ -14,6 +14,7 @@ import { useAuthStore } from '../../store/authStore';
 import { getAccessibleZones } from '../../utils/roleCapabilities';
 import { CoOwnerExperience } from './experiences/CoOwnerExperience';
 import { OperationsExperience } from './experiences/OperationsExperience';
+import { ChargingWorld } from './charging/ChargingWorld';
 import { GlobalInteractionManager } from './GlobalInteractionManager';
 import { handleNeutralSceneClick } from './globalInteractionState';
 
@@ -59,6 +60,9 @@ export const EVShareWorld: React.FC = () => {
               accessibleZones.map((zoneId) => (
                 <GarageZoneObject key={zoneId} zone={getZoneConfig(zoneId, user?.role)} />
               ))}
+
+            {/* Phase 17: 3D Charging Infrastructure & Dynamic Connection Cable */}
+            <ChargingWorld />
 
             {/* Role-Specific Experience: CO_OWNER vs OPERATIONS (STAFF + ADMIN) */}
             {isOperationsRole ? <OperationsExperience /> : <CoOwnerExperience />}
