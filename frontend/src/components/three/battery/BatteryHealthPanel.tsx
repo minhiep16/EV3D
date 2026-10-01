@@ -510,7 +510,7 @@ export const BatteryHealthPanel: React.FC<BatteryHealthPanelProps> = ({
                 <span>DUNG LƯỢNG TỔNG</span>
               </div>
               <div style={{ fontSize: '14px', fontWeight: 900, color: '#ffffff', marginTop: '2px' }}>
-                {batteryHealth.capacityKwh ?? vehicle.batteryCapacity ?? 75} kWh
+                {batteryHealth.capacityKwh ?? vehicle.grossBatteryCapacityKwh ?? vehicle.batteryCapacity ?? (vehicleCode === 'EV02' ? 65 : 69)} kWh
               </div>
             </div>
 
@@ -528,7 +528,7 @@ export const BatteryHealthPanel: React.FC<BatteryHealthPanelProps> = ({
                 <span>KHẢ DỤNG</span>
               </div>
               <div style={{ fontSize: '14px', fontWeight: 900, color: '#ffffff', marginTop: '2px' }}>
-                {batteryHealth.usableCapacityKwh ?? 70.5} kWh
+                {batteryHealth.usableCapacityKwh ?? vehicle.usableBatteryCapacityKwh ?? (vehicleCode === 'EV02' ? 60 : 65)} kWh
               </div>
             </div>
           </div>

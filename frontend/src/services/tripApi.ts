@@ -106,13 +106,14 @@ export async function fetchTripById(tripId: string): Promise<TripData | null> {
  * Exclusively called by authorized trip owner (CO_OWNER).
  * Idempotently and transactionally transitions Trip to COMPLETED and Vehicle to AVAILABLE.
  */
-export async function completeTripApi(tripId: string): Promise<TripData> {
+export async function completeTripApi(tripId: string, endOdometer?: number): Promise<TripData> {
   try {
     const res = await authenticatedFetch(`/api/trips/${tripId}/complete`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
+      body: endOdometer !== undefined ? JSON.stringify({ endOdometer }) : undefined,
     });
     return await safeParseResponse<TripData>(res);
   } catch (err: any) {

@@ -200,7 +200,8 @@ export const StaffOperationsPanel: React.FC<StaffOperationsPanelProps> = ({
   const eligibilityReason: HandoverEligibilityReason =
     eligibility?.reason ||
     (nextHandover?.eligibilityReason ?? (activeHandovers.length === 0 ? 'NO_BOOKING' : 'READY_FOR_PREPARATION'));
-  const eligibilityConfig = HANDOVER_ELIGIBILITY_CONFIG[eligibilityReason];
+  const eligibilityConfig =
+    HANDOVER_ELIGIBILITY_CONFIG[eligibilityReason] || HANDOVER_ELIGIBILITY_CONFIG.NO_BOOKING;
 
   // Resolve single source of recipient data for normal handover mode
   const recipientName =

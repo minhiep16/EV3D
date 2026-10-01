@@ -16,6 +16,7 @@ import {
   fetchActiveVehicleHandovers,
   fetchBookingHandover,
   fetchHandoverEligibility,
+  createHandoverApi,
   startHandoverApi,
   submitInspectionApi,
   markHandoverReadyApi,
@@ -158,35 +159,30 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
     refetchInterval: 3000,
   });
 
-  // Resolve current handover:
-  // If user selected a specific bookingId or bookingHandover is resolved, use it; otherwise resolve the most actionable non-expired candidate
+  // Resolve current handover strictly tied to the active/selected booking
   const handover = useMemo(() => {
-    if (bookingHandover) {
+    if (!targetBookingId || eligibility?.reason === 'NO_BOOKING') {
+      return null;
+    }
+    if (bookingHandover && bookingHandover.id) {
       return bookingHandover;
     }
-    if (selectedBookingId && activeHandovers.length > 0) {
-      const match = activeHandovers.find((h) => h.bookingId === selectedBookingId);
+    const bId = selectedBookingId || targetBookingId;
+    if (bId && activeHandovers && activeHandovers.length > 0) {
+      const match = activeHandovers.find((h) => h.bookingId === bId && Boolean(h.id));
       if (match) return match;
     }
-    if (activeHandovers && activeHandovers.length > 0) {
-      const nonExpired = activeHandovers.filter((h) => !isHandoverExpired(h));
-      const targetPool = nonExpired.length > 0 ? nonExpired : activeHandovers;
-
-      const handedOver = targetPool.find((h) => h.status === 'HANDED_OVER');
-      if (handedOver) return handedOver;
-      const ready = targetPool.find((h) => h.status === 'READY_FOR_HANDOVER');
-      if (ready) return ready;
-      const inProgress = targetPool.find((h) => h.status === 'INSPECTION_IN_PROGRESS');
-      if (inProgress) return inProgress;
-      const pending = targetPool.find((h) => h.status === 'PENDING_PREPARATION');
-      if (pending) return pending;
-      return targetPool[0];
-    }
-    if (eligibility?.handoverId && eligibility?.handover) {
+    if (eligibility?.handoverId && eligibility?.handover?.id && eligibility?.bookingId === bId) {
       return eligibility.handover;
     }
     return null;
-  }, [bookingHandover, activeHandovers, selectedBookingId, eligibility?.handoverId, eligibility?.handover]);
+  }, [bookingHandover, activeHandovers, selectedBookingId, targetBookingId, eligibility]);
+
+  // Authoritative Backend Eligibility Reason (source of truth)
+  const reason: HandoverEligibilityReason =
+    eligibility?.reason ||
+    (handover?.eligibilityReason ?? (activeHandovers.length === 0 ? 'NO_BOOKING' : 'READY_FOR_PREPARATION'));
+  const eligibilityReason = reason;
 
   // Selected checkpoint object
   const currentCheckpointObj = useMemo(() => {
@@ -199,11 +195,6 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
   const isStaff = userRole === 'STAFF';
   const isCoOwner = userRole === 'CO_OWNER';
   const isAdmin = userRole === 'ADMIN';
-
-  // Authoritative Backend Eligibility Reason (source of truth)
-  const reason: HandoverEligibilityReason =
-    eligibility?.reason ||
-    (handover?.eligibilityReason ?? (activeHandovers.length === 0 ? 'NO_BOOKING' : 'READY_FOR_PREPARATION'));
 
   // Local Countdown ticker for TOO_EARLY state
   const [countdownSeconds, setCountdownSeconds] = useState<number | null>(null);
@@ -292,10 +283,7 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
 
   // STAFF Action: Mark Ready
   const handleMarkReady = async () => {
-    if (!handover?.id) {
-      setErrorMessage('Chưa có hồ sơ bàn giao xe hợp lệ.');
-      return;
-    }
+    const bId = selectedBookingId || targetBookingId || handover?.bookingId || eligibility?.bookingId;
     if (isHandoverExpired(handover) || reason === 'BOOKING_EXPIRED') {
       setErrorMessage('Lịch đặt xe đã hết thời gian (EXPIRED), không thể xác nhận xe sẵn sàng.');
       return;
@@ -303,15 +291,34 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
     setIsSubmitting(true);
     setErrorMessage(null);
     try {
-      await markHandoverReadyApi(handover.id);
+      let currentHandoverId = handover?.id || bookingHandover?.id;
+      if (!currentHandoverId) {
+        if (!bId) {
+          setErrorMessage('Chưa có hồ sơ bàn giao xe hợp lệ.');
+          return;
+        }
+        const created = await createHandoverApi(bId);
+        if (!created || !created.id) {
+          throw new Error('Không thể khởi tạo hồ sơ bàn giao xe.');
+        }
+        currentHandoverId = created.id;
+        await queryClient.invalidateQueries({ queryKey: ['handoverByBooking', bId] });
+      }
+
+      await markHandoverReadyApi(currentHandoverId);
       await Promise.all([
         refetch(),
         refetchEligibility(),
-        queryClient.invalidateQueries({ queryKey: ['handoverByBooking', targetBookingId] }),
+        queryClient.invalidateQueries({ queryKey: ['handoverByBooking', bId] }),
+        queryClient.invalidateQueries({ queryKey: ['handoverEligibility', currentHandoverId] }),
+        queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandovers', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandover', vehicle.id] }),
-        queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['handoverHistory', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['vehicleRelevantBooking', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['latestCompletedInspection', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['vehicle', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['booking', bId] }),
       ]);
     } catch (err: any) {
       setErrorMessage(err.message || 'Không thể xác nhận xe sẵn sàng.');
@@ -336,6 +343,8 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
         refetchEligibility(),
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandovers', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandover', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['handoverHistory', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['vehicleRelevantBooking', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
       ]);
     } catch (err: any) {
@@ -385,14 +394,27 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
     setIsSubmitting(true);
     setErrorMessage(null);
     try {
+      if (!handover.conditionAcknowledged && !handover.ownerConditionAcknowledgedAt) {
+        await acknowledgeConditionApi(handover.id);
+      }
       await confirmOwnerReceiptApi(handover.id);
       await completeHandoverApi(handover.id);
+      const bId = targetBookingId || handover.bookingId || eligibility?.bookingId;
       await Promise.all([
         refetch(),
         refetchEligibility(),
+        bId ? queryClient.invalidateQueries({ queryKey: ['handoverByBooking', bId] }) : Promise.resolve(),
+        queryClient.invalidateQueries({ queryKey: ['handoverEligibility', handover.id] }),
+        queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandovers', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandover', vehicle.id] }),
-        queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['handoverHistory', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['vehicleRelevantBooking', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['vehicleBookings', vehicle.id] }),
+        bId ? queryClient.invalidateQueries({ queryKey: ['booking', bId] }) : Promise.resolve(),
+        queryClient.invalidateQueries({ queryKey: ['vehicle', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['vehicles'] }),
+        queryClient.invalidateQueries({ queryKey: ['tripEligibility'] }),
       ]);
     } catch (err: any) {
       setErrorMessage(err.message || 'Không thể xác nhận nhận xe.');
@@ -462,7 +484,7 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
       !handover);
 
   if (shouldRenderStateCard) {
-    const config = HANDOVER_ELIGIBILITY_CONFIG[reason];
+    const config = HANDOVER_ELIGIBILITY_CONFIG[reason] || HANDOVER_ELIGIBILITY_CONFIG.NO_BOOKING;
 
     return (
       <group position={[0, 1.4, 0]}>
@@ -1036,16 +1058,20 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
                   height: '8px',
                   borderRadius: '50%',
                   background:
-                    handover?.status === 'READY_FOR_HANDOVER' || eligibility?.handoverAllowed
+                    handover?.status === 'HANDED_OVER'
+                      ? '#a855f7'
+                      : handover?.status === 'READY_FOR_HANDOVER'
                       ? '#10b981'
                       : eligibility?.inspectionAvailable && eligibility?.inspectionFresh
-                      ? '#00f2fe'
+                      ? (eligibility.inspectionResult === 'FAIL' ? '#ef4444' : '#00f2fe')
                       : '#f59e0b',
                   boxShadow: `0 0 8px ${
-                    handover?.status === 'READY_FOR_HANDOVER' || eligibility?.handoverAllowed
+                    handover?.status === 'HANDED_OVER'
+                      ? '#a855f7'
+                      : handover?.status === 'READY_FOR_HANDOVER'
                       ? '#10b981'
                       : eligibility?.inspectionAvailable && eligibility?.inspectionFresh
-                      ? '#00f2fe'
+                      ? (eligibility.inspectionResult === 'FAIL' ? '#ef4444' : '#00f2fe')
                       : '#f59e0b'
                   }`,
                 }}
@@ -1061,7 +1087,7 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
               >
                 {handover?.status === 'HANDED_OVER'
                   ? 'ĐÃ BÀN GIAO XE — CHỜ NHẬN XE'
-                  : handover?.status === 'READY_FOR_HANDOVER' || eligibility?.handoverAllowed
+                  : handover?.status === 'READY_FOR_HANDOVER'
                   ? 'SẴN SÀNG BÀN GIAO'
                   : eligibility?.inspectionAvailable && eligibility?.inspectionFresh
                   ? `ĐÃ KIỂM TRA — ${
@@ -1071,6 +1097,8 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
                         ? 'ĐẠT CÓ LƯU Ý'
                         : 'KHÔNG ĐẠT'
                     }`
+                  : eligibility?.handoverAllowed
+                  ? 'SẴN SÀNG BÀN GIAO'
                   : 'CHƯA CÓ KIỂM TRA HỢP LỆ'}
               </span>
             </div>

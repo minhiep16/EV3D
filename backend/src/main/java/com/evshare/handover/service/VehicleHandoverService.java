@@ -120,13 +120,34 @@ public class VehicleHandoverService {
     @Transactional(readOnly = true)
     public List<VehicleHandoverResponse> getActiveHandoversForVehicle(UUID vehicleId, UUID currentUserId, Role currentUserRole) {
         if (currentUserRole == Role.CO_OWNER) {
-            List<VehicleHandover> handovers = handoverRepository.findActiveByCoOwnerAndVehicle(currentUserId, vehicleId);
-            return handovers.stream().map(VehicleHandoverResponse::fromEntity).collect(Collectors.toList());
+            List<VehicleHandover> handovers = new ArrayList<>(handoverRepository.findActiveByCoOwnerAndVehicle(currentUserId, vehicleId));
+            if (handovers.isEmpty()) {
+                // Include confirmed/completed handover for current non-expired booking so owner doesn't lose receipt status
+                // but exclude if booking or trip is already completed (historical)
+                List<Booking> userBookings = bookingRepository.findByVehicleIdOrderByStartTimeAsc(vehicleId).stream()
+                        .filter(b -> b.getUser() != null && currentUserId.equals(b.getUser().getId()) && !b.isExpired() && b.getEndTime().isAfter(Instant.now()))
+                        .filter(b -> b.getStatus() != BookingStatus.COMPLETED && b.getStatus() != BookingStatus.CANCELLED)
+                        .filter(b -> tripRepository == null || !tripRepository.existsByBooking_IdAndStatus(b.getId(), TripStatus.COMPLETED))
+                        .collect(Collectors.toList());
+                for (Booking b : userBookings) {
+                    handoverRepository.findByBookingId(b.getId()).ifPresent(h -> {
+                        if (h.getStatus() == HandoverStatus.COMPLETED || h.getStatus() == HandoverStatus.OWNER_CONFIRMED) {
+                            handovers.add(h);
+                        }
+                    });
+                }
+            }
+            List<VehicleHandover> activeOnly = handovers.stream()
+                    .filter(h -> h.getBooking() == null || (h.getBooking().getStatus() != BookingStatus.COMPLETED && (tripRepository == null || !tripRepository.existsByBooking_IdAndStatus(h.getBooking().getId(), TripStatus.COMPLETED))))
+                    .collect(Collectors.toList());
+            return activeOnly.stream().map(VehicleHandoverResponse::fromEntity).collect(Collectors.toList());
         }
 
         // For STAFF / ADMIN:
         // 1. Fetch persisted active handovers (never mutate on GET)
-        List<VehicleHandover> persistedHandovers = handoverRepository.findActiveByVehicleId(vehicleId);
+        List<VehicleHandover> persistedHandovers = handoverRepository.findActiveByVehicleId(vehicleId).stream()
+                .filter(h -> h.getBooking() == null || (h.getBooking().getStatus() != BookingStatus.COMPLETED && (tripRepository == null || !tripRepository.existsByBooking_IdAndStatus(h.getBooking().getId(), TripStatus.COMPLETED))))
+                .collect(Collectors.toList());
         List<VehicleHandoverResponse> responses = new ArrayList<>();
         for (VehicleHandover h : persistedHandovers) {
             VehicleHandoverResponse resp = VehicleHandoverResponse.fromEntity(h);
@@ -172,6 +193,7 @@ public class VehicleHandoverService {
                             HandoverStatus.PENDING_PREPARATION
                     );
                     VehicleHandoverResponse candidateResp = VehicleHandoverResponse.fromEntity(transientCandidate);
+                    candidateResp.setId(null); // CRITICAL: Transient candidate does not have a persisted handover record in DB
                     if (isPast) {
                         candidateResp.setExpired(true);
                         candidateResp.setBookingStatus("EXPIRED");
@@ -202,10 +224,40 @@ public class VehicleHandoverService {
     }
 
     @Transactional(readOnly = true)
+    public List<VehicleHandoverResponse> getHandoverHistory(UUID vehicleId) {
+        return handoverRepository.findByVehicleIdOrderByCreatedAtDesc(vehicleId).stream()
+                .map(VehicleHandoverResponse::fromEntity)
+                .collect(Collectors.toList());
+    }
+
+    public Optional<VehicleInspection> findLatestEligibleInspectionForHandover(UUID vehicleId, UUID currentHandoverId) {
+        if (inspectionRepository == null) {
+            return Optional.empty();
+        }
+        List<VehicleInspection> completed = inspectionRepository.findCompletedByVehicleIdOrderByCompletedAtDesc(vehicleId);
+        if (completed == null || completed.isEmpty()) {
+            return inspectionRepository.findLatestCompletedByVehicleId(vehicleId);
+        }
+
+        java.util.Set<UUID> consumedInspectionIds = handoverRepository.findUsedInspectionIds(vehicleId, currentHandoverId);
+
+        for (VehicleInspection insp : completed) {
+            if (consumedInspectionIds == null || !consumedInspectionIds.contains(insp.getId())) {
+                return Optional.of(insp);
+            }
+        }
+        return Optional.empty();
+    }
+
+    @Transactional(readOnly = true)
     public VehicleHandoverEligibilityResponse getHandoverEligibilityByHandoverId(UUID handoverId, UUID currentUserId, Role currentUserRole) {
         VehicleHandover handover = handoverRepository.findById(handoverId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy hồ sơ bàn giao xe: " + handoverId));
-        return getHandoverEligibility(handover.getVehicle().getId(), currentUserId, currentUserRole);
+        VehicleHandoverEligibilityResponse resp = new VehicleHandoverEligibilityResponse();
+        resp.setVehicleId(handover.getVehicle().getId());
+        resp.setVehicleName(handover.getVehicle().getName());
+        resp.setVehicleCode(handover.getVehicle().getName() != null ? handover.getVehicle().getName() : "EV01");
+        return populateEligibilityForBooking(resp, handover.getBooking(), handover.getVehicle().getId());
     }
 
     @Transactional(readOnly = true)
@@ -218,33 +270,10 @@ public class VehicleHandoverService {
         Vehicle vehicle = vehicleRepository != null ? vehicleRepository.findById(vehicleId).orElse(null) : null;
         if (vehicle != null) {
             resp.setVehicleName(vehicle.getName());
-            resp.setVehicleCode("EV01");
+            resp.setVehicleCode(vehicle.getName() != null ? vehicle.getName() : "EV01");
         }
 
-        // Populate latest completed inspection details
-        if (inspectionRepository != null) {
-            Optional<VehicleInspection> latestInspOpt =
-                    inspectionRepository.findLatestCompletedByVehicleId(vehicleId);
-            if (latestInspOpt.isPresent()) {
-                VehicleInspection latest = latestInspOpt.get();
-                resp.setInspectionAvailable(true);
-                resp.setInspectionId(latest.getId());
-                resp.setInspectionResult(latest.getOverallResult() != null ? latest.getOverallResult().name() : "PASS");
-                resp.setInspectionCompletedAt(latest.getCompletedAt());
-                boolean fresh = latest.getCompletedAt() != null &&
-                        latest.getCompletedAt().isAfter(Instant.now().minus(Duration.ofHours(maxAgeHours)));
-                resp.setInspectionFresh(fresh);
-                resp.setInspectedPartsCount(latest.getItems() != null ? latest.getItems().size() : 0);
-                if (latest.getInspectedBy() != null) {
-                    resp.setInspectorName(latest.getInspectedBy().getFullName());
-                }
-            } else {
-                resp.setInspectionAvailable(false);
-                resp.setInspectionFresh(false);
-            }
-        }
-
-        // 2. Check VEHICLE_IN_USE or CHARGING or MAINTENANCE
+        // 2. Check VEHICLE_MAINTENANCE or VEHICLE_CHARGING or VEHICLE_IN_USE
         if (vehicle != null && vehicle.getStatus() == VehicleStatus.MAINTENANCE) {
             resp.setReason(HandoverEligibilityReason.VEHICLE_MAINTENANCE);
             resp.setMessage("XE ĐANG TRONG QUÁ TRÌNH BẢO DƯỠNG");
@@ -271,120 +300,56 @@ public class VehicleHandoverService {
             return resp;
         }
 
-        // 3. Check active persisted handover (already in progress or completed)
-        List<VehicleHandover> persistedHandovers;
-        if (currentUserRole == Role.CO_OWNER && currentUserId != null) {
-            persistedHandovers = handoverRepository.findActiveByCoOwnerAndVehicle(currentUserId, vehicleId);
-            if (persistedHandovers.isEmpty()) {
-                persistedHandovers = handoverRepository.findActiveByVehicleId(vehicleId).stream()
-                        .filter(ph -> (ph.getCoOwner() != null && currentUserId.equals(ph.getCoOwner().getId())) ||
-                                      (ph.getBooking() != null && ph.getBooking().getUser() != null && currentUserId.equals(ph.getBooking().getUser().getId())))
-                        .collect(Collectors.toList());
-            }
-        } else {
-            persistedHandovers = handoverRepository.findActiveByVehicleId(vehicleId);
-        }
-
-        if (!persistedHandovers.isEmpty()) {
-            VehicleHandover h = persistedHandovers.get(0);
-            resp.setHandoverId(h.getId());
-            resp.setHandoverStatus(h.getStatus() != null ? h.getStatus().name() : null);
-            resp.setHandover(VehicleHandoverResponse.fromEntity(h));
-
-            if (h.getBooking() != null) {
-                resp.setBookingId(h.getBooking().getId());
-                resp.setBookingStartTime(h.getBooking().getStartTime());
-                resp.setBookingEndTime(h.getBooking().getEndTime());
-                resp.setBookingPurpose(h.getBooking().getPurpose());
-                if (h.getBooking().getUser() != null) {
-                    resp.setRecipientName(h.getBooking().getUser().getFullName());
-                    resp.setRecipientEmail(h.getBooking().getUser().getEmail());
-                }
-            }
-            if (h.getCoOwner() != null && resp.getRecipientName() == null) {
-                resp.setRecipientName(h.getCoOwner().getFullName());
-                resp.setRecipientEmail(h.getCoOwner().getEmail());
-            }
-
-            if (h.getStatus() == HandoverStatus.HANDED_OVER ||
-                h.getStatus() == HandoverStatus.OWNER_CONFIRMED ||
-                h.getStatus() == HandoverStatus.COMPLETED) {
-                resp.setReason(HandoverEligibilityReason.HANDED_OVER);
-                resp.setMessage("XE ĐÃ ĐƯỢC BÀN GIAO");
-                resp.setEligibleForInspection(false);
-                return resp;
-            }
-
-            if (h.getBooking() != null && (h.getBooking().isExpired() || Instant.now().isAfter(h.getBooking().getEndTime()))) {
-                resp.setReason(HandoverEligibilityReason.BOOKING_EXPIRED);
-                resp.setMessage("LỊCH ĐẶT ĐÃ HẾT HIỆU LỰC");
-                resp.setEligibleForInspection(false);
-                return resp;
-            }
-
-            if (h.getStatus() == HandoverStatus.READY_FOR_HANDOVER) {
-                resp.setReason(HandoverEligibilityReason.READY);
-                resp.setMessage("XE ĐÃ SẴN SÀNG ĐỂ BÀN GIAO");
-                resp.setHandoverAllowed(true);
-                resp.setEligibleForInspection(true);
-                return resp;
-            }
-
-            evaluateInspectionReadiness(resp);
-            return resp;
-        }
-
-        // 4. No active persisted handover -> Evaluate Bookings
+        // 3. Resolve relevant upcoming/active booking for this vehicle
+        // ONE BOOKING -> ONE HANDOVER.
+        // A booking whose trip/handover is already COMPLETED or CANCELLED is historical and MUST NOT be selected.
         List<Booking> allBookings = bookingRepository.findByVehicleIdOrderByStartTimeAsc(vehicleId);
         if (currentUserRole == Role.CO_OWNER && currentUserId != null) {
-            List<Booking> myBookings = allBookings.stream()
+            allBookings = allBookings.stream()
                     .filter(b -> b.getUser() != null && currentUserId.equals(b.getUser().getId()))
                     .collect(Collectors.toList());
-            if (!myBookings.isEmpty()) {
-                allBookings = myBookings;
-            }
-        }
-        if (allBookings.isEmpty()) {
-            resp.setReason(HandoverEligibilityReason.NO_BOOKING);
-            resp.setMessage("KHÔNG CÓ LỊCH BÀN GIAO");
-            resp.setEligibleForInspection(false);
-            return resp;
-        }
-
-        List<Booking> nonCancelledBookings = allBookings.stream()
-                .filter(b -> b.getStatus() != BookingStatus.CANCELLED)
-                .collect(Collectors.toList());
-
-        if (nonCancelledBookings.isEmpty()) {
-            resp.setReason(HandoverEligibilityReason.NO_BOOKING);
-            resp.setMessage("KHÔNG CÓ LỊCH BÀN GIAO");
-            resp.setEligibleForInspection(false);
-            return resp;
         }
 
         Instant now = Instant.now();
-        List<Booking> futureOrActiveBookings = nonCancelledBookings.stream()
-                .filter(b -> b.getStatus() != BookingStatus.EXPIRED && b.getEndTime().isAfter(now) && !b.isExpired())
+        List<Booking> candidates = allBookings.stream()
+                .filter(b -> b.getStatus() != BookingStatus.CANCELLED)
+                .filter(b -> b.getStatus() != BookingStatus.EXPIRED)
+                .filter(b -> !b.isExpired() && b.getEndTime().isAfter(now))
+                .filter(b -> b.getStatus() != BookingStatus.COMPLETED)
+                .filter(b -> tripRepository == null || !tripRepository.existsByBooking_IdAndStatus(b.getId(), TripStatus.COMPLETED))
+                .filter(b -> {
+                    Optional<VehicleHandover> existingH = handoverRepository.findByBookingId(b.getId());
+                    if (existingH.isPresent()) {
+                        HandoverStatus st = existingH.get().getStatus();
+                        return st != HandoverStatus.COMPLETED && st != HandoverStatus.CANCELLED;
+                    }
+                    return true;
+                })
                 .collect(Collectors.toList());
 
-        if (futureOrActiveBookings.isEmpty()) {
-            Booking lastBooking = nonCancelledBookings.get(nonCancelledBookings.size() - 1);
-            resp.setBookingId(lastBooking.getId());
-            resp.setBookingStartTime(lastBooking.getStartTime());
-            resp.setBookingEndTime(lastBooking.getEndTime());
-            resp.setBookingPurpose(lastBooking.getPurpose());
-            if (lastBooking.getUser() != null) {
-                resp.setRecipientName(lastBooking.getUser().getFullName());
-                resp.setRecipientEmail(lastBooking.getUser().getEmail());
-            }
-            resp.setReason(HandoverEligibilityReason.BOOKING_EXPIRED);
-            resp.setMessage("LỊCH ĐẶT ĐÃ HẾT HIỆU LỰC");
+        // CASE C: No upcoming or active booking requires handover
+        if (candidates.isEmpty()) {
+            resp.setReason(HandoverEligibilityReason.NO_BOOKING);
+            resp.setMessage("Hiện không có lượt đặt xe nào cần bàn giao.");
+            resp.setBookingId(null);
+            resp.setHandoverId(null);
+            resp.setHandoverStatus(null);
+            resp.setHandover(null);
+            resp.setHandoverAllowed(false);
             resp.setEligibleForInspection(false);
             return resp;
         }
 
-        // 5. Next valid booking
-        Booking target = futureOrActiveBookings.get(0);
+        // 4. Nearest upcoming or active booking requiring handover
+        Booking target = candidates.get(0);
+        return populateEligibilityForBooking(resp, target, vehicleId);
+    }
+
+    private VehicleHandoverEligibilityResponse populateEligibilityForBooking(
+            VehicleHandoverEligibilityResponse resp,
+            Booking target,
+            UUID vehicleId
+    ) {
         resp.setBookingId(target.getId());
         resp.setBookingStartTime(target.getStartTime());
         resp.setBookingEndTime(target.getEndTime());
@@ -394,6 +359,7 @@ public class VehicleHandoverService {
             resp.setRecipientEmail(target.getUser().getEmail());
         }
 
+        Instant now = Instant.now();
         Instant prepWindowStart = target.getStartTime().minus(Duration.ofMinutes(PREPARATION_WINDOW_MINUTES));
         resp.setPreparationWindowStartTime(prepWindowStart);
 
@@ -403,19 +369,21 @@ public class VehicleHandoverService {
             resp.setReason(HandoverEligibilityReason.TOO_EARLY);
             resp.setMessage("CHƯA ĐẾN THỜI GIAN CHUẨN BỊ XE");
             resp.setEligibleForInspection(false);
+            resp.setHandoverAllowed(false);
             return resp;
         }
 
         // Within preparation window up to end time
-        // Authoritative resolution of handover by target booking
         Optional<VehicleHandover> bookingHandoverOpt = handoverRepository.findByBookingId(target.getId());
-        if (bookingHandoverOpt.isPresent()) {
-            VehicleHandover h = bookingHandoverOpt.get();
-            resp.setHandoverId(h.getId());
-            resp.setHandoverStatus(h.getStatus() != null ? h.getStatus().name() : null);
-            resp.setHandover(VehicleHandoverResponse.fromEntity(h));
+        VehicleHandover handover = bookingHandoverOpt.orElse(null);
 
-            if (h.getStatus() == HandoverStatus.READY_FOR_HANDOVER) {
+        if (handover != null) {
+            resp.setHandoverId(handover.getId());
+            resp.setHandoverStatus(handover.getStatus() != null ? handover.getStatus().name() : null);
+            resp.setHandover(VehicleHandoverResponse.fromEntity(handover));
+
+            if (handover.getStatus() == HandoverStatus.READY_FOR_HANDOVER) {
+                populateInspectionDetails(resp, handover.getInspection());
                 resp.setReason(HandoverEligibilityReason.READY);
                 resp.setMessage("XE ĐÃ SẴN SÀNG ĐỂ BÀN GIAO");
                 resp.setHandoverAllowed(true);
@@ -423,26 +391,74 @@ public class VehicleHandoverService {
                 return resp;
             }
 
-            evaluateInspectionReadiness(resp);
-            return resp;
+            if (handover.getStatus() == HandoverStatus.HANDED_OVER) {
+                populateInspectionDetails(resp, handover.getInspection());
+                resp.setReason(HandoverEligibilityReason.HANDED_OVER);
+                resp.setMessage("XE ĐÃ ĐƯỢC BÀN GIAO — ĐANG CHỜ ĐỒNG SỞ HỮU XÁC NHẬN");
+                resp.setHandoverAllowed(false);
+                resp.setEligibleForInspection(false);
+                return resp;
+            }
+
+            if (handover.getStatus() == HandoverStatus.OWNER_CONFIRMED) {
+                populateInspectionDetails(resp, handover.getInspection());
+                resp.setReason(HandoverEligibilityReason.HANDED_OVER);
+                resp.setMessage("ĐỒNG SỞ HỮU ĐÃ NHẬN XE");
+                resp.setHandoverAllowed(false);
+                resp.setEligibleForInspection(false);
+                return resp;
+            }
+        } else {
+            // Case A: Handover has not been created yet in DB
+            resp.setHandoverId(null);
+            resp.setHandoverStatus(null);
+            resp.setHandover(null);
         }
 
-        // Controlled state when handover record has not been created yet for this booking
-        resp.setHandoverId(null);
-        resp.setHandoverStatus(null);
-        resp.setHandover(null);
-        resp.setHandoverAllowed(false);
-        resp.setReason(HandoverEligibilityReason.READY_FOR_PREPARATION);
-        resp.setMessage("Chưa có hồ sơ bàn giao cho lượt đặt xe này.");
-        resp.setEligibleForInspection(true);
+        // Inspection evaluation for this specific handover cycle
+        VehicleInspection targetInsp = (handover != null && handover.getInspection() != null)
+                ? handover.getInspection()
+                : findLatestEligibleInspectionForHandover(vehicleId, handover != null ? handover.getId() : null).orElse(null);
 
+        populateInspectionDetails(resp, targetInsp);
+        evaluateInspectionReadiness(resp);
         return resp;
+    }
+
+    private void populateInspectionDetails(VehicleHandoverEligibilityResponse resp, VehicleInspection insp) {
+        if (insp != null) {
+            resp.setInspectionAvailable(true);
+            resp.setInspectionId(insp.getId());
+            resp.setInspectionResult(insp.getOverallResult() != null ? insp.getOverallResult().name() : "PASS");
+            resp.setInspectionCompletedAt(insp.getCompletedAt());
+            boolean fresh = insp.getCompletedAt() != null &&
+                    insp.getCompletedAt().isAfter(Instant.now().minus(Duration.ofHours(maxAgeHours)));
+            resp.setInspectionFresh(fresh);
+            resp.setInspectedPartsCount(insp.getItems() != null ? insp.getItems().size() : 0);
+            if (insp.getInspectedBy() != null) {
+                resp.setInspectorName(insp.getInspectedBy().getFullName());
+            }
+        } else {
+            resp.setInspectionAvailable(false);
+            resp.setInspectionFresh(false);
+            resp.setInspectionId(null);
+            resp.setInspectionResult(null);
+            resp.setInspectionCompletedAt(null);
+            resp.setInspectedPartsCount(0);
+            resp.setInspectorName(null);
+        }
     }
 
     private void evaluateInspectionReadiness(VehicleHandoverEligibilityResponse resp) {
         if (!resp.isInspectionAvailable()) {
-            resp.setReason(HandoverEligibilityReason.NO_INSPECTION);
-            resp.setMessage("Xe chưa có kết quả kiểm tra hợp lệ để bàn giao.");
+            boolean hasPersistedHandover = resp.getHandoverId() != null || (resp.getHandover() != null && resp.getHandover().getId() != null);
+            if (hasPersistedHandover) {
+                resp.setReason(HandoverEligibilityReason.NO_INSPECTION);
+                resp.setMessage("Xe chưa có kết quả kiểm tra hợp lệ để bàn giao.");
+            } else {
+                resp.setReason(HandoverEligibilityReason.READY_FOR_PREPARATION);
+                resp.setMessage("Chưa có hồ sơ bàn giao cho lượt đặt xe này.");
+            }
             resp.setHandoverAllowed(false);
             resp.setEligibleForInspection(true);
         } else if (!resp.isInspectionFresh()) {
@@ -456,19 +472,46 @@ public class VehicleHandoverService {
             resp.setHandoverAllowed(false);
             resp.setEligibleForInspection(true);
         } else {
-            boolean hasPersistedHandover = resp.getHandoverId() != null || (resp.getHandover() != null && resp.getHandover().getId() != null);
-            if (hasPersistedHandover) {
-                resp.setReason(HandoverEligibilityReason.READY);
-                resp.setMessage("SẴN SÀNG CHUẨN BỊ BÀN GIAO XE");
-                resp.setHandoverAllowed(true);
-                resp.setEligibleForInspection(true);
-            } else {
-                resp.setReason(HandoverEligibilityReason.READY_FOR_PREPARATION);
-                resp.setMessage("Chưa có hồ sơ bàn giao cho lượt đặt xe này.");
-                resp.setHandoverAllowed(false);
-                resp.setEligibleForInspection(true);
-            }
+            // Authoritative inspection is valid and PASS / PASS_WITH_NOTES
+            resp.setReason(HandoverEligibilityReason.READY);
+            resp.setMessage("SẴN SÀNG CHUẨN BỊ BÀN GIAO XE");
+            resp.setHandoverAllowed(true);
+            resp.setEligibleForInspection(true);
         }
+    }
+
+    @Transactional
+    public VehicleHandoverResponse createHandover(UUID bookingId, UUID staffId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy lịch đặt với mã: " + bookingId));
+
+        if (booking.getStatus() == BookingStatus.CANCELLED) {
+            throw new IllegalArgumentException("Lịch đặt xe đã bị hủy, không thể tiến hành bàn giao");
+        }
+
+        if (booking.isExpired() || booking.getEndTime().isBefore(Instant.now()) || booking.getStatus() == BookingStatus.EXPIRED) {
+            throw new IllegalStateException("Lịch đặt xe đã hết thời gian (EXPIRED), không thể tạo hồ sơ bàn giao");
+        }
+
+        // 1 booking -> 1 handover (enforce unique handover per booking)
+        Optional<VehicleHandover> existingOpt = handoverRepository.findByBookingId(bookingId);
+        if (existingOpt.isPresent()) {
+            return VehicleHandoverResponse.fromEntity(existingOpt.get());
+        }
+
+        User staff = staffId != null ? userRepository.findById(staffId).orElse(null) : null;
+
+        VehicleHandover handover = new VehicleHandover(
+                UUID.randomUUID(),
+                booking,
+                booking.getVehicle(),
+                staff,
+                booking.getUser(),
+                HandoverStatus.PENDING_PREPARATION
+        );
+
+        VehicleHandover saved = handoverRepository.save(handover);
+        return VehicleHandoverResponse.fromEntity(saved);
     }
 
     @Transactional
@@ -568,8 +611,10 @@ public class VehicleHandoverService {
 
         // Authoritative Standalone Inspection Verification
         VehicleInspection latestInsp = null;
-        if (inspectionRepository != null && vehicle != null) {
-            latestInsp = inspectionRepository.findLatestCompletedByVehicleId(vehicle.getId()).orElse(null);
+        if (handover.getInspection() != null) {
+            latestInsp = handover.getInspection();
+        } else if (vehicle != null) {
+            latestInsp = findLatestEligibleInspectionForHandover(vehicle.getId(), handover.getId()).orElse(null);
         }
 
         if (latestInsp == null) {

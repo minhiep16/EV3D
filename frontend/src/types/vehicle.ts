@@ -15,6 +15,9 @@ export interface VehicleResponse {
   licensePlate: string;
   vin: string;
   batteryCapacity: number;
+  grossBatteryCapacityKwh?: number;
+  usableBatteryCapacityKwh?: number;
+  energyConsumptionKwhPer100Km?: number;
   currentBatteryLevel: number;
   odometer: number;
   status: VehicleStatus;

@@ -174,6 +174,10 @@ public class VehicleHandoverEligibilityResponse {
         return handoverAllowed;
     }
 
+    public boolean getHandoverAllowed() {
+        return handoverAllowed;
+    }
+
     public void setHandoverAllowed(boolean handoverAllowed) {
         this.handoverAllowed = handoverAllowed;
     }

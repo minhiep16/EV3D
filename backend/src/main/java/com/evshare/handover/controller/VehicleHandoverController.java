@@ -40,7 +40,7 @@ public class VehicleHandoverController {
         return ResponseEntity.ok(response);
     }
 
-    @GetMapping("/vehicles/{vehicleId}/active-handover")
+    @GetMapping(value = {"/vehicles/{vehicleId}/active-handover", "/vehicles/{vehicleId}/handovers/active"})
     @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
     public ResponseEntity<VehicleHandoverResponse> getActiveHandoverForVehicle(
             @PathVariable UUID vehicleId,
@@ -53,6 +53,15 @@ public class VehicleHandoverController {
         );
         return response.map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    @GetMapping("/vehicles/{vehicleId}/handover-history")
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
+    public ResponseEntity<List<VehicleHandoverResponse>> getHandoverHistory(
+            @PathVariable UUID vehicleId
+    ) {
+        List<VehicleHandoverResponse> response = handoverService.getHandoverHistory(vehicleId);
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("/vehicles/{vehicleId}/active-handovers")
@@ -97,6 +106,16 @@ public class VehicleHandoverController {
         return ResponseEntity.ok(response);
     }
 
+    @PostMapping("/bookings/{bookingId}/handover")
+    @PreAuthorize("hasRole('STAFF')")
+    public ResponseEntity<VehicleHandoverResponse> createHandover(
+            @PathVariable UUID bookingId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        VehicleHandoverResponse response = handoverService.createHandover(bookingId, principal.getId());
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
     @PostMapping("/bookings/{bookingId}/handover/start")
     @PreAuthorize("hasRole('STAFF')")
     public ResponseEntity<VehicleHandoverResponse> startHandover(
@@ -107,6 +126,8 @@ public class VehicleHandoverController {
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
+    @Deprecated
+    @SuppressWarnings("deprecation")
     @PostMapping("/handovers/{handoverId}/inspections")
     @PreAuthorize("hasRole('STAFF')")
     public ResponseEntity<VehicleInspectionResponse> recordInspection(

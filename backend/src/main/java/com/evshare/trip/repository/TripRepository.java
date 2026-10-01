@@ -22,6 +22,10 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
 
     boolean existsByBookingId(UUID bookingId);
 
+    boolean existsByBooking_IdAndStatus(UUID bookingId, TripStatus status);
+
+    boolean existsByBookingIdAndStatus(UUID bookingId, TripStatus status);
+
     List<Trip> findByUserIdAndStatus(UUID userId, TripStatus status);
 
     @Query("SELECT t FROM Trip t WHERE t.vehicle.id = :vehicleId AND t.status = 'ACTIVE'")

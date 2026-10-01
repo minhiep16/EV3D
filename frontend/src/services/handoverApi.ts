@@ -11,8 +11,26 @@ export async function fetchHandoverEligibility(
 ): Promise<VehicleHandoverEligibilityResponse> {
   try {
     const res = await authenticatedFetch(`/api/vehicles/${vehicleId}/handover-eligibility`);
+    if (res.status === 404 || res.status === 204) {
+      return {
+        vehicleId,
+        handoverAllowed: false,
+        reason: 'NO_BOOKING',
+      };
+    }
     return await safeParseResponse<VehicleHandoverEligibilityResponse>(res);
   } catch (err: any) {
+    if (
+      err?.status === 404 ||
+      err?.statusCode === 404 ||
+      (err?.message && (err.message.includes('404') || err.message.includes('không tìm thấy')))
+    ) {
+      return {
+        vehicleId,
+        handoverAllowed: false,
+        reason: 'NO_BOOKING',
+      };
+    }
     if (err instanceof TypeError || (err instanceof Error && err.message.includes('fetch'))) {
       throw new Error('Không thể kết nối đến máy chủ kiểm tra điều kiện bàn giao xe.');
     }
@@ -30,7 +48,11 @@ export async function fetchActiveVehicleHandover(
     }
     return await safeParseResponse<VehicleHandoverData>(res);
   } catch (err: any) {
-    if (err.message && (err.message.includes('404') || err.message.includes('không tìm thấy') || err.message.includes('No active handover'))) {
+    if (
+      err?.status === 404 ||
+      err?.statusCode === 404 ||
+      (err?.message && (err.message.includes('404') || err.message.includes('không tìm thấy') || err.message.includes('No active handover') || err.message.includes('Chưa có hồ sơ')))
+    ) {
       return null;
     }
     if (err instanceof TypeError || (err instanceof Error && err.message.includes('fetch'))) {
@@ -50,7 +72,11 @@ export async function fetchActiveVehicleHandovers(
     }
     return await safeParseResponse<VehicleHandoverData[]>(res);
   } catch (err: any) {
-    if (err.message && (err.message.includes('404') || err.message.includes('không tìm thấy') || err.message.includes('No active handover'))) {
+    if (
+      err?.status === 404 ||
+      err?.statusCode === 404 ||
+      (err?.message && (err.message.includes('404') || err.message.includes('không tìm thấy') || err.message.includes('No active handover') || err.message.includes('Chưa có hồ sơ')))
+    ) {
       return [];
     }
     if (err instanceof TypeError || (err instanceof Error && err.message.includes('fetch'))) {
@@ -72,12 +98,34 @@ export async function fetchBookingHandover(
   } catch (err: any) {
     if (
       err?.status === 404 ||
-      (err?.message && (err.message.includes('404') || err.message.includes('Chưa có hồ sơ') || err.message.includes('Không tìm thấy')))
+      err?.statusCode === 404 ||
+      (err?.message && (
+        err.message.includes('404') ||
+        err.message.includes('Chưa có hồ sơ') ||
+        err.message.includes('Không tìm thấy') ||
+        err.message.includes('ResourceNotFound')
+      ))
     ) {
       return null;
     }
     if (err instanceof TypeError || (err instanceof Error && err.message?.includes('fetch'))) {
       throw new Error('Không thể kết nối đến máy chủ quản lý bàn giao xe.');
+    }
+    throw err;
+  }
+}
+
+export async function createHandoverApi(
+  bookingId: string
+): Promise<VehicleHandoverData> {
+  try {
+    const res = await authenticatedFetch(`/api/bookings/${bookingId}/handover`, {
+      method: 'POST',
+    });
+    return await safeParseResponse<VehicleHandoverData>(res);
+  } catch (err) {
+    if (err instanceof TypeError || (err instanceof Error && err.message?.includes('fetch'))) {
+      throw new Error('Không thể kết nối đến máy chủ tạo hồ sơ bàn giao xe.');
     }
     throw err;
   }
@@ -194,5 +242,30 @@ export async function completeHandoverApi(
       throw new Error('Không thể kết nối đến máy chủ hoàn tất Check-in.');
     }
     throw err;
+  }
+}
+
+/**
+ * Fetch all historical handovers for a vehicle (ordered by createdAt DESC).
+ * Used for historical audit and reporting without interfering with active handover workflow.
+ */
+export async function fetchHandoverHistory(
+  vehicleId: string
+): Promise<VehicleHandoverData[]> {
+  try {
+    const res = await authenticatedFetch(`/api/vehicles/${vehicleId}/handover-history`);
+    if (res.status === 404 || res.status === 204) {
+      return [];
+    }
+    return await safeParseResponse<VehicleHandoverData[]>(res);
+  } catch (err: any) {
+    if (
+      err?.status === 404 ||
+      err?.statusCode === 404 ||
+      (err?.message && (err.message.includes('404') || err.message.includes('không tìm thấy')))
+    ) {
+      return [];
+    }
+    return [];
   }
 }

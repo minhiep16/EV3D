@@ -673,4 +673,92 @@ class VehicleHandoverServiceTest {
         assertNotNull(res.getHandover());
         assertEquals(handover.getId(), res.getHandoverId());
     }
+
+    @Test
+    @DisplayName("Should return READY with handoverAllowed=true when latest inspection is PASS")
+    void testEligibility_ReadyWhenInspectionPass() {
+        booking.setStartTime(Instant.now().plus(1, ChronoUnit.HOURS));
+        booking.setEndTime(Instant.now().plus(3, ChronoUnit.HOURS));
+
+        VehicleInspection insp = new VehicleInspection(UUID.randomUUID(), vehicle, staff, InspectionType.PRE_HANDOVER);
+        insp.setStatus(InspectionStatus.COMPLETED);
+        insp.setOverallResult(InspectionOverallResult.PASS);
+        insp.setCompletedAt(Instant.now().minus(30, ChronoUnit.MINUTES));
+
+        when(vehicleRepository.findById(vehicle.getId())).thenReturn(Optional.of(vehicle));
+        when(inspectionRepository.findLatestCompletedByVehicleId(vehicle.getId())).thenReturn(Optional.of(insp));
+        when(handoverRepository.findActiveByVehicleId(vehicle.getId())).thenReturn(Collections.emptyList());
+        when(bookingRepository.findByVehicleIdOrderByStartTimeAsc(vehicle.getId())).thenReturn(List.of(booking));
+        when(handoverRepository.findByBookingId(booking.getId())).thenReturn(Optional.empty());
+
+        VehicleHandoverEligibilityResponse res = handoverService.getHandoverEligibility(vehicle.getId(), staffId, Role.STAFF);
+        assertNotNull(res);
+        assertEquals(HandoverEligibilityReason.READY, res.getReason());
+        assertTrue(Boolean.TRUE.equals(res.getHandoverAllowed()));
+        assertTrue(res.isInspectionAvailable());
+        assertTrue(res.isInspectionFresh());
+        assertEquals("PASS", res.getInspectionResult());
+    }
+
+    @Test
+    @DisplayName("TEST: When previous booking and handover completed, and no upcoming booking, returns NO_BOOKING (Case C)")
+    void testEligibility_WhenPreviousBookingCompleted_AndNoUpcomingBooking_ReturnsNoBooking() {
+        Booking oldBooking = new Booking(UUID.randomUUID(), vehicle, coOwner, Instant.now().minus(2, ChronoUnit.HOURS), Instant.now().plus(1, ChronoUnit.HOURS), BookingStatus.COMPLETED, "Commute");
+
+        VehicleHandover oldHandover = new VehicleHandover(UUID.randomUUID(), oldBooking, vehicle, staff, coOwner, HandoverStatus.COMPLETED);
+
+        when(vehicleRepository.findById(vehicle.getId())).thenReturn(Optional.of(vehicle));
+        when(bookingRepository.findByVehicleIdOrderByStartTimeAsc(vehicle.getId())).thenReturn(List.of(oldBooking));
+        when(handoverRepository.findByBookingId(oldBooking.getId())).thenReturn(Optional.of(oldHandover));
+
+        VehicleHandoverEligibilityResponse res = handoverService.getHandoverEligibility(vehicle.getId(), staffId, Role.STAFF);
+
+        assertNotNull(res);
+        assertEquals(HandoverEligibilityReason.NO_BOOKING, res.getReason());
+        assertEquals("Hiện không có lượt đặt xe nào cần bàn giao.", res.getMessage());
+        assertNull(res.getBookingId());
+        assertNull(res.getHandoverId());
+        assertNull(res.getHandover());
+        assertFalse(res.isHandoverAllowed());
+        assertFalse(res.isEligibleForInspection());
+    }
+
+    @Test
+    @DisplayName("TEST: When previous booking completed, resolves next upcoming booking with fresh handover cycle")
+    void testEligibility_WhenPreviousBookingCompleted_ResolvesNextUpcomingBooking() {
+        Booking oldBooking = new Booking(UUID.randomUUID(), vehicle, coOwner, Instant.now().minus(2, ChronoUnit.HOURS), Instant.now().plus(1, ChronoUnit.HOURS), BookingStatus.COMPLETED, "Commute");
+        VehicleHandover oldHandover = new VehicleHandover(UUID.randomUUID(), oldBooking, vehicle, staff, coOwner, HandoverStatus.COMPLETED);
+
+        Booking newBooking = new Booking(UUID.randomUUID(), vehicle, coOwner, Instant.now().plus(1, ChronoUnit.HOURS), Instant.now().plus(3, ChronoUnit.HOURS), BookingStatus.CONFIRMED, "Client Meeting");
+
+        when(vehicleRepository.findById(vehicle.getId())).thenReturn(Optional.of(vehicle));
+        when(bookingRepository.findByVehicleIdOrderByStartTimeAsc(vehicle.getId())).thenReturn(List.of(oldBooking, newBooking));
+        when(handoverRepository.findByBookingId(oldBooking.getId())).thenReturn(Optional.of(oldHandover));
+        when(handoverRepository.findByBookingId(newBooking.getId())).thenReturn(Optional.empty());
+
+        VehicleHandoverEligibilityResponse res = handoverService.getHandoverEligibility(vehicle.getId(), staffId, Role.STAFF);
+
+        assertNotNull(res);
+        assertEquals(newBooking.getId(), res.getBookingId());
+        assertNull(res.getHandoverId());
+        assertNull(res.getHandover());
+        assertEquals(HandoverEligibilityReason.READY_FOR_PREPARATION, res.getReason());
+        assertEquals("Chưa có hồ sơ bàn giao cho lượt đặt xe này.", res.getMessage());
+    }
+
+    @Test
+    @DisplayName("TEST: When booking has completed trip, it is excluded and returns NO_BOOKING if no other booking")
+    void testEligibility_WhenBookingHasCompletedTrip_ExcludedFromHandover() {
+        Booking activeBooking = new Booking(UUID.randomUUID(), vehicle, coOwner, Instant.now().minus(1, ChronoUnit.HOURS), Instant.now().plus(2, ChronoUnit.HOURS), BookingStatus.IN_PROGRESS, "Commute");
+
+        when(vehicleRepository.findById(vehicle.getId())).thenReturn(Optional.of(vehicle));
+        when(bookingRepository.findByVehicleIdOrderByStartTimeAsc(vehicle.getId())).thenReturn(List.of(activeBooking));
+        when(tripRepository.existsByBooking_IdAndStatus(activeBooking.getId(), TripStatus.COMPLETED)).thenReturn(true);
+
+        VehicleHandoverEligibilityResponse res = handoverService.getHandoverEligibility(vehicle.getId(), staffId, Role.STAFF);
+
+        assertNotNull(res);
+        assertEquals(HandoverEligibilityReason.NO_BOOKING, res.getReason());
+        assertNull(res.getBookingId());
+    }
 }

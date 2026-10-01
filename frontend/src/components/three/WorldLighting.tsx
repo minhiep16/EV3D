@@ -23,7 +23,7 @@ export const WorldLighting: React.FC = () => {
       <directionalLight
         position={[8, 18, 10]}
         intensity={2.0}
-        color="#ffffffcb"
+        color="#ffffff"
         castShadow
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}

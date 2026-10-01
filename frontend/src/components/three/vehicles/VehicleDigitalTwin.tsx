@@ -597,6 +597,7 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
   const vehicleChargingMode = useWorldStore((state) => state.vehicleChargingMode);
   const selectedVehiclePartId = useWorldStore((state) => state.selectedVehiclePartId);
   const selectVehicle = useWorldStore((state) => state.selectVehicle);
+  const openVehicleDetail = useWorldStore((state) => state.openVehicleDetail);
   const hoverVehicle = useWorldStore((state) => state.hoverVehicle);
   const clearSelection = useWorldStore((state) => state.clearSelection);
   const isVehicleSelected = useWorldStore((state) => state.isVehicleSelected);
@@ -693,6 +694,13 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
 
   const handleVehicleSelect = (selectedVehicle: VehicleResponse) => {
     selectVehicle(selectedVehicle.id, role);
+  };
+
+  const handleDirectVehicleClick = (selectedVehicle: VehicleResponse) => {
+    selectVehicle(selectedVehicle.id, role);
+    if (isOperationsRole) {
+      openVehicleDetail();
+    }
   };
 
   // For operations role, derive the foreground hero vehicle (selected vehicle or first vehicle)
@@ -882,7 +890,7 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
           vehicleInspectionMode={vehicleInspectionMode}
           selectedVehiclePartId={selectedVehiclePartId}
           renderPanel={renderPanel}
-          onSelect={handleVehicleSelect}
+          onSelect={handleDirectVehicleClick}
           onHover={hoverVehicle}
           onClearSelection={clearSelection}
         />
@@ -944,7 +952,7 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
             vehicleInspectionMode={vehicleInspectionMode}
             selectedVehiclePartId={selectedVehiclePartId}
             renderPanel={renderPanel}
-            onSelect={handleVehicleSelect}
+            onSelect={isOperationsRole ? handleDirectVehicleClick : handleVehicleSelect}
             onHover={hoverVehicle}
             onClearSelection={clearSelection}
           />

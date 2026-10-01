@@ -32,4 +32,6 @@ public interface ChargingSessionRepository extends JpaRepository<ChargingSession
     boolean existsByChargingStationIdAndStatus(UUID stationId, ChargingSessionStatus status);
 
     List<ChargingSession> findByVehicleIdOrderByCreatedAtDesc(UUID vehicleId);
+
+    List<ChargingSession> findByStatus(ChargingSessionStatus status);
 }

@@ -41,6 +41,7 @@ export interface ChargingSessionResponse {
   targetSocPercent: number;
   energyDeliveredKwh?: number | null;
   powerKw?: number | null;
+  estimatedRemainingMinutes?: number | null;
   completionReason?: string | null;
   createdAt: string;
   updatedAt: string;

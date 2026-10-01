@@ -9,18 +9,16 @@ import {
   fetchHandoverEligibility,
   fetchActiveVehicleHandovers,
   fetchBookingHandover,
+  fetchHandoverHistory,
+  createHandoverApi,
   startHandoverApi,
-  submitInspectionApi,
   markHandoverReadyApi,
   confirmHandoverApi,
 } from '../../services/handoverApi';
 import {
-  HANDOVER_CHECKPOINTS,
-  getCheckpointByCode,
-  InspectionCondition,
   VehicleHandoverData,
-  INSPECTION_CONDITION_CONFIG,
   HANDOVER_STATUS_CONFIG,
+  HANDOVER_ELIGIBILITY_CONFIG,
 } from '../../types/handover';
 import {
   fetchLatestCompletedInspection,
@@ -67,6 +65,8 @@ import {
   Clock,
   UserCheck,
   XCircle,
+  RotateCcw,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface StaffVehicleDetailPanelProps {
@@ -204,7 +204,12 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
   const targetBookingId = eligibility?.bookingId;
 
   // Authoritative query for handover by booking
-  const { data: bookingHandover, refetch: refetchBookingHandover } = useQuery<VehicleHandoverData | null>({
+  const {
+    data: bookingHandover,
+    isError: isBookingHandoverError,
+    error: bookingHandoverError,
+    refetch: refetchBookingHandover,
+  } = useQuery<VehicleHandoverData | null>({
     queryKey: ['handoverByBooking', targetBookingId],
     queryFn: () => (targetBookingId ? fetchBookingHandover(targetBookingId) : null),
     enabled: !!targetBookingId && vehicleHandoverMode,
@@ -230,35 +235,35 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
     refetchInterval: vehicleHandoverMode ? 3000 : false,
   });
 
-  // Derive target handover candidate
+  // TanStack Query: Historical Completed Handovers (Immutable history for vehicle)
+  const { data: handoverHistory = [], refetch: refetchHandoverHistory } = useQuery<VehicleHandoverData[]>({
+    queryKey: ['handoverHistory', vehicle.id],
+    queryFn: () => fetchHandoverHistory(vehicle.id),
+    enabled: !!vehicle.id,
+    staleTime: 5000,
+  });
+
+  // Derive target handover candidate strictly tied to current booking and active lifecycle
   const handover = useMemo(() => {
-    if (bookingHandover) {
+    // If no target booking or explicitly NO_BOOKING, there is no active handover candidate
+    if (!targetBookingId || eligibility?.reason === 'NO_BOOKING') {
+      return null;
+    }
+    // 1. Authoritative: Handover fetched directly for the current booking
+    if (bookingHandover && bookingHandover.id) {
       return bookingHandover;
     }
-    if (activeHandovers && activeHandovers.length > 0) {
-      if (targetBookingId) {
-        const match = activeHandovers.find((h) => h.bookingId === targetBookingId);
-        if (match) return match;
-      }
-      const nonExpired = activeHandovers.filter(
-        (h) => !h.isExpired && !h.expired && h.bookingStatus !== 'EXPIRED'
-      );
-      const targetPool = nonExpired.length > 0 ? nonExpired : activeHandovers;
-      const handedOver = targetPool.find((h) => h.status === 'HANDED_OVER');
-      if (handedOver) return handedOver;
-      const ready = targetPool.find((h) => h.status === 'READY_FOR_HANDOVER');
-      if (ready) return ready;
-      const inProgress = targetPool.find((h) => h.status === 'INSPECTION_IN_PROGRESS');
-      if (inProgress) return inProgress;
-      const pending = targetPool.find((h) => h.status === 'PENDING_PREPARATION');
-      if (pending) return pending;
-      return targetPool[0];
+    // 2. Active handover list for this vehicle matching targetBookingId with real ID
+    if (activeHandovers && activeHandovers.length > 0 && targetBookingId) {
+      const match = activeHandovers.find((h) => h.bookingId === targetBookingId && Boolean(h.id));
+      if (match) return match;
     }
-    if (eligibility?.handoverId && eligibility?.handover) {
+    // 3. Handover attached to authoritative eligibility response matching current booking
+    if (eligibility?.handoverId && eligibility?.handover?.id && eligibility?.bookingId === targetBookingId) {
       return eligibility.handover;
     }
     return null;
-  }, [bookingHandover, activeHandovers, targetBookingId, eligibility?.handoverId, eligibility?.handover]);
+  }, [bookingHandover, activeHandovers, targetBookingId, eligibility]);
 
   // TanStack Query: Latest Completed Vehicle Inspection (Authoritative for Handover)
   const {
@@ -282,6 +287,78 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
     enabled: vehicleInspectionMode,
     refetchInterval: 3000,
   });
+
+  // Business rule: Authoritative Inspection & Handover Readiness
+  // Strictly require a fresh, unconsumed inspection for the upcoming handover cycle (Requirements 10 & 11)
+  const isInspectionPassed = useMemo(() => {
+    // 1. Authoritative: Backend eligibility explicitly confirms an unconsumed inspection is available and fresh
+    if (eligibility) {
+      return Boolean(
+        eligibility.inspectionAvailable &&
+        eligibility.inspectionFresh &&
+        (eligibility.inspectionResult === 'PASS' || eligibility.inspectionResult === 'PASS_WITH_NOTES')
+      );
+    }
+    // 2. Fallback only if eligibility not loaded yet: inspect whether latestInspection is not consumed by historical handovers
+    if (latestInspection && (latestInspection.overallResult === 'PASS' || latestInspection.overallResult === 'PASS_WITH_NOTES')) {
+      const isConsumed = handoverHistory.some((h) => h.inspectionId === latestInspection.id);
+      return !isConsumed;
+    }
+    return false;
+  }, [eligibility, latestInspection, handoverHistory]);
+
+  const isInspectionFailed = useMemo(() => {
+    return Boolean(
+      eligibility?.reason === 'INSPECTION_FAILED' ||
+      eligibility?.inspectionResult === 'FAIL' ||
+      latestInspection?.overallResult === 'FAIL'
+    );
+  }, [eligibility, latestInspection]);
+
+  const isInspectionExpired = useMemo(() => {
+    return Boolean(
+      eligibility?.reason === 'INSPECTION_EXPIRED' ||
+      (eligibility?.inspectionAvailable && !eligibility?.inspectionFresh)
+    );
+  }, [eligibility]);
+
+  const handoverBlockReason = useMemo(() => {
+    if (vehicle.status === 'MAINTENANCE' || eligibility?.reason === 'VEHICLE_MAINTENANCE') {
+      return 'Xe đang bảo dưỡng nên chưa thể bàn giao.';
+    }
+    if (vehicle.status === 'CHARGING' || eligibility?.reason === 'VEHICLE_CHARGING') {
+      return 'Xe đang sạc nên chưa thể bàn giao.';
+    }
+    if (vehicle.status === 'IN_USE' || eligibility?.reason === 'VEHICLE_IN_USE') {
+      return 'Xe đang được sử dụng nên chưa thể bàn giao.';
+    }
+    if (eligibility?.reason === 'TOO_EARLY') {
+      return 'Chưa đến thời gian bàn giao xe (mở trước 2 tiếng).';
+    }
+    if (eligibility?.reason === 'BOOKING_EXPIRED') {
+      return 'Lịch đặt xe đã hết hiệu lực.';
+    }
+    if (eligibility?.reason === 'NO_BOOKING') {
+      return 'Không có lịch đặt xe phù hợp để bàn giao.';
+    }
+    return null;
+  }, [vehicle.status, eligibility?.reason]);
+
+  const isHandoverEligibleForReady = useMemo(() => {
+    const hasHandoverCandidate = Boolean(handover || targetBookingId || eligibility?.bookingId);
+    const isNotAlreadyDone = handover?.status !== 'HANDED_OVER' &&
+      handover?.status !== 'OWNER_CONFIRMED' &&
+      handover?.status !== 'COMPLETED';
+
+    return Boolean(
+      hasHandoverCandidate &&
+      isNotAlreadyDone &&
+      isInspectionPassed &&
+      !isInspectionFailed &&
+      !isInspectionExpired &&
+      !handoverBlockReason
+    );
+  }, [handover, targetBookingId, eligibility?.bookingId, isInspectionPassed, isInspectionFailed, isInspectionExpired, handoverBlockReason]);
 
   // Local state for KIỂM TRA BỘ PHẬN (Vehicle Part Inspection)
   const [partCondition, setPartCondition] = useState<InspectionItemCondition>('GOOD');
@@ -361,8 +438,19 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
         queryClient.invalidateQueries({ queryKey: ['activeVehicleInspection', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['latestCompletedInspection', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['activeVehicleHandovers', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['activeVehicleHandover', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['vehicle', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['fleetVehicles'] }),
+        targetBookingId ? queryClient.invalidateQueries({ queryKey: ['handoverByBooking', targetBookingId] }) : Promise.resolve(),
       ]);
-      await Promise.all([refetchActiveInspection(), refetchLatestInspection()]);
+      await Promise.all([
+        refetchActiveInspection(),
+        refetchLatestInspection(),
+        refetchEligibility(),
+        refetchActiveHandovers(),
+        refetchBookingHandover(),
+      ]);
       setInspectionFeedback({
         type: 'success',
         text: `Đã hoàn tất biên bản kiểm tra: Kết quả ${
@@ -414,7 +502,46 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
 
   useEffect(() => {
     setActionErrorMsg(null);
-  }, [vehicle.id, vehicleHandoverMode]);
+  }, [vehicle.id, targetBookingId, vehicleHandoverMode]);
+
+  // Controlled Proactive Preparation on Entry: If STAFF enters handover mode, targetBookingId is resolved,
+  // inspection is passed, but no handover record exists yet in DB, proactively prepare it
+  useEffect(() => {
+    let isCancelled = false;
+    if (
+      vehicleHandoverMode &&
+      targetBookingId &&
+      !bookingHandover &&
+      !isBookingHandoverError &&
+      isInspectionPassed &&
+      !isInspectionFailed &&
+      !isInspectionExpired &&
+      !handoverBlockReason
+    ) {
+      createHandoverApi(targetBookingId)
+        .then((created) => {
+          if (!isCancelled && created?.id) {
+            queryClient.invalidateQueries({ queryKey: ['handoverByBooking', targetBookingId] });
+            queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] });
+          }
+        })
+        .catch(() => {
+          // Handled gracefully on-demand by handleMarkHandoverReady
+        });
+    }
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    vehicleHandoverMode,
+    targetBookingId,
+    bookingHandover,
+    isBookingHandoverError,
+    isInspectionPassed,
+    isInspectionFailed,
+    isInspectionExpired,
+    handoverBlockReason,
+  ]);
 
   const handleStartHandoverWorkflow = async () => {
     const bookingId = targetBookingId || handover?.bookingId || eligibility?.bookingId;
@@ -425,41 +552,64 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
     setIsSubmittingAction(true);
     setActionErrorMsg(null);
     try {
-      await startHandoverApi(bookingId);
+      const started = await createHandoverApi(bookingId);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['handoverByBooking', bookingId] }),
+        queryClient.invalidateQueries({ queryKey: ['handoverEligibility', started?.id] }),
+        queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandovers', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandover', vehicle.id] }),
-        queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['handoverHistory', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['vehicleRelevantBooking', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['vehicle', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['booking', bookingId] }),
       ]);
-      await Promise.all([refetchBookingHandover(), refetchActiveHandovers(), refetchEligibility()]);
+      await Promise.all([refetchBookingHandover(), refetchActiveHandovers(), refetchEligibility(), refetchHandoverHistory()]);
     } catch (err: any) {
-      setActionErrorMsg(err.message || 'Không thể bắt đầu kiểm tra xe.');
+      setActionErrorMsg(err.message || 'Không thể khởi tạo hồ sơ bàn giao xe.');
     } finally {
       setIsSubmittingAction(false);
     }
   };
 
   const handleMarkHandoverReady = async () => {
-    if (!handover?.id) {
-      setActionErrorMsg('Chưa có hồ sơ bàn giao xe hợp lệ để xác nhận sẵn sàng.');
+    const bId = targetBookingId || handover?.bookingId || eligibility?.bookingId;
+    if (!bId) {
+      setActionErrorMsg('Không tìm thấy mã đặt xe để chuẩn bị bàn giao.');
       return;
     }
+
     setIsSubmittingAction(true);
     setActionErrorMsg(null);
     try {
-      await markHandoverReadyApi(handover.id);
+      let currentHandoverId = handover?.id || bookingHandover?.id;
+
+      // If no persisted handover record exists yet in DB, create one authoritatively
+      if (!currentHandoverId) {
+        const created = await createHandoverApi(bId);
+        if (!created || !created.id) {
+          throw new Error('Không thể khởi tạo hồ sơ bàn giao xe.');
+        }
+        currentHandoverId = created.id;
+        await queryClient.invalidateQueries({ queryKey: ['handoverByBooking', bId] });
+      }
+
+      await markHandoverReadyApi(currentHandoverId);
+
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['handoverByBooking', targetBookingId] }),
+        queryClient.invalidateQueries({ queryKey: ['handoverByBooking', bId] }),
+        queryClient.invalidateQueries({ queryKey: ['handoverEligibility', currentHandoverId] }),
+        queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandovers', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandover', vehicle.id] }),
-        queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['handoverHistory', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['vehicleRelevantBooking', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['latestCompletedInspection', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['vehicle', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['booking', bId] }),
         queryClient.invalidateQueries({ queryKey: ['fleetVehicles'] }),
       ]);
-      await Promise.all([refetchBookingHandover(), refetchActiveHandovers(), refetchEligibility()]);
+      await Promise.all([refetchBookingHandover(), refetchActiveHandovers(), refetchEligibility(), refetchHandoverHistory()]);
     } catch (err: any) {
       setActionErrorMsg(err.message || 'Không thể xác nhận sẵn sàng bàn giao.');
     } finally {
@@ -477,11 +627,13 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
         queryClient.invalidateQueries({ queryKey: ['handoverByBooking', targetBookingId] }),
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandovers', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandover', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['handoverHistory', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['vehicleRelevantBooking', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['vehicle', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['fleetVehicles'] }),
       ]);
-      await Promise.all([refetchBookingHandover(), refetchActiveHandovers(), refetchEligibility()]);
+      await Promise.all([refetchBookingHandover(), refetchActiveHandovers(), refetchEligibility(), refetchHandoverHistory()]);
     } catch (err: any) {
       setActionErrorMsg(err.message || 'Không thể xác nhận giao xe.');
     } finally {
@@ -1741,69 +1893,169 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
                 </button>
               </div>
 
-              {/* Handover & Recipient Summary Card */}
-              <div
-                style={{
-                  background: 'rgba(15, 23, 42, 0.75)',
-                  border: '1px solid rgba(56, 189, 248, 0.2)',
-                  borderRadius: '8px',
-                  padding: '10px 12px',
-                  fontSize: '11px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '6px',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#94a3b8' }}>Xe:</span>
-                  <span style={{ fontWeight: 700, color: '#ffffff' }}>{code} — {vehicle.licensePlate}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#94a3b8' }}>Người nhận:</span>
-                  <span style={{ fontWeight: 700, color: '#38bdf8' }}>
-                    {handover?.coOwnerName || eligibility?.recipientName || 'Đồng sở hữu'}
-                  </span>
-                </div>
-                {(handover?.bookingStartTime || eligibility?.bookingStartTime) && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#94a3b8' }}>Khung giờ:</span>
-                    <span style={{ fontWeight: 600, color: '#cbd5e1' }}>
-                      {formatBookingDate(handover?.bookingStartTime || eligibility?.bookingStartTime)}{' '}
-                      ({formatBookingTime(handover?.bookingStartTime || eligibility?.bookingStartTime)} - {formatBookingTime(handover?.bookingEndTime || eligibility?.bookingEndTime)})
-                    </span>
+              {/* CASE C: NO ACTIVE / UPCOMING BOOKING REQUIRING HANDOVER */}
+              {((!targetBookingId && (!handover || handover.status === 'COMPLETED')) || eligibility?.reason === 'NO_BOOKING' || handover?.status === 'COMPLETED') ? (
+                <div
+                  style={{
+                    background: 'rgba(15, 23, 42, 0.75)',
+                    border: '1px solid rgba(56, 189, 248, 0.2)',
+                    borderRadius: '10px',
+                    padding: '24px 16px',
+                    textAlign: 'center',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '12px',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '44px',
+                      height: '44px',
+                      borderRadius: '50%',
+                      background: 'rgba(56, 189, 248, 0.12)',
+                      border: '1px solid rgba(56, 189, 248, 0.3)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#38bdf8',
+                    }}
+                  >
+                    <Key size={22} />
                   </div>
-                )}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ color: '#94a3b8' }}>Trạng thái:</span>
-                  {handover ? (
-                    <span
+
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 800, color: '#f8fafc', marginBottom: '6px' }}>
+                      Hiện không có lượt đặt xe nào cần bàn giao.
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#94a3b8', lineHeight: '1.5' }}>
+                      {vehicle.status === 'AVAILABLE'
+                        ? 'Xe đang ở trạng thái sẵn sàng (AVAILABLE) nhưng chưa có lịch đặt mới sắp tới để chuẩn bị bàn giao.'
+                        : 'Tất cả các lượt bàn giao trước đó đã hoàn tất hoặc xe chưa có lịch đặt mới.'}
+                    </div>
+                  </div>
+
+                  {/* Historical Handover Summary Info if exists */}
+                  {handoverHistory.length > 0 && (
+                    <div
                       style={{
-                        fontWeight: 800,
-                        fontSize: '10px',
-                        color: HANDOVER_STATUS_CONFIG[handover.status || 'PENDING_PREPARATION'].color,
-                        background: HANDOVER_STATUS_CONFIG[handover.status || 'PENDING_PREPARATION'].badgeBg,
-                        padding: '2px 6px',
-                        borderRadius: '4px',
+                        width: '100%',
+                        background: 'rgba(255, 255, 255, 0.03)',
+                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        borderRadius: '8px',
+                        padding: '10px 12px',
+                        textAlign: 'left',
+                        fontSize: '11px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px',
+                        marginTop: '4px',
                       }}
                     >
-                      {HANDOVER_STATUS_CONFIG[handover.status || 'PENDING_PREPARATION'].labelVi}
-                    </span>
-                  ) : (
-                    <span
-                      style={{
-                        fontWeight: 800,
-                        fontSize: '10px',
-                        color: '#f59e0b',
-                        background: 'rgba(245, 158, 11, 0.15)',
-                        padding: '2px 6px',
-                        borderRadius: '4px',
-                      }}
-                    >
-                      CHƯA CÓ HỒ SƠ BÀN GIAO
-                    </span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: '#94a3b8', fontWeight: 600 }}>Lịch sử bàn giao:</span>
+                        <span style={{ color: '#38bdf8', fontWeight: 700 }}>{handoverHistory.length} lượt hoàn tất</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px' }}>
+                        <span style={{ color: '#64748b' }}>Lần bàn giao gần nhất:</span>
+                        <span style={{ color: '#cbd5e1' }}>
+                          {handoverHistory[0]?.completedAt
+                            ? new Date(handoverHistory[0].completedAt).toLocaleString('vi-VN')
+                            : 'Đã lưu trữ'}
+                        </span>
+                      </div>
+                    </div>
                   )}
+
+                  <button
+                    type="button"
+                    onClick={() => returnToVehicleOverview()}
+                    style={{
+                      width: '100%',
+                      marginTop: '6px',
+                      padding: '9px 16px',
+                      background: 'rgba(255, 255, 255, 0.08)',
+                      border: '1px solid rgba(255, 255, 255, 0.18)',
+                      borderRadius: '8px',
+                      color: '#cbd5e1',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <ArrowLeft size={13} />
+                    <span>ĐÓNG QUY TRÌNH BÀN GIAO</span>
+                  </button>
                 </div>
-              </div>
+              ) : (
+                <>
+                  {/* CASE A & B: Handover & Recipient Summary Card */}
+                  <div
+                    style={{
+                      background: 'rgba(15, 23, 42, 0.75)',
+                      border: '1px solid rgba(56, 189, 248, 0.2)',
+                      borderRadius: '8px',
+                      padding: '10px 12px',
+                      fontSize: '11px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '6px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Xe:</span>
+                      <span style={{ fontWeight: 700, color: '#ffffff' }}>{code} — {vehicle.licensePlate}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Người nhận:</span>
+                      <span style={{ fontWeight: 700, color: '#38bdf8' }}>
+                        {handover?.coOwnerName || eligibility?.recipientName || 'Đồng sở hữu'}
+                      </span>
+                    </div>
+                    {(handover?.bookingStartTime || eligibility?.bookingStartTime) && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#94a3b8' }}>Khung giờ:</span>
+                        <span style={{ fontWeight: 600, color: '#cbd5e1' }}>
+                          {formatBookingDate(handover?.bookingStartTime || eligibility?.bookingStartTime)}{' '}
+                          ({formatBookingTime(handover?.bookingStartTime || eligibility?.bookingStartTime)} - {formatBookingTime(handover?.bookingEndTime || eligibility?.bookingEndTime)})
+                        </span>
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ color: '#94a3b8' }}>Trạng thái:</span>
+                      {handover ? (
+                        <span
+                          style={{
+                            fontWeight: 800,
+                            fontSize: '10px',
+                            color: HANDOVER_STATUS_CONFIG[handover.status || 'PENDING_PREPARATION'].color,
+                            background: HANDOVER_STATUS_CONFIG[handover.status || 'PENDING_PREPARATION'].badgeBg,
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                          }}
+                        >
+                          {HANDOVER_STATUS_CONFIG[handover.status || 'PENDING_PREPARATION'].labelVi}
+                        </span>
+                      ) : (
+                        <span
+                          style={{
+                            fontWeight: 800,
+                            fontSize: '10px',
+                            color: isHandoverEligibleForReady ? '#34d399' : '#f59e0b',
+                            background: isHandoverEligibleForReady ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                          }}
+                        >
+                          {isHandoverEligibleForReady ? 'ĐÃ KIỂM TRA TIỀN BÀN GIAO' : 'CHỜ CHUẨN BỊ'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
 
               {/* Action Error Alert */}
               {actionErrorMsg && (
@@ -1827,8 +2079,8 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
               {/* ================================================================= */}
               {/* Inspection Status & Handover Eligibility Assessment               */}
               {/* ================================================================= */}
-              {eligibility?.handoverAllowed ? (
-                /* Eligible Case: Inspection is completed and passed */
+              {isInspectionPassed ? (
+                /* Eligible / Passed Case: Inspection is completed and passed */
                 <div
                   style={{
                     background: 'rgba(15, 23, 42, 0.85)',
@@ -1848,19 +2100,19 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
                         ĐÃ KIỂM TRA TIỀN BÀN GIAO
                       </span>
                     </div>
-                    {latestInspection?.overallResult && (
+                    {(latestInspection?.overallResult || eligibility?.inspectionResult) && (
                       <span
                         style={{
                           fontWeight: 800,
                           fontSize: '10px',
                           padding: '2px 6px',
                           borderRadius: '4px',
-                          color: INSPECTION_RESULT_CONFIG[latestInspection.overallResult].color,
-                          background: INSPECTION_RESULT_CONFIG[latestInspection.overallResult].bg,
-                          border: `1px solid ${INSPECTION_RESULT_CONFIG[latestInspection.overallResult].border}`,
+                          color: INSPECTION_RESULT_CONFIG[(latestInspection?.overallResult || eligibility?.inspectionResult) as keyof typeof INSPECTION_RESULT_CONFIG]?.color || '#34d399',
+                          background: INSPECTION_RESULT_CONFIG[(latestInspection?.overallResult || eligibility?.inspectionResult) as keyof typeof INSPECTION_RESULT_CONFIG]?.bg || 'rgba(16, 185, 129, 0.2)',
+                          border: `1px solid ${INSPECTION_RESULT_CONFIG[(latestInspection?.overallResult || eligibility?.inspectionResult) as keyof typeof INSPECTION_RESULT_CONFIG]?.border || 'rgba(16, 185, 129, 0.4)'}`,
                         }}
                       >
-                        {INSPECTION_RESULT_CONFIG[latestInspection.overallResult].labelVi}
+                        {INSPECTION_RESULT_CONFIG[(latestInspection?.overallResult || eligibility?.inspectionResult) as keyof typeof INSPECTION_RESULT_CONFIG]?.labelVi || 'ĐẠT TIÊU CHUẨN'}
                       </span>
                     )}
                   </div>
@@ -1897,6 +2149,26 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
                     </div>
                   </div>
 
+                  {handoverBlockReason && (
+                    <div
+                      style={{
+                        background: 'rgba(245, 158, 11, 0.15)',
+                        border: '1px solid rgba(245, 158, 11, 0.4)',
+                        borderRadius: '6px',
+                        padding: '6px 8px',
+                        color: '#fbbf24',
+                        fontSize: '10.5px',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      <AlertTriangle size={13} />
+                      <span>{handoverBlockReason}</span>
+                    </div>
+                  )}
+
                   <button
                     type="button"
                     onClick={() => setIsViewingInspectionDetail(true)}
@@ -1920,91 +2192,7 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
                     <ChevronRight size={13} />
                   </button>
                 </div>
-              ) : eligibility?.reason === 'NO_INSPECTION' || (!latestInspection && !eligibility?.inspectionAvailable) ? (
-                /* Ineligible Case: No Inspection Record */
-                <div
-                  style={{
-                    background: 'rgba(245, 158, 11, 0.1)',
-                    border: '1px solid rgba(245, 158, 11, 0.4)',
-                    borderRadius: '10px',
-                    padding: '12px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '8px',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#fbbf24' }}>
-                    <AlertTriangle size={15} />
-                    <span style={{ fontSize: '11.5px', fontWeight: 800 }}>CHƯA CÓ KẾT QUẢ KIỂM TRA XE</span>
-                  </div>
-                  <div style={{ fontSize: '11px', color: '#e2e8f0', lineHeight: '1.45' }}>
-                    Xe chưa có kết quả kiểm tra hợp lệ để bàn giao. Vui lòng hoàn tất kiểm tra xe trước khi thực hiện bàn giao.
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => enterVehicleInspectionMode()}
-                    style={{
-                      background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-                      border: 'none',
-                      borderRadius: '8px',
-                      padding: '8px 12px',
-                      color: '#080c16',
-                      fontSize: '11px',
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px',
-                    }}
-                  >
-                    <Shield size={13} />
-                    <span>KIỂM TRA XE NGAY</span>
-                  </button>
-                </div>
-              ) : eligibility?.reason === 'INSPECTION_EXPIRED' ? (
-                /* Ineligible Case: Inspection Expired */
-                <div
-                  style={{
-                    background: 'rgba(245, 158, 11, 0.1)',
-                    border: '1px solid rgba(245, 158, 11, 0.4)',
-                    borderRadius: '10px',
-                    padding: '12px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '8px',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#fbbf24' }}>
-                    <Clock size={15} />
-                    <span style={{ fontSize: '11.5px', fontWeight: 800 }}>KẾT QUẢ KIỂM TRA ĐÃ QUÁ HẠN</span>
-                  </div>
-                  <div style={{ fontSize: '11px', color: '#e2e8f0', lineHeight: '1.45' }}>
-                    Kết quả kiểm tra xe đã quá hạn (tối đa 24 giờ). Vui lòng kiểm tra lại xe trước khi bàn giao.
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => enterVehicleInspectionMode()}
-                    style={{
-                      background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-                      border: 'none',
-                      borderRadius: '8px',
-                      padding: '8px 12px',
-                      color: '#080c16',
-                      fontSize: '11px',
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px',
-                    }}
-                  >
-                    <Shield size={13} />
-                    <span>KIỂM TRA LẠI XE</span>
-                  </button>
-                </div>
-              ) : eligibility?.reason === 'INSPECTION_FAILED' || latestInspection?.overallResult === 'FAIL' ? (
+              ) : isInspectionFailed ? (
                 /* Ineligible Case: Inspection Failed */
                 <div
                   style={{
@@ -2059,86 +2247,249 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
                     </button>
                   </div>
                 </div>
-              ) : (
-                /* Ineligible Case: Other Reasons */
+              ) : isInspectionExpired ? (
+                /* Ineligible Case: Inspection Expired */
                 <div
                   style={{
                     background: 'rgba(245, 158, 11, 0.1)',
-                    border: '1px solid rgba(245, 158, 11, 0.35)',
+                    border: '1px solid rgba(245, 158, 11, 0.4)',
                     borderRadius: '10px',
                     padding: '12px',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '6px',
+                    gap: '8px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#fbbf24' }}>
+                    <Clock size={15} />
+                    <span style={{ fontSize: '11.5px', fontWeight: 800 }}>KẾT QUẢ KIỂM TRA ĐÃ QUÁ HẠN</span>
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#e2e8f0', lineHeight: '1.45' }}>
+                    Kết quả kiểm tra xe đã quá hạn (tối đa 24 giờ). Vui lòng kiểm tra lại xe trước khi bàn giao.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => enterVehicleInspectionMode()}
+                    style={{
+                      background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                      border: 'none',
+                      borderRadius: '8px',
+                      padding: '8px 12px',
+                      color: '#080c16',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <Shield size={13} />
+                    <span>KIỂM TRA LẠI XE</span>
+                  </button>
+                </div>
+              ) : (
+                /* Ineligible Case: No Inspection Record or Other */
+                <div
+                  style={{
+                    background: 'rgba(245, 158, 11, 0.1)',
+                    border: '1px solid rgba(245, 158, 11, 0.4)',
+                    borderRadius: '10px',
+                    padding: '12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#fbbf24' }}>
                     <AlertTriangle size={15} />
-                    <span style={{ fontSize: '11.5px', fontWeight: 800 }}>CHƯA THỂ BÀN GIAO XE</span>
+                    <span style={{ fontSize: '11.5px', fontWeight: 800 }}>CHƯA CÓ KẾT QUẢ KIỂM TRA XE</span>
                   </div>
-                  <div style={{ fontSize: '11px', color: '#cbd5e1' }}>
-                    {HANDOVER_ELIGIBILITY_CONFIG[eligibility?.reason as keyof typeof HANDOVER_ELIGIBILITY_CONFIG]?.labelVi ||
-                      eligibility?.reason ||
-                      'Xe chưa sẵn sàng để bàn giao.'}
+                  <div style={{ fontSize: '11px', color: '#e2e8f0', lineHeight: '1.45' }}>
+                    Xe chưa có kết quả kiểm tra hợp lệ để bàn giao. Vui lòng hoàn tất kiểm tra xe trước khi thực hiện bàn giao.
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => enterVehicleInspectionMode()}
+                    style={{
+                      background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                      border: 'none',
+                      borderRadius: '8px',
+                      padding: '8px 12px',
+                      color: '#080c16',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <Shield size={13} />
+                    <span>KIỂM TRA XE NGAY</span>
+                  </button>
                 </div>
               )}
 
               {/* Handover Lifecycle Action Buttons */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
-                {!handover ? (
-                  <div>
-                    <div
+                {/* 500 / Network Error State for Handover Query */}
+                {isBookingHandoverError && (
+                  <div
+                    style={{
+                      background: 'rgba(239, 68, 68, 0.12)',
+                      border: '1px solid rgba(239, 68, 68, 0.4)',
+                      borderRadius: '8px',
+                      padding: '10px 12px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '6px',
+                      color: '#f87171',
+                      marginBottom: '6px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 700 }}>
+                      <AlertTriangle size={14} />
+                      <span>Không thể tải thông tin bàn giao.</span>
+                    </div>
+                    <div style={{ fontSize: '10px', color: '#cbd5e1' }}>
+                      {(bookingHandoverError as any)?.message || 'Vui lòng kiểm tra lại kết nối máy chủ.'}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => refetchBookingHandover()}
                       style={{
-                        background: 'rgba(245, 158, 11, 0.12)',
-                        border: '1px solid rgba(245, 158, 11, 0.35)',
-                        borderRadius: '8px',
-                        padding: '10px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        color: '#f59e0b',
-                        marginBottom: '8px',
+                        padding: '5px 10px',
+                        background: 'rgba(239, 68, 68, 0.25)',
+                        border: '1px solid #ef4444',
+                        borderRadius: '6px',
+                        color: '#ffffff',
+                        fontSize: '10.5px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        alignSelf: 'flex-start',
                       }}
                     >
-                      <AlertTriangle size={15} />
-                      <span style={{ fontSize: '11px', fontWeight: 700 }}>
-                        Chưa có hồ sơ bàn giao cho lượt đặt xe này.
-                      </span>
-                    </div>
+                      THỬ LẠI
+                    </button>
+                  </div>
+                )}
+
+                {!handover ? (
+                  <div>
+                    {isHandoverEligibleForReady ? (
+                      <button
+                        type="button"
+                        onClick={handleMarkHandoverReady}
+                        disabled={isSubmittingAction}
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          background: 'linear-gradient(135deg, #10b981 0%, #34d399 100%)',
+                          border: 'none',
+                          borderRadius: '8px',
+                          color: '#052e16',
+                          fontWeight: 800,
+                          fontSize: '11.5px',
+                          letterSpacing: '0.04em',
+                          cursor: isSubmittingAction ? 'not-allowed' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          boxShadow: '0 4px 15px rgba(16, 185, 129, 0.4)',
+                        }}
+                      >
+                        <Sparkles size={14} />
+                        <span>{isSubmittingAction ? 'ĐANG CHUẨN BỊ & XÁC NHẬN...' : 'XÁC NHẬN SẴN SÀNG BÀN GIAO'}</span>
+                      </button>
+                    ) : (
+                      <>
+                        <div
+                          style={{
+                            background: 'rgba(245, 158, 11, 0.12)',
+                            border: '1px solid rgba(245, 158, 11, 0.35)',
+                            borderRadius: '8px',
+                            padding: '10px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            color: '#f59e0b',
+                            marginBottom: '8px',
+                          }}
+                        >
+                          <AlertTriangle size={15} />
+                          <span style={{ fontSize: '11px', fontWeight: 700 }}>
+                            {handoverBlockReason || 'Đang chuẩn bị hồ sơ bàn giao...'}
+                          </span>
+                        </div>
+
+                        {targetBookingId && !handoverBlockReason ? (
+                          <button
+                            type="button"
+                            onClick={handleStartHandoverWorkflow}
+                            disabled={isSubmittingAction}
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              background: 'linear-gradient(135deg, #0ea5e9 0%, #38bdf8 100%)',
+                              border: 'none',
+                              borderRadius: '8px',
+                              color: '#082f49',
+                              fontWeight: 800,
+                              fontSize: '11.5px',
+                              letterSpacing: '0.04em',
+                              cursor: isSubmittingAction ? 'not-allowed' : 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '6px',
+                              boxShadow: '0 4px 15px rgba(14, 165, 233, 0.4)',
+                            }}
+                          >
+                            <Sparkles size={14} />
+                            <span>{isSubmittingAction ? 'ĐANG KHỞI TẠO...' : 'TẠO / CHUẨN BỊ HỒ SƠ BÀN GIAO'}</span>
+                          </button>
+                        ) : null}
+                      </>
+                    )}
 
                     <button
                       type="button"
-                      onClick={handleStartHandoverWorkflow}
-                      disabled={isSubmittingAction || !targetBookingId}
+                      onClick={() => returnToVehicleOverview()}
                       style={{
                         width: '100%',
-                        padding: '10px',
-                        background: 'linear-gradient(135deg, #0ea5e9 0%, #38bdf8 100%)',
-                        border: 'none',
+                        marginTop: targetBookingId || isHandoverEligibleForReady ? '6px' : '0',
+                        padding: '8px 12px',
+                        background: 'rgba(255, 255, 255, 0.06)',
+                        border: '1px solid rgba(255, 255, 255, 0.15)',
                         borderRadius: '8px',
-                        color: '#082f49',
-                        fontWeight: 800,
-                        fontSize: '11.5px',
-                        letterSpacing: '0.04em',
-                        cursor: isSubmittingAction || !targetBookingId ? 'not-allowed' : 'pointer',
+                        color: '#94a3b8',
+                        fontWeight: 700,
+                        fontSize: '11px',
+                        cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         gap: '6px',
-                        boxShadow: '0 4px 15px rgba(14, 165, 233, 0.4)',
                       }}
                     >
-                      <Sparkles size={14} />
-                      <span>{isSubmittingAction ? 'ĐANG KHỞI TẠO...' : 'BẮT ĐẦU CHUẨN BỊ BÀN GIAO'}</span>
+                      <ArrowLeft size={13} />
+                      <span>QUAY LẠI XE</span>
                     </button>
-                    <div style={{ fontSize: '9.5px', color: '#94a3b8', textAlign: 'center', marginTop: '4px' }}>
-                      Khởi tạo hồ sơ bàn giao xe cho lịch đặt hiện tại.
+                    <div style={{ fontSize: '9.5px', color: isHandoverEligibleForReady ? '#34d399' : '#94a3b8', textAlign: 'center', marginTop: '4px' }}>
+                      {isHandoverEligibleForReady
+                        ? 'Đã có kết quả kiểm tra đạt chuẩn. Xác nhận để chuẩn bị và chuyển sang trạng thái sẵn sàng bàn giao.'
+                        : handoverBlockReason
+                        ? handoverBlockReason
+                        : 'Khởi tạo hồ sơ bàn giao xe cho lịch đặt hiện tại.'}
                     </div>
                   </div>
                 ) : (handover.status === 'PENDING_PREPARATION' || handover.status === 'INSPECTION_IN_PROGRESS') ? (
                   <div>
-                    {eligibility?.handoverAllowed ? (
+                    {isHandoverEligibleForReady ? (
                       <button
                         type="button"
                         onClick={handleMarkHandoverReady}
@@ -2164,6 +2515,24 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
                         <Sparkles size={14} />
                         <span>{isSubmittingAction ? 'ĐANG XỬ LÝ...' : 'XÁC NHẬN SẴN SÀNG BÀN GIAO'}</span>
                       </button>
+                    ) : handoverBlockReason ? (
+                      <div
+                        style={{
+                          background: 'rgba(245, 158, 11, 0.15)',
+                          border: '1px solid rgba(245, 158, 11, 0.4)',
+                          borderRadius: '8px',
+                          padding: '10px',
+                          color: '#fbbf24',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                        }}
+                      >
+                        <AlertTriangle size={15} />
+                        <span>{handoverBlockReason}</span>
+                      </div>
                     ) : (
                       <button
                         type="button"
@@ -2189,10 +2558,12 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
                         <span>ĐI ĐẾN KIỂM TRA BỘ PHẬN</span>
                       </button>
                     )}
-                    <div style={{ fontSize: '9.5px', color: eligibility?.handoverAllowed ? '#34d399' : '#94a3b8', textAlign: 'center', marginTop: '4px' }}>
-                      {eligibility?.handoverAllowed
-                        ? 'Đã có kết quả kiểm tra hợp lệ. Xác nhận để chuyển sang trạng thái sẵn sàng bàn giao.'
-                        : 'Xe chưa có kết quả kiểm tra hợp lệ để bàn giao. Vui lòng hoàn tất kiểm tra bộ phận.'}
+                    <div style={{ fontSize: '9.5px', color: isHandoverEligibleForReady ? '#34d399' : '#94a3b8', textAlign: 'center', marginTop: '4px' }}>
+                      {isHandoverEligibleForReady
+                        ? 'Đã có kết quả kiểm tra hợp lệ và hồ sơ bàn giao. Xác nhận để chuyển sang trạng thái sẵn sàng bàn giao.'
+                        : handoverBlockReason
+                        ? handoverBlockReason
+                        : 'Xe chưa đủ điều kiện hoàn tất để sẵn sàng bàn giao. Vui lòng hoàn tất kiểm tra bộ phận đạt chuẩn.'}
                     </div>
                   </div>
                 ) : null}
@@ -2247,23 +2618,6 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
                   </div>
                 )}
 
-                {handover?.status === 'COMPLETED' && (
-                  <div
-                    style={{
-                      background: 'rgba(16, 185, 129, 0.15)',
-                      border: '1px solid rgba(16, 185, 129, 0.4)',
-                      borderRadius: '8px',
-                      padding: '8px 10px',
-                      color: '#34d399',
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      textAlign: 'center',
-                    }}
-                  >
-                    QUY TRÌNH BÀN GIAO ĐÃ HOÀN TẤT
-                  </div>
-                )}
-
                 <button
                   type="button"
                   onClick={() => returnToVehicleOverview()}
@@ -2283,6 +2637,8 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
                   Đóng quy trình bàn giao
                 </button>
               </div>
+            </>
+          )}
             </div>
           )}
         </div>
@@ -2291,7 +2647,7 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
           {/* ========================================================================= */}
           {/* 4. DEFAULT VEHICLE DETAIL & OPERATIONAL TABS (REFERENCE DESIGN)          */}
           {/* ========================================================================= */}
-          {/* Header: Title & Status Badge */}
+          {/* Header: Title, Status Badge & Close Button */}
           <div
             style={{
               display: 'flex',
@@ -2306,32 +2662,65 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
               CHI TIẾT XE
             </span>
 
-            {/* Live Status Pill */}
-            <span
-              style={{
-                background: 'rgba(16, 185, 129, 0.15)',
-                border: '1px solid rgba(16, 185, 129, 0.4)',
-                color: statusMeta.color,
-                fontSize: '11px',
-                fontWeight: 700,
-                padding: '3px 9px',
-                borderRadius: '9999px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px',
-              }}
-            >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {/* Live Status Pill */}
               <span
                 style={{
-                  width: '6px',
-                  height: '6px',
-                  borderRadius: '50%',
-                  backgroundColor: statusMeta.dotColor,
-                  boxShadow: `0 0 8px ${statusMeta.dotColor}`,
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  border: '1px solid rgba(16, 185, 129, 0.4)',
+                  color: statusMeta.color,
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  padding: '3px 9px',
+                  borderRadius: '9999px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
                 }}
-              />
-              {statusMeta.labelVi}
-            </span>
+              >
+                <span
+                  style={{
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '50%',
+                    backgroundColor: statusMeta.dotColor,
+                    boxShadow: `0 0 8px ${statusMeta.dotColor}`,
+                  }}
+                />
+                {statusMeta.labelVi}
+              </span>
+
+              {onClose && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  title="Đóng chi tiết xe"
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.08)',
+                    border: 'none',
+                    borderRadius: '50%',
+                    width: '24px',
+                    height: '24px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#94a3b8',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.18)';
+                    e.currentTarget.style.color = '#ffffff';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                    e.currentTarget.style.color = '#94a3b8';
+                  }}
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Vehicle Summary Card */}

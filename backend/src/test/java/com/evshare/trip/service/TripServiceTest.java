@@ -7,6 +7,7 @@ import com.evshare.common.exception.DuplicateResourceException;
 import com.evshare.handover.entity.HandoverStatus;
 import com.evshare.handover.entity.VehicleHandover;
 import com.evshare.handover.repository.VehicleHandoverRepository;
+import com.evshare.battery.repository.VehicleBatteryHealthRepository;
 import com.evshare.trip.dto.TripResponse;
 import com.evshare.trip.dto.TripStartEligibilityResponse;
 import com.evshare.trip.entity.Trip;
@@ -24,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.access.AccessDeniedException;
 
@@ -51,6 +53,12 @@ class TripServiceTest {
 
     @Mock
     private VehicleRepository vehicleRepository;
+
+    @Mock
+    private VehicleBatteryHealthRepository batteryHealthRepository;
+
+    @Spy
+    private VehicleEnergyModelService energyModelService = new VehicleEnergyModelService();
 
     @InjectMocks
     private TripService tripService;
@@ -372,7 +380,7 @@ class TripServiceTest {
     void testCompleteTrip_Success() {
         UUID tripId = UUID.randomUUID();
         vehicle.setStatus(VehicleStatus.IN_USE);
-        vehicle.setCurrentBatteryLevel(75);
+        vehicle.setCurrentBatteryLevel(88);
         vehicle.setOdometer(new BigDecimal("10620.00"));
 
         Trip activeTrip = new Trip(tripId, booking, vehicle, coOwner, TripStatus.ACTIVE,
@@ -388,9 +396,12 @@ class TripServiceTest {
         assertNotNull(res);
         assertEquals(TripStatus.COMPLETED, res.getStatus());
         assertNotNull(res.getEndedAt());
-        assertEquals(75, res.getEndBatteryLevel());
+        assertEquals(69, res.getEndBatteryLevel());
+        assertEquals(new BigDecimal("69.29"), res.getEndSocPercent());
+        assertEquals(new BigDecimal("12.163"), res.getEnergyConsumedKwh());
+        assertEquals(new BigDecimal("18.71"), res.getSocConsumedPercent());
         assertEquals(new BigDecimal("10620.00"), res.getEndOdometer());
-        assertEquals(13, res.getBatteryUsed()); // 88 - 75 = 13%
+        assertEquals(19, res.getBatteryUsed()); // 88 - 69 = 19%
         assertEquals(new BigDecimal("69.50"), res.getDistanceTraveled()); // 10620.00 - 10550.50 = 69.50 km
         assertNotNull(res.getDurationSeconds());
         assertTrue(res.getDurationSeconds() >= 3600);
@@ -404,6 +415,71 @@ class TripServiceTest {
         verify(bookingRepository).save(booking);
 
         verify(tripRepository).save(activeTrip);
+    }
+
+    @Test
+    @DisplayName("20a. EV01 Volvo EX30-like: 35 km -> 6.125 kWh consumed, ~9.42% SOC consumed, 100% -> 90.58%")
+    void testCompleteTrip_EV01_RealisticEnergyModel_MatchesPromptExample() {
+        UUID tripId = UUID.randomUUID();
+        vehicle.setName("EV01 — realistic compact electric SUV");
+        vehicle.setStatus(VehicleStatus.IN_USE);
+        vehicle.setCurrentBatteryLevel(100);
+        vehicle.setOdometer(new BigDecimal("10200.00"));
+
+        Trip activeTrip = new Trip(tripId, booking, vehicle, coOwner, TripStatus.ACTIVE,
+                Instant.now().minus(1, ChronoUnit.HOURS), new BigDecimal("10200.00"), 100);
+
+        when(tripRepository.findById(tripId)).thenReturn(Optional.of(activeTrip));
+        when(vehicleRepository.findById(vehicleId)).thenReturn(Optional.of(vehicle));
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(booking));
+        when(tripRepository.save(any(Trip.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TripResponse res = tripService.completeTrip(tripId, coOwnerId, Role.CO_OWNER, new BigDecimal("10235.00"));
+
+        assertNotNull(res);
+        assertEquals(TripStatus.COMPLETED, res.getStatus());
+        assertEquals(new BigDecimal("10235.00"), res.getEndOdometer());
+        assertEquals(new BigDecimal("35.00"), res.getDistanceTraveled());
+        assertEquals(new BigDecimal("6.125"), res.getEnergyConsumedKwh());
+        assertEquals(new BigDecimal("9.42"), res.getSocConsumedPercent());
+        assertEquals(new BigDecimal("90.58"), res.getEndSocPercent());
+        assertEquals(91, res.getEndBatteryLevel());
+        assertEquals(9, res.getBatteryUsed()); // 100 - 91 = 9%
+        assertEquals(new BigDecimal("17.50"), res.getEnergyConsumptionKwhPer100Km());
+        assertEquals(new BigDecimal("65.00"), res.getUsableBatteryCapacityKwh());
+        assertEquals(new BigDecimal("69.00"), res.getGrossBatteryCapacityKwh());
+    }
+
+    @Test
+    @DisplayName("20b. EV02 lighter stylized EV: 35 km -> 5.775 kWh consumed, ~9.63% SOC consumed, 100% -> 90.38%")
+    void testCompleteTrip_EV02_RealisticEnergyModel() {
+        UUID tripId = UUID.randomUUID();
+        vehicle.setName("EV02 — lighter stylized EV");
+        vehicle.setStatus(VehicleStatus.IN_USE);
+        vehicle.setCurrentBatteryLevel(100);
+        vehicle.setOdometer(new BigDecimal("4520.00"));
+
+        Trip activeTrip = new Trip(tripId, booking, vehicle, coOwner, TripStatus.ACTIVE,
+                Instant.now().minus(1, ChronoUnit.HOURS), new BigDecimal("4520.00"), 100);
+
+        when(tripRepository.findById(tripId)).thenReturn(Optional.of(activeTrip));
+        when(vehicleRepository.findById(vehicleId)).thenReturn(Optional.of(vehicle));
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(booking));
+        when(tripRepository.save(any(Trip.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TripResponse res = tripService.completeTrip(tripId, coOwnerId, Role.CO_OWNER, new BigDecimal("4555.00"));
+
+        assertNotNull(res);
+        assertEquals(TripStatus.COMPLETED, res.getStatus());
+        assertEquals(new BigDecimal("4555.00"), res.getEndOdometer());
+        assertEquals(new BigDecimal("35.00"), res.getDistanceTraveled());
+        assertEquals(new BigDecimal("5.775"), res.getEnergyConsumedKwh());
+        assertEquals(new BigDecimal("9.63"), res.getSocConsumedPercent());
+        assertEquals(new BigDecimal("90.38"), res.getEndSocPercent());
+        assertEquals(90, res.getEndBatteryLevel());
+        assertEquals(10, res.getBatteryUsed()); // 100 - 90 = 10%
+        assertEquals(new BigDecimal("16.50"), res.getEnergyConsumptionKwhPer100Km());
+        assertEquals(new BigDecimal("60.00"), res.getUsableBatteryCapacityKwh());
     }
 
     @Test

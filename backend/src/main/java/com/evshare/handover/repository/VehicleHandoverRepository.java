@@ -22,5 +22,10 @@ public interface VehicleHandoverRepository extends JpaRepository<VehicleHandover
     @Query("SELECT h FROM VehicleHandover h WHERE h.coOwner.id = :userId AND h.vehicle.id = :vehicleId AND h.status NOT IN ('COMPLETED', 'CANCELLED') ORDER BY CASE WHEN h.status = 'HANDED_OVER' THEN 1 WHEN h.status = 'READY_FOR_HANDOVER' THEN 2 WHEN h.status = 'INSPECTION_IN_PROGRESS' THEN 3 ELSE 4 END, h.booking.startTime ASC")
     List<VehicleHandover> findActiveByCoOwnerAndVehicle(@Param("userId") UUID userId, @Param("vehicleId") UUID vehicleId);
 
+    List<VehicleHandover> findByVehicleIdOrderByCreatedAtDesc(UUID vehicleId);
+
+    @Query("SELECT h.inspection.id FROM VehicleHandover h WHERE h.vehicle.id = :vehicleId AND h.inspection IS NOT NULL AND (:excludeHandoverId IS NULL OR h.id <> :excludeHandoverId) AND h.status IN ('READY_FOR_HANDOVER', 'HANDED_OVER', 'OWNER_CONFIRMED', 'COMPLETED')")
+    java.util.Set<UUID> findUsedInspectionIds(@Param("vehicleId") UUID vehicleId, @Param("excludeHandoverId") UUID excludeHandoverId);
+
     List<VehicleHandover> findByStatus(HandoverStatus status);
 }

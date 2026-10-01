@@ -51,6 +51,10 @@ export async function fetchActiveChargingSession(vehicleId: string): Promise<Cha
       return null;
     }
     if (!res.ok) {
+      if (res.status >= 500) {
+        console.warn(`[chargingApi] Active session returned ${res.status}, treating as null`);
+        return null;
+      }
       const err = await res.json().catch(() => null);
       throw new Error(err?.message || `Lỗi tải trạng thái phiên sạc (${res.status})`);
     }
@@ -60,10 +64,8 @@ export async function fetchActiveChargingSession(vehicleId: string): Promise<Cha
     if (err?.message && (err.message.includes('204') || err.message.includes('404'))) {
       return null;
     }
-    if (err instanceof TypeError || (err instanceof Error && err.message?.includes('fetch'))) {
-      throw new Error('Không thể kết nối đến máy chủ quản lý phiên sạc.');
-    }
-    throw err;
+    console.warn('[chargingApi] Active charging session query failed gracefully:', err?.message || err);
+    return null;
   }
 }
 

@@ -31,6 +31,12 @@ public class TripResponse {
     private Long durationSeconds;
     private BigDecimal distanceTraveled;
     private Integer batteryUsed;
+    private BigDecimal endSocPercent;
+    private BigDecimal energyConsumedKwh;
+    private BigDecimal socConsumedPercent;
+    private BigDecimal energyConsumptionKwhPer100Km;
+    private BigDecimal usableBatteryCapacityKwh;
+    private BigDecimal grossBatteryCapacityKwh;
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -51,7 +57,10 @@ public class TripResponse {
             res.setVehicleId(trip.getVehicle().getId());
             res.setVehicleName(trip.getVehicle().getName());
             res.setLicensePlate(trip.getVehicle().getLicensePlate());
-            res.setVehicleCode("EV01");
+            res.setVehicleCode(trip.getVehicle().getName() != null && trip.getVehicle().getName().contains("EV02") ? "EV02" : "EV01");
+            res.setGrossBatteryCapacityKwh(trip.getVehicle().getGrossBatteryCapacityKwh());
+            res.setUsableBatteryCapacityKwh(trip.getVehicle().getUsableBatteryCapacityKwh());
+            res.setEnergyConsumptionKwhPer100Km(trip.getVehicle().getEnergyConsumptionKwhPer100Km());
         }
         if (trip.getUser() != null) {
             res.setUserId(trip.getUser().getId());
@@ -65,6 +74,9 @@ public class TripResponse {
         res.setEndOdometer(trip.getEndOdometer());
         res.setStartBatteryLevel(trip.getStartBatteryLevel());
         res.setEndBatteryLevel(trip.getEndBatteryLevel());
+        res.setEndSocPercent(trip.getEndSocPercent());
+        res.setEnergyConsumedKwh(trip.getEnergyConsumedKwh());
+        res.setSocConsumedPercent(trip.getSocConsumedPercent());
         if (trip.getEndedAt() != null && trip.getStartedAt() != null) {
             long secs = java.time.Duration.between(trip.getStartedAt(), trip.getEndedAt()).getSeconds();
             res.setDurationSeconds(Math.max(0, secs));
@@ -272,5 +284,53 @@ public class TripResponse {
 
     public void setBatteryUsed(Integer batteryUsed) {
         this.batteryUsed = batteryUsed;
+    }
+
+    public BigDecimal getEndSocPercent() {
+        return endSocPercent;
+    }
+
+    public void setEndSocPercent(BigDecimal endSocPercent) {
+        this.endSocPercent = endSocPercent;
+    }
+
+    public BigDecimal getEnergyConsumedKwh() {
+        return energyConsumedKwh;
+    }
+
+    public void setEnergyConsumedKwh(BigDecimal energyConsumedKwh) {
+        this.energyConsumedKwh = energyConsumedKwh;
+    }
+
+    public BigDecimal getSocConsumedPercent() {
+        return socConsumedPercent;
+    }
+
+    public void setSocConsumedPercent(BigDecimal socConsumedPercent) {
+        this.socConsumedPercent = socConsumedPercent;
+    }
+
+    public BigDecimal getEnergyConsumptionKwhPer100Km() {
+        return energyConsumptionKwhPer100Km;
+    }
+
+    public void setEnergyConsumptionKwhPer100Km(BigDecimal energyConsumptionKwhPer100Km) {
+        this.energyConsumptionKwhPer100Km = energyConsumptionKwhPer100Km;
+    }
+
+    public BigDecimal getUsableBatteryCapacityKwh() {
+        return usableBatteryCapacityKwh;
+    }
+
+    public void setUsableBatteryCapacityKwh(BigDecimal usableBatteryCapacityKwh) {
+        this.usableBatteryCapacityKwh = usableBatteryCapacityKwh;
+    }
+
+    public BigDecimal getGrossBatteryCapacityKwh() {
+        return grossBatteryCapacityKwh;
+    }
+
+    public void setGrossBatteryCapacityKwh(BigDecimal grossBatteryCapacityKwh) {
+        this.grossBatteryCapacityKwh = grossBatteryCapacityKwh;
     }
 }

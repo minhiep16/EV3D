@@ -6,6 +6,7 @@ import com.evshare.vehicle.dto.CreateVehicleRequest;
 import com.evshare.vehicle.dto.UpdateVehicleRequest;
 import com.evshare.vehicle.dto.VehicleResponse;
 import com.evshare.vehicle.entity.Vehicle;
+import com.evshare.vehicle.entity.VehicleStatus;
 import com.evshare.vehicle.repository.VehicleRepository;
 import com.evshare.ownership.entity.CoOwnershipGroup;
 import com.evshare.ownership.entity.GroupMember;
@@ -35,25 +36,39 @@ public class VehicleService {
     private final VehicleRepository vehicleRepository;
     private final GroupMemberRepository memberRepository;
     private final GroupVehicleRepository groupVehicleRepository;
+    private final com.evshare.charging.service.ChargingProgressService chargingProgressService;
 
     public VehicleService(
             VehicleRepository vehicleRepository,
             GroupMemberRepository memberRepository,
-            GroupVehicleRepository groupVehicleRepository
+            GroupVehicleRepository groupVehicleRepository,
+            com.evshare.charging.service.ChargingProgressService chargingProgressService
     ) {
         this.vehicleRepository = vehicleRepository;
         this.memberRepository = memberRepository;
         this.groupVehicleRepository = groupVehicleRepository;
+        this.chargingProgressService = chargingProgressService;
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<VehicleResponse> getAllVehicles() {
-        return vehicleRepository.findAll().stream()
+        List<Vehicle> vehicles = vehicleRepository.findAll();
+        boolean hasSynced = false;
+        for (Vehicle v : vehicles) {
+            if (v.getStatus() == VehicleStatus.CHARGING) {
+                chargingProgressService.syncActiveSessionForVehicle(v.getId());
+                hasSynced = true;
+            }
+        }
+        if (hasSynced) {
+            vehicles = vehicleRepository.findAll();
+        }
+        return vehicles.stream()
                 .map(VehicleResponse::fromEntity)
                 .collect(Collectors.toList());
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<VehicleResponse> getAllVehicles(UserPrincipal principal) {
         if (principal == null) {
             return getAllVehicles();
@@ -92,22 +107,39 @@ public class VehicleService {
             return Collections.emptyList();
         }
 
+        List<Vehicle> vehicles = vehicleRepository.findAllById(visibleVehicleIds);
+        boolean hasSynced = false;
+        for (Vehicle v : vehicles) {
+            if (v.getStatus() == VehicleStatus.CHARGING) {
+                chargingProgressService.syncActiveSessionForVehicle(v.getId());
+                hasSynced = true;
+            }
+        }
+        if (hasSynced) {
+            vehicles = vehicleRepository.findAllById(visibleVehicleIds);
+        }
+
         // Strict Single Active Contract: Return at most 1 vehicle for CO_OWNER
-        return vehicleRepository.findAllById(visibleVehicleIds).stream()
+        return vehicles.stream()
                 .limit(1)
                 .map(VehicleResponse::fromEntity)
                 .collect(Collectors.toList());
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public VehicleResponse getVehicleById(UUID id) {
         return getVehicleById(id, null);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public VehicleResponse getVehicleById(UUID id, UserPrincipal principal) {
         Vehicle vehicle = vehicleRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found with id: " + id));
+
+        if (vehicle.getStatus() == VehicleStatus.CHARGING) {
+            chargingProgressService.syncActiveSessionForVehicle(vehicle.getId());
+            vehicle = vehicleRepository.findById(id).orElse(vehicle);
+        }
 
         if (principal != null) {
             Role userRole = principal.getUser().getRole();

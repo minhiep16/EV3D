@@ -2,6 +2,9 @@ package com.evshare.charging.dto;
 
 import com.evshare.charging.entity.ChargingSession;
 import com.evshare.charging.entity.ChargingSessionStatus;
+import com.evshare.charging.entity.ChargingStation;
+import com.evshare.user.entity.User;
+import com.evshare.vehicle.entity.Vehicle;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -25,6 +28,7 @@ public class ChargingSessionResponse {
     private BigDecimal targetSocPercent;
     private BigDecimal energyDeliveredKwh;
     private BigDecimal powerKw;
+    private Integer estimatedRemainingMinutes;
     private String completionReason;
     private Instant createdAt;
     private Instant updatedAt;
@@ -33,6 +37,13 @@ public class ChargingSessionResponse {
     }
 
     public static ChargingSessionResponse fromEntity(ChargingSession session) {
+        return fromEntity(session, null);
+    }
+
+    public static ChargingSessionResponse fromEntity(ChargingSession session, Integer estimatedRemainingMinutes) {
+        if (session == null) {
+            return null;
+        }
         ChargingSessionResponse response = new ChargingSessionResponse();
         response.setId(session.getId());
         if (session.getVehicle() != null) {
@@ -56,6 +67,7 @@ public class ChargingSessionResponse {
         response.setTargetSocPercent(session.getTargetSocPercent());
         response.setEnergyDeliveredKwh(session.getEnergyDeliveredKwh());
         response.setPowerKw(session.getPowerKw());
+        response.setEstimatedRemainingMinutes(estimatedRemainingMinutes);
         response.setCompletionReason(session.getCompletionReason());
         response.setCreatedAt(session.getCreatedAt());
         response.setUpdatedAt(session.getUpdatedAt());
@@ -188,6 +200,14 @@ public class ChargingSessionResponse {
 
     public void setPowerKw(BigDecimal powerKw) {
         this.powerKw = powerKw;
+    }
+
+    public Integer getEstimatedRemainingMinutes() {
+        return estimatedRemainingMinutes;
+    }
+
+    public void setEstimatedRemainingMinutes(Integer estimatedRemainingMinutes) {
+        this.estimatedRemainingMinutes = estimatedRemainingMinutes;
     }
 
     public String getCompletionReason() {

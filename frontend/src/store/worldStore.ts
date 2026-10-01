@@ -178,13 +178,19 @@ interface WorldState {
 
   selectZone: (zone: GarageZone | null) => void;
   hoverZone: (zone: GarageZone | null) => void;
-  selectVehicle: (id: string | null, explicitRole?: string) => void;
+  selectVehicle: (id: string | null, explicitRole?: string, openDetail?: boolean) => void;
   hoverVehicle: (id: string | null) => void;
   selectObject: (id: string, position: [number, number, number]) => void;
   hoverObject: (id: string | null) => void;
   clearSelection: () => void;
   clearActiveSpatialSelection: () => void;
   setWorldMode: (mode: WorldMode) => void;
+
+  // Transient vehicle detail panel state (separated from authoritative vehicle selection)
+  isVehicleDetailOpen: boolean;
+  openVehicleDetail: () => void;
+  closeVehicleDetail: () => void;
+  setVehicleDetailOpen: (open: boolean) => void;
 
   // 360-degree vehicle rotation turntable state
   vehicleYaw: number;
@@ -316,6 +322,7 @@ export const useWorldStore = create<WorldState>((set) => ({
   vehicleMode: 'NONE',
   activeExperience: null,
   isVehicleSelected: false,
+  isVehicleDetailOpen: false,
 
   vehicleBatteryXrayMode: false,
   vehicleChargingMode: false,
@@ -366,6 +373,10 @@ export const useWorldStore = create<WorldState>((set) => ({
   setVehicleYaw: (yaw) => set({ vehicleYaw: yaw }),
   resetVehicleYaw: () => set({ vehicleYaw: -0.32 }),
 
+  openVehicleDetail: () => set({ isVehicleDetailOpen: true }),
+  closeVehicleDetail: () => set({ isVehicleDetailOpen: false }),
+  setVehicleDetailOpen: (open) => set({ isVehicleDetailOpen: open }),
+
   selectZone: (zone) =>
     set((state) => {
       let role: string | undefined;
@@ -396,6 +407,7 @@ export const useWorldStore = create<WorldState>((set) => ({
         selectedObjectId: zone,
         selectedVehicleId: isVeh ? (state.selectedVehicleId || 'EV01') : null,
         isVehicleSelected: isVeh,
+        isVehicleDetailOpen: false,
         activeExperience: isVeh ? activeExp : state.activeExperience,
         vehicleFeatureMode: isVeh ? vehicleTargetMode : 'NONE',
         vehicleMode: isVeh ? vehicleTargetMode : 'NONE',
@@ -424,7 +436,7 @@ export const useWorldStore = create<WorldState>((set) => ({
       hoveredObjectId: zone,
     }),
 
-  selectVehicle: (id, explicitRole) =>
+  selectVehicle: (id, explicitRole, openDetail) =>
     set((state) => {
       if (!id) {
         return {
@@ -434,6 +446,7 @@ export const useWorldStore = create<WorldState>((set) => ({
           vehicleFeatureMode: 'NONE',
           vehicleMode: 'NONE',
           isVehicleSelected: false,
+          isVehicleDetailOpen: false,
         };
       }
 
@@ -468,6 +481,7 @@ export const useWorldStore = create<WorldState>((set) => ({
         vehicleMode: targetMode,
         activeExperience: activeExp,
         isVehicleSelected: true,
+        isVehicleDetailOpen: openDetail ?? false,
         vehicleInspectionMode: false,
         selectedVehiclePartId: null,
         selectedVehiclePartCode: null,
@@ -517,6 +531,7 @@ export const useWorldStore = create<WorldState>((set) => ({
       vehicleFeatureMode: 'NONE',
       vehicleMode: 'NONE',
       isVehicleSelected: false,
+      isVehicleDetailOpen: false,
       vehicleInspectionMode: false,
       selectedVehiclePartId: null,
       hoveredVehiclePartId: null,
@@ -661,6 +676,7 @@ export const useWorldStore = create<WorldState>((set) => ({
         vehicleFeatureMode: 'NONE',
         vehicleMode: 'NONE',
         isVehicleSelected: false,
+        isVehicleDetailOpen: false,
         vehicleInspectionMode: false,
         selectedVehiclePartId: null,
         selectedVehiclePartCode: null,
@@ -1482,6 +1498,7 @@ export const useWorldStore = create<WorldState>((set) => ({
       vehicleMode: 'NONE',
       activeExperience: null,
       isVehicleSelected: false,
+      isVehicleDetailOpen: false,
       vehicleBatteryXrayMode: false,
       vehicleChargingMode: false,
       selectedChargingStationId: null,
@@ -1672,6 +1689,7 @@ export const useWorldStore = create<WorldState>((set) => ({
         vehicleMode: targetMode,
         activeExperience: activeExp,
         isVehicleSelected: true,
+        isVehicleDetailOpen: true,
         vehicleBatteryXrayMode: false,
         vehicleChargingMode: false,
         selectedChargingStationId: null,
@@ -1718,6 +1736,7 @@ export const useWorldStore = create<WorldState>((set) => ({
       vehicleMode: 'NONE',
       activeExperience: null,
       isVehicleSelected: false,
+      isVehicleDetailOpen: false,
       vehicleBatteryXrayMode: false,
       vehicleChargingMode: false,
       selectedChargingStationId: null,

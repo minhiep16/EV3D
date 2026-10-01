@@ -17,6 +17,9 @@ public class VehicleResponse {
     private String licensePlate;
     private String vin;
     private BigDecimal batteryCapacity;
+    private BigDecimal grossBatteryCapacityKwh;
+    private BigDecimal usableBatteryCapacityKwh;
+    private BigDecimal energyConsumptionKwhPer100Km;
     private Integer currentBatteryLevel;
     private BigDecimal odometer;
     private VehicleStatus status;
@@ -37,6 +40,9 @@ public class VehicleResponse {
         response.setLicensePlate(vehicle.getLicensePlate());
         response.setVin(vehicle.getVin());
         response.setBatteryCapacity(vehicle.getBatteryCapacity());
+        response.setGrossBatteryCapacityKwh(vehicle.getGrossBatteryCapacityKwh());
+        response.setUsableBatteryCapacityKwh(vehicle.getUsableBatteryCapacityKwh());
+        response.setEnergyConsumptionKwhPer100Km(vehicle.getEnergyConsumptionKwhPer100Km());
         response.setCurrentBatteryLevel(vehicle.getCurrentBatteryLevel());
         response.setOdometer(vehicle.getOdometer());
         response.setStatus(vehicle.getStatus());
@@ -156,5 +162,29 @@ public class VehicleResponse {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public BigDecimal getGrossBatteryCapacityKwh() {
+        return grossBatteryCapacityKwh;
+    }
+
+    public void setGrossBatteryCapacityKwh(BigDecimal grossBatteryCapacityKwh) {
+        this.grossBatteryCapacityKwh = grossBatteryCapacityKwh;
+    }
+
+    public BigDecimal getUsableBatteryCapacityKwh() {
+        return usableBatteryCapacityKwh;
+    }
+
+    public void setUsableBatteryCapacityKwh(BigDecimal usableBatteryCapacityKwh) {
+        this.usableBatteryCapacityKwh = usableBatteryCapacityKwh;
+    }
+
+    public BigDecimal getEnergyConsumptionKwhPer100Km() {
+        return energyConsumptionKwhPer100Km;
+    }
+
+    public void setEnergyConsumptionKwhPer100Km(BigDecimal energyConsumptionKwhPer100Km) {
+        this.energyConsumptionKwhPer100Km = energyConsumptionKwhPer100Km;
     }
 }

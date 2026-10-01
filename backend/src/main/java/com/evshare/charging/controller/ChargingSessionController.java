@@ -15,6 +15,10 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * REST controller for EV charging session management.
+ * Provides endpoints for active session polling, session history, and session lifecycle operations.
+ */
 @RestController
 public class ChargingSessionController {
 

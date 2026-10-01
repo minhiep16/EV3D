@@ -2,6 +2,7 @@ package com.evshare.trip.controller;
 
 import com.evshare.common.exception.UnauthorizedException;
 import com.evshare.security.UserPrincipal;
+import com.evshare.trip.dto.CompleteTripRequest;
 import com.evshare.trip.dto.TripResponse;
 import com.evshare.trip.dto.TripStartEligibilityResponse;
 import com.evshare.trip.service.TripService;
@@ -116,13 +117,14 @@ public class TripController {
     }
 
     /**
-     * Complete / check-out an active trip (Phase 12).
+     * Complete / check-out an active trip (Phase 12 & Phase 18 Realistic EV Energy Model).
      * Exclusively accessible by the authenticated CO_OWNER who owns the active trip.
      */
     @PostMapping("/trips/{tripId}/complete")
     @PreAuthorize("hasRole('CO_OWNER')")
     public ResponseEntity<TripResponse> completeTrip(
             @PathVariable UUID tripId,
+            @RequestBody(required = false) CompleteTripRequest request,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         if (principal == null || principal.getUser() == null) {
@@ -131,7 +133,8 @@ public class TripController {
         TripResponse response = tripService.completeTrip(
                 tripId,
                 principal.getId(),
-                principal.getUser().getRole()
+                principal.getUser().getRole(),
+                request != null ? request.getEndOdometer() : null
         );
         return ResponseEntity.ok(response);
     }

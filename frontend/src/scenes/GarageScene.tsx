@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { StaffGarageFleetSidebar } from '../components/fleet/StaffGarageFleetSidebar';
 import { StaffVehicleDetailPanel } from '../components/fleet/StaffVehicleDetailPanel';
+import { PanelErrorBoundary } from '../components/common/PanelErrorBoundary';
 import { FleetHeroNavigator } from '../components/fleet/FleetHeroNavigator';
 import { CoOwnerVehiclePartPanel } from '../components/three/vehicles/CoOwnerVehiclePartPanel';
 import { DamageHistoryPanel } from '../components/three/damage/DamageHistoryPanel';
@@ -46,6 +47,8 @@ export const GarageScene: React.FC = () => {
   const resetExperienceState = useWorldStore((state) => state.resetExperienceState);
   const vehicleFeatureMode = useWorldStore((state) => state.vehicleFeatureMode);
   const selectedVehicleId = useWorldStore((state) => state.selectedVehicleId);
+  const isVehicleDetailOpen = useWorldStore((state) => state.isVehicleDetailOpen);
+  const closeVehicleDetail = useWorldStore((state) => state.closeVehicleDetail);
   const selectedZone = useWorldStore((state) => state.selectedZone);
   const clearSelection = useWorldStore((state) => state.clearSelection);
   const returnToGarageOverview = useWorldStore((state) => state.returnToGarageOverview);
@@ -504,12 +507,14 @@ export const GarageScene: React.FC = () => {
           )}
 
           {/* D. Right Selected Vehicle Operational Panel (Authoritative Screen-Space Shell) */}
-          {heroVehicle && !vehicleDamageHistoryMode && !vehicleMaintenanceMode && !vehicleBatteryXrayMode && !vehicleChargingMode && (
-            <StaffVehicleDetailPanel
-              vehicle={heroVehicle}
-              onClose={() => clearSelection()}
-            />
-          )}
+          <PanelErrorBoundary key={heroVehicle ? `${heroVehicle.id}-detail` : 'panel'}>
+            {heroVehicle && (isVehicleDetailOpen || vehicleInspectionMode || vehicleDamageMappingMode || vehicleHandoverMode) && !vehicleDamageHistoryMode && !vehicleMaintenanceMode && !vehicleBatteryXrayMode && !vehicleChargingMode && (
+              <StaffVehicleDetailPanel
+                vehicle={heroVehicle}
+                onClose={() => closeVehicleDetail()}
+              />
+            )}
+          </PanelErrorBoundary>
 
           {/* Dedicated Phase 14 Screen-Space Damage History Panel */}
           {heroVehicle && vehicleDamageHistoryMode && (

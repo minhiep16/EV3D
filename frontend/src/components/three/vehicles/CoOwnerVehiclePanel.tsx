@@ -345,7 +345,7 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
     return active.find((b) => b.endTime && new Date(b.endTime) >= now) || active[0] || null;
   }, [allBookings, user?.id]);
 
-  // Check if CO_OWNER has an active handover ready for receipt / check-in (HANDED_OVER status)
+  // Check if CO_OWNER has an active handover ready for receipt / check-in (strictly HANDED_OVER status)
   const isEligibleForCheckIn = React.useMemo(() => {
     if (isTripActive || isVehicleInUse) return false;
     const list = Array.isArray(activeHandovers) ? activeHandovers : [];
@@ -353,7 +353,19 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
     return list.some(
       (h) =>
         h &&
-        (h.status === 'HANDED_OVER' || h.status === 'READY_FOR_HANDOVER') &&
+        h.status === 'HANDED_OVER' &&
+        (!user?.id || h.coOwnerId === user?.id || h.coOwnerEmail === user?.email)
+    );
+  }, [activeHandovers, user, isTripActive, isVehicleInUse]);
+
+  const isWaitingForStaffHandover = React.useMemo(() => {
+    if (isTripActive || isVehicleInUse) return false;
+    const list = Array.isArray(activeHandovers) ? activeHandovers : [];
+    if (list.length === 0) return false;
+    return list.some(
+      (h) =>
+        h &&
+        h.status === 'READY_FOR_HANDOVER' &&
         (!user?.id || h.coOwnerId === user?.id || h.coOwnerEmail === user?.email)
     );
   }, [activeHandovers, user, isTripActive, isVehicleInUse]);
@@ -1044,7 +1056,7 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
           <span>SẠC XE</span>
         </button>
 
-        {/* Conditional Action: NHẬN XE */}
+        {/* Conditional Action: NHẬN XE - strictly enabled only when staff has performed HANDED_OVER */}
         {isEligibleForCheckIn && (
           <button
             type="button"
@@ -1054,6 +1066,28 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
             <Key size={14} />
             <span>NHẬN XE</span>
           </button>
+        )}
+
+        {isWaitingForStaffHandover && !isEligibleForCheckIn && (
+          <div
+            style={{
+              width: '100%',
+              padding: '9px 12px',
+              background: 'rgba(56, 189, 248, 0.1)',
+              border: '1px solid rgba(56, 189, 248, 0.3)',
+              borderRadius: '10px',
+              color: '#38bdf8',
+              fontSize: '11px',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+            }}
+          >
+            <Clock size={13} />
+            <span>XE ĐÃ SẴN SÀNG — CHỜ NHÂN VIÊN GIAO XE</span>
+          </div>
         )}
       </div>
     </div>

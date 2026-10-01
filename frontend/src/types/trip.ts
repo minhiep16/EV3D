@@ -25,6 +25,12 @@ export interface TripData {
   durationSeconds?: number | null;
   distanceTraveled?: number | null;
   batteryUsed?: number | null;
+  endSocPercent?: number | null;
+  energyConsumedKwh?: number | null;
+  socConsumedPercent?: number | null;
+  energyConsumptionKwhPer100Km?: number | null;
+  usableBatteryCapacityKwh?: number | null;
+  grossBatteryCapacityKwh?: number | null;
 }
 
 export interface TripStartEligibilityData {

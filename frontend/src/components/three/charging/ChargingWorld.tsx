@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as THREE from 'three';
 import { useWorldStore } from '../../../store/worldStore';
 import { useAuthStore } from '../../../store/authStore';
@@ -17,6 +17,7 @@ import { resolveVehicleCode } from '../vehicles/vehicleModelConfig';
 import { STAFF_GARAGE_LAYOUT } from '../../../config/staffGarageLayout';
 
 export const ChargingWorld: React.FC = () => {
+  const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const isOperationsRole = user?.role === 'STAFF' || user?.role === 'ADMIN';
 
@@ -61,6 +62,17 @@ export const ChargingWorld: React.FC = () => {
     enabled: Boolean(activeVehicle?.id),
     refetchInterval: 3000,
   });
+
+  // Synchronize 3D world state when session finishes
+  React.useEffect(() => {
+    if (activeSession && activeSession.status === 'COMPLETED') {
+      queryClient.invalidateQueries({ queryKey: ['chargingStations'] });
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+      if (activeVehicle?.id) {
+        queryClient.invalidateQueries({ queryKey: ['vehicle', activeVehicle.id] });
+      }
+    }
+  }, [activeSession?.status, queryClient, activeVehicle?.id]);
 
   // Determine fallback stations if database has not returned yet
   const effectiveStations = useMemo(() => {

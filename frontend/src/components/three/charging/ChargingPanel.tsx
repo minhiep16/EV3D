@@ -117,9 +117,25 @@ export const ChargingPanel: React.FC<ChargingPanelProps> = ({
       queryClient.invalidateQueries({ queryKey: ['chargingSessions', vehicle.id] }),
       queryClient.invalidateQueries({ queryKey: ['chargingStations'] }),
       queryClient.invalidateQueries({ queryKey: ['vehicles'] }),
+      queryClient.invalidateQueries({ queryKey: ['vehicle', vehicle.id] }),
       queryClient.invalidateQueries({ queryKey: ['vehicleBatteryHealth', vehicle.id] }),
     ]);
   };
+
+  // Authoritative auto-complete detector: when active session reaches target or completes
+  const prevSessionStatusRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    const prevStatus = prevSessionStatusRef.current;
+    const currentStatus = activeSession?.status;
+
+    if (
+      (prevStatus === 'ACTIVE' && currentStatus === 'COMPLETED') ||
+      (currentStatus === 'ACTIVE' && (activeSession?.currentSocPercent ?? 0) >= (activeSession?.targetSocPercent ?? 100))
+    ) {
+      invalidateAllChargingQueries();
+    }
+    prevSessionStatusRef.current = currentStatus ?? null;
+  }, [activeSession?.status, activeSession?.currentSocPercent, activeSession?.targetSocPercent]);
 
   // Start Charging Mutation
   const startMutation = useMutation({
@@ -189,17 +205,21 @@ export const ChargingPanel: React.FC<ChargingPanelProps> = ({
   const sessionSoc = activeSession?.currentSocPercent ?? currentSoc;
   const sessionTarget = activeSession?.targetSocPercent ?? targetSoc;
 
-  // Remaining time estimate calculation based on power and remaining kWh
+  // Remaining time estimate calculation using authoritative backend ETA or unified formula
   const estimatedRemainingMinutes = useMemo(() => {
     if (!isVehicleCharging || !activeSession) return null;
-    const power = activeSession.powerKw || 120;
-    const capacity = vehicle.batteryCapacity || 75;
+    if (activeSession.estimatedRemainingMinutes !== undefined && activeSession.estimatedRemainingMinutes !== null) {
+      return activeSession.estimatedRemainingMinutes;
+    }
+    const power = activeSession.powerKw || 150;
+    const capacity = vehicle.usableBatteryCapacityKwh || vehicle.batteryCapacity || 65;
     const deltaPercent = Math.max(0, sessionTarget - sessionSoc);
     const remainingKwh = (deltaPercent * capacity) / 100;
     if (remainingKwh <= 0) return 0;
-    const hours = remainingKwh / power;
+    const effectivePower = power * 0.92;
+    const hours = remainingKwh / effectivePower;
     return Math.max(1, Math.round(hours * 60));
-  }, [isVehicleCharging, activeSession, sessionTarget, sessionSoc, vehicle.batteryCapacity]);
+  }, [isVehicleCharging, activeSession, sessionTarget, sessionSoc, vehicle.batteryCapacity, vehicle.usableBatteryCapacityKwh]);
 
   const isVehicleMaintenance = vehicle.status === 'MAINTENANCE';
   const isVehicleInUse = vehicle.status === 'IN_USE';
@@ -549,29 +569,30 @@ export const ChargingPanel: React.FC<ChargingPanelProps> = ({
                 </div>
               </div>
 
-              {/* Controlled Demo Simulation Button */}
-              {sessionSoc < sessionTarget && (
+              {/* DEV-Only Simulation Helper (Section 13) */}
+              {Boolean((import.meta as any)?.env?.DEV) && sessionSoc < sessionTarget && (
                 <button
                   type="button"
                   onClick={() => progressMutation.mutate(Math.min(sessionTarget, sessionSoc + 5))}
                   disabled={progressMutation.isPending}
                   style={{
-                    background: 'rgba(6, 182, 212, 0.15)',
-                    border: '1px solid rgba(6, 182, 212, 0.45)',
+                    background: 'rgba(6, 182, 212, 0.12)',
+                    border: '1px dashed rgba(6, 182, 212, 0.45)',
                     color: '#38bdf8',
                     borderRadius: '8px',
                     padding: '6px',
-                    fontSize: '11px',
-                    fontWeight: 700,
+                    fontSize: '10px',
+                    fontWeight: 600,
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '5px',
                   }}
+                  title="Chỉ hiển thị trong môi trường phát triển (DEV)"
                 >
-                  <Plus size={12} />
-                  <span>Mô phỏng nạp thêm +5% pin</span>
+                  <Plus size={11} />
+                  <span>[DEV] Mô phỏng nạp thêm +5% pin</span>
                 </button>
               )}
 
@@ -624,6 +645,157 @@ export const ChargingPanel: React.FC<ChargingPanelProps> = ({
                   <span>DỪNG SẠC</span>
                 </button>
               </div>
+            </div>
+          ) : activeSession && activeSession.status === 'COMPLETED' ? (
+            /* COMPLETED CHARGING SESSION BANNER / SUMMARY */
+            <div
+              style={{
+                background: 'rgba(15, 23, 42, 0.85)',
+                border: '1.5px solid rgba(16, 185, 129, 0.6)',
+                borderRadius: '12px',
+                padding: '12px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px',
+                boxShadow: '0 0 16px rgba(16, 185, 129, 0.2)',
+              }}
+            >
+              {/* Header */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  paddingBottom: '6px',
+                  borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <CheckCircle2 size={14} color="#10b981" />
+                  <span style={{ fontSize: '11px', fontWeight: 900, color: '#10b981', letterSpacing: '0.04em' }}>
+                    HOÀN TẤT SẠC PIN
+                  </span>
+                </div>
+                <span style={{ fontSize: '10px', color: '#94a3b8' }}>
+                  {activeSession.chargingStationCode}
+                </span>
+              </div>
+
+              {/* Progress 100% */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '11px', color: '#cbd5e1' }}>Mức pin hoàn thành:</span>
+                  <span style={{ fontSize: '12px', fontWeight: 800, color: '#10b981' }}>
+                    {activeSession.currentSocPercent}% <span style={{ color: '#94a3b8', fontSize: '10px' }}>/ {activeSession.targetSocPercent}%</span>
+                  </span>
+                </div>
+                <div
+                  style={{
+                    width: '100%',
+                    height: '8px',
+                    background: 'rgba(255, 255, 255, 0.08)',
+                    borderRadius: '9999px',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      background: 'linear-gradient(90deg, #10b981 0%, #34d399 100%)',
+                      boxShadow: '0 0 10px rgba(16, 185, 129, 0.7)',
+                      borderRadius: '9999px',
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Metrics */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '6px',
+                  fontSize: '11px',
+                }}
+              >
+                <div
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.35)',
+                    padding: '8px',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(255, 255, 255, 0.06)',
+                  }}
+                >
+                  <div style={{ color: '#94a3b8', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Zap size={11} color="#10b981" /> Điện năng đã nạp
+                  </div>
+                  <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '12px', marginTop: '2px' }}>
+                    {activeSession.energyDeliveredKwh != null ? `${activeSession.energyDeliveredKwh} kWh` : '0 kWh'}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.35)',
+                    padding: '8px',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(255, 255, 255, 0.06)',
+                  }}
+                >
+                  <div style={{ color: '#94a3b8', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Clock size={11} color="#10b981" /> Trạng thái
+                  </div>
+                  <div style={{ fontWeight: 800, color: '#10b981', fontSize: '11px', marginTop: '2px' }}>
+                    Đã hoàn tất
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.35)',
+                    padding: '8px',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(255, 255, 255, 0.06)',
+                    gridColumn: 'span 2',
+                  }}
+                >
+                  <div style={{ color: '#94a3b8', fontSize: '10px' }}>Trụ sạc & Phương tiện</div>
+                  <div style={{ fontWeight: 700, color: '#f8fafc', fontSize: '11px', marginTop: '2px' }}>
+                    Trụ sạc {activeSession.chargingStationName} đã được giải phóng (SẴN SÀNG). Xe sẵn sàng vận hành.
+                  </div>
+                </div>
+              </div>
+
+              {/* Dismiss / Start New button */}
+              <button
+                type="button"
+                onClick={async () => {
+                  await invalidateAllChargingQueries();
+                  refetchActiveSession();
+                  refetchHistory();
+                }}
+                style={{
+                  width: '100%',
+                  background: 'linear-gradient(90deg, #10b981 0%, #059669 100%)',
+                  border: 'none',
+                  color: '#ffffff',
+                  borderRadius: '8px',
+                  padding: '9px 10px',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
+                  marginTop: '4px',
+                }}
+              >
+                <CheckCircle2 size={13} />
+                <span>XÁC NHẬN & ĐÓNG PHIÊN SẠC</span>
+              </button>
             </div>
           ) : (
             /* B. NO ACTIVE SESSION: CONFIGURE & START CHARGING */

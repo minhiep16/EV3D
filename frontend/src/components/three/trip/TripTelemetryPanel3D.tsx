@@ -179,8 +179,11 @@ export const TripTelemetryPanel3D: React.FC<TripTelemetryPanel3DProps> = ({
       queryClient.invalidateQueries({ queryKey: ['activeTrip', vehicle.id] });
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['vehicleBookings', vehicle.id] });
+      queryClient.invalidateQueries({ queryKey: ['vehicleRelevantBooking', vehicle.id] });
       queryClient.invalidateQueries({ queryKey: ['activeVehicleHandovers', vehicle.id] });
+      queryClient.invalidateQueries({ queryKey: ['handoverHistory', vehicle.id] });
       queryClient.invalidateQueries({ queryKey: ['bookingHandover'] });
+      queryClient.invalidateQueries({ queryKey: ['handoverByBooking'] });
       queryClient.invalidateQueries({ queryKey: ['tripEligibility'] });
       queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] });
     } catch (err: any) {
@@ -289,7 +292,7 @@ export const TripTelemetryPanel3D: React.FC<TripTelemetryPanel3DProps> = ({
                       letterSpacing: '0.05em',
                     }}
                   >
-                    EV01
+                    {activeTripState.vehicleCode || vehicle.model || vehicle.name || 'EV01'}
                   </span>
                 </div>
 
@@ -601,7 +604,7 @@ export const TripTelemetryPanel3D: React.FC<TripTelemetryPanel3DProps> = ({
                       borderRadius: '9999px',
                     }}
                   >
-                    EV01
+                    {activeTripState.vehicleCode || vehicle.model || vehicle.name || 'EV01'}
                   </span>
                 </div>
 
@@ -613,7 +616,7 @@ export const TripTelemetryPanel3D: React.FC<TripTelemetryPanel3DProps> = ({
                     margin: '0 0 14px 0',
                   }}
                 >
-                  Bạn đang chuẩn bị trả xe <strong style={{ color: '#ffffff' }}>EV01</strong>.
+                  Bạn đang chuẩn bị trả xe <strong style={{ color: '#ffffff' }}>{activeTripState.vehicleCode || vehicle.name || 'EV01'}</strong>.
                 </p>
 
                 {/* Summary Parameters Box */}
@@ -766,7 +769,7 @@ export const TripTelemetryPanel3D: React.FC<TripTelemetryPanel3DProps> = ({
                     lineHeight: 1.5,
                   }}
                 >
-                  Sau khi xác nhận, chuyến đi hiện tại sẽ được kết thúc. Hệ thống sẽ chốt thông số pin và số km từ cảm biến xe EV01.
+                  Sau khi xác nhận, chuyến đi hiện tại sẽ được kết thúc. Hệ thống sẽ chốt thông số pin và số km từ cảm biến xe {activeTripState.vehicleCode || vehicle.name || 'EV01'}.
                 </div>
 
                 {errorMessage && (
@@ -909,7 +912,7 @@ export const TripTelemetryPanel3D: React.FC<TripTelemetryPanel3DProps> = ({
                       borderRadius: '9999px',
                     }}
                   >
-                    EV01
+                    {activeTripState.vehicleCode || vehicle.model || vehicle.name || 'EV01'}
                   </span>
                 </div>
 
@@ -983,15 +986,17 @@ export const TripTelemetryPanel3D: React.FC<TripTelemetryPanel3DProps> = ({
                       justifyContent: 'space-between',
                     }}
                   >
-                    <span style={{ color: '#94a3b8' }}>Pin bắt đầu:</span>
+                    <span style={{ color: '#94a3b8' }}>Pin bắt đầu (SOC):</span>
                     <span style={{ color: '#cbd5e1', fontWeight: 600 }}>
                       {activeTripState.startBatteryLevel}%
                     </span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#94a3b8' }}>Pin kết thúc:</span>
+                    <span style={{ color: '#94a3b8' }}>Pin kết thúc (SOC):</span>
                     <strong style={{ color: '#34d399' }}>
-                      {activeTripState.endBatteryLevel != null
+                      {activeTripState.endSocPercent != null
+                        ? `${activeTripState.endSocPercent}%`
+                        : activeTripState.endBatteryLevel != null
                         ? `${activeTripState.endBatteryLevel}%`
                         : `${activeTripState.startBatteryLevel}%`}
                     </strong>
@@ -1037,12 +1042,46 @@ export const TripTelemetryPanel3D: React.FC<TripTelemetryPanel3DProps> = ({
                     </div>
                   )}
 
-                  {activeTripState.batteryUsed != null && (
+                  {activeTripState.socConsumedPercent != null ? (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Pin tiêu thụ (SOC):</span>
+                      <strong style={{ color: '#f59e0b' }}>
+                        {activeTripState.socConsumedPercent}%
+                      </strong>
+                    </div>
+                  ) : activeTripState.batteryUsed != null ? (
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span style={{ color: '#94a3b8' }}>Pin tiêu thụ:</span>
                       <strong style={{ color: '#f59e0b' }}>
                         {activeTripState.batteryUsed}%
                       </strong>
+                    </div>
+                  ) : null}
+
+                  {activeTripState.energyConsumedKwh != null && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Năng lượng tiêu thụ:</span>
+                      <strong style={{ color: '#10b981' }}>
+                        {activeTripState.energyConsumedKwh} kWh
+                      </strong>
+                    </div>
+                  )}
+
+                  {activeTripState.energyConsumptionKwhPer100Km != null && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Định mức tiêu thụ:</span>
+                      <span style={{ color: '#67e8f9', fontWeight: 600 }}>
+                        {activeTripState.energyConsumptionKwhPer100Km} kWh/100km
+                      </span>
+                    </div>
+                  )}
+
+                  {activeTripState.usableBatteryCapacityKwh != null && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Dung lượng pin khả dụng:</span>
+                      <span style={{ color: '#a7f3d0', fontWeight: 600 }}>
+                        {activeTripState.usableBatteryCapacityKwh} kWh
+                      </span>
                     </div>
                   )}
                 </div>

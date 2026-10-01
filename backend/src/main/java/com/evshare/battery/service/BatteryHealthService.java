@@ -7,6 +7,7 @@ import com.evshare.common.exception.ResourceNotFoundException;
 import com.evshare.security.UserPrincipal;
 import com.evshare.user.entity.Role;
 import com.evshare.vehicle.entity.Vehicle;
+import com.evshare.vehicle.entity.VehicleStatus;
 import com.evshare.vehicle.repository.VehicleRepository;
 import com.evshare.vehicle.service.VehicleService;
 import org.springframework.security.access.AccessDeniedException;
@@ -21,21 +22,29 @@ public class BatteryHealthService {
     private final VehicleBatteryHealthRepository batteryHealthRepository;
     private final VehicleRepository vehicleRepository;
     private final VehicleService vehicleService;
+    private final com.evshare.charging.service.ChargingProgressService chargingProgressService;
 
     public BatteryHealthService(
             VehicleBatteryHealthRepository batteryHealthRepository,
             VehicleRepository vehicleRepository,
-            VehicleService vehicleService
+            VehicleService vehicleService,
+            com.evshare.charging.service.ChargingProgressService chargingProgressService
     ) {
         this.batteryHealthRepository = batteryHealthRepository;
         this.vehicleRepository = vehicleRepository;
         this.vehicleService = vehicleService;
+        this.chargingProgressService = chargingProgressService;
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public BatteryHealthResponse getBatteryHealth(UUID vehicleId, UserPrincipal principal) {
         Vehicle vehicle = vehicleRepository.findById(vehicleId)
                 .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found with id: " + vehicleId));
+
+        if (vehicle.getStatus() == VehicleStatus.CHARGING) {
+            chargingProgressService.syncActiveSessionForVehicle(vehicleId);
+            vehicle = vehicleRepository.findById(vehicleId).orElse(vehicle);
+        }
 
         if (principal == null || principal.getUser() == null) {
             throw new AccessDeniedException("Vui lòng đăng nhập để xem thông tin pin xe.");

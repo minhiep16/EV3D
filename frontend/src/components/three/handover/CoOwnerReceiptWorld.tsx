@@ -5,14 +5,19 @@ import { VehicleResponse } from '../../../types/vehicle';
 import {
   HANDOVER_CHECKPOINTS,
   VehicleHandoverData,
+  VehicleHandoverEligibilityResponse,
   getCheckpointByCode,
 } from '../../../types/handover';
+import { Booking } from '../../../types/booking';
 import {
   fetchActiveVehicleHandovers,
+  fetchBookingHandover,
+  fetchHandoverEligibility,
   acknowledgeConditionApi,
   confirmOwnerReceiptApi,
   completeHandoverApi,
 } from '../../../services/handoverApi';
+import { fetchVehicleBookings } from '../../../services/bookingApi';
 import { useAuthStore } from '../../../store/authStore';
 import { useWorldStore } from '../../../store/worldStore';
 import { HandoverHotspot3D } from './HandoverHotspot3D';
@@ -49,10 +54,53 @@ export const CoOwnerReceiptWorld: React.FC<CoOwnerReceiptWorldProps> = ({ vehicl
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [lastConfirmedHandover, setLastConfirmedHandover] = useState<VehicleHandoverData | null>(null);
+
+  // TanStack Query: Handover Eligibility for vehicle
+  const {
+    data: eligibility,
+    isLoading: isEligibilityLoading,
+  } = useQuery<VehicleHandoverEligibilityResponse>({
+    queryKey: ['handoverEligibility', vehicle.id],
+    queryFn: () => fetchHandoverEligibility(vehicle.id),
+    staleTime: 5000,
+  });
+
+  // TanStack Query: Bookings for vehicle to resolve authoritative bookingId
+  const { data: allBookings = [] } = useQuery<Booking[]>({
+    queryKey: ['vehicleBookings', vehicle.id],
+    queryFn: () => fetchVehicleBookings(vehicle.id),
+    staleTime: 10000,
+  });
+
+  // Resolve target booking ID authoritatively
+  const targetBookingId = useMemo(() => {
+    if (eligibility?.bookingId) return eligibility.bookingId;
+    const now = new Date();
+    const myBookings = allBookings.filter(
+      (b) => b && b.status !== 'CANCELLED' && (!user?.id || b.userId === user?.id)
+    );
+    if (myBookings.length > 0) {
+      const activeOrUpcoming = myBookings.find((b) => b.endTime && new Date(b.endTime) >= now);
+      return activeOrUpcoming ? activeOrUpcoming.id : myBookings[0].id;
+    }
+    const confirmed = allBookings.find((b) => b && (b.status === 'CONFIRMED' || b.status === 'IN_PROGRESS'));
+    return confirmed ? confirmed.id : null;
+  }, [eligibility?.bookingId, allBookings, user?.id]);
+
+  // TanStack Query: Handover by booking (authoritative source of truth)
+  const {
+    data: bookingHandover,
+    isLoading: isBookingHandoverLoading,
+  } = useQuery<VehicleHandoverData | null>({
+    queryKey: ['handoverByBooking', targetBookingId],
+    queryFn: () => (targetBookingId ? fetchBookingHandover(targetBookingId) : null),
+    enabled: !!targetBookingId,
+    staleTime: 5000,
+  });
 
   // TanStack Query: Fetch active vehicle handovers with stable query key
   // staleTime: 30000 prevents unnecessary aggressive refetching during review
-  // Background refetches do NOT flicker or unmount UI
   const {
     data: activeHandovers = [],
     isLoading: isHandoversLoading,
@@ -75,16 +123,21 @@ export const CoOwnerReceiptWorld: React.FC<CoOwnerReceiptWorldProps> = ({ vehicl
     },
   });
 
-  // Resolve current CO_OWNER handover strictly from server state
+  // Resolve current CO_OWNER handover strictly from server state + fallback cache to prevent rollback
   const handover = useMemo(() => {
+    if (bookingHandover) return bookingHandover;
     const list = Array.isArray(activeHandovers) ? activeHandovers : [];
-    if (list.length === 0) return null;
-    const myHandover = list.find(
-      (h) =>
-        h && (!user?.id || h.coOwnerId === user.id || h.coOwnerEmail === user.email)
-    );
-    return myHandover || list[0] || null;
-  }, [activeHandovers, user?.id, user?.email]);
+    if (list.length > 0) {
+      const myHandover = list.find(
+        (h) =>
+          h && (!user?.id || h.coOwnerId === user.id || h.coOwnerEmail === user.email)
+      );
+      if (myHandover) return myHandover;
+    }
+    if (eligibility?.handover) return eligibility.handover;
+    if (lastConfirmedHandover) return lastConfirmedHandover;
+    return list[0] || null;
+  }, [bookingHandover, activeHandovers, eligibility?.handover, lastConfirmedHandover, user?.id, user?.email]);
 
   // Selected checkpoint object
   const currentCheckpointObj = useMemo(() => {
@@ -105,11 +158,17 @@ export const CoOwnerReceiptWorld: React.FC<CoOwnerReceiptWorldProps> = ({ vehicl
     setIsSubmitting(true);
     setErrorMessage(null);
     try {
-      await acknowledgeConditionApi(handover.id);
+      const acked = await acknowledgeConditionApi(handover.id);
+      if (acked) {
+        setLastConfirmedHandover(acked);
+      }
+      const bId = targetBookingId || handover.bookingId || eligibility?.bookingId;
       await Promise.all([
+        bId ? queryClient.invalidateQueries({ queryKey: ['handoverByBooking', bId] }) : Promise.resolve(),
+        queryClient.invalidateQueries({ queryKey: ['handoverEligibility', handover.id] }),
+        queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandovers', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandover', vehicle.id] }),
-        queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['tripEligibility'] }),
       ]);
     } catch (err: any) {
@@ -125,16 +184,31 @@ export const CoOwnerReceiptWorld: React.FC<CoOwnerReceiptWorldProps> = ({ vehicl
     setIsSubmitting(true);
     setErrorMessage(null);
     try {
-      await confirmOwnerReceiptApi(handover.id);
-      await completeHandoverApi(handover.id);
+      if (!handover.conditionAcknowledged && !handover.ownerConditionAcknowledgedAt) {
+        await acknowledgeConditionApi(handover.id);
+      }
+      const confirmed = await confirmOwnerReceiptApi(handover.id);
+      let finalHandover = confirmed;
+      try {
+        finalHandover = await completeHandoverApi(handover.id);
+      } catch {
+        // Handover completion may already be done or auto-finalized
+      }
+      // Store immediately in state to prevent UI rollback to preparation
+      setLastConfirmedHandover(finalHandover || { ...handover, status: 'COMPLETED' });
+
+      const bId = targetBookingId || handover.bookingId || eligibility?.bookingId;
       await Promise.all([
+        bId ? queryClient.invalidateQueries({ queryKey: ['handoverByBooking', bId] }) : Promise.resolve(),
+        queryClient.invalidateQueries({ queryKey: ['handoverEligibility', handover.id] }),
+        queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandovers', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandover', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['vehicleBookings', vehicle.id] }),
-        queryClient.invalidateQueries({ queryKey: ['bookingHandover'] }),
-        queryClient.invalidateQueries({ queryKey: ['tripEligibility'] }),
-        queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
+        bId ? queryClient.invalidateQueries({ queryKey: ['booking', bId] }) : Promise.resolve(),
+        queryClient.invalidateQueries({ queryKey: ['vehicle', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['vehicles'] }),
+        queryClient.invalidateQueries({ queryKey: ['tripEligibility'] }),
       ]);
     } catch (err: any) {
       setErrorMessage(err.message || 'Không thể xác nhận nhận xe.');
@@ -143,9 +217,12 @@ export const CoOwnerReceiptWorld: React.FC<CoOwnerReceiptWorldProps> = ({ vehicl
     }
   };
 
-  // Initial Loading only when data has not yet loaded.
-  // Never unmount the scene during background refetch!
-  if (isHandoversLoading && activeHandovers.length === 0) {
+  // Rule 9: If query temporarily loading and no cached handover, show loading state, not preparation state!
+  const isAnyInitialLoading =
+    !handover &&
+    (isHandoversLoading || (!!targetBookingId && isBookingHandoverLoading) || isEligibilityLoading);
+
+  if (isAnyInitialLoading) {
     return (
       <group position={[0, 1.4, 0]}>
         <Billboard follow={true}>
@@ -177,8 +254,55 @@ export const CoOwnerReceiptWorld: React.FC<CoOwnerReceiptWorldProps> = ({ vehicl
     );
   }
 
+  // Explicit status config for modal derived from current backend status (Rule 8)
+  const getHandoverModalConfig = (status?: string | null) => {
+    switch (status) {
+      case 'READY_FOR_HANDOVER':
+        return {
+          badge: 'SẴN SÀNG BÀN GIAO',
+          title: 'Xe đã sẵn sàng bàn giao',
+          message: 'Nhân viên đã kiểm tra xe đạt chuẩn. Vui lòng chờ nhân viên thực hiện thủ tục giao xe trực tiếp.',
+          iconColor: '#34d399',
+          borderColor: 'rgba(52, 211, 153, 0.5)',
+        };
+      case 'HANDED_OVER':
+        return {
+          badge: 'ĐÃ BÀN GIAO',
+          title: 'Xe đã được nhân viên bàn giao',
+          message: 'Nhân viên đã bàn giao xe. Vui lòng kiểm tra tình trạng xe và xác nhận nhận xe.',
+          iconColor: '#38bdf8',
+          borderColor: 'rgba(56, 189, 248, 0.5)',
+        };
+      case 'OWNER_CONFIRMED':
+        return {
+          badge: 'ĐÃ XÁC NHẬN NHẬN XE',
+          title: 'Bạn đã xác nhận nhận xe',
+          message: 'Bạn đã xác nhận nhận xe thành công. Chúc bạn có một hành trình an toàn và thuận lợi!',
+          iconColor: '#10b981',
+          borderColor: 'rgba(16, 185, 129, 0.5)',
+        };
+      case 'COMPLETED':
+        return {
+          badge: 'BÀN GIAO HOÀN TẤT',
+          title: 'Bàn giao hoàn tất',
+          message: 'Quy trình bàn giao đã hoàn tất. Xe đã sẵn sàng bắt đầu hành trình.',
+          iconColor: '#10b981',
+          borderColor: 'rgba(16, 185, 129, 0.5)',
+        };
+      case 'PENDING_PREPARATION':
+      default:
+        return {
+          badge: 'BÀN GIAO & NHẬN XE',
+          title: 'Đang chuẩn bị bàn giao xe',
+          message: 'Đang chờ nhân viên vận hành hoàn tất kiểm tra và bàn giao xe.',
+          iconColor: '#38bdf8',
+          borderColor: 'rgba(56, 189, 248, 0.5)',
+        };
+    }
+  };
+
   // Backend state drives the view:
-  // Status before HANDED_OVER -> Waiting state
+  // If no handover or status before HANDED_OVER -> Waiting state modal
   const isWaitingForStaff =
     !handover ||
     (handover.status !== 'HANDED_OVER' &&
@@ -186,6 +310,8 @@ export const CoOwnerReceiptWorld: React.FC<CoOwnerReceiptWorldProps> = ({ vehicl
       handover.status !== 'COMPLETED');
 
   if (isWaitingForStaff) {
+    const modalConfig = getHandoverModalConfig(handover?.status);
+
     return (
       <group position={[0, 1.4, 0]}>
         <Billboard follow={true}>
@@ -196,7 +322,7 @@ export const CoOwnerReceiptWorld: React.FC<CoOwnerReceiptWorldProps> = ({ vehicl
                 pointerEvents: 'auto',
                 background: 'rgba(8, 14, 26, 0.96)',
                 backdropFilter: 'blur(20px)',
-                border: '1px solid rgba(56, 189, 248, 0.5)',
+                border: `1px solid ${modalConfig.borderColor}`,
                 borderRadius: '16px',
                 padding: '24px',
                 width: '380px',
@@ -220,21 +346,21 @@ export const CoOwnerReceiptWorld: React.FC<CoOwnerReceiptWorldProps> = ({ vehicl
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: '#38bdf8',
+                  color: modalConfig.iconColor,
                 }}
               >
                 <Clock size={24} />
               </div>
 
               <div>
-                <div style={{ fontSize: '11px', fontWeight: 800, color: '#38bdf8', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '4px' }}>
-                  BÀN GIAO & NHẬN XE
+                <div style={{ fontSize: '11px', fontWeight: 800, color: modalConfig.iconColor, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '4px' }}>
+                  {modalConfig.badge}
                 </div>
                 <div style={{ fontSize: '15px', fontWeight: 800, color: '#ffffff', letterSpacing: '0.02em', marginBottom: '6px' }}>
-                  ĐANG CHUẨN BỊ BÀN GIAO XE
+                  {modalConfig.title}
                 </div>
                 <div style={{ fontSize: '11.5px', color: '#94a3b8', lineHeight: 1.5 }}>
-                  Đang chờ nhân viên vận hành hoàn tất kiểm tra và bàn giao xe.
+                  {modalConfig.message}
                 </div>
               </div>
 
@@ -255,7 +381,7 @@ export const CoOwnerReceiptWorld: React.FC<CoOwnerReceiptWorldProps> = ({ vehicl
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: '#94a3b8' }}>Phương tiện:</span>
-                    <span style={{ fontWeight: 800, color: '#fbbf24' }}>EV01</span>
+                    <span style={{ fontWeight: 800, color: '#fbbf24' }}>{vehicle.name || vehicle.licensePlate || 'EV01'}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: '#94a3b8' }}>Người nhận:</span>

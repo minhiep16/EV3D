@@ -47,6 +47,7 @@ public class ChargingService {
     private final TripRepository tripRepository;
     private final MaintenanceRequestRepository maintenanceRequestRepository;
     private final VehicleBatteryHealthRepository batteryHealthRepository;
+    private final ChargingProgressService chargingProgressService;
 
     public ChargingService(
             ChargingStationRepository chargingStationRepository,
@@ -55,7 +56,8 @@ public class ChargingService {
             VehicleService vehicleService,
             TripRepository tripRepository,
             MaintenanceRequestRepository maintenanceRequestRepository,
-            VehicleBatteryHealthRepository batteryHealthRepository
+            VehicleBatteryHealthRepository batteryHealthRepository,
+            ChargingProgressService chargingProgressService
     ) {
         this.chargingStationRepository = chargingStationRepository;
         this.chargingSessionRepository = chargingSessionRepository;
@@ -64,6 +66,7 @@ public class ChargingService {
         this.tripRepository = tripRepository;
         this.maintenanceRequestRepository = maintenanceRequestRepository;
         this.batteryHealthRepository = batteryHealthRepository;
+        this.chargingProgressService = chargingProgressService;
     }
 
     @Transactional(readOnly = true)
@@ -80,20 +83,36 @@ public class ChargingService {
         return ChargingStationResponse.fromEntity(station);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public ChargingSessionResponse getActiveSessionForVehicle(UUID vehicleId, UserPrincipal principal) {
         validateVehicleAccess(vehicleId, principal);
-        return chargingSessionRepository
-                .findFirstByVehicleIdAndStatusOrderByStartedAtDesc(vehicleId, ChargingSessionStatus.ACTIVE)
-                .map(ChargingSessionResponse::fromEntity)
-                .orElse(null);
+        Optional<ChargingSession> sessionOpt = chargingSessionRepository
+                .findFirstByVehicleIdAndStatusOrderByStartedAtDesc(vehicleId, ChargingSessionStatus.ACTIVE);
+
+        if (sessionOpt.isEmpty()) {
+            return null;
+        }
+
+        ChargingSession session = sessionOpt.get();
+        // Deterministic server-side progression recomputation on read
+        ChargingSession syncedSession = chargingProgressService.syncSession(session, Instant.now());
+        Integer eta = chargingProgressService.calculateRemainingMinutes(syncedSession);
+
+        return ChargingSessionResponse.fromEntity(syncedSession, eta);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<ChargingSessionResponse> getSessionHistoryForVehicle(UUID vehicleId, UserPrincipal principal) {
         validateVehicleAccess(vehicleId, principal);
+        // Ensure any active session is progressed before reading history
+        chargingProgressService.syncActiveSessionForVehicle(vehicleId);
         return chargingSessionRepository.findByVehicleIdOrderByCreatedAtDesc(vehicleId).stream()
-                .map(ChargingSessionResponse::fromEntity)
+                .map(session -> {
+                    Integer eta = session.getStatus() == ChargingSessionStatus.ACTIVE
+                            ? chargingProgressService.calculateRemainingMinutes(session)
+                            : 0;
+                    return ChargingSessionResponse.fromEntity(session, eta);
+                })
                 .collect(Collectors.toList());
     }
 
@@ -179,7 +198,10 @@ public class ChargingService {
         }
 
         ChargingSession savedSession = chargingSessionRepository.save(session);
-        return ChargingSessionResponse.fromEntity(savedSession);
+        Integer eta = savedSession.getStatus() == ChargingSessionStatus.ACTIVE
+                ? chargingProgressService.calculateRemainingMinutes(savedSession)
+                : 0;
+        return ChargingSessionResponse.fromEntity(savedSession, eta);
     }
 
     @Transactional
@@ -215,8 +237,9 @@ public class ChargingService {
         chargingStationRepository.save(station);
         vehicleRepository.save(vehicle);
         ChargingSession saved = chargingSessionRepository.save(session);
+        Integer eta = chargingProgressService.calculateRemainingMinutes(saved);
 
-        return ChargingSessionResponse.fromEntity(saved);
+        return ChargingSessionResponse.fromEntity(saved, eta);
     }
 
     @Transactional
@@ -234,41 +257,44 @@ public class ChargingService {
             throw new IllegalStateException("Phiên sạc không ở trạng thái hoạt động (ACTIVE).");
         }
 
-        BigDecimal newSoc = request.getNewSocPercent();
-        if (newSoc.compareTo(BigDecimal.valueOf(100)) > 0) {
-            newSoc = BigDecimal.valueOf(100);
-        }
-        if (newSoc.compareTo(session.getCurrentSocPercent()) < 0) {
-            newSoc = session.getCurrentSocPercent();
-        }
+        // Support manual +5% simulation as a DEV-only helper if newSocPercent is explicitly provided
+        if (request != null && request.getNewSocPercent() != null) {
+            BigDecimal newSoc = request.getNewSocPercent();
+            if (newSoc.compareTo(BigDecimal.valueOf(100)) > 0) {
+                newSoc = BigDecimal.valueOf(100);
+            }
+            if (newSoc.compareTo(session.getCurrentSocPercent()) < 0) {
+                newSoc = session.getCurrentSocPercent();
+            }
 
-        session.setCurrentSocPercent(newSoc);
+            session.setCurrentSocPercent(newSoc);
 
-        Vehicle vehicle = session.getVehicle();
-        vehicle.setCurrentBatteryLevel(newSoc.intValue());
-        vehicleRepository.save(vehicle);
+            Vehicle vehicle = session.getVehicle();
+            if (vehicle != null) {
+                vehicle.setCurrentBatteryLevel(newSoc.intValue());
+                vehicleRepository.save(vehicle);
+                chargingProgressService.updateBatteryHealthEstimate(vehicle, newSoc);
+            }
 
-        // Calculate / update energy delivered
-        if (request.getEnergyDeliveredKwh() != null && request.getEnergyDeliveredKwh().compareTo(BigDecimal.ZERO) >= 0) {
-            session.setEnergyDeliveredKwh(request.getEnergyDeliveredKwh());
-        } else {
-            // Deterministic estimation: deltaSoc * capacity / 100
-            BigDecimal capacity = vehicle.getBatteryCapacity() != null ? vehicle.getBatteryCapacity() : BigDecimal.valueOf(75.0);
+            BigDecimal usableCapacity = chargingProgressService.resolveUsableCapacity(vehicle);
             BigDecimal deltaSoc = newSoc.subtract(session.getStartSocPercent()).max(BigDecimal.ZERO);
-            BigDecimal delivered = deltaSoc.multiply(capacity).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+            BigDecimal delivered = deltaSoc.multiply(usableCapacity)
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
             session.setEnergyDeliveredKwh(delivered);
+
+            if (newSoc.compareTo(session.getTargetSocPercent()) >= 0) {
+                return completeChargingSessionInternal(session, "Đạt mức pin mục tiêu " + session.getTargetSocPercent() + "%");
+            }
+
+            ChargingSession saved = chargingSessionRepository.save(session);
+            Integer eta = chargingProgressService.calculateRemainingMinutes(saved);
+            return ChargingSessionResponse.fromEntity(saved, eta);
         }
 
-        // Keep estimated range in sync on battery health if present
-        updateBatteryHealthEstimate(vehicle, newSoc);
-
-        // Check if target SOC reached
-        if (newSoc.compareTo(session.getTargetSocPercent()) >= 0) {
-            return completeChargingSessionInternal(session, "Đạt mức pin mục tiêu " + session.getTargetSocPercent() + "%");
-        }
-
-        ChargingSession saved = chargingSessionRepository.save(session);
-        return ChargingSessionResponse.fromEntity(saved);
+        // Default: authoritative server elapsed-time sync
+        ChargingSession synced = chargingProgressService.syncSession(session, Instant.now());
+        Integer eta = chargingProgressService.calculateRemainingMinutes(synced);
+        return ChargingSessionResponse.fromEntity(synced, eta);
     }
 
     @Transactional
@@ -280,6 +306,14 @@ public class ChargingService {
 
         if (session.getStatus() != ChargingSessionStatus.ACTIVE && session.getStatus() != ChargingSessionStatus.PENDING) {
             throw new IllegalStateException("Phiên sạc đã kết thúc.");
+        }
+
+        // If ACTIVE, ensure session is synced to current server time before final completion
+        if (session.getStatus() == ChargingSessionStatus.ACTIVE) {
+            session = chargingProgressService.syncSession(session, Instant.now());
+            if (session.getStatus() == ChargingSessionStatus.COMPLETED) {
+                return ChargingSessionResponse.fromEntity(session, 0);
+            }
         }
 
         return completeChargingSessionInternal(session, "Người dùng hoàn tất phiên sạc");
@@ -302,70 +336,45 @@ public class ChargingService {
 
         // Free charging station
         ChargingStation station = session.getChargingStation();
-        station.setStatus(ChargingStationStatus.AVAILABLE);
-        chargingStationRepository.save(station);
+        if (station != null) {
+            station.setStatus(ChargingStationStatus.AVAILABLE);
+            chargingStationRepository.save(station);
+        }
 
         // Recalculate vehicle status authoritatively
         Vehicle vehicle = session.getVehicle();
-        recalculateVehicleStatus(vehicle);
+        if (vehicle != null) {
+            chargingProgressService.recalculateVehicleStatus(vehicle);
+        }
 
         ChargingSession saved = chargingSessionRepository.save(session);
-        return ChargingSessionResponse.fromEntity(saved);
+        return ChargingSessionResponse.fromEntity(saved, 0);
     }
 
     private ChargingSessionResponse completeChargingSessionInternal(ChargingSession session, String reason) {
         session.setStatus(ChargingSessionStatus.COMPLETED);
-        session.setEndedAt(Instant.now());
+        if (session.getEndedAt() == null) {
+            session.setEndedAt(Instant.now());
+        }
         session.setCompletionReason(reason);
 
         // Ensure final vehicle battery level matches session currentSoc
         Vehicle vehicle = session.getVehicle();
-        vehicle.setCurrentBatteryLevel(session.getCurrentSocPercent().intValue());
+        if (vehicle != null) {
+            vehicle.setCurrentBatteryLevel(session.getCurrentSocPercent().intValue());
+            chargingProgressService.recalculateVehicleStatus(vehicle);
+            chargingProgressService.updateBatteryHealthEstimate(vehicle, session.getCurrentSocPercent());
+        }
 
         // Free charging station
         ChargingStation station = session.getChargingStation();
-        station.setStatus(ChargingStationStatus.AVAILABLE);
-        chargingStationRepository.save(station);
-
-        // Recalculate vehicle operational status
-        recalculateVehicleStatus(vehicle);
-
-        // Keep battery health range in sync
-        updateBatteryHealthEstimate(vehicle, session.getCurrentSocPercent());
+        if (station != null) {
+            station.setStatus(ChargingStationStatus.AVAILABLE);
+            chargingStationRepository.save(station);
+        }
 
         ChargingSession saved = chargingSessionRepository.save(session);
-        return ChargingSessionResponse.fromEntity(saved);
-    }
-
-    private void recalculateVehicleStatus(Vehicle vehicle) {
-        boolean hasActiveMaintenance = maintenanceRequestRepository.existsByVehicleIdAndStatus(
-                vehicle.getId(),
-                MaintenanceStatus.IN_PROGRESS
-        );
-        boolean hasActiveTrip = tripRepository.existsByVehicleIdAndStatus(
-                vehicle.getId(),
-                TripStatus.ACTIVE
-        );
-
-        if (hasActiveMaintenance) {
-            vehicle.setStatus(VehicleStatus.MAINTENANCE);
-        } else if (hasActiveTrip) {
-            vehicle.setStatus(VehicleStatus.IN_USE);
-        } else {
-            vehicle.setStatus(VehicleStatus.AVAILABLE);
-        }
-        vehicleRepository.save(vehicle);
-    }
-
-    private void updateBatteryHealthEstimate(Vehicle vehicle, BigDecimal currentSoc) {
-        Optional<VehicleBatteryHealth> healthOpt = batteryHealthRepository.findByVehicleId(vehicle.getId());
-        if (healthOpt.isPresent()) {
-            VehicleBatteryHealth health = healthOpt.get();
-            // Estimate range based on ~4.5 km per 1% SOC
-            BigDecimal estimatedKm = currentSoc.multiply(BigDecimal.valueOf(4.5)).setScale(2, RoundingMode.HALF_UP);
-            health.setEstimatedRangeKm(estimatedKm);
-            batteryHealthRepository.save(health);
-        }
+        return ChargingSessionResponse.fromEntity(saved, 0);
     }
 
     private void validateVehicleAccess(UUID vehicleId, UserPrincipal principal) {

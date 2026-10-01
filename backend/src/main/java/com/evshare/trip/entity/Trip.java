@@ -56,6 +56,15 @@ public class Trip {
     @Column(name = "end_battery_level")
     private Integer endBatteryLevel;
 
+    @Column(name = "end_soc_percent", precision = 5, scale = 2)
+    private BigDecimal endSocPercent;
+
+    @Column(name = "energy_consumed_kwh", precision = 8, scale = 3)
+    private BigDecimal energyConsumedKwh;
+
+    @Column(name = "soc_consumed_percent", precision = 5, scale = 2)
+    private BigDecimal socConsumedPercent;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;
@@ -165,6 +174,30 @@ public class Trip {
 
     public void setEndBatteryLevel(Integer endBatteryLevel) {
         this.endBatteryLevel = endBatteryLevel;
+    }
+
+    public BigDecimal getEndSocPercent() {
+        return endSocPercent;
+    }
+
+    public void setEndSocPercent(BigDecimal endSocPercent) {
+        this.endSocPercent = endSocPercent;
+    }
+
+    public BigDecimal getEnergyConsumedKwh() {
+        return energyConsumedKwh;
+    }
+
+    public void setEnergyConsumedKwh(BigDecimal energyConsumedKwh) {
+        this.energyConsumedKwh = energyConsumedKwh;
+    }
+
+    public BigDecimal getSocConsumedPercent() {
+        return socConsumedPercent;
+    }
+
+    public void setSocConsumedPercent(BigDecimal socConsumedPercent) {
+        this.socConsumedPercent = socConsumedPercent;
     }
 
     public Instant getCreatedAt() {

@@ -714,10 +714,12 @@ export const CoOwnerReceiptPanel3D: React.FC<CoOwnerReceiptPanel3DProps> = ({
                     }}
                   >
                     <Sparkles size={16} />
-                    CHECK-IN HOÀN TẤT
+                    {handover.status === 'OWNER_CONFIRMED' ? 'ĐÃ XÁC NHẬN NHẬN XE' : 'BÀN GIAO HOÀN TẤT'}
                   </div>
                   <div style={{ color: '#ffffff', fontSize: '12px', fontWeight: 600 }}>
-                    XE ĐÃ ĐƯỢC BÀN GIAO THÀNH CÔNG
+                    {handover.status === 'OWNER_CONFIRMED'
+                      ? 'Bạn đã xác nhận nhận xe.'
+                      : 'Quy trình bàn giao đã hoàn tất.'}
                   </div>
                 </div>
               ) : handover.status === 'PENDING_PREPARATION' ? (
