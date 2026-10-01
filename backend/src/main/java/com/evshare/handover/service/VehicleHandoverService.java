@@ -10,9 +10,10 @@ import com.evshare.handover.dto.VehicleInspectionRequest;
 import com.evshare.handover.dto.VehicleInspectionResponse;
 import com.evshare.handover.entity.HandoverStatus;
 import com.evshare.handover.entity.VehicleHandover;
-import com.evshare.handover.entity.VehicleInspection;
 import com.evshare.handover.repository.VehicleHandoverRepository;
-import com.evshare.handover.repository.VehicleInspectionRepository;
+import com.evshare.inspection.entity.InspectionOverallResult;
+import com.evshare.inspection.entity.VehicleInspection;
+import com.evshare.inspection.repository.VehicleInspectionRepository;
 import com.evshare.handover.dto.HandoverEligibilityReason;
 import com.evshare.handover.dto.VehicleHandoverEligibilityResponse;
 import com.evshare.trip.entity.TripStatus;
@@ -92,6 +93,13 @@ public class VehicleHandoverService {
         this.coOwnershipService = coOwnershipService;
         this.vehicleRepository = vehicleRepository;
         this.tripRepository = tripRepository;
+    }
+
+    @org.springframework.beans.factory.annotation.Value("${app.handover.inspection-max-age-hours:24}")
+    private long maxAgeHours = 24;
+
+    public void setMaxAgeHours(long maxAgeHours) {
+        this.maxAgeHours = maxAgeHours;
     }
 
     @Transactional(readOnly = true)
@@ -194,6 +202,13 @@ public class VehicleHandoverService {
     }
 
     @Transactional(readOnly = true)
+    public VehicleHandoverEligibilityResponse getHandoverEligibilityByHandoverId(UUID handoverId, UUID currentUserId, Role currentUserRole) {
+        VehicleHandover handover = handoverRepository.findById(handoverId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy hồ sơ bàn giao xe: " + handoverId));
+        return getHandoverEligibility(handover.getVehicle().getId(), currentUserId, currentUserRole);
+    }
+
+    @Transactional(readOnly = true)
     public VehicleHandoverEligibilityResponse getHandoverEligibility(UUID vehicleId, UUID currentUserId, Role currentUserRole) {
         VehicleHandoverEligibilityResponse resp = new VehicleHandoverEligibilityResponse();
         resp.setVehicleId(vehicleId);
@@ -206,12 +221,52 @@ public class VehicleHandoverService {
             resp.setVehicleCode("EV01");
         }
 
-        // 2. Check VEHICLE_IN_USE or CHARGING
-        boolean isVehicleUnavailable = (vehicle != null && (vehicle.getStatus() == VehicleStatus.IN_USE || vehicle.getStatus() == VehicleStatus.CHARGING)) ||
+        // Populate latest completed inspection details
+        if (inspectionRepository != null) {
+            Optional<VehicleInspection> latestInspOpt =
+                    inspectionRepository.findLatestCompletedByVehicleId(vehicleId);
+            if (latestInspOpt.isPresent()) {
+                VehicleInspection latest = latestInspOpt.get();
+                resp.setInspectionAvailable(true);
+                resp.setInspectionId(latest.getId());
+                resp.setInspectionResult(latest.getOverallResult() != null ? latest.getOverallResult().name() : "PASS");
+                resp.setInspectionCompletedAt(latest.getCompletedAt());
+                boolean fresh = latest.getCompletedAt() != null &&
+                        latest.getCompletedAt().isAfter(Instant.now().minus(Duration.ofHours(maxAgeHours)));
+                resp.setInspectionFresh(fresh);
+                resp.setInspectedPartsCount(latest.getItems() != null ? latest.getItems().size() : 0);
+                if (latest.getInspectedBy() != null) {
+                    resp.setInspectorName(latest.getInspectedBy().getFullName());
+                }
+            } else {
+                resp.setInspectionAvailable(false);
+                resp.setInspectionFresh(false);
+            }
+        }
+
+        // 2. Check VEHICLE_IN_USE or CHARGING or MAINTENANCE
+        if (vehicle != null && vehicle.getStatus() == VehicleStatus.MAINTENANCE) {
+            resp.setReason(HandoverEligibilityReason.VEHICLE_MAINTENANCE);
+            resp.setMessage("XE ĐANG TRONG QUÁ TRÌNH BẢO DƯỠNG");
+            resp.setHandoverAllowed(false);
+            resp.setEligibleForInspection(false);
+            return resp;
+        }
+
+        if (vehicle != null && vehicle.getStatus() == VehicleStatus.CHARGING) {
+            resp.setReason(HandoverEligibilityReason.VEHICLE_CHARGING);
+            resp.setMessage("XE ĐANG TRONG QUÁ TRÌNH SẠC");
+            resp.setHandoverAllowed(false);
+            resp.setEligibleForInspection(false);
+            return resp;
+        }
+
+        boolean isVehicleUnavailable = (vehicle != null && vehicle.getStatus() == VehicleStatus.IN_USE) ||
                 (tripRepository != null && tripRepository.existsByVehicleIdAndStatus(vehicleId, TripStatus.ACTIVE));
         if (isVehicleUnavailable) {
             resp.setReason(HandoverEligibilityReason.VEHICLE_IN_USE);
-            resp.setMessage(vehicle != null && vehicle.getStatus() == VehicleStatus.CHARGING ? "XE ĐANG TRONG QUÁ TRÌNH SẠC" : "XE ĐANG ĐƯỢC SỬ DỤNG");
+            resp.setMessage("XE ĐANG ĐƯỢC SỬ DỤNG");
+            resp.setHandoverAllowed(false);
             resp.setEligibleForInspection(false);
             return resp;
         }
@@ -267,9 +322,15 @@ public class VehicleHandoverService {
                 return resp;
             }
 
-            resp.setReason(HandoverEligibilityReason.READY_FOR_PREPARATION);
-            resp.setMessage("SẴN SÀNG CHUẨN BỊ BÀN GIAO XE");
-            resp.setEligibleForInspection(true);
+            if (h.getStatus() == HandoverStatus.READY_FOR_HANDOVER) {
+                resp.setReason(HandoverEligibilityReason.READY);
+                resp.setMessage("XE ĐÃ SẴN SÀNG ĐỂ BÀN GIAO");
+                resp.setHandoverAllowed(true);
+                resp.setEligibleForInspection(true);
+                return resp;
+            }
+
+            evaluateInspectionReadiness(resp);
             return resp;
         }
 
@@ -346,21 +407,68 @@ public class VehicleHandoverService {
         }
 
         // Within preparation window up to end time
+        // Authoritative resolution of handover by target booking
+        Optional<VehicleHandover> bookingHandoverOpt = handoverRepository.findByBookingId(target.getId());
+        if (bookingHandoverOpt.isPresent()) {
+            VehicleHandover h = bookingHandoverOpt.get();
+            resp.setHandoverId(h.getId());
+            resp.setHandoverStatus(h.getStatus() != null ? h.getStatus().name() : null);
+            resp.setHandover(VehicleHandoverResponse.fromEntity(h));
+
+            if (h.getStatus() == HandoverStatus.READY_FOR_HANDOVER) {
+                resp.setReason(HandoverEligibilityReason.READY);
+                resp.setMessage("XE ĐÃ SẴN SÀNG ĐỂ BÀN GIAO");
+                resp.setHandoverAllowed(true);
+                resp.setEligibleForInspection(true);
+                return resp;
+            }
+
+            evaluateInspectionReadiness(resp);
+            return resp;
+        }
+
+        // Controlled state when handover record has not been created yet for this booking
+        resp.setHandoverId(null);
+        resp.setHandoverStatus(null);
+        resp.setHandover(null);
+        resp.setHandoverAllowed(false);
         resp.setReason(HandoverEligibilityReason.READY_FOR_PREPARATION);
-        resp.setMessage("SẴN SÀNG CHUẨN BỊ BÀN GIAO XE");
+        resp.setMessage("Chưa có hồ sơ bàn giao cho lượt đặt xe này.");
         resp.setEligibleForInspection(true);
 
-        VehicleHandover transientCandidate = new VehicleHandover(
-                null,
-                target,
-                target.getVehicle() != null ? target.getVehicle() : vehicle,
-                null,
-                target.getUser(),
-                HandoverStatus.PENDING_PREPARATION
-        );
-        resp.setHandover(VehicleHandoverResponse.fromEntity(transientCandidate));
-
         return resp;
+    }
+
+    private void evaluateInspectionReadiness(VehicleHandoverEligibilityResponse resp) {
+        if (!resp.isInspectionAvailable()) {
+            resp.setReason(HandoverEligibilityReason.NO_INSPECTION);
+            resp.setMessage("Xe chưa có kết quả kiểm tra hợp lệ để bàn giao.");
+            resp.setHandoverAllowed(false);
+            resp.setEligibleForInspection(true);
+        } else if (!resp.isInspectionFresh()) {
+            resp.setReason(HandoverEligibilityReason.INSPECTION_EXPIRED);
+            resp.setMessage("Kết quả kiểm tra xe đã quá hạn (" + maxAgeHours + " giờ). Vui lòng kiểm tra lại xe trước khi bàn giao.");
+            resp.setHandoverAllowed(false);
+            resp.setEligibleForInspection(true);
+        } else if ("FAIL".equalsIgnoreCase(resp.getInspectionResult())) {
+            resp.setReason(HandoverEligibilityReason.INSPECTION_FAILED);
+            resp.setMessage("Kết quả kiểm tra xe KHÔNG ĐẠT (FAIL). Không thể bàn giao xe.");
+            resp.setHandoverAllowed(false);
+            resp.setEligibleForInspection(true);
+        } else {
+            boolean hasPersistedHandover = resp.getHandoverId() != null || (resp.getHandover() != null && resp.getHandover().getId() != null);
+            if (hasPersistedHandover) {
+                resp.setReason(HandoverEligibilityReason.READY);
+                resp.setMessage("SẴN SÀNG CHUẨN BỊ BÀN GIAO XE");
+                resp.setHandoverAllowed(true);
+                resp.setEligibleForInspection(true);
+            } else {
+                resp.setReason(HandoverEligibilityReason.READY_FOR_PREPARATION);
+                resp.setMessage("Chưa có hồ sơ bàn giao cho lượt đặt xe này.");
+                resp.setHandoverAllowed(false);
+                resp.setEligibleForInspection(true);
+            }
+        }
     }
 
     @Transactional
@@ -423,61 +531,11 @@ public class VehicleHandoverService {
         return VehicleHandoverResponse.fromEntity(saved);
     }
 
+    @Deprecated
     @Transactional
     public VehicleInspectionResponse recordInspection(UUID handoverId, VehicleInspectionRequest request, UUID staffId) {
-        VehicleHandover handover = handoverRepository.findById(handoverId)
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy hồ sơ bàn giao xe: " + handoverId));
-
-        if (handover.getStatus() == HandoverStatus.READY_FOR_HANDOVER ||
-            handover.getStatus() == HandoverStatus.HANDED_OVER ||
-            handover.getStatus() == HandoverStatus.OWNER_CONFIRMED ||
-            handover.getStatus() == HandoverStatus.COMPLETED) {
-            throw new DuplicateResourceException("Hồ sơ kiểm tra đã khóa, không thể chỉnh sửa khi xe đã sẵn sàng hoặc đã bàn giao");
-        }
-        if (handover.getStatus() == HandoverStatus.CANCELLED) {
-            throw new IllegalStateException("Hồ sơ bàn giao đã bị hủy");
-        }
-
-        Booking booking = handover.getBooking();
-        if (booking != null && (booking.isExpired() || booking.getEndTime().isBefore(Instant.now()) || booking.getStatus() == BookingStatus.EXPIRED)) {
-            throw new IllegalStateException("Lịch đặt xe đã hết thời gian (EXPIRED), không thể thực hiện kiểm tra xe");
-        }
-
-        String partCode = request.getVehiclePartCode().trim().toUpperCase();
-        if (!REQUIRED_CHECKPOINTS.contains(partCode)) {
-            throw new IllegalArgumentException("Mã bộ phận kiểm tra không hợp lệ: " + partCode);
-        }
-
-        User staff = userRepository.findById(staffId)
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tài khoản nhân viên"));
-
-        handover.setStaff(staff);
-        if (handover.getStatus() == HandoverStatus.PENDING_PREPARATION) {
-            handover.setStatus(HandoverStatus.INSPECTION_IN_PROGRESS);
-        }
-
-        VehicleInspection inspection = inspectionRepository.findByHandoverIdAndVehiclePartCode(handoverId, partCode)
-                .orElseGet(() -> {
-                    VehicleInspection insp = new VehicleInspection();
-                    insp.setId(UUID.randomUUID());
-                    insp.setHandover(handover);
-                    insp.setVehiclePartCode(partCode);
-                    return insp;
-                });
-
-        inspection.setConditionStatus(request.getConditionStatus());
-        inspection.setNote(request.getNote());
-        inspection.setInspectedBy(staff);
-        inspection.setInspectedAt(Instant.now());
-
-        VehicleInspection saved = inspectionRepository.save(inspection);
-
-        if (!handover.getInspections().contains(saved)) {
-            handover.getInspections().add(saved);
-        }
-        handoverRepository.save(handover);
-
-        return VehicleInspectionResponse.fromEntity(saved);
+        throw new UnsupportedOperationException(
+                "Quy trình kiểm tra 8 điểm trực tiếp trên bàn giao đã được thay thế bằng kiểm tra bộ phận độc lập (/api/inspections)");
     }
 
     @Transactional
@@ -495,29 +553,44 @@ public class VehicleHandoverService {
             return VehicleHandoverResponse.fromEntity(handover);
         }
 
-        if (handover.getStatus() != HandoverStatus.INSPECTION_IN_PROGRESS) {
-            throw new IllegalStateException("Chỉ có thể chuyển sang sẵn sàng từ trạng thái đang kiểm tra xe");
-        }
-
         Booking booking = handover.getBooking();
         if (booking == null || booking.getStatus() != BookingStatus.CONFIRMED || booking.isExpired() || booking.getEndTime().isBefore(Instant.now()) || booking.getStatus() == BookingStatus.EXPIRED) {
             throw new IllegalStateException("Lịch đặt xe đã hết thời gian (EXPIRED) hoặc không hợp lệ, không thể xác nhận sẵn sàng");
         }
 
-        List<VehicleInspection> inspections = inspectionRepository.findByHandoverIdOrderByInspectedAtAsc(handoverId);
-        Set<String> inspectedParts = new HashSet<>();
-        for (VehicleInspection inspection : inspections) {
-            inspectedParts.add(inspection.getVehiclePartCode().toUpperCase());
+        Vehicle vehicle = handover.getVehicle();
+        if (vehicle != null && vehicle.getStatus() == VehicleStatus.MAINTENANCE) {
+            throw new IllegalStateException("Xe đang trong quá trình bảo dưỡng, không thể xác nhận sẵn sàng bàn giao");
+        }
+        if (vehicle != null && vehicle.getStatus() == VehicleStatus.CHARGING) {
+            throw new IllegalStateException("Xe đang trong quá trình sạc, không thể xác nhận sẵn sàng bàn giao");
         }
 
-        if (!inspectedParts.containsAll(REQUIRED_CHECKPOINTS)) {
-            throw new IllegalArgumentException("Chưa hoàn thành kiểm tra tất cả " + REQUIRED_CHECKPOINTS.size() + " bộ phận bắt buộc trước khi bàn giao");
+        // Authoritative Standalone Inspection Verification
+        VehicleInspection latestInsp = null;
+        if (inspectionRepository != null && vehicle != null) {
+            latestInsp = inspectionRepository.findLatestCompletedByVehicleId(vehicle.getId()).orElse(null);
+        }
+
+        if (latestInsp == null) {
+            throw new IllegalStateException("Xe chưa có kết quả kiểm tra hợp lệ để bàn giao. Vui lòng thực hiện kiểm tra xe trước.");
+        }
+
+        if (latestInsp.getOverallResult() == InspectionOverallResult.FAIL) {
+            throw new IllegalStateException("Kết quả kiểm tra xe KHÔNG ĐẠT (FAIL). Không thể bàn giao xe.");
+        }
+
+        boolean fresh = latestInsp.getCompletedAt() != null &&
+                latestInsp.getCompletedAt().isAfter(Instant.now().minus(Duration.ofHours(maxAgeHours)));
+        if (!fresh) {
+            throw new IllegalStateException("Kết quả kiểm tra xe đã quá hạn (" + maxAgeHours + " giờ). Vui lòng kiểm tra lại xe trước khi bàn giao.");
         }
 
         User staff = userRepository.findById(staffId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tài khoản nhân viên"));
 
         handover.setStaff(staff);
+        handover.setInspection(latestInsp);
         handover.setStatus(HandoverStatus.READY_FOR_HANDOVER);
         handover.setStaffPreparedAt(Instant.now());
 

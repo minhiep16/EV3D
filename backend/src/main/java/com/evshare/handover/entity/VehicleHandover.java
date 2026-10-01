@@ -1,6 +1,7 @@
 package com.evshare.handover.entity;
 
 import com.evshare.booking.entity.Booking;
+import com.evshare.inspection.entity.VehicleInspection;
 import com.evshare.user.entity.User;
 import com.evshare.vehicle.entity.Vehicle;
 import jakarta.persistence.*;
@@ -10,8 +11,6 @@ import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -55,8 +54,9 @@ public class VehicleHandover {
     @Column(name = "owner_condition_acknowledged_at")
     private Instant ownerConditionAcknowledgedAt;
 
-    @OneToMany(mappedBy = "handover", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<VehicleInspection> inspections = new ArrayList<>();
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "inspection_id")
+    private VehicleInspection inspection;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
@@ -165,12 +165,16 @@ public class VehicleHandover {
         this.ownerConditionAcknowledgedAt = ownerConditionAcknowledgedAt;
     }
 
-    public List<VehicleInspection> getInspections() {
-        return inspections;
+    public VehicleInspection getInspection() {
+        return inspection;
     }
 
-    public void setInspections(List<VehicleInspection> inspections) {
-        this.inspections = inspections;
+    public void setInspection(VehicleInspection inspection) {
+        this.inspection = inspection;
+    }
+
+    public UUID getInspectionId() {
+        return inspection != null ? inspection.getId() : null;
     }
 
     public Instant getCreatedAt() {

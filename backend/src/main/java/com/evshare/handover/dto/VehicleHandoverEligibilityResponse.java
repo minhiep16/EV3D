@@ -8,6 +8,14 @@ public class VehicleHandoverEligibilityResponse {
     private HandoverEligibilityReason reason;
     private String message;
     private boolean eligibleForInspection;
+    private boolean handoverAllowed;
+    private boolean inspectionAvailable;
+    private UUID inspectionId;
+    private String inspectionResult;
+    private Instant inspectionCompletedAt;
+    private boolean inspectionFresh;
+    private Integer inspectedPartsCount;
+    private String inspectorName;
     private UUID vehicleId;
     private String vehicleName;
     private String vehicleCode;
@@ -160,5 +168,69 @@ public class VehicleHandoverEligibilityResponse {
 
     public void setHandover(VehicleHandoverResponse handover) {
         this.handover = handover;
+    }
+
+    public boolean isHandoverAllowed() {
+        return handoverAllowed;
+    }
+
+    public void setHandoverAllowed(boolean handoverAllowed) {
+        this.handoverAllowed = handoverAllowed;
+    }
+
+    public boolean isInspectionAvailable() {
+        return inspectionAvailable;
+    }
+
+    public void setInspectionAvailable(boolean inspectionAvailable) {
+        this.inspectionAvailable = inspectionAvailable;
+    }
+
+    public UUID getInspectionId() {
+        return inspectionId;
+    }
+
+    public void setInspectionId(UUID inspectionId) {
+        this.inspectionId = inspectionId;
+    }
+
+    public String getInspectionResult() {
+        return inspectionResult;
+    }
+
+    public void setInspectionResult(String inspectionResult) {
+        this.inspectionResult = inspectionResult;
+    }
+
+    public Instant getInspectionCompletedAt() {
+        return inspectionCompletedAt;
+    }
+
+    public void setInspectionCompletedAt(Instant inspectionCompletedAt) {
+        this.inspectionCompletedAt = inspectionCompletedAt;
+    }
+
+    public boolean isInspectionFresh() {
+        return inspectionFresh;
+    }
+
+    public void setInspectionFresh(boolean inspectionFresh) {
+        this.inspectionFresh = inspectionFresh;
+    }
+
+    public Integer getInspectedPartsCount() {
+        return inspectedPartsCount;
+    }
+
+    public void setInspectedPartsCount(Integer inspectedPartsCount) {
+        this.inspectedPartsCount = inspectedPartsCount;
+    }
+
+    public String getInspectorName() {
+        return inspectorName;
+    }
+
+    public void setInspectorName(String inspectorName) {
+        this.inspectorName = inspectorName;
     }
 }

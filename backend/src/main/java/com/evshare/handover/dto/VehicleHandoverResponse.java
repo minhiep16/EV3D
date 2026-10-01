@@ -33,6 +33,7 @@ public class VehicleHandoverResponse {
     private Instant ownerReceivedAt;
     private Instant ownerConditionAcknowledgedAt;
     private boolean conditionAcknowledged;
+    private UUID inspectionId;
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -90,18 +91,30 @@ public class VehicleHandoverResponse {
         resp.setOwnerReceivedAt(entity.getOwnerReceivedAt());
         resp.setOwnerConditionAcknowledgedAt(entity.getOwnerConditionAcknowledgedAt());
         resp.setConditionAcknowledged(entity.getOwnerConditionAcknowledgedAt() != null);
+        resp.setInspectionId(entity.getInspectionId());
         resp.setCreatedAt(entity.getCreatedAt());
         resp.setUpdatedAt(entity.getUpdatedAt());
 
-        if (entity.getInspections() != null) {
-            List<VehicleInspectionResponse> inspectionResponses = entity.getInspections().stream()
-                    .map(VehicleInspectionResponse::fromEntity)
-                    .collect(Collectors.toList());
-            resp.setInspections(inspectionResponses);
-            resp.setTotalInspectedCount(inspectionResponses.size());
-            resp.setAllCheckpointsInspected(inspectionResponses.size() >= resp.getRequiredCheckpointsCount());
-            resp.setHasWarningsOrDamage(inspectionResponses.stream()
-                    .anyMatch(i -> i.getConditionStatus() == InspectionCondition.WARNING || i.getConditionStatus() == InspectionCondition.DAMAGED));
+        if (entity.getInspection() != null) {
+            resp.setInspectionId(entity.getInspection().getId());
+            if (entity.getInspection().getItems() != null) {
+                Instant inspTime = entity.getInspection().getCompletedAt() != null
+                        ? entity.getInspection().getCompletedAt()
+                        : entity.getInspection().getStartedAt();
+                List<VehicleInspectionResponse> inspectionResponses = entity.getInspection().getItems().stream()
+                        .map(item -> VehicleInspectionResponse.fromItem(
+                                item,
+                                entity.getId(),
+                                entity.getInspection().getInspectedBy(),
+                                inspTime
+                        ))
+                        .collect(Collectors.toList());
+                resp.setInspections(inspectionResponses);
+                resp.setTotalInspectedCount(inspectionResponses.size());
+                resp.setAllCheckpointsInspected(inspectionResponses.size() >= resp.getRequiredCheckpointsCount());
+                resp.setHasWarningsOrDamage(inspectionResponses.stream()
+                        .anyMatch(i -> i.getConditionStatus() == InspectionCondition.WARNING || i.getConditionStatus() == InspectionCondition.DAMAGED));
+            }
         }
 
         return resp;
@@ -368,6 +381,14 @@ public class VehicleHandoverResponse {
 
     public void setEligibilityMessage(String eligibilityMessage) {
         this.eligibilityMessage = eligibilityMessage;
+    }
+
+    public UUID getInspectionId() {
+        return inspectionId;
+    }
+
+    public void setInspectionId(UUID inspectionId) {
+        this.inspectionId = inspectionId;
     }
 }
 

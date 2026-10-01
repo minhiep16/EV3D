@@ -1,7 +1,6 @@
 package com.evshare.handover.dto;
 
 import com.evshare.handover.entity.InspectionCondition;
-import com.evshare.handover.entity.VehicleInspection;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -20,18 +19,26 @@ public class VehicleInspectionResponse {
     public VehicleInspectionResponse() {
     }
 
-    public static VehicleInspectionResponse fromEntity(VehicleInspection entity) {
+    public static VehicleInspectionResponse fromItem(com.evshare.inspection.entity.VehicleInspectionItem item, UUID handoverId, com.evshare.user.entity.User inspector, Instant inspectedAt) {
+        if (item == null) return null;
         VehicleInspectionResponse resp = new VehicleInspectionResponse();
-        resp.setId(entity.getId());
-        resp.setHandoverId(entity.getHandover().getId());
-        resp.setVehiclePartCode(entity.getVehiclePartCode());
-        resp.setConditionStatus(entity.getConditionStatus());
-        resp.setNote(entity.getNote());
-        if (entity.getInspectedBy() != null) {
-            resp.setInspectedById(entity.getInspectedBy().getId());
-            resp.setInspectedByName(entity.getInspectedBy().getFullName());
+        resp.setId(item.getId());
+        resp.setHandoverId(handoverId);
+        resp.setVehiclePartCode(item.getVehiclePartCode());
+        if (item.getConditionStatus() != null) {
+            String cName = item.getConditionStatus().name();
+            if ("GOOD".equals(cName)) resp.setConditionStatus(InspectionCondition.GOOD);
+            else if ("WARNING".equals(cName) || "SCRATCH".equals(cName) || "DENT".equals(cName)) resp.setConditionStatus(InspectionCondition.WARNING);
+            else resp.setConditionStatus(InspectionCondition.DAMAGED);
+        } else {
+            resp.setConditionStatus(InspectionCondition.GOOD);
         }
-        resp.setInspectedAt(entity.getInspectedAt());
+        resp.setNote(item.getNote());
+        if (inspector != null) {
+            resp.setInspectedById(inspector.getId());
+            resp.setInspectedByName(inspector.getFullName());
+        }
+        resp.setInspectedAt(inspectedAt != null ? inspectedAt : item.getCreatedAt());
         return resp;
     }
 

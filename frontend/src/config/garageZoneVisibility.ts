@@ -34,8 +34,11 @@ export interface GarageFocusState {
   vehicleDamageHistoryMode?: boolean;
   vehicleMaintenanceMode?: boolean;
   vehicleInspectionMode?: boolean;
+  vehicleBatteryXrayMode?: boolean;
+  vehicleChargingMode?: boolean;
   selectedVehiclePartId?: string | null;
   selectedVehiclePartCode?: string | null;
+  selectedChargingStationId?: string | null;
 }
 
 /**
@@ -57,6 +60,8 @@ export function getActiveFocusedZoneId(state: GarageFocusState): GarageZone | nu
     Boolean(state.vehicleDamageHistoryMode) ||
     Boolean(state.vehicleMaintenanceMode) ||
     Boolean(state.vehicleInspectionMode) ||
+    Boolean(state.vehicleBatteryXrayMode) ||
+    Boolean(state.vehicleChargingMode) ||
     Boolean(state.selectedVehiclePartId) ||
     Boolean(state.selectedVehiclePartCode);
 
@@ -137,4 +142,92 @@ export function shouldShowZoneSummary(
  */
 export function shouldShowVehicleStatusLabel(state: GarageFocusState): boolean {
   return shouldShowOverviewZoneUI(state);
+}
+
+/**
+ * Authoritative Rule: Should world-space charging station floating HUD labels be shown?
+ *
+ * Rules:
+ * 1. Strictly hidden during unrelated focused business modes:
+ *    BOOKING, HANDOVER, VEHICLE_INSPECTION, DAMAGE_MAPPING, DAMAGE_HISTORY,
+ *    MAINTENANCE, CO_OWNERSHIP, BATTERY_XRAY, TRIP_START, TRIP_ACTIVE/TRIP_VISUALIZATION.
+ * 2. In CHARGING mode:
+ *    Visible for the selected or hovered station (or all stations if none specifically selected),
+ *    preventing visual clutter over business panels while keeping selected station HUD clear.
+ * 3. In Garage Overview (no focused business mode active):
+ *    Visible so operators/co-owners see station status & power ratings at a glance in the 3D space.
+ */
+export function shouldShowChargingStationLabel(
+  stationId: string,
+  state: GarageFocusState,
+  options?: { isSelected?: boolean; isHovered?: boolean }
+): boolean {
+  // If an unrelated focused business mode is active, strictly hide all world-space charger labels
+  const isUnrelatedFocusedBusinessMode =
+    Boolean(state.vehicleBookingMode) ||
+    Boolean(state.vehicleHandoverMode) ||
+    Boolean(state.vehicleReceiptReviewMode) ||
+    Boolean(state.vehicleInspectionMode) ||
+    Boolean(state.vehicleDamageMappingMode) ||
+    Boolean(state.vehicleDamageHistoryMode) ||
+    Boolean(state.vehicleMaintenanceMode) ||
+    Boolean(state.vehicleCoOwnershipMode) ||
+    Boolean(state.vehicleBatteryXrayMode) ||
+    Boolean(state.vehicleTripStartMode) ||
+    Boolean(state.vehicleTripVisualizationMode);
+
+  if (isUnrelatedFocusedBusinessMode) {
+    return false;
+  }
+
+  // If in explicit CHARGING mode:
+  if (state.vehicleChargingMode) {
+    if (options?.isSelected || options?.isHovered) {
+      return true;
+    }
+    if (state.selectedChargingStationId) {
+      return state.selectedChargingStationId === stationId;
+    }
+    return true;
+  }
+
+  // If another showroom zone is focused (not CHARGING):
+  if (state.selectedZone && state.selectedZone !== 'CHARGING') {
+    return false;
+  }
+
+  // In Garage Overview: visible
+  return true;
+}
+
+/**
+ * Convenience helper to determine if ANY charging station label should be visible.
+ */
+export function shouldShowAnyChargingStationLabels(state: GarageFocusState): boolean {
+  const isUnrelatedFocusedBusinessMode =
+    Boolean(state.vehicleBookingMode) ||
+    Boolean(state.vehicleHandoverMode) ||
+    Boolean(state.vehicleReceiptReviewMode) ||
+    Boolean(state.vehicleInspectionMode) ||
+    Boolean(state.vehicleDamageMappingMode) ||
+    Boolean(state.vehicleDamageHistoryMode) ||
+    Boolean(state.vehicleMaintenanceMode) ||
+    Boolean(state.vehicleCoOwnershipMode) ||
+    Boolean(state.vehicleBatteryXrayMode) ||
+    Boolean(state.vehicleTripStartMode) ||
+    Boolean(state.vehicleTripVisualizationMode);
+
+  if (isUnrelatedFocusedBusinessMode) {
+    return false;
+  }
+
+  if (state.vehicleChargingMode) {
+    return true;
+  }
+
+  if (state.selectedZone && state.selectedZone !== 'CHARGING') {
+    return false;
+  }
+
+  return true;
 }

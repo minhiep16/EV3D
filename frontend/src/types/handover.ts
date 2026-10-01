@@ -37,6 +37,7 @@ export interface VehicleHandoverData {
   bookingStatus?: string;
   vehicleCode?: string;
   status: HandoverStatus;
+  inspectionId?: string;
   staffPreparedAt?: string;
   staffHandedOverAt?: string;
   ownerReceivedAt?: string;
@@ -61,12 +62,26 @@ export type HandoverEligibilityReason =
   | 'TOO_EARLY'
   | 'READY_FOR_PREPARATION'
   | 'HANDED_OVER'
-  | 'VEHICLE_IN_USE';
+  | 'VEHICLE_IN_USE'
+  | 'NO_INSPECTION'
+  | 'INSPECTION_EXPIRED'
+  | 'INSPECTION_FAILED'
+  | 'VEHICLE_MAINTENANCE'
+  | 'VEHICLE_CHARGING'
+  | 'READY';
 
 export interface VehicleHandoverEligibilityResponse {
   reason: HandoverEligibilityReason;
   message: string;
   eligibleForInspection: boolean;
+  handoverAllowed?: boolean;
+  inspectionAvailable?: boolean;
+  inspectionId?: string;
+  inspectionResult?: 'PASS' | 'PASS_WITH_NOTES' | 'FAIL' | string;
+  inspectionCompletedAt?: string;
+  inspectionFresh?: boolean;
+  inspectedPartsCount?: number;
+  inspectorName?: string;
   vehicleId: string;
   vehicleName?: string;
   vehicleCode?: string;
@@ -128,6 +143,42 @@ export const HANDOVER_ELIGIBILITY_CONFIG: Record<
     color: '#00f2fe',
     badgeBg: 'rgba(0, 242, 254, 0.2)',
     border: 'rgba(0, 242, 254, 0.4)',
+  },
+  NO_INSPECTION: {
+    labelVi: 'CHƯA CÓ KIỂM TRA HỢP LỆ',
+    color: '#f59e0b',
+    badgeBg: 'rgba(245, 158, 11, 0.18)',
+    border: 'rgba(245, 158, 11, 0.4)',
+  },
+  INSPECTION_EXPIRED: {
+    labelVi: 'KẾT QUẢ KIỂM TRA ĐÃ QUÁ HẠN',
+    color: '#f97316',
+    badgeBg: 'rgba(249, 115, 22, 0.18)',
+    border: 'rgba(249, 115, 22, 0.4)',
+  },
+  INSPECTION_FAILED: {
+    labelVi: 'KIỂM TRA XE KHÔNG ĐẠT',
+    color: '#ef4444',
+    badgeBg: 'rgba(239, 68, 68, 0.18)',
+    border: 'rgba(239, 68, 68, 0.4)',
+  },
+  VEHICLE_MAINTENANCE: {
+    labelVi: 'XE ĐANG BẢO DƯỠNG',
+    color: '#f59e0b',
+    badgeBg: 'rgba(245, 158, 11, 0.18)',
+    border: 'rgba(245, 158, 11, 0.4)',
+  },
+  VEHICLE_CHARGING: {
+    labelVi: 'XE ĐANG TRONG TRẠM SẠC',
+    color: '#10b981',
+    badgeBg: 'rgba(16, 185, 129, 0.18)',
+    border: 'rgba(16, 185, 129, 0.4)',
+  },
+  READY: {
+    labelVi: 'SẴN SÀNG BÀN GIAO XE',
+    color: '#00f2fe',
+    badgeBg: 'rgba(0, 242, 254, 0.2)',
+    border: 'rgba(0, 242, 254, 0.45)',
   },
 };
 

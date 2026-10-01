@@ -50,18 +50,19 @@ export const CoOwnerReceiptPanel3D: React.FC<CoOwnerReceiptPanel3DProps> = ({
 
   // Read-only inspection details for currently selected checkpoint
   const currentInspection = React.useMemo(() => {
-    if (!selectedCheckpoint) return undefined;
+    if (!selectedCheckpoint || !handover?.inspections) return undefined;
     return handover.inspections.find(
       (i) => i.vehiclePartCode === selectedCheckpoint.code
     );
-  }, [handover.inspections, selectedCheckpoint]);
+  }, [handover?.inspections, selectedCheckpoint]);
 
   // Overall condition statistics
   const conditionStats = React.useMemo(() => {
     let good = 0;
     let warning = 0;
     let damaged = 0;
-    handover.inspections.forEach((i) => {
+    const list = handover?.inspections || [];
+    list.forEach((i) => {
       if (i.conditionStatus === 'GOOD') good++;
       else if (i.conditionStatus === 'WARNING') warning++;
       else if (i.conditionStatus === 'DAMAGED') damaged++;
@@ -71,16 +72,16 @@ export const CoOwnerReceiptPanel3D: React.FC<CoOwnerReceiptPanel3DProps> = ({
       warning,
       damaged,
       totalAttention: warning + damaged,
-      totalInspected: handover.inspections.length,
+      totalInspected: list.length,
     };
-  }, [handover.inspections]);
+  }, [handover?.inspections]);
 
   // Checkpoints that have warnings or damages
   const attentionItems = React.useMemo(() => {
-    return handover.inspections.filter(
+    return (handover?.inspections || []).filter(
       (i) => i.conditionStatus === 'WARNING' || i.conditionStatus === 'DAMAGED'
     );
-  }, [handover.inspections]);
+  }, [handover?.inspections]);
 
   // Format booking date and time
   const formatBookingDate = (isoString?: string) => {

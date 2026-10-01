@@ -299,7 +299,7 @@ export const CoOwnerReceiptWorld: React.FC<CoOwnerReceiptWorldProps> = ({ vehicl
     <group>
       {/* 1. 3D Inspection Hotspots on EV01 (Read-Only for CO_OWNER) */}
       {HANDOVER_CHECKPOINTS.map((checkpoint) => {
-        const inspection = handover.inspections.find(
+        const inspection = (handover?.inspections || []).find(
           (i) => i.vehiclePartCode === checkpoint.code
         );
         const isSelected = selectedHandoverCheckpoint === checkpoint.code;

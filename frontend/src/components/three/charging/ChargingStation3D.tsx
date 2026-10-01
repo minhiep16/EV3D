@@ -7,6 +7,8 @@ import {
   CHARGING_STATION_THEMES,
   CHARGING_STATION_VISUALS,
 } from '../../../config/chargingVisualConfig';
+import { useWorldStore } from '../../../store/worldStore';
+import { shouldShowChargingStationLabel } from '../../../config/garageZoneVisibility';
 import { Zap, Activity } from 'lucide-react';
 
 export interface ChargingStation3DProps {
@@ -25,6 +27,75 @@ export const ChargingStation3D: React.FC<ChargingStation3DProps> = ({
   const [isHovered, setIsHovered] = useState(false);
   const statusLedRef = useRef<THREE.MeshBasicMaterial>(null);
   const touchScreenRef = useRef<THREE.MeshBasicMaterial>(null);
+
+  // Authoritative garage focus state to govern world-space label visibility
+  const selectedZone = useWorldStore((state) => state.selectedZone);
+  const selectedVehicleId = useWorldStore((state) => state.selectedVehicleId);
+  const isVehicleSelected = useWorldStore((state) => state.isVehicleSelected);
+  const vehicleBookingMode = useWorldStore((state) => state.vehicleBookingMode);
+  const vehicleCoOwnershipMode = useWorldStore((state) => state.vehicleCoOwnershipMode);
+  const vehicleHandoverMode = useWorldStore((state) => state.vehicleHandoverMode);
+  const vehicleReceiptReviewMode = useWorldStore((state) => state.vehicleReceiptReviewMode);
+  const vehicleTripStartMode = useWorldStore((state) => state.vehicleTripStartMode);
+  const vehicleTripVisualizationMode = useWorldStore((state) => state.vehicleTripVisualizationMode);
+  const vehicleDamageMappingMode = useWorldStore((state) => state.vehicleDamageMappingMode);
+  const vehicleDamageHistoryMode = useWorldStore((state) => state.vehicleDamageHistoryMode);
+  const vehicleMaintenanceMode = useWorldStore((state) => state.vehicleMaintenanceMode);
+  const vehicleInspectionMode = useWorldStore((state) => state.vehicleInspectionMode);
+  const vehicleBatteryXrayMode = useWorldStore((state) => state.vehicleBatteryXrayMode);
+  const vehicleChargingMode = useWorldStore((state) => state.vehicleChargingMode);
+  const selectedVehiclePartId = useWorldStore((state) => state.selectedVehiclePartId);
+  const selectedVehiclePartCode = useWorldStore((state) => state.selectedVehiclePartCode);
+  const selectedChargingStationId = useWorldStore((state) => state.selectedChargingStationId);
+
+  const showLabel = useMemo(() => {
+    return shouldShowChargingStationLabel(
+      station.id,
+      {
+        selectedZone,
+        selectedVehicleId,
+        isVehicleSelected,
+        vehicleBookingMode,
+        vehicleCoOwnershipMode,
+        vehicleHandoverMode,
+        vehicleReceiptReviewMode,
+        vehicleTripStartMode,
+        vehicleTripVisualizationMode,
+        vehicleDamageMappingMode,
+        vehicleDamageHistoryMode,
+        vehicleMaintenanceMode,
+        vehicleInspectionMode,
+        vehicleBatteryXrayMode,
+        vehicleChargingMode,
+        selectedVehiclePartId,
+        selectedVehiclePartCode,
+        selectedChargingStationId,
+      },
+      { isSelected, isHovered }
+    );
+  }, [
+    station.id,
+    selectedZone,
+    selectedVehicleId,
+    isVehicleSelected,
+    vehicleBookingMode,
+    vehicleCoOwnershipMode,
+    vehicleHandoverMode,
+    vehicleReceiptReviewMode,
+    vehicleTripStartMode,
+    vehicleTripVisualizationMode,
+    vehicleDamageMappingMode,
+    vehicleDamageHistoryMode,
+    vehicleMaintenanceMode,
+    vehicleInspectionMode,
+    vehicleBatteryXrayMode,
+    vehicleChargingMode,
+    selectedVehiclePartId,
+    selectedVehiclePartCode,
+    selectedChargingStationId,
+    isSelected,
+    isHovered,
+  ]);
 
   const visualConfig = useMemo(() => {
     return CHARGING_STATION_VISUALS[station.code] || {
@@ -171,58 +242,60 @@ export const ChargingStation3D: React.FC<ChargingStation3DProps> = ({
         </mesh>
       )}
 
-      {/* 9. Floating Holographic Station HUD Badge */}
-      <Billboard position={[0, 2.22, 0]} follow={true}>
-        <Html
-          center
-          distanceFactor={10}
-          style={{ pointerEvents: 'none', userSelect: 'none' }}
-        >
-          <div
-            style={{
-              background: 'rgba(8, 16, 28, 0.92)',
-              backdropFilter: 'blur(12px)',
-              border: `1.5px solid ${isSelected ? '#00f2fe' : theme.border}`,
-              borderRadius: '10px',
-              padding: '6px 10px',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '2px',
-              minWidth: '110px',
-              boxShadow: `0 8px 20px rgba(0, 0, 0, 0.45), 0 0 12px ${theme.glow}40`,
-              transform: isHovered ? 'scale(1.06)' : 'scale(1.0)',
-              transition: 'transform 0.18s ease',
-              whiteSpace: 'nowrap',
-            }}
+      {/* 9. Floating Holographic Station HUD Badge (Centralized Visibility Rule) */}
+      {showLabel && (
+        <Billboard position={[0, 2.22, 0]} follow={true}>
+          <Html
+            center
+            distanceFactor={10}
+            style={{ pointerEvents: 'none', userSelect: 'none' }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <div
-                style={{
-                  width: '7px',
-                  height: '7px',
-                  borderRadius: '50%',
-                  background: theme.primary,
-                  boxShadow: `0 0 8px ${theme.glow}`,
-                }}
-              />
-              <span
-                style={{
-                  fontSize: '11px',
-                  fontWeight: 900,
-                  color: '#ffffff',
-                  letterSpacing: '0.04em',
-                }}
-              >
-                {station.code} • {station.maxPowerKw} kW
-              </span>
+            <div
+              style={{
+                background: 'rgba(8, 16, 28, 0.92)',
+                backdropFilter: 'blur(12px)',
+                border: `1.5px solid ${isSelected ? '#00f2fe' : theme.border}`,
+                borderRadius: '10px',
+                padding: '6px 10px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '2px',
+                minWidth: '110px',
+                boxShadow: `0 8px 20px rgba(0, 0, 0, 0.45), 0 0 12px ${theme.glow}40`,
+                transform: isHovered ? 'scale(1.06)' : 'scale(1.0)',
+                transition: 'transform 0.18s ease',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <div
+                  style={{
+                    width: '7px',
+                    height: '7px',
+                    borderRadius: '50%',
+                    background: theme.primary,
+                    boxShadow: `0 0 8px ${theme.glow}`,
+                  }}
+                />
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 900,
+                    color: '#ffffff',
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  {station.code} • {station.maxPowerKw} kW
+                </span>
+              </div>
+              <div style={{ fontSize: '9px', fontWeight: 700, color: theme.primary }}>
+                {theme.labelVi}
+              </div>
             </div>
-            <div style={{ fontSize: '9px', fontWeight: 700, color: theme.primary }}>
-              {theme.labelVi}
-            </div>
-          </div>
-        </Html>
-      </Billboard>
+          </Html>
+        </Billboard>
+      )}
     </group>
   );
 };

@@ -10,9 +10,12 @@ import com.evshare.handover.dto.VehicleInspectionResponse;
 import com.evshare.handover.entity.HandoverStatus;
 import com.evshare.handover.entity.InspectionCondition;
 import com.evshare.handover.entity.VehicleHandover;
-import com.evshare.handover.entity.VehicleInspection;
+import com.evshare.inspection.entity.InspectionOverallResult;
+import com.evshare.inspection.entity.InspectionStatus;
+import com.evshare.inspection.entity.InspectionType;
+import com.evshare.inspection.entity.VehicleInspection;
 import com.evshare.handover.repository.VehicleHandoverRepository;
-import com.evshare.handover.repository.VehicleInspectionRepository;
+import com.evshare.inspection.repository.VehicleInspectionRepository;
 import com.evshare.user.entity.Role;
 import com.evshare.user.entity.User;
 import com.evshare.user.repository.UserRepository;
@@ -126,52 +129,37 @@ class VehicleHandoverServiceTest {
     }
 
     @Test
-    @DisplayName("Should successfully record checkpoint inspection")
-    void testRecordInspection_Success() {
-        when(handoverRepository.findById(handoverId)).thenReturn(Optional.of(handover));
-        when(userRepository.findById(staffId)).thenReturn(Optional.of(staff));
-        when(inspectionRepository.findByHandoverIdAndVehiclePartCode(handoverId, "WHEEL_FL"))
-                .thenReturn(Optional.empty());
-        when(inspectionRepository.save(any(VehicleInspection.class))).thenAnswer(i -> i.getArgument(0));
-
+    @DisplayName("Should throw UnsupportedOperationException when calling obsolete recordInspection")
+    void testRecordInspection_Obsolete() {
         VehicleInspectionRequest request = new VehicleInspectionRequest("WHEEL_FL", InspectionCondition.GOOD, "Lốp xe mới, áp suất đạt chuẩn 2.4 bar");
-        VehicleInspectionResponse response = handoverService.recordInspection(handoverId, request, staffId);
-
-        assertNotNull(response);
-        assertEquals("WHEEL_FL", response.getVehiclePartCode());
-        assertEquals(InspectionCondition.GOOD, response.getConditionStatus());
-        verify(inspectionRepository).save(any(VehicleInspection.class));
+        assertThrows(UnsupportedOperationException.class,
+                () -> handoverService.recordInspection(handoverId, request, staffId));
     }
 
     @Test
-    @DisplayName("Should reject mark ready when checkpoints are incomplete (< 8)")
-    void testMarkReady_IncompleteCheckpoints_ThrowsValidationException() {
+    @DisplayName("Should reject mark ready when vehicle has no completed inspection")
+    void testMarkReady_NoInspection_ThrowsIllegalStateException() {
         handover.setStatus(HandoverStatus.INSPECTION_IN_PROGRESS);
         when(handoverRepository.findById(handoverId)).thenReturn(Optional.of(handover));
+        when(inspectionRepository.findLatestCompletedByVehicleId(vehicle.getId())).thenReturn(Optional.empty());
 
-        // Only 3 checkpoints inspected
-        List<VehicleInspection> partialInspections = List.of(
-                new VehicleInspection(UUID.randomUUID(), handover, "BODY", InspectionCondition.GOOD, null, staff, Instant.now()),
-                new VehicleInspection(UUID.randomUUID(), handover, "WHEEL_FL", InspectionCondition.GOOD, null, staff, Instant.now()),
-                new VehicleInspection(UUID.randomUUID(), handover, "WHEEL_FR", InspectionCondition.GOOD, null, staff, Instant.now())
-        );
-        when(inspectionRepository.findByHandoverIdOrderByInspectedAtAsc(handoverId)).thenReturn(partialInspections);
-
-        assertThrows(IllegalArgumentException.class, () -> handoverService.markReadyForHandover(handoverId, staffId));
+        assertThrows(IllegalStateException.class, () -> handoverService.markReadyForHandover(handoverId, staffId));
     }
 
     @Test
-    @DisplayName("Should mark ready when all 8 required checkpoints are inspected")
-    void testMarkReady_AllCheckpoints_Success() {
+    @DisplayName("Should mark ready when valid completed inspection exists")
+    void testMarkReady_ValidInspection_Success() {
         handover.setStatus(HandoverStatus.INSPECTION_IN_PROGRESS);
         when(handoverRepository.findById(handoverId)).thenReturn(Optional.of(handover));
         when(userRepository.findById(staffId)).thenReturn(Optional.of(staff));
 
-        List<VehicleInspection> allInspections = new ArrayList<>();
-        for (String code : VehicleHandoverService.REQUIRED_CHECKPOINTS) {
-            allInspections.add(new VehicleInspection(UUID.randomUUID(), handover, code, InspectionCondition.GOOD, "OK", staff, Instant.now()));
-        }
-        when(inspectionRepository.findByHandoverIdOrderByInspectedAtAsc(handoverId)).thenReturn(allInspections);
+        VehicleInspection completedInsp = new VehicleInspection(
+                UUID.randomUUID(), vehicle, staff, InspectionType.PRE_HANDOVER);
+        completedInsp.setStatus(InspectionStatus.COMPLETED);
+        completedInsp.setOverallResult(InspectionOverallResult.PASS);
+        completedInsp.setCompletedAt(Instant.now());
+
+        when(inspectionRepository.findLatestCompletedByVehicleId(vehicle.getId())).thenReturn(Optional.of(completedInsp));
         when(handoverRepository.save(any(VehicleHandover.class))).thenAnswer(i -> i.getArgument(0));
 
         VehicleHandoverResponse response = handoverService.markReadyForHandover(handoverId, staffId);
@@ -179,6 +167,7 @@ class VehicleHandoverServiceTest {
         assertNotNull(response);
         assertEquals(HandoverStatus.READY_FOR_HANDOVER, response.getStatus());
         assertNotNull(response.getStaffPreparedAt());
+        assertEquals(completedInsp.getId(), response.getInspectionId());
     }
 
     @Test
@@ -385,20 +374,26 @@ class VehicleHandoverServiceTest {
     }
 
     @Test
-    @DisplayName("TEST 7: 8 inspections remain associated with original canonical handover")
+    @DisplayName("TEST 7: Completed inspection is associated with canonical handover on mark ready")
     void testInspectionsRemainAssociatedWithOriginalHandover() {
         handover.setStatus(HandoverStatus.INSPECTION_IN_PROGRESS);
         when(handoverRepository.findById(handoverId)).thenReturn(Optional.of(handover));
         when(userRepository.findById(staffId)).thenReturn(Optional.of(staff));
-        when(inspectionRepository.findByHandoverIdAndVehiclePartCode(handoverId, "BODY")).thenReturn(Optional.empty());
-        when(inspectionRepository.save(any(VehicleInspection.class))).thenAnswer(i -> i.getArgument(0));
 
-        VehicleInspectionRequest req = new VehicleInspectionRequest("BODY", InspectionCondition.GOOD, "OK");
-        VehicleInspectionResponse resp = handoverService.recordInspection(handoverId, req, staffId);
+        VehicleInspection completedInsp = new VehicleInspection(
+                UUID.randomUUID(), vehicle, staff, InspectionType.PRE_HANDOVER);
+        completedInsp.setStatus(InspectionStatus.COMPLETED);
+        completedInsp.setOverallResult(InspectionOverallResult.PASS);
+        completedInsp.setCompletedAt(Instant.now());
+
+        when(inspectionRepository.findLatestCompletedByVehicleId(vehicle.getId())).thenReturn(Optional.of(completedInsp));
+        when(handoverRepository.save(any(VehicleHandover.class))).thenAnswer(i -> i.getArgument(0));
+
+        VehicleHandoverResponse resp = handoverService.markReadyForHandover(handoverId, staffId);
 
         assertNotNull(resp);
-        assertEquals("BODY", resp.getVehiclePartCode());
-        verify(inspectionRepository).save(argThat(vi -> vi.getHandover().getId().equals(handoverId)));
+        assertEquals(completedInsp.getId(), resp.getInspectionId());
+        verify(handoverRepository).save(argThat(h -> completedInsp.equals(h.getInspection())));
     }
 
     @Test
@@ -449,16 +444,13 @@ class VehicleHandoverServiceTest {
     }
 
     @Test
-    @DisplayName("Should lock inspection editing when status is READY_FOR_HANDOVER or later")
+    @DisplayName("Should reject record inspection as legacy operation when status is READY_FOR_HANDOVER or later")
     void testRecordInspection_LockedWhenReadyOrLater() {
-        handover.setStatus(HandoverStatus.READY_FOR_HANDOVER);
-        when(handoverRepository.findById(handoverId)).thenReturn(Optional.of(handover));
-
         VehicleInspectionRequest req = new VehicleInspectionRequest();
         req.setVehiclePartCode("BODY");
         req.setConditionStatus(InspectionCondition.GOOD);
 
-        assertThrows(DuplicateResourceException.class, () -> handoverService.recordInspection(handoverId, req, staffId));
+        assertThrows(UnsupportedOperationException.class, () -> handoverService.recordInspection(handoverId, req, staffId));
     }
 
     @Test
@@ -496,19 +488,14 @@ class VehicleHandoverServiceTest {
     }
 
     @Test
-    @DisplayName("Should reject record inspection when booking has EXPIRED")
+    @DisplayName("Should reject record inspection as legacy operation")
     void testRecordInspection_ExpiredBooking_ThrowsIllegalStateException() {
-        booking.setEndTime(Instant.now().minus(30, ChronoUnit.MINUTES));
-        handover.setStatus(HandoverStatus.INSPECTION_IN_PROGRESS);
-        when(handoverRepository.findById(handoverId)).thenReturn(Optional.of(handover));
-
         VehicleInspectionRequest req = new VehicleInspectionRequest();
         req.setVehiclePartCode("BODY");
         req.setConditionStatus(InspectionCondition.GOOD);
 
-        IllegalStateException ex = assertThrows(IllegalStateException.class,
+        assertThrows(UnsupportedOperationException.class,
                 () -> handoverService.recordInspection(handoverId, req, staffId));
-        assertTrue(ex.getMessage().contains("EXPIRED"));
     }
 
     @Test
@@ -651,20 +638,39 @@ class VehicleHandoverServiceTest {
     }
 
     @Test
-    @DisplayName("Should return READY_FOR_PREPARATION when booking is within preparation window")
-    void testEligibility_ReadyForPreparation() {
+    @DisplayName("Should return READY_FOR_PREPARATION with controlled message when handover record is missing")
+    void testEligibility_ReadyForPreparation_HandoverMissing() {
         booking.setStartTime(Instant.now().plus(1, ChronoUnit.HOURS));
         booking.setEndTime(Instant.now().plus(3, ChronoUnit.HOURS));
 
         when(vehicleRepository.findById(vehicle.getId())).thenReturn(Optional.of(vehicle));
         when(handoverRepository.findActiveByVehicleId(vehicle.getId())).thenReturn(Collections.emptyList());
         when(bookingRepository.findByVehicleIdOrderByStartTimeAsc(vehicle.getId())).thenReturn(List.of(booking));
+        when(handoverRepository.findByBookingId(booking.getId())).thenReturn(Optional.empty());
 
         VehicleHandoverEligibilityResponse res = handoverService.getHandoverEligibility(vehicle.getId(), staffId, Role.STAFF);
         assertNotNull(res);
         assertEquals(HandoverEligibilityReason.READY_FOR_PREPARATION, res.getReason());
-        assertEquals("SẴN SÀNG CHUẨN BỊ BÀN GIAO XE", res.getMessage());
+        assertEquals("Chưa có hồ sơ bàn giao cho lượt đặt xe này.", res.getMessage());
         assertTrue(res.isEligibleForInspection());
+        assertNull(res.getHandover());
+        assertFalse(Boolean.TRUE.equals(res.getHandoverAllowed()));
+    }
+
+    @Test
+    @DisplayName("Should resolve persisted handover by bookingId when available")
+    void testEligibility_ResolvesPersistedHandoverByBooking() {
+        booking.setStartTime(Instant.now().plus(1, ChronoUnit.HOURS));
+        booking.setEndTime(Instant.now().plus(3, ChronoUnit.HOURS));
+
+        when(vehicleRepository.findById(vehicle.getId())).thenReturn(Optional.of(vehicle));
+        when(handoverRepository.findActiveByVehicleId(vehicle.getId())).thenReturn(Collections.emptyList());
+        when(bookingRepository.findByVehicleIdOrderByStartTimeAsc(vehicle.getId())).thenReturn(List.of(booking));
+        when(handoverRepository.findByBookingId(booking.getId())).thenReturn(Optional.of(handover));
+
+        VehicleHandoverEligibilityResponse res = handoverService.getHandoverEligibility(vehicle.getId(), staffId, Role.STAFF);
+        assertNotNull(res);
         assertNotNull(res.getHandover());
+        assertEquals(handover.getId(), res.getHandoverId());
     }
 }

@@ -14,6 +14,7 @@ import {
 } from '../../../types/handover';
 import {
   fetchActiveVehicleHandovers,
+  fetchBookingHandover,
   fetchHandoverEligibility,
   startHandoverApi,
   submitInspectionApi,
@@ -147,9 +148,22 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
     );
   };
 
+  const targetBookingId = selectedBookingId || eligibility?.bookingId;
+
+  // Authoritative Query: Handover by booking
+  const { data: bookingHandover } = useQuery<VehicleHandoverData | null>({
+    queryKey: ['handoverByBooking', targetBookingId],
+    queryFn: () => (targetBookingId ? fetchBookingHandover(targetBookingId) : null),
+    enabled: !!targetBookingId,
+    refetchInterval: 3000,
+  });
+
   // Resolve current handover:
-  // If user selected a specific bookingId, find it; otherwise resolve the most actionable non-expired candidate
+  // If user selected a specific bookingId or bookingHandover is resolved, use it; otherwise resolve the most actionable non-expired candidate
   const handover = useMemo(() => {
+    if (bookingHandover) {
+      return bookingHandover;
+    }
     if (selectedBookingId && activeHandovers.length > 0) {
       const match = activeHandovers.find((h) => h.bookingId === selectedBookingId);
       if (match) return match;
@@ -168,8 +182,11 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
       if (pending) return pending;
       return targetPool[0];
     }
-    return eligibility?.handover || null;
-  }, [activeHandovers, selectedBookingId, eligibility?.handover]);
+    if (eligibility?.handoverId && eligibility?.handover) {
+      return eligibility.handover;
+    }
+    return null;
+  }, [bookingHandover, activeHandovers, selectedBookingId, eligibility?.handoverId, eligibility?.handover]);
 
   // Selected checkpoint object
   const currentCheckpointObj = useMemo(() => {
@@ -206,8 +223,8 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
   }, [countdownSeconds]);
 
   // STAFF Action: Start Inspection
-  const handleStartInspection = async (targetBookingId?: string) => {
-    const bId = targetBookingId || handover?.bookingId || eligibility?.bookingId;
+  const handleStartInspection = async (targetBookingIdParam?: string) => {
+    const bId = targetBookingIdParam || targetBookingId || handover?.bookingId || eligibility?.bookingId;
     if (!bId) {
       setErrorMessage('Không xác định được mã đặt xe để bắt đầu kiểm tra.');
       return;
@@ -227,6 +244,7 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
       await Promise.all([
         refetch(),
         refetchEligibility(),
+        queryClient.invalidateQueries({ queryKey: ['handoverByBooking', bId] }),
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandovers', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandover', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
@@ -274,7 +292,10 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
 
   // STAFF Action: Mark Ready
   const handleMarkReady = async () => {
-    if (!handover) return;
+    if (!handover?.id) {
+      setErrorMessage('Chưa có hồ sơ bàn giao xe hợp lệ.');
+      return;
+    }
     if (isHandoverExpired(handover) || reason === 'BOOKING_EXPIRED') {
       setErrorMessage('Lịch đặt xe đã hết thời gian (EXPIRED), không thể xác nhận xe sẵn sàng.');
       return;
@@ -286,9 +307,11 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
       await Promise.all([
         refetch(),
         refetchEligibility(),
+        queryClient.invalidateQueries({ queryKey: ['handoverByBooking', targetBookingId] }),
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandovers', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandover', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['latestCompletedInspection', vehicle.id] }),
       ]);
     } catch (err: any) {
       setErrorMessage(err.message || 'Không thể xác nhận xe sẵn sàng.');
@@ -977,44 +1000,86 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
         </group>
       )}
 
-      {/* 1. 3D Handover Inspection Checkpoint Hotspots (Section 13 & 14) */}
-      {HANDOVER_CHECKPOINTS.map((checkpoint) => {
-        const inspection = handover.inspections.find(
-          (i) => i.vehiclePartCode === checkpoint.code
-        );
-        const isSelected = selectedHandoverCheckpoint === checkpoint.code;
+      {/* 1. Subtle 3D Handover & Inspection Status Badge on Vehicle (Requirement 14) */}
+      <group position={[0, 1.85, 0]}>
+        <Billboard follow={true}>
+          <Html center distanceFactor={8.5} style={{ pointerEvents: 'none', userSelect: 'none' }}>
+            <div
+              style={{
+                background: 'rgba(8, 14, 26, 0.94)',
+                backdropFilter: 'blur(16px)',
+                border: `1.5px solid ${
+                  handover?.status === 'READY_FOR_HANDOVER' || eligibility?.handoverAllowed
+                    ? '#10b981'
+                    : eligibility?.inspectionAvailable && eligibility?.inspectionFresh
+                    ? '#00f2fe'
+                    : '#f59e0b'
+                }`,
+                borderRadius: '9999px',
+                padding: '6px 16px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                boxShadow: `0 8px 24px rgba(0, 0, 0, 0.6), 0 0 20px ${
+                  handover?.status === 'READY_FOR_HANDOVER' || eligibility?.handoverAllowed
+                    ? 'rgba(16, 185, 129, 0.4)'
+                    : eligibility?.inspectionAvailable && eligibility?.inspectionFresh
+                    ? 'rgba(0, 242, 254, 0.35)'
+                    : 'rgba(245, 158, 11, 0.3)'
+                }`,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <div
+                style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  background:
+                    handover?.status === 'READY_FOR_HANDOVER' || eligibility?.handoverAllowed
+                      ? '#10b981'
+                      : eligibility?.inspectionAvailable && eligibility?.inspectionFresh
+                      ? '#00f2fe'
+                      : '#f59e0b',
+                  boxShadow: `0 0 8px ${
+                    handover?.status === 'READY_FOR_HANDOVER' || eligibility?.handoverAllowed
+                      ? '#10b981'
+                      : eligibility?.inspectionAvailable && eligibility?.inspectionFresh
+                      ? '#00f2fe'
+                      : '#f59e0b'
+                  }`,
+                }}
+              />
+              <span
+                style={{
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  letterSpacing: '0.05em',
+                  color: '#ffffff',
+                  textTransform: 'uppercase',
+                }}
+              >
+                {handover?.status === 'HANDED_OVER'
+                  ? 'ĐÃ BÀN GIAO XE — CHỜ NHẬN XE'
+                  : handover?.status === 'READY_FOR_HANDOVER' || eligibility?.handoverAllowed
+                  ? 'SẴN SÀNG BÀN GIAO'
+                  : eligibility?.inspectionAvailable && eligibility?.inspectionFresh
+                  ? `ĐÃ KIỂM TRA — ${
+                      eligibility.inspectionResult === 'PASS'
+                        ? 'ĐẠT'
+                        : eligibility.inspectionResult === 'PASS_WITH_NOTES'
+                        ? 'ĐẠT CÓ LƯU Ý'
+                        : 'KHÔNG ĐẠT'
+                    }`
+                  : 'CHƯA CÓ KIỂM TRA HỢP LỆ'}
+              </span>
+            </div>
+          </Html>
+        </Billboard>
+      </group>
 
-        return (
-          <HandoverHotspot3D
-            key={checkpoint.code}
-            checkpoint={checkpoint}
-            inspection={inspection}
-            isSelected={isSelected}
-            onSelect={(code) => {
-              if (selectedHandoverCheckpoint === code) {
-                clearHandoverCheckpointSelection();
-              } else {
-                selectHandoverCheckpoint(code);
-              }
-            }}
-            canInteract={
-              isStaff ||
-              handover.status === 'HANDED_OVER' ||
-              handover.status === 'OWNER_CONFIRMED' ||
-              handover.status === 'COMPLETED'
-            }
-          />
-        );
-      })}
-
-      {/* 2. 3D Segmented Radial Progress Visualizer (Section 16) */}
-      <HandoverProgressVisualizer3D
-        inspections={handover.inspections}
-        position={[0, 1.85, 0.2]}
-      />
-
-      {/* 3. Role-Based Right Holographic Panel (Rendered only for CO_OWNER; STAFF/ADMIN use screen-space panel) */}
-      {isCoOwner && (
+      {/* 2. Role-Based Right Holographic Panel (Rendered only for CO_OWNER when handover exists) */}
+      {isCoOwner && handover && (
         <CoOwnerReceiptPanel3D
           handover={handover}
           selectedCheckpoint={currentCheckpointObj}
@@ -1164,7 +1229,7 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
                     }}
                   >
                     {HANDOVER_CHECKPOINTS.map((cp) => {
-                      const item = handover.inspections.find(
+                      const item = (handover.inspections || []).find(
                         (i) => i.vehiclePartCode === cp.code
                       );
                       const cond = item?.conditionStatus;

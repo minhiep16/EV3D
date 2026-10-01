@@ -54,6 +54,7 @@ export const GarageCamera: React.FC = () => {
   const vehicleBatteryXrayMode = useWorldStore((state) => state.vehicleBatteryXrayMode);
   const vehicleChargingMode = useWorldStore((state) => state.vehicleChargingMode);
   const vehicleInspectionMode = useWorldStore((state) => state.vehicleInspectionMode);
+  const selectedHandoverCheckpoint = useWorldStore((state) => state.selectedHandoverCheckpoint);
   const draftDamage = useWorldStore((state) => state.draftDamage);
   const selectedDamageId = useWorldStore((state) => state.selectedDamageId);
   const vehicleYaw = useWorldStore((state) => state.vehicleYaw);
@@ -218,6 +219,18 @@ export const GarageCamera: React.FC = () => {
           vehicleYaw,
           resolvedVehicleCode
         );
+      } else if (
+        (vehicleHandoverMode || vehicleReceiptReviewMode) &&
+        selectedHandoverCheckpoint
+      ) {
+        preset = getVehiclePartInspectionPreset(
+          selectedHandoverCheckpoint,
+          role,
+          size.width,
+          null,
+          vehicleYaw,
+          resolvedVehicleCode
+        );
       } else {
         preset = getVehicleCameraPreset(presetKey, role, size.width, resolvedVehicleCode);
       }
@@ -257,6 +270,7 @@ export const GarageCamera: React.FC = () => {
     activePartCode,
     activeDamagePoint,
     selectedDamageId,
+    selectedHandoverCheckpoint,
     vehicleCoOwnershipMode,
     vehicleBookingMode,
     vehicleHandoverMode,
