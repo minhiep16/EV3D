@@ -5,12 +5,18 @@ import * as THREE from 'three';
 import { useQuery, QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '../../../services/queryClient';
 import { useAuthStore } from '../../../store/authStore';
-import { useWorldStore } from '../../../store/worldStore';
+import { useWorldStore, VEHICLE_STATUS_LABELS, GarageZone } from '../../../store/worldStore';
 import { fetchVehicles } from '../../../services/vehicleApi';
 import { VehicleResponse } from '../../../types/vehicle';
 import { VehicleModel } from './VehicleModel';
 import { VehicleInteractionHitboxes } from './VehicleInteractionHitboxes';
-import { getVehicleModelUrl, resolveVehicleCode } from './vehicleModelConfig';
+import {
+  getVehicleModelUrl,
+  resolveVehicleCode,
+  sortStaffFleetVehicles,
+  resolveAuthoritativeHeroVehicle,
+  isMatchingVehicle,
+} from './vehicleModelConfig';
 import { resolveVehicleSlot, GarageSlotDef, DEFAULT_GARAGE_SLOT } from '../../../config/garageSlotConfig';
 import { STAFF_GARAGE_LAYOUT } from '../../../config/staffGarageLayout';
 import { FleetPreviewRow3D } from '../../fleet/FleetPreviewRow3D';
@@ -36,12 +42,12 @@ import { CoOwnerVehiclePanel } from './CoOwnerVehiclePanel';
 import { StaffOperationsPanel } from './StaffOperationsPanel';
 import { AdminVehicleMonitorPanel } from './AdminVehicleMonitorPanel';
 import { shouldShowVehicleStatusLabel } from '../../../config/garageZoneVisibility';
-import { GarageZone } from '../../../store/worldStore';
 import {
   Car,
   Sparkles,
   AlertTriangle,
   RefreshCw,
+  Zap,
 } from 'lucide-react';
 import { VEHICLE_INTERACTION_CONFIG } from '../../../config/interactionConfig';
 import {
@@ -298,12 +304,14 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
     // Prevent accidental selection during camera orbit/drag or vehicle turntable drag
     if (isRecentDragInteraction(e.delta) || isVehicleDraggingRef.current) return;
     if (isBusinessModeActive) return;
+    // When a dedicated showroom zone like FINANCE is active, zone presentation owns the screen
+    if (selectedZone && selectedZone !== 'VEHICLE') return;
     e.stopPropagation();
     onSelect(vehicle);
   };
 
   const handlePointerOver = (e: ThreeEvent<PointerEvent>) => {
-    if (isBusinessModeActive) return;
+    if (isBusinessModeActive || (selectedZone && selectedZone !== 'VEHICLE')) return;
     e.stopPropagation();
     onHover(vehicleCode);
     document.body.style.cursor = 'grab';
@@ -344,6 +352,10 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
     !isBusinessModeActive;
 
   const displayName = vehicleCode === 'EV01' ? 'Xe điện thực tế' : 'Xe thử nghiệm tương tác';
+  const vehicleStatusConfig = VEHICLE_STATUS_LABELS[vehicle.status] || {
+    label: 'Sẵn sàng',
+    color: '#10b981',
+  };
 
   return (
     <group position={effectivePosition} name={`${vehicleCode}Bay`}>
@@ -404,8 +416,9 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
         )}
       </group>
 
-      {/* Floating 3D Status Pill Indicator (shown in overview mode when not focused) */}
-      {!isSelected &&
+      {/* Floating 3D Status Pill Indicator (shown in overview mode for operations, hidden for clean co-owner hero overview) */}
+      {!isCoOwner &&
+        !isSelected &&
         !vehicleInspectionMode &&
         !vehicleCoOwnershipMode &&
         shouldShowVehicleStatusLabel({
@@ -432,51 +445,119 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
           />
         )}
 
-      {/* World-Space Spatial Vehicle Information Card with 3D Holographic Frame & Connector */}
+      {/* World-Space Floating Vehicle Identity Plaque (Matches Style 4 Reference Image) */}
       {isCoOwner && isSelected && shouldRenderVehicleOverview && (
-        <>
-          <SpatialDataLink
-            start={[0, 0.7, 0]}
-            end={[2.6 - 0.45, 1.35, 0]}
-            color={role === 'ADMIN' ? '#a855f7' : role === 'CO_OWNER' ? '#10b981' : '#00f2fe'}
-          />
-
-          <group position={[2.6, 1.35, 0]}>
-            <Billboard follow={true}>
-              <HolographicPanelFrame3D
-                width={2.55}
-                height={3.4}
-                color={role === 'ADMIN' ? '#a855f7' : role === 'CO_OWNER' ? '#10b981' : '#00f2fe'}
-              />
-              <Html
-                center
-                distanceFactor={8.8}
-                style={{ pointerEvents: 'none', userSelect: 'none' }}
+        <group position={[-0.45, 2.18, 0.3]}>
+          <Billboard follow={true}>
+            <Html
+              center
+              distanceFactor={9.5}
+              style={{ pointerEvents: 'none', userSelect: 'none' }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  pointerEvents: 'none',
+                  userSelect: 'none',
+                }}
               >
-                <QueryClientProvider client={queryClient}>
-                  {renderPanel ? (
-                    renderPanel(vehicle, onClearSelection)
-                  ) : role === 'ADMIN' ? (
-                    <AdminVehicleMonitorPanel
-                      vehicle={vehicle}
-                      onClose={onClearSelection}
-                    />
-                  ) : role === 'STAFF' ? (
-                    <StaffOperationsPanel
-                      vehicle={vehicle}
-                      onClose={onClearSelection}
-                    />
-                  ) : (
-                    <CoOwnerVehiclePanel
-                      vehicle={vehicle}
-                      onClose={onClearSelection}
-                    />
-                  )}
-                </QueryClientProvider>
-              </Html>
-            </Billboard>
-          </group>
-        </>
+                {/* Identity Card */}
+                <div
+                  style={{
+                    background: 'rgba(7, 20, 38, 0.92)',
+                    backdropFilter: 'blur(20px)',
+                    WebkitBackdropFilter: 'blur(20px)',
+                    border: '1.5px solid rgba(34, 230, 255, 0.35)',
+                    boxShadow: '0 10px 30px rgba(0, 0, 0, 0.6), 0 0 20px rgba(34, 230, 255, 0.2)',
+                    borderRadius: '16px',
+                    padding: '8px 14px',
+                    color: '#ffffff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {/* Left Circular Teal Badge */}
+                  <div
+                    style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '50%',
+                      background: 'rgba(0, 224, 199, 0.16)',
+                      border: '1.5px solid #00e0c7',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 0 10px rgba(0, 224, 199, 0.35)',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Car size={16} color="#00e0c7" />
+                  </div>
+
+                  {/* Right Details */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 900, color: '#ffffff', letterSpacing: '0.04em', lineHeight: 1.1 }}>
+                        {vehicleCode}
+                      </span>
+                      <span style={{ fontSize: '9.5px', color: '#9bb3c9', fontWeight: 600 }}>
+                        {displayName}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '2px' }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          color: vehicleStatusConfig.color,
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: '6px',
+                            height: '6px',
+                            borderRadius: '50%',
+                            background: vehicleStatusConfig.color,
+                            boxShadow: `0 0 6px ${vehicleStatusConfig.color}`,
+                          }}
+                        />
+                        <span>{vehicleStatusConfig.label}</span>
+                      </div>
+
+                      <div style={{ width: '1px', height: '12px', background: 'rgba(34, 230, 255, 0.25)' }} />
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px', fontWeight: 800, color: '#22e6ff' }}>
+                        <Zap size={11} color="#22e6ff" />
+                        <span>{vehicle.currentBatteryLevel ?? 100}%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Downward Pointer Notch */}
+                <div
+                  style={{
+                    width: 0,
+                    height: 0,
+                    borderLeft: '7px solid transparent',
+                    borderRight: '7px solid transparent',
+                    borderTop: '7px solid rgba(7, 20, 38, 0.92)',
+                    margin: '0 auto',
+                    filter: 'drop-shadow(0 2px 2px rgba(34, 230, 255, 0.25))',
+                  }}
+                />
+              </div>
+            </Html>
+          </Billboard>
+        </group>
       )}
 
       {/* Sub-Worlds rendered ONLY for the selected vehicle (Spatial HTML cards only for CO_OWNER) */}
@@ -629,13 +710,7 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
       return [vehicles[0]];
     }
 
-    const sorted = [...vehicles].sort((a, b) => {
-      const codeA = resolveVehicleCode(a);
-      const codeB = resolveVehicleCode(b);
-      if (codeA === 'EV01' && codeB !== 'EV01') return -1;
-      if (codeA !== 'EV01' && codeB === 'EV01') return 1;
-      return 0;
-    });
+    const sorted = sortStaffFleetVehicles(vehicles);
 
     if (sorted.length <= MAX_CONCURRENT_3D_BAYS) {
       return sorted;
@@ -644,16 +719,10 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
     const baySubset = sorted.slice(0, MAX_CONCURRENT_3D_BAYS);
 
     if (selectedVehicleId) {
-      const isAlreadyMounted = baySubset.some((v) => {
-        const code = resolveVehicleCode(v);
-        return v.id === selectedVehicleId || code === selectedVehicleId;
-      });
+      const isAlreadyMounted = baySubset.some((v) => isMatchingVehicle(v, selectedVehicleId));
 
       if (!isAlreadyMounted) {
-        const targetVehicle = sorted.find((v) => {
-          const code = resolveVehicleCode(v);
-          return v.id === selectedVehicleId || code === selectedVehicleId;
-        });
+        const targetVehicle = sorted.find((v) => isMatchingVehicle(v, selectedVehicleId));
 
         if (targetVehicle) {
           // Mount the selected vehicle into the active 3D set so it renders seamlessly
@@ -668,10 +737,7 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
   // Synchronize selection: If selected vehicle is not in authorized backend vehicles, reset selection
   useEffect(() => {
     if (selectedVehicleId && vehicles.length > 0) {
-      const isStillAvailable = vehicles.some((v) => {
-        const code = resolveVehicleCode(v);
-        return v.id === selectedVehicleId || code === selectedVehicleId;
-      });
+      const isStillAvailable = vehicles.some((v) => isMatchingVehicle(v, selectedVehicleId));
       if (!isStillAvailable) {
         clearSelection();
       }
@@ -693,7 +759,8 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
     vehicleChargingMode;
 
   const handleVehicleSelect = (selectedVehicle: VehicleResponse) => {
-    selectVehicle(selectedVehicle.id, role);
+    selectVehicle(selectedVehicle.id, role, true);
+    openVehicleDetail();
   };
 
   const handleDirectVehicleClick = (selectedVehicle: VehicleResponse) => {
@@ -703,19 +770,12 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
     }
   };
 
-  // For operations role, derive the foreground hero vehicle (selected vehicle or first vehicle)
+  // For operations role, derive the foreground hero vehicle using the Single Source of Truth
   // All hooks must execute unconditionally BEFORE any early returns
   const heroVehicle = useMemo(() => {
-    if (!effectiveVehicles || effectiveVehicles.length === 0) return null;
-    if (selectedVehicleId) {
-      const match = effectiveVehicles.find((v) => {
-        const code = resolveVehicleCode(v);
-        return v.id === selectedVehicleId || code === selectedVehicleId;
-      });
-      if (match) return match;
-    }
-    return effectiveVehicles[0];
-  }, [effectiveVehicles, selectedVehicleId]);
+    if (!vehicles || vehicles.length === 0) return null;
+    return resolveAuthoritativeHeroVehicle(vehicles, selectedVehicleId);
+  }, [vehicles, selectedVehicleId]);
 
   // Loading State in 3D Space (all hooks have now been called unconditionally)
   if (!authReady || isLoading) {
@@ -915,8 +975,7 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
         }
 
         const isSelected = Boolean(
-          selectedVehicleId &&
-            (selectedVehicleId === vehicle.id || selectedVehicleId === vehicleCode)
+          selectedVehicleId && isMatchingVehicle(vehicle, selectedVehicleId)
         );
 
         const isHovered =

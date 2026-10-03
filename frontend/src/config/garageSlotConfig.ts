@@ -124,7 +124,7 @@ export function getSlotPosition(slotId: string, role?: string): [number, number,
   const isCoOwner = !role || role === 'CO_OWNER';
   if (isCoOwner) {
     if (slotId === 'BAY_READY_01') {
-      return [0.0, 0.14, 1.8];
+      return [0.0, 0.09, 1.8];
     }
     if (slotId === 'BAY_HANDOVER_01') {
       return [-3.8, 0.14, 3.2];
@@ -147,7 +147,7 @@ export function resolveVehicleSlot(
     // In CO_OWNER mode, the active co-owned vehicle is always centered on the hero showroom turntable
     return {
       ...GARAGE_SLOTS.BAY_READY_01,
-      position: [0.0, 0.14, 1.8],
+      position: [0.0, 0.09, 1.8],
     };
   }
 

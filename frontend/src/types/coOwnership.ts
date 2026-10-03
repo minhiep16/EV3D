@@ -16,6 +16,7 @@ export interface GroupMemberResponse {
   role: string;
   memberRole?: 'MEMBER' | 'REPRESENTATIVE' | 'ADMIN';
   status: 'ACTIVE' | 'INACTIVE' | 'PENDING' | 'REMOVED';
+  avatarUrl?: string | null;
   joinedAt: string;
   removedAt?: string | null;
   share: OwnershipShareResponse | null;

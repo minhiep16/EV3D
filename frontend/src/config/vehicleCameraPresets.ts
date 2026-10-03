@@ -51,6 +51,8 @@ export interface VehicleCameraPreset {
   panelOffsetX?: number;
   /** Transition animation duration in seconds */
   transitionDuration?: number;
+  /** Field of view in degrees (default ~40) */
+  fov?: number;
 }
 
 export type VehiclePresetKey =
@@ -75,14 +77,15 @@ export type VehiclePresetKey =
 /**
  * Standard Reusable Camera Preset: Full Garage Overview
  * Wide room shot showing the entire garage architecture, lighting, floor, and platforms.
+ * Camera is pulled back and elevated for a breathable, elegant wide showroom composition.
  */
 export const GARAGE_OVERVIEW_CAMERA: VehicleCameraPreset = {
-  target: [0.0, 1.2, -0.5],
-  position: [0.0, 6.2, 13.8],
-  minDistance: 4.0,
-  maxDistance: 28.0,
-  minPolarAngle: 0.1,
-  maxPolarAngle: Math.PI / 2 - 0.05,
+  target: [0.0, 0.85, 1.8],
+  position: [-0.25, 2.35, 12.0],
+  minDistance: 5.0,
+  maxDistance: 18.0,
+  minPolarAngle: 0.40,
+  maxPolarAngle: 1.42,
   enableRotate: true,
   enableZoom: true,
   enablePan: true,
@@ -96,12 +99,12 @@ export const GARAGE_OVERVIEW_CAMERA: VehicleCameraPreset = {
  * Pulled farther back so the vehicle is situated in a spacious, premium garage environment.
  */
 export const VEHICLE_FOCUS_CAMERA: VehicleCameraPreset = {
-  target: [0.0, 0.95, 1.8],
-  position: [0.0, 3.4, 15.0],
-  minDistance: 6.0,
-  maxDistance: 24.0,
-  minPolarAngle: 0.55,
-  maxPolarAngle: 1.43,
+  target: [0.0, 0.85, 1.8],
+  position: [-0.25, 2.05, 8.8],
+  minDistance: 4.5,
+  maxDistance: 16.0,
+  minPolarAngle: 0.40,
+  maxPolarAngle: 1.42,
   enableRotate: true,
   enableZoom: true,
   enablePan: true,
@@ -112,20 +115,20 @@ export const VEHICLE_FOCUS_CAMERA: VehicleCameraPreset = {
 /**
  * Standard Reusable Camera Preset: Vehicle with Right Detail Panel
  * Farther back, spacious center-left framing preserving generous breathing room between EV01 and the panel.
- * EV01 occupies comfortable center-left ~38-42% of the viewport, with ample floor & environment around it.
+ * EV01 occupies comfortable center-left ~30-34% of the viewport, with ample floor & environment around it.
  */
 export const VEHICLE_PANEL_SAFE_CAMERA: VehicleCameraPreset = {
-  target: [1.45, 1.05, 1.8],
-  position: [1.45, 3.6, 14.5],
-  minDistance: 6.5,
-  maxDistance: 24.0,
-  minPolarAngle: 0.55,
-  maxPolarAngle: 1.43,
+  target: [0.75, 0.85, 1.8],
+  position: [0.45, 2.05, 8.8],
+  minDistance: 4.5,
+  maxDistance: 16.0,
+  minPolarAngle: 0.40,
+  maxPolarAngle: 1.42,
   enableRotate: true,
   enableZoom: true,
   enablePan: true,
   panelSide: 'right',
-  panelOffsetX: 1.45,
+  panelOffsetX: 0.75,
   transitionDuration: 0.65,
 };
 
@@ -265,12 +268,12 @@ export function getVehicleCameraPreset(
   switch (presetKey) {
     case 'OVERVIEW':
       return {
-        target: isCoOwner ? [-1.9, 1.15, 2.2] : STAFF_GARAGE_LAYOUT.camera.target,
-        position: isCoOwner ? [-1.9, 6.5, 15.5] : STAFF_GARAGE_LAYOUT.camera.position,
-        minDistance: isCoOwner ? 4.0 : STAFF_GARAGE_LAYOUT.camera.minDistance,
-        maxDistance: isCoOwner ? 26.0 : STAFF_GARAGE_LAYOUT.camera.maxDistance,
-        minPolarAngle: isCoOwner ? 0.1 : STAFF_GARAGE_LAYOUT.camera.minPolarAngle,
-        maxPolarAngle: isCoOwner ? Math.PI / 2 - 0.05 : STAFF_GARAGE_LAYOUT.camera.maxPolarAngle,
+        target: isCoOwner ? [0.0, 0.85, 1.8] : STAFF_GARAGE_LAYOUT.camera.target,
+        position: isCoOwner ? [-0.25, 2.35, 12.0] : STAFF_GARAGE_LAYOUT.camera.position,
+        minDistance: isCoOwner ? 5.0 : STAFF_GARAGE_LAYOUT.camera.minDistance,
+        maxDistance: isCoOwner ? 18.0 : STAFF_GARAGE_LAYOUT.camera.maxDistance,
+        minPolarAngle: isCoOwner ? 0.40 : STAFF_GARAGE_LAYOUT.camera.minPolarAngle,
+        maxPolarAngle: isCoOwner ? 1.42 : STAFF_GARAGE_LAYOUT.camera.maxPolarAngle,
         enableRotate: true,
         enableZoom: true,
         enablePan: true,
@@ -294,16 +297,16 @@ export function getVehicleCameraPreset(
           transitionDuration: 0.65,
         };
       }
-      // Spacious framing: EV01 on center-left 38-42%, Right Detail Panel on right, with clear room breathing space
-      const panelOffsetX = 1.45;
-      const baseDistZ = 12.7 * responsiveFactor;
+      // Premium hero framing: EV01 on center-left ~30-34% of viewport width, Right Information Panel clear on right, zero clipping
+      const panelOffsetX = 0.75;
+      const baseDistZ = 7.0 * responsiveFactor;
       return {
-        target: [vx + panelOffsetX, vy + 1.05, vz],
-        position: [vx + panelOffsetX, vy + 3.6, vz + baseDistZ],
-        minDistance: 6.5,
-        maxDistance: 24.0,
-        minPolarAngle: defaultMinPolar,
-        maxPolarAngle: defaultMaxPolar,
+        target: [vx + panelOffsetX, vy + 0.85, vz],
+        position: [vx + 0.45, vy + 2.05, vz + baseDistZ],
+        minDistance: 4.5,
+        maxDistance: 16.0,
+        minPolarAngle: 0.40,
+        maxPolarAngle: 1.42,
         enableRotate: true,
         enableZoom: true,
         enablePan: true,
@@ -329,15 +332,15 @@ export function getVehicleCameraPreset(
           transitionDuration: 0.65,
         };
       }
-      // Pure vehicle focus without right panel - generous wide framing showing surrounding garage room
-      const baseDistZ = 13.2 * responsiveFactor;
+      // Pure vehicle focus without right panel - spacious cinematic 3/4 angle
+      const baseDistZ = 7.0 * responsiveFactor;
       return {
-        target: [vx, vy + 0.95, vz],
-        position: [vx, vy + 3.4, vz + baseDistZ],
-        minDistance: 6.0,
-        maxDistance: 24.0,
-        minPolarAngle: defaultMinPolar,
-        maxPolarAngle: defaultMaxPolar,
+        target: [vx, vy + 0.85, vz],
+        position: [vx - 0.25, vy + 2.05, vz + baseDistZ],
+        minDistance: 4.5,
+        maxDistance: 16.0,
+        minPolarAngle: 0.40,
+        maxPolarAngle: 1.42,
         enableRotate: true,
         enableZoom: true,
         enablePan: true,
@@ -402,16 +405,19 @@ export function getVehicleCameraPreset(
     }
 
     case 'VEHICLE_CO_OWNERSHIP': {
-      // Group summary above EV01 + owner columns
-      const panelOffsetX = 0.8;
-      const baseDistZ = 13.0 * responsiveFactor;
+      // Re-framed CO_OWNER vehicle & co-ownership composition:
+      // Vehicle prominent in center-left (~35-45% viewport width), 3D member representatives visible on left,
+      // right co-ownership panel unobstructed, podium grounded and visible
+      const panelOffsetX = 0.65;
+      const baseDistZ = 10.0 * responsiveFactor;
       return {
-        target: [vx + panelOffsetX, vy + 1.4, vz],
-        position: [vx + panelOffsetX, vy + 3.7, vz + baseDistZ],
-        minDistance: 6.5,
-        maxDistance: 24.0,
-        minPolarAngle: defaultMinPolar,
-        maxPolarAngle: defaultMaxPolar,
+        target: [vx + panelOffsetX, vy + 0.95, vz],
+        position: [vx + 0.45, vy + 2.35, vz + baseDistZ],
+        fov: 40,
+        minDistance: 4.5,
+        maxDistance: 18.0,
+        minPolarAngle: 0.40,
+        maxPolarAngle: 1.42,
         enableRotate: true,
         enableZoom: true,
         enablePan: true,

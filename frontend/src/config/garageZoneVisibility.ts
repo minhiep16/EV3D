@@ -231,3 +231,46 @@ export function shouldShowAnyChargingStationLabels(state: GarageFocusState): boo
 
   return true;
 }
+
+/**
+ * Authoritative Rule: Should floating decorative showroom branding cards
+ * (e.g. "EV EVShare / FUTURE MOBILITY SHOWROOM" right-wall signage) be visible?
+ *
+ * Rules:
+ * 1. STRICTLY HIDDEN during all primary business panels & submodes:
+ *    - Booking (vehicleBookingMode)
+ *    - Maintenance (vehicleMaintenanceMode)
+ *    - Battery X-Ray (vehicleBatteryXrayMode)
+ *    - Damage Mapping & History (vehicleDamageMappingMode, vehicleDamageHistoryMode)
+ *    - Charging (vehicleChargingMode)
+ *    - Trip Start & Visualization (vehicleTripStartMode, vehicleTripVisualizationMode)
+ *    - Handover & Receipt Review (vehicleHandoverMode, vehicleReceiptReviewMode)
+ *    - Co-ownership (vehicleCoOwnershipMode)
+ *    - Vehicle Inspection (vehicleInspectionMode)
+ * 2. STRICTLY HIDDEN whenever any vehicle detail panel or zone detail card is open on the right:
+ *    - selectedVehicleId != null
+ *    - isVehicleDetailOpen === true
+ *    - selectedZone != null
+ * 3. Visible ONLY in clean default CO_OWNER_OVERVIEW or garage overview mode where no
+ *    business panel is present, guaranteeing zero overlap with right-side panels.
+ */
+export function shouldShowShowroomBranding(state: GarageFocusState): boolean {
+  const isBusinessPanelActive =
+    Boolean(state.vehicleBookingMode) ||
+    Boolean(state.vehicleMaintenanceMode) ||
+    Boolean(state.vehicleBatteryXrayMode) ||
+    Boolean(state.vehicleDamageMappingMode) ||
+    Boolean(state.vehicleDamageHistoryMode) ||
+    Boolean(state.vehicleChargingMode) ||
+    Boolean(state.vehicleTripStartMode) ||
+    Boolean(state.vehicleTripVisualizationMode) ||
+    Boolean(state.vehicleHandoverMode) ||
+    Boolean(state.vehicleReceiptReviewMode) ||
+    Boolean(state.vehicleCoOwnershipMode) ||
+    Boolean(state.vehicleInspectionMode) ||
+    Boolean(state.selectedVehicleId) ||
+    Boolean(state.isVehicleSelected) ||
+    Boolean(state.selectedZone);
+
+  return !isBusinessPanelActive;
+}

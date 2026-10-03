@@ -106,7 +106,7 @@ export const MyBookingsPanel: React.FC<MyBookingsPanelProps> = ({
         color: '#ffffff',
         fontFamily: 'var(--font-family)',
         position: 'relative',
-        zIndex: 20,
+        zIndex: 40,
       }}
     >
       {/* Close button */}

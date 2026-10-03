@@ -4,7 +4,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useWorldStore } from '../../store/worldStore';
 import { fetchVehicles } from '../../services/vehicleApi';
 import { VehicleResponse } from '../../types/vehicle';
-import { resolveVehicleCode } from '../three/vehicles/vehicleModelConfig';
+import { resolveVehicleCode, sortStaffFleetVehicles, isMatchingVehicle } from '../three/vehicles/vehicleModelConfig';
 import { FleetVehicleListItem } from './FleetVehicleListItem';
 import { Search, X, RefreshCw } from 'lucide-react';
 
@@ -36,15 +36,9 @@ export const StaffGarageFleetSidebar: React.FC = () => {
     staleTime: 6000,
   });
 
-  // Sort: EV01 first, EV02 second, then remaining fleet
+  // Sort: EV01 first, EV02 second, then remaining fleet (Single Source of Truth)
   const sortedVehicles = useMemo(() => {
-    return [...vehicles].sort((a, b) => {
-      const codeA = resolveVehicleCode(a);
-      const codeB = resolveVehicleCode(b);
-      if (codeA === 'EV01' && codeB !== 'EV01') return -1;
-      if (codeA !== 'EV01' && codeB === 'EV01') return 1;
-      return 0;
-    });
+    return sortStaffFleetVehicles(vehicles);
   }, [vehicles]);
 
   // Filtered vehicles based on search query
@@ -279,9 +273,7 @@ export const StaffGarageFleetSidebar: React.FC = () => {
         ) : (
           filteredVehicles.map((vehicle, idx) => {
             const code = resolveVehicleCode(vehicle);
-            const isSelected =
-              selectedVehicleId === vehicle.id ||
-              selectedVehicleId === code;
+            const isSelected = isMatchingVehicle(vehicle, selectedVehicleId);
 
             return (
               <FleetVehicleListItem

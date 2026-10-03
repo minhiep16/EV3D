@@ -80,7 +80,7 @@ export const CoOwnerVehiclePartPanel: React.FC = () => {
         flexDirection: 'column',
         overflow: 'hidden',
         boxSizing: 'border-box',
-        zIndex: 20,
+        zIndex: 40,
         background: 'rgba(8, 14, 26, 0.94)',
         backdropFilter: 'blur(20px)',
         border: `1px solid ${isInspection ? 'rgba(0, 242, 254, 0.6)' : 'rgba(0, 242, 254, 0.4)'}`,

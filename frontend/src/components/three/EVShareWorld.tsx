@@ -1,5 +1,6 @@
 import React, { Suspense } from 'react';
 import { Canvas } from '@react-three/fiber';
+import * as THREE from 'three';
 import { WorldErrorBoundary } from './WorldErrorBoundary';
 import { WorldLoader } from './WorldLoader';
 import { WorldLighting } from './WorldLighting';
@@ -30,11 +31,17 @@ export const EVShareWorld: React.FC = () => {
 
   return (
     <WorldErrorBoundary>
-      <div style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden', background: '#eaf1f8' }}>
+      <div style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden', background: '#d0e2f2' }}>
         <Canvas
           shadows
-          camera={{ position: isCoOwner ? [0.0, 6.2, 13.8] : [0.2, 3.2, 9.6], fov: 40 }}
-          gl={{ antialias: true, alpha: false }}
+          camera={{ position: isCoOwner ? [-0.20, 2.25, 11.5] : [0.2, 3.2, 9.6], fov: 40 }}
+          gl={{
+            antialias: true,
+            alpha: false,
+            powerPreference: 'high-performance',
+            toneMapping: THREE.ACESFilmicToneMapping,
+            toneMappingExposure: 0.96,
+          }}
           style={{ width: '100%', height: '100%' }}
           onPointerMissed={handleNeutralSceneClick}
         >
@@ -57,9 +64,11 @@ export const EVShareWorld: React.FC = () => {
 
             {/* Functional Garage Zones: Rendered ONLY for CO_OWNER dedicated showroom exploration */}
             {!isOperationsRole &&
-              accessibleZones.map((zoneId) => (
-                <GarageZoneObject key={zoneId} zone={getZoneConfig(zoneId, user?.role)} />
-              ))}
+              accessibleZones
+                .filter((z) => z !== 'FINANCE')
+                .map((zoneId) => (
+                  <GarageZoneObject key={zoneId} zone={getZoneConfig(zoneId, user?.role)} />
+                ))}
 
             {/* Phase 17: 3D Charging Infrastructure & Dynamic Connection Cable */}
             <ChargingWorld />

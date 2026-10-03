@@ -125,7 +125,7 @@ export const ZONE_CAPABILITIES: Record<UserRole, Record<GarageZone, boolean>> = 
   CO_OWNER: {
     VEHICLE: true,
     CHARGING: true,
-    FINANCE: true,
+    FINANCE: true, // Showroom Finance experience enabled for CO_OWNER
     ANALYTICS: true,
     AI: true,
     MAINTENANCE: false,
@@ -164,8 +164,7 @@ export function canAccessZone(
   role: string | undefined,
   zone: GarageZone
 ): boolean {
-  if (!role) return false;
-  const userRole = (role in ZONE_CAPABILITIES ? role : 'CO_OWNER') as UserRole;
+  const userRole = (role && role in ZONE_CAPABILITIES ? role : 'CO_OWNER') as UserRole;
   return !!ZONE_CAPABILITIES[userRole]?.[zone];
 }
 

@@ -77,7 +77,7 @@ export const GARAGE_ZONE_ANCHORS: {
   ADMIN: Record<GarageZone, [number, number, number]>;
 } = {
   CO_OWNER: {
-    VEHICLE: [0.0, 0.14, 1.8],
+    VEHICLE: [0.0, 0.09, 1.8],
     CHARGING: [5.2, 0, 0.5],
     FINANCE: [-5.2, 0, 0.5],
     ANALYTICS: [3.2, 0, -3.8],
@@ -192,8 +192,8 @@ export function panelFriendlyFocusCamera(
  */
 export function overviewCamera(role?: string, viewportWidth?: number): GarageCameraPreset {
   const isCoOwner = !role || role === 'CO_OWNER';
-  const target: [number, number, number] = isCoOwner ? [0.0, 1.2, 0.5] : [0.0, 0.7, 0.5];
-  const position: [number, number, number] = isCoOwner ? [0.0, 5.2, 13.2] : [0.0, 14.5, 19.5];
+  const target: [number, number, number] = isCoOwner ? [0.0, 0.85, 1.8] : [0.0, 0.7, 0.5];
+  const position: [number, number, number] = isCoOwner ? [-0.20, 2.25, 11.5] : [0.0, 14.5, 19.5];
 
   const dx = position[0] - target[0];
   const dy = position[1] - target[1];
@@ -203,18 +203,18 @@ export function overviewCamera(role?: string, viewportWidth?: number): GarageCam
   return {
     target,
     position,
-    fov: 42,
-    minDistance: 4.0,
-    maxDistance: isCoOwner ? 28.0 : 32.0,
-    minPolarAngle: 0.1,
-    maxPolarAngle: Math.PI / 2 - 0.05,
+    fov: 40,
+    minDistance: isCoOwner ? 5.0 : 4.0,
+    maxDistance: isCoOwner ? 18.0 : 32.0,
+    minPolarAngle: isCoOwner ? 0.40 : 0.1,
+    maxPolarAngle: isCoOwner ? 1.42 : Math.PI / 2 - 0.05,
     enableRotate: true,
     enableZoom: true,
     enablePan: true,
     panelSide: 'none',
     horizontalOffset: 0,
     safeFramingDistance,
-    transitionDuration: 0.7,
+    transitionDuration: 0.65,
   };
 }
 
@@ -223,6 +223,26 @@ export function overviewCamera(role?: string, viewportWidth?: number): GarageCam
  * Focused EV01 view without side panel: vehicle is centered with generous room margins.
  */
 export function vehicleFocusCamera(role?: string, viewportWidth?: number): GarageCameraPreset {
+  const isCoOwner = !role || role === 'CO_OWNER';
+  if (isCoOwner) {
+    return {
+      target: [0.0, 0.85, 1.8],
+      position: [-0.25, 2.05, 8.8],
+      fov: 40,
+      minDistance: 4.5,
+      maxDistance: 16.0,
+      minPolarAngle: 0.40,
+      maxPolarAngle: 1.42,
+      enableRotate: true,
+      enableZoom: true,
+      enablePan: true,
+      panelSide: 'none',
+      horizontalOffset: 0,
+      safeFramingDistance: 7.0,
+      transitionDuration: 0.65,
+    };
+  }
+
   const [vx, vy, vz] = getGarageZoneAnchor('VEHICLE', role);
   const factor = getResponsiveDistanceFactor(viewportWidth);
   const distZ = 13.2 * factor;
@@ -256,6 +276,26 @@ export function vehicleFocusCamera(role?: string, viewportWidth?: number): Garag
  * Panel-friendly EV01 vehicle camera preset with EV01 center-left and right detail panel legible.
  */
 export function vehicleZoneCamera(role?: string, viewportWidth?: number): GarageCameraPreset {
+  const isCoOwner = !role || role === 'CO_OWNER';
+  if (isCoOwner) {
+    return {
+      target: [0.75, 0.85, 1.8],
+      position: [0.45, 2.05, 8.8],
+      fov: 40,
+      minDistance: 4.5,
+      maxDistance: 16.0,
+      minPolarAngle: 0.40,
+      maxPolarAngle: 1.42,
+      enableRotate: true,
+      enableZoom: true,
+      enablePan: true,
+      panelSide: 'right',
+      horizontalOffset: 0.75,
+      safeFramingDistance: 7.0,
+      transitionDuration: 0.65,
+    };
+  }
+
   const anchor = getGarageZoneAnchor('VEHICLE', role);
   const factor = getResponsiveDistanceFactor(viewportWidth);
   return panelFriendlyFocusCamera(anchor, {
@@ -304,6 +344,27 @@ export function zoneFocusCamera(
  */
 
 export function financeZoneCamera(role?: string, viewportWidth?: number): GarageCameraPreset {
+  const isCoOwner = !role || role === 'CO_OWNER';
+  if (isCoOwner) {
+    const factor = getResponsiveDistanceFactor(viewportWidth);
+    const distZ = 11.5 * factor;
+    return {
+      target: [0.35, 1.25, 1.8],
+      position: [0.35, 2.10, 1.8 + distZ],
+      fov: 40,
+      minDistance: 6.0,
+      maxDistance: 20.0,
+      minPolarAngle: 0.40,
+      maxPolarAngle: 1.42,
+      enableRotate: true,
+      enableZoom: true,
+      enablePan: true,
+      panelSide: 'right',
+      horizontalOffset: 0.35,
+      safeFramingDistance: distZ,
+      transitionDuration: 0.65,
+    };
+  }
   return zoneFocusCamera('FINANCE', role, viewportWidth);
 }
 

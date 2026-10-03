@@ -246,7 +246,7 @@ export const ChargingPanel: React.FC<ChargingPanelProps> = ({
         width: 'clamp(330px, 26vw, 410px)',
         height: 'auto',
         maxHeight: 'calc(100dvh - 112px)',
-        zIndex: 25,
+        zIndex: 40,
         pointerEvents: 'auto',
         display: 'flex',
         flexDirection: 'column',

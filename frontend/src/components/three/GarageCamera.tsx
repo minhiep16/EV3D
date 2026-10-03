@@ -243,6 +243,15 @@ export const GarageCamera: React.FC = () => {
     targetCamPos.current = new THREE.Vector3(...preset.position);
     isTransitioning.current = true;
 
+    // Synchronize FOV if preset specifies custom FOV
+    if (preset.fov && (camera as THREE.PerspectiveCamera).isPerspectiveCamera) {
+      const pCam = camera as THREE.PerspectiveCamera;
+      if (pCam.fov !== preset.fov) {
+        pCam.fov = preset.fov;
+        pCam.updateProjectionMatrix();
+      }
+    }
+
     // Synchronize control constraints
     setControlsLimits({
       minDistance: preset.minDistance,

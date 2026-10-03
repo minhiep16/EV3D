@@ -680,7 +680,7 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
         width: 'clamp(320px, 26vw, 390px)',
         height: 'auto',
         maxHeight: 'calc(100dvh - 112px)',
-        zIndex: 20,
+        zIndex: 40,
         pointerEvents: 'auto',
         display: 'flex',
         flexDirection: 'column',

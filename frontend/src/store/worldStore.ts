@@ -58,6 +58,7 @@ export const VEHICLE_STATUS_LABELS: Record<
 export interface CameraPreset {
   target: [number, number, number];
   position: [number, number, number];
+  fov?: number;
 }
 
 export type PresetKey =
@@ -86,8 +87,9 @@ export const OPERATIONS_CAMERA_PRESETS: Record<PresetKey, CameraPreset> = {
   VEHICLE: vehicleZoneCamera('OPERATIONS'),
   VEHICLE_FOCUS: vehicleZoneCamera('OPERATIONS'),
   VEHICLE_CO_OWNERSHIP: {
-    target: [0.6, 1.45, 0.5],
-    position: [0.6, 3.4, 10.9],
+    target: [0.65, 1.09, 0.5],
+    position: [0.45, 2.49, 10.5],
+    fov: 40,
   },
   VEHICLE_BOOKING: {
     target: [0.95, 1.15, 0.5],
@@ -121,8 +123,9 @@ export const CO_OWNER_CAMERA_PRESETS: Record<PresetKey, CameraPreset> = {
   VEHICLE: vehicleZoneCamera('CO_OWNER'),
   VEHICLE_FOCUS: vehicleZoneCamera('CO_OWNER'),
   VEHICLE_CO_OWNERSHIP: {
-    target: [0.6, 1.45, 1.8],
-    position: [0.6, 3.4, 12.2],
+    target: [0.65, 1.09, 0.5],
+    position: [0.45, 2.49, 10.5],
+    fov: 40,
   },
   VEHICLE_BOOKING: {
     target: [0.95, 1.15, 1.8],
@@ -191,6 +194,10 @@ interface WorldState {
   openVehicleDetail: () => void;
   closeVehicleDetail: () => void;
   setVehicleDetailOpen: (open: boolean) => void;
+
+  // Phase 18: Finance detail modal state (Chi tháng này, Lịch sử chi phí, Bảng quỹ chung)
+  isFinanceDetailModalOpen: boolean;
+  setFinanceDetailModalOpen: (open: boolean) => void;
 
   // 360-degree vehicle rotation turntable state
   vehicleYaw: number;
@@ -377,6 +384,9 @@ export const useWorldStore = create<WorldState>((set) => ({
   closeVehicleDetail: () => set({ isVehicleDetailOpen: false }),
   setVehicleDetailOpen: (open) => set({ isVehicleDetailOpen: open }),
 
+  isFinanceDetailModalOpen: false,
+  setFinanceDetailModalOpen: (open) => set({ isFinanceDetailModalOpen: open }),
+
   selectZone: (zone) =>
     set((state) => {
       let role: string | undefined;
@@ -385,6 +395,7 @@ export const useWorldStore = create<WorldState>((set) => ({
       } catch {
         role = 'CO_OWNER';
       }
+      role = role || 'CO_OWNER';
 
       if (zone && !canAccessZone(role, zone)) {
         return {};
@@ -427,6 +438,7 @@ export const useWorldStore = create<WorldState>((set) => ({
         vehicleTripStartMode: false,
         vehicleTripVisualizationMode: false,
         selectedTripRouteNode: null,
+        isFinanceDetailModalOpen: false,
       };
     }),
 
@@ -532,6 +544,7 @@ export const useWorldStore = create<WorldState>((set) => ({
       vehicleMode: 'NONE',
       isVehicleSelected: false,
       isVehicleDetailOpen: false,
+      isFinanceDetailModalOpen: false,
       vehicleInspectionMode: false,
       selectedVehiclePartId: null,
       hoveredVehiclePartId: null,
@@ -1737,6 +1750,7 @@ export const useWorldStore = create<WorldState>((set) => ({
       activeExperience: null,
       isVehicleSelected: false,
       isVehicleDetailOpen: false,
+      isFinanceDetailModalOpen: false,
       vehicleBatteryXrayMode: false,
       vehicleChargingMode: false,
       selectedChargingStationId: null,

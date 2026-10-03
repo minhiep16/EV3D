@@ -8,6 +8,7 @@ import {
   CHARGING_STATION_VISUALS,
 } from '../../../config/chargingVisualConfig';
 import { useWorldStore } from '../../../store/worldStore';
+import { useAuthStore } from '../../../store/authStore';
 import { shouldShowChargingStationLabel } from '../../../config/garageZoneVisibility';
 import { Zap, Activity } from 'lucide-react';
 
@@ -27,6 +28,9 @@ export const ChargingStation3D: React.FC<ChargingStation3DProps> = ({
   const [isHovered, setIsHovered] = useState(false);
   const statusLedRef = useRef<THREE.MeshBasicMaterial>(null);
   const touchScreenRef = useRef<THREE.MeshBasicMaterial>(null);
+
+  const user = useAuthStore((state) => state.user);
+  const isOperationsRole = user?.role === 'STAFF' || user?.role === 'ADMIN';
 
   // Authoritative garage focus state to govern world-space label visibility
   const selectedZone = useWorldStore((state) => state.selectedZone);
@@ -49,6 +53,10 @@ export const ChargingStation3D: React.FC<ChargingStation3DProps> = ({
   const selectedChargingStationId = useWorldStore((state) => state.selectedChargingStationId);
 
   const showLabel = useMemo(() => {
+    // For co-owners in overview: suppress redundant floating kiosk labels unless hovered, selected, or actively in charging mode
+    if (!isOperationsRole && !vehicleChargingMode && !isSelected && !isHovered) {
+      return false;
+    }
     return shouldShowChargingStationLabel(
       station.id,
       {
@@ -74,6 +82,7 @@ export const ChargingStation3D: React.FC<ChargingStation3DProps> = ({
       { isSelected, isHovered }
     );
   }, [
+    isOperationsRole,
     station.id,
     selectedZone,
     selectedVehicleId,
@@ -242,9 +251,9 @@ export const ChargingStation3D: React.FC<ChargingStation3DProps> = ({
         </mesh>
       )}
 
-      {/* 9. Floating Holographic Station HUD Badge (Centralized Visibility Rule) */}
+      {/* 9. Floating Holographic Station HUD Badge (Compact, close to kiosk) */}
       {showLabel && (
-        <Billboard position={[0, 2.22, 0]} follow={true}>
+        <Billboard position={[0, 1.82, 0]} follow={true}>
           <Html
             center
             distanceFactor={10}
@@ -252,44 +261,43 @@ export const ChargingStation3D: React.FC<ChargingStation3DProps> = ({
           >
             <div
               style={{
-                background: 'rgba(8, 16, 28, 0.92)',
+                background: 'rgba(6, 18, 30, 0.85)',
                 backdropFilter: 'blur(12px)',
-                border: `1.5px solid ${isSelected ? '#00f2fe' : theme.border}`,
-                borderRadius: '10px',
-                padding: '6px 10px',
+                border: `1px solid ${isSelected ? '#00f2fe' : 'rgba(56, 189, 248, 0.3)'}`,
+                borderRadius: '8px',
+                padding: '4px 8px',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                gap: '2px',
-                minWidth: '110px',
-                boxShadow: `0 8px 20px rgba(0, 0, 0, 0.45), 0 0 12px ${theme.glow}40`,
-                transform: isHovered ? 'scale(1.06)' : 'scale(1.0)',
+                gap: '1px',
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.35)',
+                transform: isHovered ? 'scale(1.05)' : 'scale(1.0)',
                 transition: 'transform 0.18s ease',
                 whiteSpace: 'nowrap',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <div
                   style={{
-                    width: '7px',
-                    height: '7px',
+                    width: '6px',
+                    height: '6px',
                     borderRadius: '50%',
                     background: theme.primary,
-                    boxShadow: `0 0 8px ${theme.glow}`,
+                    boxShadow: `0 0 6px ${theme.glow}`,
                   }}
                 />
                 <span
                   style={{
-                    fontSize: '11px',
-                    fontWeight: 900,
+                    fontSize: '10px',
+                    fontWeight: 800,
                     color: '#ffffff',
-                    letterSpacing: '0.04em',
+                    letterSpacing: '0.03em',
                   }}
                 >
-                  {station.code} • {station.maxPowerKw} kW
+                  {station.code} · {station.maxPowerKw} kW
                 </span>
               </div>
-              <div style={{ fontSize: '9px', fontWeight: 700, color: theme.primary }}>
+              <div style={{ fontSize: '8.5px', fontWeight: 600, color: theme.primary }}>
                 {theme.labelVi}
               </div>
             </div>

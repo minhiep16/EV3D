@@ -127,7 +127,7 @@ public class VehicleHandoverService {
                 List<Booking> userBookings = bookingRepository.findByVehicleIdOrderByStartTimeAsc(vehicleId).stream()
                         .filter(b -> b.getUser() != null && currentUserId.equals(b.getUser().getId()) && !b.isExpired() && b.getEndTime().isAfter(Instant.now()))
                         .filter(b -> b.getStatus() != BookingStatus.COMPLETED && b.getStatus() != BookingStatus.CANCELLED)
-                        .filter(b -> tripRepository == null || !tripRepository.existsByBooking_IdAndStatus(b.getId(), TripStatus.COMPLETED))
+                        .filter(b -> tripRepository == null || !tripRepository                                              .existsByBooking_IdAndStatus(b.getId(), TripStatus.COMPLETED))
                         .collect(Collectors.toList());
                 for (Booking b : userBookings) {
                     handoverRepository.findByBookingId(b.getId()).ifPresent(h -> {

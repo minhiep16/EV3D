@@ -7,7 +7,7 @@ import { useWorldStore } from '../store/worldStore';
 import { logoutApi } from '../services/authApi';
 import { fetchVehicles } from '../services/vehicleApi';
 import { VehicleResponse } from '../types/vehicle';
-import { resolveVehicleCode } from '../components/three/vehicles/vehicleModelConfig';
+import { resolveVehicleCode, sortStaffFleetVehicles, resolveAuthoritativeHeroVehicle } from '../components/three/vehicles/vehicleModelConfig';
 import {
   LogOut,
   Warehouse,
@@ -18,6 +18,10 @@ import {
   RotateCcw,
   Zap,
   Car,
+  DollarSign,
+  Bot,
+  TrendingUp,
+  Bell,
 } from 'lucide-react';
 import { StaffGarageFleetSidebar } from '../components/fleet/StaffGarageFleetSidebar';
 import { StaffVehicleDetailPanel } from '../components/fleet/StaffVehicleDetailPanel';
@@ -30,6 +34,13 @@ import { StaffMaintenancePanel } from '../components/three/maintenance/StaffMain
 import { CoOwnerMaintenancePanel } from '../components/three/maintenance/CoOwnerMaintenancePanel';
 import { BatteryHealthPanel } from '../components/three/battery/BatteryHealthPanel';
 import { ChargingPanel } from '../components/three/charging/ChargingPanel';
+import { CoOwnerVehiclePanel } from '../components/three/vehicles/CoOwnerVehiclePanel';
+import { CoOwnerQuickActionDock } from '../components/three/vehicles/CoOwnerQuickActionDock';
+import { CoOwnerVehicleInfoPanel } from '../components/three/vehicles/CoOwnerVehicleInfoPanel';
+import { MyBookingsPanel } from '../components/three/vehicles/MyBookingsPanel';
+import { LobbyOwnershipSummaryBoard } from '../components/three/ownership/LobbyOwnershipSummaryBoard';
+import { CoOwnerOwnershipPanel } from '../components/three/ownership/CoOwnerOwnershipPanel';
+import { ZoneInfoPanel } from '../components/zones/ZoneInfoPanel';
 
 export const GarageScene: React.FC = () => {
   const navigate = useNavigate();
@@ -46,10 +57,13 @@ export const GarageScene: React.FC = () => {
 
   const resetExperienceState = useWorldStore((state) => state.resetExperienceState);
   const vehicleFeatureMode = useWorldStore((state) => state.vehicleFeatureMode);
+  const vehicleMode = useWorldStore((state) => state.vehicleMode);
+  const isVehicleSelected = useWorldStore((state) => state.isVehicleSelected);
   const selectedVehicleId = useWorldStore((state) => state.selectedVehicleId);
   const isVehicleDetailOpen = useWorldStore((state) => state.isVehicleDetailOpen);
   const closeVehicleDetail = useWorldStore((state) => state.closeVehicleDetail);
   const selectedZone = useWorldStore((state) => state.selectedZone);
+  const selectZone = useWorldStore((state) => state.selectZone);
   const clearSelection = useWorldStore((state) => state.clearSelection);
   const returnToGarageOverview = useWorldStore((state) => state.returnToGarageOverview);
   const selectVehicle = useWorldStore((state) => state.selectVehicle);
@@ -78,17 +92,15 @@ export const GarageScene: React.FC = () => {
     staleTime: 6000,
   });
 
-  // For operations role, derive authoritative foreground hero vehicle
+  // Canonical sorted staff fleet for operations (Single Source of Truth)
+  const sortedFleetVehicles = useMemo(() => {
+    return isOperationsRole ? sortStaffFleetVehicles(vehicles) : vehicles;
+  }, [vehicles, isOperationsRole]);
+
+  // For operations role, derive authoritative foreground hero vehicle (Single Source of Truth)
   const heroVehicle = useMemo(() => {
     if (!vehicles || vehicles.length === 0) return null;
-    if (selectedVehicleId) {
-      const match = vehicles.find((v) => {
-        const code = resolveVehicleCode(v);
-        return v.id === selectedVehicleId || code === selectedVehicleId;
-      });
-      if (match) return match;
-    }
-    return vehicles[0];
+    return resolveAuthoritativeHeroVehicle(vehicles, selectedVehicleId);
   }, [vehicles, selectedVehicleId]);
 
   // For CO_OWNER role, derive authoritative active co-owned vehicle
@@ -101,8 +113,14 @@ export const GarageScene: React.FC = () => {
         vehicles.map((v) => v.id)
       );
     }
+    if (selectedVehicleId) {
+      const match = vehicles.find(
+        (v) => v.id === selectedVehicleId || resolveVehicleCode(v) === selectedVehicleId
+      );
+      if (match) return match;
+    }
     return vehicles[0];
-  }, [vehicles, isOperationsRole]);
+  }, [vehicles, isOperationsRole, selectedVehicleId]);
 
   // Session Isolation: Whenever authenticated user changes, reset all transient experience states
   useEffect(() => {
@@ -150,13 +168,15 @@ export const GarageScene: React.FC = () => {
   }, [vehicleInspectionMode, vehicleDamageMappingMode, vehicleDamageHistoryMode, selectedVehiclePartId, selectedVehiclePartCode, clearVehiclePartSelection]);
 
   const initialOperationsSelectDone = useRef(false);
-  // For STAFF / ADMIN, auto-select EV01 or first vehicle on initial load to match reference composition
+  // For STAFF / ADMIN, auto-select hero vehicle on initial load using Single Source of Truth
   useEffect(() => {
     if (isOperationsRole && !initialOperationsSelectDone.current && vehicles.length > 0) {
       initialOperationsSelectDone.current = true;
       if (!selectedVehicleId) {
-        const defaultVehicle = vehicles.find((v) => resolveVehicleCode(v) === 'EV01') || vehicles[0];
-        selectVehicle(defaultVehicle.id, user?.role);
+        const defaultVehicle = resolveAuthoritativeHeroVehicle(vehicles, null);
+        if (defaultVehicle) {
+          selectVehicle(defaultVehicle.id, user?.role);
+        }
       }
     }
   }, [isOperationsRole, selectedVehicleId, vehicles, selectVehicle, user?.role]);
@@ -499,7 +519,7 @@ export const GarageScene: React.FC = () => {
           {/* C. Center Hero Vehicle Navigator (Chevrons & Status Pill) */}
           {heroVehicle && (
             <FleetHeroNavigator
-              vehicles={vehicles}
+              vehicles={sortedFleetVehicles}
               selectedVehicle={heroVehicle}
               onSelectVehicle={(v) => selectVehicle(v.id, user?.role)}
               visible={!showBackToVehicle}
@@ -553,83 +573,260 @@ export const GarageScene: React.FC = () => {
         /* CO_OWNER DEDICATED EXPERIENCE (COMPLETELY PRESERVED)     */
         /* ======================================================== */
         <>
-          {/* Screen-space Utility Control: Top-Left [ ← QUAY LẠI XE ] in Co-ownership or Booking Mode */}
-          {showBackToVehicle && (
+          {/* A. Unified Top Header: Branding on Left, Return Navigation Controls, User Profile & Logout on Right */}
+          <div
+            style={{
+              position: 'absolute',
+              top: '20px',
+              left: '24px',
+              right: '24px',
+              height: '48px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              zIndex: 30,
+              pointerEvents: 'none',
+              userSelect: 'none',
+            }}
+          >
+            {/* Left: EVShare Brand Block */}
             <div
               style={{
-                position: 'absolute',
-                top: '20px',
-                left: '24px',
-                zIndex: 30,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'flex-start',
+                fontFamily: 'var(--font-family, sans-serif)',
                 pointerEvents: 'auto',
               }}
             >
-              <button
-                type="button"
-                onClick={handleBackToVehicle}
-                title="Quay lại xe điện"
+              <div
                 style={{
-                  background: 'rgba(13, 27, 42, 0.88)',
-                  backdropFilter: 'blur(16px)',
-                  border: '1.5px solid rgba(168, 85, 247, 0.6)',
-                  borderRadius: '9999px',
-                  padding: '8px 18px',
-                  color: '#f3e8ff',
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  letterSpacing: '0.05em',
-                  cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '7px',
-                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25), 0 0 14px rgba(168, 85, 247, 0.25)',
-                  transition: 'all 0.2s ease',
+                  gap: '8px',
+                  fontSize: '24px',
+                  fontWeight: 950,
+                  lineHeight: '1.1',
                 }}
               >
-                <ArrowLeft size={14} color="#c084fc" />
-                <span>QUAY LẠI XE</span>
-              </button>
+                <span
+                  style={{
+                    color: '#22e6ff',
+                    textShadow: '0 0 16px rgba(34, 230, 255, 0.8)',
+                  }}
+                >
+                  EV
+                </span>
+                <span
+                  style={{
+                    color: '#ffffff',
+                    textShadow: '0 2px 14px rgba(0, 0, 0, 0.6), 0 0 20px rgba(34, 230, 255, 0.2)',
+                  }}
+                >
+                  EVShare
+                </span>
+              </div>
+              <div
+                style={{
+                  fontSize: '8.5px',
+                  fontWeight: 800,
+                  letterSpacing: '0.24em',
+                  color: '#9bb3c9',
+                  textTransform: 'uppercase',
+                  marginTop: '3px',
+                  textShadow: '0 1px 4px rgba(0, 0, 0, 0.8)',
+                }}
+              >
+                DRIVE A CLEANER TOMORROW
+              </div>
             </div>
-          )}
 
-          {/* Screen-space Utility Control: Top-Left [ QUAY LẠI TOÀN CẢNH GARAGE ] */}
-          {showBackToGarageOverview && (
+            {/* Right: Return Navigation & User Controls */}
             <div
               style={{
-                position: 'absolute',
-                top: '20px',
-                left: '24px',
-                zIndex: 30,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
                 pointerEvents: 'auto',
               }}
             >
+              {/* Back to Vehicle button (when inside a business submode) */}
+              {showBackToVehicle && (
+                <button
+                  type="button"
+                  onClick={handleBackToVehicle}
+                  title="Quay lại xe điện"
+                  style={{
+                    background: 'rgba(13, 27, 42, 0.90)',
+                    backdropFilter: 'blur(16px)',
+                    border: '1.5px solid rgba(168, 85, 247, 0.6)',
+                    borderRadius: '9999px',
+                    padding: '7px 16px',
+                    color: '#f3e8ff',
+                    fontSize: '11.5px',
+                    fontWeight: 700,
+                    letterSpacing: '0.04em',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '7px',
+                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25), 0 0 14px rgba(168, 85, 247, 0.25)',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <ArrowLeft size={13} color="#c084fc" />
+                  <span>QUAY LẠI XE</span>
+                </button>
+              )}
+
+              {/* Back to Garage Overview button (shown for operations roles) */}
+              {!isCoOwner && showBackToGarageOverview && (
+                <button
+                  type="button"
+                  onClick={() => returnToGarageOverview()}
+                  title="Quay lại toàn cảnh garage"
+                  style={{
+                    background: 'rgba(7, 20, 38, 0.90)',
+                    backdropFilter: 'blur(16px)',
+                    border: '1.5px solid rgba(34, 230, 255, 0.5)',
+                    borderRadius: '9999px',
+                    padding: '7px 16px',
+                    color: '#22e6ff',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    letterSpacing: '0.04em',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '7px',
+                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.35), 0 0 14px rgba(34, 230, 255, 0.25)',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <RotateCcw size={13} color="#22e6ff" />
+                  <span>QUAY LẠI TOÀN CẢNH GARAGE</span>
+                </button>
+              )}
+
+              {/* Compact Ownership Summary Strip for CO_OWNER */}
+              {isCoOwner && (
+                <PanelErrorBoundary key="topbar-ownership-summary">
+                  <LobbyOwnershipSummaryBoard
+                    vehicle={currentCoOwnerVehicle || vehicles[0] || null}
+                  />
+                </PanelErrorBoundary>
+              )}
+
+              {/* Role Mode Identity Badge (Glowing Teal) */}
+              <div
+                style={{
+                  background: 'rgba(7, 20, 38, 0.90)',
+                  backdropFilter: 'blur(16px)',
+                  border: '1.5px solid rgba(0, 224, 199, 0.55)',
+                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.35), 0 0 16px rgba(0, 224, 199, 0.25)',
+                  borderRadius: '9999px',
+                  padding: '6px 15px',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  letterSpacing: '0.04em',
+                  color: '#00e0c7',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  textTransform: 'uppercase',
+                }}
+              >
+                <Sparkles size={13} color="#00e0c7" />
+                <span>CHẾ ĐỘ ĐỒNG SỞ HỮU</span>
+              </div>
+
+              {/* User Profile Badge */}
+              <div
+                style={{
+                  background: 'rgba(7, 20, 38, 0.85)',
+                  backdropFilter: 'blur(16px)',
+                  border: '1.5px solid rgba(34, 230, 255, 0.3)',
+                  borderRadius: '9999px',
+                  padding: '6px 14px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  color: '#cbd5e1',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25)',
+                }}
+              >
+                <Warehouse size={13} color="#22e6ff" />
+                <span>{user?.fullName || 'Nguyen Van A'}</span>
+                <span
+                  style={{
+                    background: 'rgba(0, 224, 199, 0.2)',
+                    color: '#00e0c7',
+                    fontSize: '9.5px',
+                    fontWeight: 800,
+                    padding: '2px 7px',
+                    borderRadius: '9999px',
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  ĐỒNG SỞ HỮU
+                </span>
+              </div>
+
+              {/* Notification Bell Icon */}
+              <div
+                title="Thông báo"
+                style={{
+                  width: '34px',
+                  height: '34px',
+                  borderRadius: '50%',
+                  background: 'rgba(7, 20, 38, 0.85)',
+                  backdropFilter: 'blur(16px)',
+                  border: '1px solid rgba(34, 230, 255, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#cbd5e1',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 14px rgba(0, 0, 0, 0.25)',
+                }}
+              >
+                <Bell size={14} color="#9bb3c9" />
+              </div>
+
+              {/* Logout Button */}
               <button
                 type="button"
-                onClick={() => returnToGarageOverview()}
-                title="Quay lại toàn cảnh garage"
+                onClick={handleLogout}
+                title="Đăng xuất khỏi Garage 3D"
                 style={{
-                  background: 'rgba(13, 27, 42, 0.88)',
-                  backdropFilter: 'blur(16px)',
-                  border: '1.5px solid rgba(0, 242, 254, 0.6)',
+                  background: 'rgba(239, 68, 68, 0.18)',
+                  border: '1.5px solid rgba(239, 68, 68, 0.45)',
                   borderRadius: '9999px',
-                  padding: '8px 18px',
-                  color: '#00f2fe',
-                  fontSize: '12px',
+                  padding: '6px 14px',
+                  color: '#ff5e6c',
+                  fontSize: '11.5px',
                   fontWeight: 700,
-                  letterSpacing: '0.05em',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '7px',
-                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25), 0 0 14px rgba(0, 242, 254, 0.25)',
-                  transition: 'all 0.2s ease',
+                  gap: '6px',
+                  boxShadow: '0 4px 14px rgba(239, 68, 68, 0.2)',
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.32)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.18)';
                 }}
               >
-                <RotateCcw size={13} color="#00f2fe" />
-                <span>QUAY LẠI TOÀN CẢNH GARAGE</span>
+                <LogOut size={13} />
+                <span>Đăng xuất</span>
               </button>
             </div>
-          )}
+          </div>
 
           {/* Empty Ownership State for CO_OWNER */}
           {!isOperationsRole && !isLoading && vehicles.length === 0 && (
@@ -661,172 +858,105 @@ export const GarageScene: React.FC = () => {
             </div>
           )}
 
-          {/* Centered CO_OWNER Header Brand Block */}
-          <div
-            style={{
-              position: 'absolute',
-              top: '20px',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              whiteSpace: 'nowrap',
-              fontFamily: 'var(--font-family, sans-serif)',
-              zIndex: 10,
-              pointerEvents: 'none',
-              userSelect: 'none',
-            }}
-          >
-            {/* Glowing EV Logo + EVShare Title */}
+          {/* Subtle Secondary Zone Entry Points (Finance, AI, Analytics, Charging) */}
+          {!showBackToVehicle && (
             <div
+              data-ui-interactive="true"
               style={{
+                position: 'absolute',
+                left: '24px',
+                top: '50%',
+                transform: 'translateY(-50%)',
                 display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                fontSize: '26px',
-                fontWeight: 900,
-                letterSpacing: '0.03em',
-                lineHeight: '1.1',
-              }}
-            >
-              {/* Cyan Geometric EV Monogram */}
-              <span
-                style={{
-                  color: '#00f2fe',
-                  fontSize: '28px',
-                  fontWeight: 950,
-                  textShadow: '0 0 16px rgba(0, 242, 254, 0.8)',
-                  display: 'flex',
-                  alignItems: 'center',
-                }}
-              >
-                EV
-              </span>
-              <span
-                style={{
-                  color: '#ffffff',
-                  textShadow: '0 2px 14px rgba(0, 0, 0, 0.6), 0 0 20px rgba(0, 242, 254, 0.3)',
-                }}
-              >
-                EVShare
-              </span>
-            </div>
-
-            {/* Slogan Subtitle */}
-            <div
-              style={{
-                fontSize: '9px',
-                fontWeight: 800,
-                letterSpacing: '0.28em',
-                color: '#94a3b8',
-                textTransform: 'uppercase',
-                marginTop: '4px',
-                textShadow: '0 1px 4px rgba(0, 0, 0, 0.8)',
-              }}
-            >
-              DRIVE A CLEANER TOMORROW
-            </div>
-          </div>
-
-          {/* Co-Owner Screen-space User / Profile / Logout Utility Control */}
-          <div
-            style={{
-              position: 'absolute',
-              top: '20px',
-              right: '24px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              zIndex: 10,
-              pointerEvents: 'auto',
-            }}
-          >
-            {/* Role Mode Identity Badge */}
-            <div
-              style={{
-                background: modeBadge.bg,
-                backdropFilter: 'blur(16px)',
-                border: modeBadge.border,
-                boxShadow: modeBadge.shadow,
-                borderRadius: '9999px',
-                padding: '7px 16px',
-                fontSize: '11px',
-                fontWeight: 800,
-                letterSpacing: '0.06em',
-                color: modeBadge.color,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                textTransform: 'uppercase',
-              }}
-            >
-              {modeBadge.icon}
-              <span>{modeBadge.label}</span>
-            </div>
-
-            <div
-              style={{
-                background: 'rgba(13, 27, 42, 0.85)',
-                backdropFilter: 'blur(16px)',
-                border: '1px solid rgba(56, 189, 248, 0.35)',
-                borderRadius: '9999px',
-                padding: '7px 16px',
-                fontSize: '12px',
-                fontWeight: 600,
-                color: '#cbd5e1',
-                display: 'flex',
-                alignItems: 'center',
+                flexDirection: 'column',
                 gap: '8px',
-                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.2)',
+                zIndex: 25,
+                pointerEvents: 'auto',
               }}
             >
-              <Warehouse size={14} color="#38bdf8" />
-              <span>{user?.fullName || 'Đồng sở hữu'}</span>
-              <span
-                style={{
-                  background: 'rgba(56, 189, 248, 0.15)',
-                  color: '#38bdf8',
-                  fontSize: '10px',
-                  fontWeight: 700,
-                  padding: '1px 6px',
-                  borderRadius: '4px',
-                }}
-              >
-                ĐỒNG SỞ HỮU
-              </span>
+              {[
+                { id: 'FINANCE' as const, label: 'Tài chính', icon: DollarSign },
+                { id: 'AI' as const, label: 'Trợ lý AI', icon: Bot },
+                { id: 'ANALYTICS' as const, label: 'Phân tích', icon: TrendingUp },
+                { id: 'CHARGING' as const, label: 'Khu vực sạc', icon: Zap },
+              ].map(({ id, label, icon: Icon }) => {
+                const isActive = selectedZone === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    data-ui-interactive="true"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (isActive) {
+                        clearSelection();
+                      } else {
+                        selectZone(id);
+                      }
+                    }}
+                    title={`Khu vực ${label.toLowerCase()}`}
+                    style={{
+                      background: isActive
+                        ? 'linear-gradient(135deg, rgba(0, 242, 254, 0.40) 0%, rgba(6, 26, 52, 0.96) 100%)'
+                        : 'rgba(6, 20, 38, 0.82)',
+                      backdropFilter: 'blur(24px)',
+                      WebkitBackdropFilter: 'blur(24px)',
+                      border: isActive
+                        ? '1.8px solid #00f2fe'
+                        : '1px solid rgba(0, 242, 254, 0.20)',
+                      boxShadow: isActive
+                        ? '0 8px 24px rgba(0, 0, 0, 0.6), 0 0 24px rgba(0, 242, 254, 0.48), inset 0 0 12px rgba(0, 242, 254, 0.22)'
+                        : '0 4px 14px rgba(0, 0, 0, 0.35)',
+                      borderRadius: '9999px',
+                      padding: isActive ? '8px 18px 8px 10px' : '7px 16px 7px 9px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      cursor: 'pointer',
+                      transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+                      color: isActive ? '#ffffff' : '#cbd5e1',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isActive) {
+                        e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.5)';
+                        e.currentTarget.style.background = 'rgba(8, 28, 54, 0.92)';
+                        e.currentTarget.style.color = '#ffffff';
+                        e.currentTarget.style.transform = 'translateX(3px)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isActive) {
+                        e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.20)';
+                        e.currentTarget.style.background = 'rgba(6, 20, 38, 0.82)';
+                        e.currentTarget.style.color = '#cbd5e1';
+                        e.currentTarget.style.transform = 'translateX(0)';
+                      }
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '30px',
+                        height: '30px',
+                        borderRadius: '50%',
+                        background: isActive ? 'rgba(0, 242, 254, 0.28)' : 'rgba(255, 255, 255, 0.06)',
+                        border: `1.5px solid ${isActive ? '#00f2fe' : 'rgba(255, 255, 255, 0.16)'}`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                        boxShadow: isActive ? '0 0 12px rgba(0, 242, 254, 0.5)' : 'none',
+                      }}
+                    >
+                      <Icon size={14} color={isActive ? '#ffffff' : '#94a3b8'} />
+                    </div>
+                    <span style={{ fontSize: '12.5px', fontWeight: isActive ? 800 : 600, letterSpacing: '0.02em' }}>
+                      {label}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
-
-            <button
-              type="button"
-              onClick={handleLogout}
-              title="Đăng xuất khỏi Garage 3D"
-              style={{
-                background: 'rgba(239, 68, 68, 0.15)',
-                border: '1px solid rgba(239, 68, 68, 0.35)',
-                borderRadius: '9999px',
-                padding: '7px 14px',
-                color: '#f87171',
-                fontSize: '12px',
-                fontWeight: 600,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                transition: 'all 0.2s',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(239, 68, 68, 0.3)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)';
-              }}
-            >
-              <LogOut size={13} />
-              Đăng xuất
-            </button>
-          </div>
+          )}
 
           {/* Screen-Space Fixed CO_OWNER Part Inspection Panel */}
           {vehicleInspectionMode && <CoOwnerVehiclePartPanel />}
@@ -868,6 +998,80 @@ export const GarageScene: React.FC = () => {
             <ChargingPanel
               vehicle={currentCoOwnerVehicle || vehicles[0]}
               onClose={returnToVehicleOverview}
+            />
+          )}
+
+          {/* Authoritative Redesigned Showroom Zone Info Panel (e.g. Finance) for CO_OWNER */}
+          {isCoOwner && selectedZone && selectedZone !== 'VEHICLE' && !showBackToVehicle && (
+            <PanelErrorBoundary key={`zone-info-${selectedZone}`}>
+              <ZoneInfoPanel onClose={() => clearSelection()} />
+            </PanelErrorBoundary>
+          )}
+
+          {/* Dedicated Unified Screen-Space Co-Ownership Panel for CO_OWNER */}
+          {vehicleCoOwnershipMode && (currentCoOwnerVehicle || vehicles[0]) && (
+            <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0]).id}-co-ownership-detail`}>
+              <CoOwnerOwnershipPanel
+                vehicle={currentCoOwnerVehicle || vehicles[0]}
+                onClose={returnToVehicleOverview}
+              />
+            </PanelErrorBoundary>
+          )}
+
+          {/* Dedicated Screen-Space Fixed CO_OWNER Technical Specs Modal */}
+          {currentCoOwnerVehicle && vehicleFeatureMode === 'CO_OWNER_VEHICLE_INFO' && (
+            <PanelErrorBoundary key={`${currentCoOwnerVehicle.id}-tech-info`}>
+              <div
+                style={{
+                  position: 'fixed',
+                  top: '76px',
+                  right: '24px',
+                  zIndex: 40,
+                  pointerEvents: 'auto',
+                }}
+              >
+                <CoOwnerVehicleInfoPanel
+                  vehicle={currentCoOwnerVehicle}
+                  onClose={returnToVehicleOverview}
+                />
+              </div>
+            </PanelErrorBoundary>
+          )}
+
+          {/* Dedicated Screen-Space Fixed CO_OWNER My Bookings Panel */}
+          {currentCoOwnerVehicle && vehicleFeatureMode === 'CO_OWNER_MY_BOOKINGS' && (
+            <PanelErrorBoundary key={`${currentCoOwnerVehicle.id}-my-bookings`}>
+              <div
+                style={{
+                  position: 'fixed',
+                  top: '76px',
+                  right: '24px',
+                  zIndex: 40,
+                  pointerEvents: 'auto',
+                }}
+              >
+                <MyBookingsPanel
+                  vehicle={currentCoOwnerVehicle}
+                  onClose={returnToVehicleOverview}
+                />
+              </div>
+            </PanelErrorBoundary>
+          )}
+
+          {/* Authoritative Screen-Space CO_OWNER Right Vehicle Information Panel */}
+          {currentCoOwnerVehicle && isVehicleDetailOpen && !showBackToVehicle && (!selectedZone || selectedZone === 'VEHICLE') && (
+            <PanelErrorBoundary key={`${currentCoOwnerVehicle.id}-co-owner-overview`}>
+              <CoOwnerVehiclePanel
+                vehicle={currentCoOwnerVehicle}
+                onClose={() => returnToGarageOverview()}
+              />
+            </PanelErrorBoundary>
+          )}
+
+          {/* Authoritative Screen-Space CO_OWNER Bottom Quick Action Dock */}
+          {currentCoOwnerVehicle && isVehicleDetailOpen && !showBackToVehicle && (!selectedZone || selectedZone === 'VEHICLE') && (
+            <CoOwnerQuickActionDock
+              vehicle={currentCoOwnerVehicle}
             />
           )}
         </>

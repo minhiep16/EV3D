@@ -1143,7 +1143,7 @@ export const StaffMaintenancePanel: React.FC<StaffMaintenancePanelProps> = ({
         right: '20px',
         bottom: '20px',
         width: 'clamp(360px, 30vw, 440px)',
-        zIndex: 20,
+        zIndex: 40,
         background:
           'linear-gradient(180deg, rgba(11, 18, 33, 0.96) 0%, rgba(6, 11, 22, 0.98) 100%)',
         backdropFilter: 'blur(24px)',

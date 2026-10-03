@@ -1,63 +1,78 @@
 import React from 'react';
+import { MeshReflectorMaterial } from '@react-three/drei';
 
 /**
- * GarageFloor - Polished Luxury EV Showroom Floor
- * Modeled after the EVShare 3D Reference Design:
- * - High-gloss, pristine white / light-pearl epoxy floor
- * - Smooth reflections of EV01 and platforms
- * - Clean concentric expansion seams and architectural inlays
+ * GarageFloor - High-Fidelity Polished Luxury EV Showroom Floor
+ * Modeled strictly after the EVShare 3D Reference Design:
+ * - High-gloss, pristine pearl-white polished epoxy showroom finish
+ * - Clear, soft reflections of the circular ceiling light rings, podium, cyan LED halo, and panoramic windows
+ * - Refined circular floor expansion joints centered on the hero turntable
+ * - Smooth, high-performance PBR reflection response
  */
 export const GarageFloor: React.FC = () => {
   return (
     <group position={[0, 0, 0]}>
-      {/* 1. Primary Polished Showroom Floor (High-Gloss Pearl-White Epoxy) */}
-      <mesh
-        rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, -0.01, 0]}
-        receiveShadow
-      >
-        <planeGeometry args={[80, 80]} />
-        <meshStandardMaterial
-          color="#f1f5f9"
-          roughness={0.14}
-          metalness={0.22}
-        />
-      </mesh>
-
-      {/* 2. Central High-End Showroom Polished Inner Area */}
+      {/* 1. Primary High-Gloss Luxury Showroom Epoxy Floor */}
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
         position={[0, -0.005, 0]}
         receiveShadow
       >
-        <planeGeometry args={[36, 28]} />
-        <meshStandardMaterial
+        <planeGeometry args={[120, 120]} />
+        <MeshReflectorMaterial
+          blur={[200, 50]}
+          resolution={1024}
+          mirror={0.74}
+          mixBlur={0.65}
+          mixStrength={3.4}
+          roughness={0.05}
+          depthScale={1.2}
+          minDepthThreshold={0.2}
+          maxDepthThreshold={1.5}
           color="#f8fafc"
-          roughness={0.12}
-          metalness={0.18}
+          metalness={0.10}
         />
       </mesh>
 
-      {/* 3. Subtle Showroom Radial Tile Joint Lines */}
-      {[-8, -4, 0, 4, 8].map((lx, idx) => (
-        <mesh key={`x-${idx}`} position={[lx, 0.001, 0]}>
-          <boxGeometry args={[0.02, 0.002, 28]} />
-          <meshBasicMaterial color="#e2e8f0" transparent opacity={0.6} />
+      {/* 2. Hero Turntable Floor Expansion Rings & Concentric Floor Reflection Accents */}
+      <group position={[0, 0.001, 1.8]}>
+        {/* Inner perimeter reveal joint around podium */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[3.08, 3.10, 96]} />
+          <meshBasicMaterial color="#94a3b8" transparent opacity={0.30} />
         </mesh>
-      ))}
 
-      {[-6, -2, 2, 6].map((lz, idx) => (
-        <mesh key={`z-${idx}`} position={[0, 0.001, lz]}>
-          <boxGeometry args={[36, 0.002, 0.02]} />
-          <meshBasicMaterial color="#e2e8f0" transparent opacity={0.6} />
+        {/* First architectural floor expansion joint */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[3.85, 3.868, 96]} />
+          <meshBasicMaterial color="#cbd5e1" transparent opacity={0.26} />
         </mesh>
-      ))}
 
-      {/* 4. Perimeter Expansion Border Inset */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.002, 0]}>
-        <ringGeometry args={[17.8, 17.9, 96]} />
-        <meshBasicMaterial color="#cbd5e1" transparent opacity={0.4} />
+        {/* Second broad floor expansion ring */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[4.95, 4.968, 96]} />
+          <meshBasicMaterial color="#cbd5e1" transparent opacity={0.20} />
+        </mesh>
+
+        {/* Crisp Cyan Concentric Accent Ring embedded in showroom floor */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[3.48, 3.52, 96]} />
+          <meshBasicMaterial color="#00f2fe" transparent opacity={0.45} />
+        </mesh>
+
+        {/* Soft, diffuse cyan floor bounce spreading gently outward from hero podium LED strip */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[2.95, 4.60, 96]} />
+          <meshBasicMaterial color="#00f2fe" transparent opacity={0.22} />
+        </mesh>
+      </group>
+
+      {/* 3. Perimeter Architecture Guide Ring */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.001, 0]}>
+        <ringGeometry args={[16.5, 16.53, 96]} />
+        <meshBasicMaterial color="#cbd5e1" transparent opacity={0.18} />
       </mesh>
     </group>
   );
 };
+

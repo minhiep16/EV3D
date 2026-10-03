@@ -167,7 +167,7 @@ export const DamageHistoryPanel: React.FC<DamageHistoryPanelProps> = ({
         right: '20px',
         bottom: '20px',
         width: 'clamp(350px, 28vw, 430px)',
-        zIndex: 20,
+        zIndex: 40,
         background: 'linear-gradient(180deg, rgba(11, 18, 33, 0.96) 0%, rgba(6, 11, 22, 0.98) 100%)',
         backdropFilter: 'blur(24px)',
         border: '1px solid rgba(0, 242, 254, 0.22)',

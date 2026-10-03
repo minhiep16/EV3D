@@ -67,3 +67,34 @@ body {
     transform: translateY(1000%);
   }
 }
+
+@keyframes hologramEntrance {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) translateY(28px) scale(0.92);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) translateY(0) scale(1);
+  }
+}
+
+@keyframes panelSlideInRight {
+  0% {
+    opacity: 0;
+    transform: translateY(-50%) translateX(45px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+}
+
+@keyframes fadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}

@@ -129,7 +129,7 @@ export const CoOwnerBookingPanel: React.FC<CoOwnerBookingPanelProps> = ({
         padding: '22px',
         color: '#ffffff',
         fontFamily: 'var(--font-family, sans-serif)',
-        zIndex: 20,
+        zIndex: 40,
         pointerEvents: 'auto',
         overflowY: 'auto',
         display: 'flex',

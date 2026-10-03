@@ -179,6 +179,62 @@ export function resolveVehicleCode(
 }
 
 /**
+ * Authoritative sort comparator for staff operations fleet.
+ * Preserves canonical fleet ordering: EV01 first, EV02 second, then remaining fleet deterministically.
+ */
+export function sortStaffFleetVehicles<T extends { id?: string; code?: string; name?: string; model?: string; model3dUrl?: string; vin?: string }>(vehicles: T[]): T[] {
+  if (!vehicles || vehicles.length === 0) return [];
+  return [...vehicles].sort((a, b) => {
+    const codeA = resolveVehicleCode(a);
+    const codeB = resolveVehicleCode(b);
+    if (codeA === 'EV01' && codeB !== 'EV01') return -1;
+    if (codeA !== 'EV01' && codeB === 'EV01') return 1;
+    if (codeA < codeB) return -1;
+    if (codeA > codeB) return 1;
+    return (a.id || '').localeCompare(b.id || '');
+  });
+}
+
+/**
+ * Checks whether a vehicle matches the currently selected vehicle ID.
+ * Supports primary unique UUID comparison with safe code fallback if selectedId was set to code.
+ */
+export function isMatchingVehicle<T extends { id?: string; code?: string; name?: string; model?: string; model3dUrl?: string; vin?: string }>(
+  vehicle: T | null | undefined,
+  selectedId: string | null | undefined
+): boolean {
+  if (!vehicle || !selectedId) return false;
+  if (vehicle.id === selectedId) return true;
+  const code = resolveVehicleCode(vehicle);
+  return code === selectedId;
+}
+
+/**
+ * Single Source of Truth for resolving the active/focused hero vehicle in Operations mode.
+ * 
+ * Rules:
+ * 1. If selectedVehicleId is provided, matches by unique UUID (v.id === selectedVehicleId)
+ *    or fallback by resolved vehicle code (resolveVehicleCode(v) === selectedVehicleId).
+ * 2. If no selection exists or match is not found, deterministically resolves to the
+ *    primary hero vehicle of the canonical fleet (sorted fleet's first vehicle, EV01).
+ * 3. Never relies on arbitrary backend database array[0] ordering.
+ */
+export function resolveAuthoritativeHeroVehicle<T extends { id?: string; code?: string; name?: string; model?: string; model3dUrl?: string; vin?: string }>(
+  vehicles: T[],
+  selectedVehicleId: string | null | undefined
+): T | null {
+  if (!vehicles || vehicles.length === 0) return null;
+  const canonicalFleet = sortStaffFleetVehicles(vehicles);
+
+  if (selectedVehicleId) {
+    const match = canonicalFleet.find((v) => isMatchingVehicle(v, selectedVehicleId));
+    if (match) return match;
+  }
+
+  return canonicalFleet[0] || null;
+}
+
+/**
  * Resolves the full vehicle configuration for a vehicle code, id, or vehicle response.
  */
 export function getVehicleConfig(

@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { VehicleResponse, VehicleStatus } from '../../types/vehicle';
-import { resolveVehicleCode } from '../three/vehicles/vehicleModelConfig';
+import { resolveVehicleCode, isMatchingVehicle } from '../three/vehicles/vehicleModelConfig';
 import { ChevronLeft, ChevronRight, Battery, BatteryCharging } from 'lucide-react';
 
 interface FleetHeroNavigatorProps {
@@ -37,10 +37,7 @@ export const FleetHeroNavigator: React.FC<FleetHeroNavigatorProps> = ({
 }) => {
   const currentIndex = useMemo(() => {
     if (!selectedVehicle || vehicles.length === 0) return 0;
-    const targetCode = resolveVehicleCode(selectedVehicle);
-    const idx = vehicles.findIndex(
-      (v) => v.id === selectedVehicle.id || resolveVehicleCode(v) === targetCode
-    );
+    const idx = vehicles.findIndex((v) => isMatchingVehicle(v, selectedVehicle.id));
     return idx >= 0 ? idx : 0;
   }, [vehicles, selectedVehicle]);
 

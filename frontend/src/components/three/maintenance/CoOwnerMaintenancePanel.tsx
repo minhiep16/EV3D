@@ -628,7 +628,7 @@ export const CoOwnerMaintenancePanel: React.FC<CoOwnerMaintenancePanelProps> = (
         right: '20px',
         bottom: '20px',
         width: 'clamp(340px, 28vw, 420px)',
-        zIndex: 20,
+        zIndex: 40,
         background:
           'linear-gradient(180deg, rgba(8, 14, 24, 0.96) 0%, rgba(5, 10, 18, 0.98) 100%)',
         backdropFilter: 'blur(24px)',

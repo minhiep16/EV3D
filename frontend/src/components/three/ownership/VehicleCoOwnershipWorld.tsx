@@ -5,12 +5,7 @@ import { VehicleResponse } from '../../../types/vehicle';
 import { CoOwnershipGroupResponse, GroupMemberResponse } from '../../../types/coOwnership';
 import { fetchVehicleCoOwnership } from '../../../services/coOwnershipApi';
 import { useWorldStore } from '../../../store/worldStore';
-import { useAuthStore } from '../../../store/authStore';
-import { OwnerOrb3D } from './OwnerOrb3D';
-import { HolographicOwnerDetailPanel } from './HolographicOwnerDetailPanel';
-import { GroupSummaryPanel3D } from './GroupSummaryPanel3D';
-import { AddMemberModal3D } from './AddMemberModal3D';
-import { SpatialDataLink } from '../SpatialDataLink';
+import { CoOwnerRepresentative3D } from './CoOwnerRepresentative3D';
 import {
   Sparkles,
   AlertTriangle,
@@ -50,10 +45,6 @@ export const VehicleCoOwnershipWorld: React.FC<VehicleCoOwnershipWorldProps> = (
     (state) => state.exitVehicleCoOwnershipMode
   );
   const selectedOwnerId = useWorldStore((state) => state.selectedOwnerId);
-  const clearOwnerSelection = useWorldStore((state) => state.clearOwnerSelection);
-
-  const currentUser = useAuthStore((state) => state.user);
-  const [isAddMemberModalOpen, setIsAddMemberModalOpen] = useState(false);
 
   const {
     data: coOwnership,
@@ -65,21 +56,6 @@ export const VehicleCoOwnershipWorld: React.FC<VehicleCoOwnershipWorldProps> = (
     queryKey: ['coOwnership', vehicle.id],
     queryFn: () => fetchVehicleCoOwnership(vehicle.id),
   });
-
-  const canManage = useMemo(() => {
-    if (!currentUser || !coOwnership) return false;
-    if (currentUser.role !== 'CO_OWNER') return false;
-
-    // Future-proof rule: ONLY the CURRENT ACTIVE GROUP REPRESENTATIVE (Nhóm trưởng) has management authority.
-    // coOwnership.createdBy ("người tạo nhóm") is intentionally NOT permanent authority.
-    // Phase 21 will later handle voting/election to update the REPRESENTATIVE.
-    const currentMembership = coOwnership.members?.find((m) => m.userId === currentUser.id);
-    return (
-      currentMembership !== undefined &&
-      currentMembership.status === 'ACTIVE' &&
-      currentMembership.memberRole === 'REPRESENTATIVE'
-    );
-  }, [currentUser, coOwnership]);
 
   // Filter only ACTIVE members from database
   const activeMembers = useMemo(() => {
@@ -119,12 +95,6 @@ export const VehicleCoOwnershipWorld: React.FC<VehicleCoOwnershipWorldProps> = (
       };
     });
   }, [sortedMembers]);
-
-  // Find currently selected owner node by stable ID
-  const selectedNode = useMemo(() => {
-    if (!selectedOwnerId) return null;
-    return ownerNodes.find((node) => node.id === selectedOwnerId) ?? null;
-  }, [ownerNodes, selectedOwnerId]);
 
   // 1. Loading State in 3D Space
   if (isLoading) {
@@ -282,24 +252,7 @@ export const VehicleCoOwnershipWorld: React.FC<VehicleCoOwnershipWorldProps> = (
 
   return (
     <group>
-      {/* 1. Group Summary Panel Centered Directly Above EV01 (Requirements 1, 2, 3) */}
-      <GroupSummaryPanel3D
-        group={coOwnership}
-        vehicleCode={coOwnership.vehicleCode || vehicle.name || 'EV01'}
-        position={[0.0, 2.70, 0.0]}
-        canManage={canManage}
-        onAddMemberClick={() => setIsAddMemberModalOpen(true)}
-        onClose={() => exitVehicleCoOwnershipMode()}
-      />
-
-      {/* 2. Vertical Spatial Data Link connecting EV01 Roof to Group Panel (Requirement 4) */}
-      <SpatialDataLink
-        start={[0.0, 1.50, 0.0]}
-        end={[0.0, 2.05, 0.0]}
-        color="#a855f7"
-      />
-
-      {/* 3. Vertical Ownership Network Spine linking the members on the Left */}
+      {/* 1. Vertical Ownership Network Spine linking the members on the Left */}
       {ownerNodes.length > 1 && (
         <mesh position={[BASE_X, spineCenterY, BASE_Z]}>
           <cylinderGeometry args={[0.005, 0.005, spineHeight, 12]} />
@@ -307,7 +260,7 @@ export const VehicleCoOwnershipWorld: React.FC<VehicleCoOwnershipWorldProps> = (
         </mesh>
       )}
 
-      {/* 4. Vertical Ownership Member Nodes on the Left Side (Requirements 5, 8, 11) */}
+      {/* 2. Vertical Ownership Member Nodes on the Left Side */}
       {ownerNodes.length === 0 ? (
         <group position={[BASE_X, 1.25, BASE_Z]}>
           <Billboard follow={true}>
@@ -334,57 +287,13 @@ export const VehicleCoOwnershipWorld: React.FC<VehicleCoOwnershipWorldProps> = (
         </group>
       ) : (
         ownerNodes.map((node) => (
-          <OwnerOrb3D
+          <CoOwnerRepresentative3D
             key={node.id}
             member={node.member}
             position={node.position}
             color={node.color}
           />
         ))
-      )}
-
-      {/* 5. Spatial Relationships & Connections (Requirements 6 & 7: ● [EV01] --------> [OWNER DETAIL PANEL]) */}
-      {selectedNode && (
-        <>
-          {/* Link 1: Selected Member Orb on Left -> EV01 Left Anchor */}
-          <SpatialDataLink
-            start={selectedNode.position}
-            end={[-0.85, 0.75, 0.1]}
-            color={selectedNode.color}
-          />
-
-          {/* Link 2: EV01 Right Anchor -> Right Owner Detail Panel */}
-          <SpatialDataLink
-            start={[0.85, 0.75, 0.1]}
-            end={[2.1, 1.25, 0.2]}
-            color={selectedNode.color}
-          />
-
-          {/* 6. Holographic Owner Detail Panel on the Right Side (Requirements 6 & 7) */}
-          <HolographicOwnerDetailPanel
-            key={selectedNode.id}
-            member={selectedNode.member}
-            groupName={coOwnership.name}
-            vehicleCode={coOwnership.vehicleCode || vehicle.name || 'EV01'}
-            vehicleId={vehicle.id}
-            orbPosition={selectedNode.position}
-            panelPosition={[3.3, 1.25, 0.2]}
-            color={selectedNode.color}
-            renderLink={false}
-            canManage={canManage}
-            onClose={() => clearOwnerSelection()}
-          />
-        </>
-      )}
-
-      {/* 7. Holographic Add Member Modal */}
-      {isAddMemberModalOpen && coOwnership && (
-        <AddMemberModal3D
-          groupId={coOwnership.id}
-          vehicleId={vehicle.id}
-          position={[0.0, 1.50, 0.8]}
-          onClose={() => setIsAddMemberModalOpen(false)}
-        />
       )}
     </group>
   );

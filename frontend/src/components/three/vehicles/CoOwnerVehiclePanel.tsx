@@ -1,22 +1,22 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { VehicleResponse } from '../../../types/vehicle';
 import { VehicleHandoverData } from '../../../types/handover';
 import { Booking } from '../../../types/booking';
-import { TripData, TripStartEligibilityData } from '../../../types/trip';
-import { fetchActiveVehicleHandovers } from '../../../services/handoverApi';
-import { fetchVehicleBookings } from '../../../services/bookingApi';
-import { fetchActiveTripForVehicle, fetchTripStartEligibility } from '../../../services/tripApi';
-import {
-  fetchVehicleMaintenance,
-  fetchMaintenanceApproval,
-} from '../../../services/maintenanceApi';
+import { TripData } from '../../../types/trip';
+import { DamageRecordData } from '../../../types/damage';
 import {
   MaintenanceResponse,
   MaintenanceApprovalResponse,
   MAINTENANCE_TYPE_CONFIG,
   MAINTENANCE_PRIORITY_CONFIG,
 } from '../../../types/maintenance';
+import { resolveVehicleCode } from './vehicleModelConfig';
+import { fetchActiveVehicleHandovers } from '../../../services/handoverApi';
+import { fetchVehicleBookings } from '../../../services/bookingApi';
+import { fetchActiveTripForVehicle } from '../../../services/tripApi';
+import { fetchVehicleMaintenance, fetchMaintenanceApproval } from '../../../services/maintenanceApi';
+import { fetchVehicleDamages } from '../../../services/damageApi';
 import { useAuthStore } from '../../../store/authStore';
 import { useWorldStore, VEHICLE_STATUS_LABELS } from '../../../store/worldStore';
 import { useCoOwnerTripPrerequisites } from '../../../hooks/useCoOwnerTripPrerequisites';
@@ -30,14 +30,14 @@ import {
   X,
   Clock,
   Sparkles,
-  Info,
   Play,
   CheckCircle2,
   AlertTriangle,
-  MapPin,
   Compass,
   Wrench,
   BatteryCharging,
+  ShieldCheck,
+  ChevronRight,
 } from 'lucide-react';
 
 function formatDate(isoString?: string): string {
@@ -117,15 +117,14 @@ const PendingApprovalMaintenanceNotice: React.FC<PendingApprovalMaintenanceNotic
   return (
     <div
       style={{
-        background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(180, 83, 9, 0.2) 100%)',
-        border: '1.5px solid rgba(245, 158, 11, 0.65)',
-        boxShadow: '0 0 20px rgba(245, 158, 11, 0.25)',
-        borderRadius: '12px',
+        background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.18) 0%, rgba(180, 83, 9, 0.15) 100%)',
+        border: '1px solid rgba(245, 158, 11, 0.55)',
+        boxShadow: '0 0 16px rgba(245, 158, 11, 0.2)',
+        borderRadius: '14px',
         padding: '12px',
-        marginBottom: '14px',
         display: 'flex',
         flexDirection: 'column',
-        gap: '7px',
+        gap: '6px',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -137,20 +136,19 @@ const PendingApprovalMaintenanceNotice: React.FC<PendingApprovalMaintenanceNotic
               borderRadius: '50%',
               background: '#f59e0b',
               boxShadow: '0 0 10px #f59e0b',
-              animation: 'pulse 1.5s infinite',
             }}
           />
-          <span style={{ fontSize: '11px', fontWeight: 800, color: '#fbbf24', letterSpacing: '0.04em' }}>
-            YÊU CẦU BẢO DƯỠNG ĐANG CHỜ PHÊ DUYỆT
+          <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#fbbf24', letterSpacing: '0.04em' }}>
+            YÊU CẦU BẢO DƯỠNG ĐANG CHỜ DUYỆT
           </span>
         </div>
       </div>
 
-      <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#ffffff' }}>
+      <div style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff' }}>
         {maintenance.title}
       </div>
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', fontSize: '10px' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', fontSize: '9.5px' }}>
         <span
           style={{
             background: typeCfg?.bg || 'rgba(255, 255, 255, 0.1)',
@@ -177,46 +175,32 @@ const PendingApprovalMaintenanceNotice: React.FC<PendingApprovalMaintenanceNotic
       </div>
 
       {maintenance.description && (
-        <div style={{ fontSize: '11px', color: '#cbd5e1', lineHeight: '1.4' }}>
+        <div style={{ fontSize: '10.5px', color: '#cbd5e1', lineHeight: '1.4' }}>
           <span style={{ color: '#94a3b8' }}>Lý do: </span>
           {maintenance.description}
         </div>
       )}
-
-      {maintenance.damageRecords && maintenance.damageRecords.length > 0 && (
-        <div style={{ fontSize: '10.5px', color: '#fbbf24' }}>
-          Hư hỏng liên quan: <strong>{maintenance.damageRecords.length} điểm</strong>
-        </div>
-      )}
-
-      <div style={{ fontSize: '10px', color: '#94a3b8', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-        <div>Người tạo: <strong style={{ color: '#e2e8f0' }}>{maintenance.createdByName || 'STAFF'}</strong></div>
-        <div>Thời gian tạo: <strong style={{ color: '#e2e8f0' }}>{formatDateTime(maintenance.createdAt)}</strong></div>
-        {maintenance.scheduledAt && (
-          <div>Lịch dự kiến: <strong style={{ color: '#38bdf8' }}>{formatDateTime(maintenance.scheduledAt)}</strong></div>
-        )}
-      </div>
 
       {/* Approval progress */}
       <div
         style={{
           background: 'rgba(0, 0, 0, 0.35)',
           borderRadius: '8px',
-          padding: '7px 9px',
+          padding: '6px 8px',
           border: '1px solid rgba(255, 255, 255, 0.08)',
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', marginBottom: '4px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', marginBottom: '4px' }}>
           <span style={{ color: '#fbbf24', fontWeight: 700 }}>
             PHÊ DUYỆT: {approveWeight}%
           </span>
-          <span style={{ color: '#94a3b8', fontSize: '10px' }}>
+          <span style={{ color: '#94a3b8', fontSize: '9.5px' }}>
             cần &gt; {threshold}%
           </span>
         </div>
         <div
           style={{
-            height: '6px',
+            height: '5px',
             background: 'rgba(255, 255, 255, 0.1)',
             borderRadius: '999px',
             overflow: 'hidden',
@@ -242,7 +226,7 @@ const PendingApprovalMaintenanceNotice: React.FC<PendingApprovalMaintenanceNotic
           background: 'linear-gradient(135deg, #d97706 0%, #f59e0b 100%)',
           border: 'none',
           borderRadius: '8px',
-          padding: '8px 12px',
+          padding: '7px 10px',
           color: '#ffffff',
           fontSize: '11px',
           fontWeight: 800,
@@ -251,7 +235,6 @@ const PendingApprovalMaintenanceNotice: React.FC<PendingApprovalMaintenanceNotic
           alignItems: 'center',
           justifyContent: 'center',
           gap: '6px',
-          boxShadow: '0 2px 10px rgba(245, 158, 11, 0.3)',
         }}
       >
         <Wrench size={13} />
@@ -261,7 +244,7 @@ const PendingApprovalMaintenanceNotice: React.FC<PendingApprovalMaintenanceNotic
   );
 };
 
-interface CoOwnerVehiclePanelProps {
+export interface CoOwnerVehiclePanelProps {
   vehicle: VehicleResponse;
   onClose: () => void;
 }
@@ -283,7 +266,7 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
   const enterBatteryXrayMode = useWorldStore((state) => state.enterBatteryXrayMode);
   const enterChargingMode = useWorldStore((state) => state.enterChargingMode);
 
-  // TanStack Query: Fetch active handovers to evaluate eligibility for check-in
+  // TanStack Queries (authoritative server state)
   const { data: activeHandovers = [] } = useQuery<VehicleHandoverData[]>({
     queryKey: ['activeVehicleHandovers', vehicle.id],
     queryFn: () => fetchActiveVehicleHandovers(vehicle.id),
@@ -291,7 +274,6 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
     refetchInterval: 4000,
   });
 
-  // TanStack Query: Fetch vehicle bookings to display "Lịch sắp tới"
   const { data: allBookings = [] } = useQuery<Booking[]>({
     queryKey: ['vehicleBookings', vehicle.id],
     queryFn: () => fetchVehicleBookings(vehicle.id),
@@ -299,7 +281,6 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
     refetchInterval: 8000,
   });
 
-  // TanStack Query: Fetch active trip for vehicle
   const { data: activeTrip } = useQuery<TripData | null>({
     queryKey: ['activeTrip', vehicle.id],
     queryFn: () => fetchActiveTripForVehicle(vehicle.id),
@@ -307,7 +288,6 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
     refetchInterval: 3000,
   });
 
-  // TanStack Query: Fetch vehicle maintenance proposals for approval visibility
   const { data: vehicleMaintenanceList = [] } = useQuery<MaintenanceResponse[]>({
     queryKey: ['vehicleMaintenance', vehicle.id],
     queryFn: () => fetchVehicleMaintenance(vehicle.id),
@@ -315,7 +295,14 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
     refetchInterval: 5000,
   });
 
-  const pendingApprovalMaintenance = React.useMemo(() => {
+  const { data: damages = [] } = useQuery<DamageRecordData[]>({
+    queryKey: ['vehicleDamages', vehicle.id],
+    queryFn: () => (vehicle?.id ? fetchVehicleDamages(vehicle.id) : Promise.resolve([])),
+    enabled: authReady && !!vehicle.id,
+    refetchInterval: 6000,
+  });
+
+  const pendingApprovalMaintenance = useMemo(() => {
     return vehicleMaintenanceList.find((m) => m.status === 'PENDING_APPROVAL') || null;
   }, [vehicleMaintenanceList]);
 
@@ -329,8 +316,8 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
   const isOtherUserActiveTrip = isTripActive && !isMyActiveTrip;
   const isOverdue = isTripActive && isTripOverdue(activeTrip.bookingEndTime);
 
-  // Resolve upcoming booking for this vehicle / user
-  const upcomingBooking = React.useMemo(() => {
+  // Resolve upcoming booking
+  const upcomingBooking = useMemo(() => {
     const list = Array.isArray(allBookings) ? allBookings : [];
     if (list.length === 0) return null;
     const now = new Date();
@@ -340,13 +327,12 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
     if (myBookings.length > 0) {
       return myBookings.find((b) => b.endTime && new Date(b.endTime) >= now) || myBookings[0];
     }
-    // Fallback to active confirmed booking on vehicle
     const active = list.filter((b) => b && b.status === 'CONFIRMED');
     return active.find((b) => b.endTime && new Date(b.endTime) >= now) || active[0] || null;
   }, [allBookings, user?.id]);
 
-  // Check if CO_OWNER has an active handover ready for receipt / check-in (strictly HANDED_OVER status)
-  const isEligibleForCheckIn = React.useMemo(() => {
+  // Handover check-in eligibility
+  const isEligibleForCheckIn = useMemo(() => {
     if (isTripActive || isVehicleInUse) return false;
     const list = Array.isArray(activeHandovers) ? activeHandovers : [];
     if (list.length === 0) return false;
@@ -358,7 +344,7 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
     );
   }, [activeHandovers, user, isTripActive, isVehicleInUse]);
 
-  const isWaitingForStaffHandover = React.useMemo(() => {
+  const isWaitingForStaffHandover = useMemo(() => {
     if (isTripActive || isVehicleInUse) return false;
     const list = Array.isArray(activeHandovers) ? activeHandovers : [];
     if (list.length === 0) return false;
@@ -370,7 +356,6 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
     );
   }, [activeHandovers, user, isTripActive, isVehicleInUse]);
 
-  // Authoritative CO_OWNER Trip Prerequisites derived from booking-specific identity chain
   const {
     candidateBooking,
     completedHandover,
@@ -379,7 +364,7 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
     eligibilityErrorMessage,
   } = useCoOwnerTripPrerequisites(vehicle.id, isTripActive);
 
-  const displayCode = 'EV01';
+  const displayCode = resolveVehicleCode(vehicle) || 'EV01';
   const statusConfig = isTripActive
     ? { label: 'Đang sử dụng', color: '#00f2fe' }
     : VEHICLE_STATUS_LABELS[vehicle.status] || {
@@ -395,144 +380,125 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
       onPointerDown={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
       style={{
-        pointerEvents: 'auto',
-        width: '330px',
-        maxHeight: '86vh',
+        position: 'fixed',
+        top: '76px',
+        right: '24px',
+        width: '380px',
+        maxHeight: 'calc(100vh - 96px)',
         overflowY: 'auto',
-        background: 'rgba(8, 14, 24, 0.95)',
-        backdropFilter: 'blur(20px)',
-        border: '1px solid #10b981',
-        boxShadow: '0 20px 50px rgba(0, 0, 0, 0.85), 0 0 30px rgba(16, 185, 129, 0.22)',
-        borderRadius: '16px',
+        background: 'rgba(7, 20, 38, 0.90)',
+        backdropFilter: 'blur(24px)',
+        WebkitBackdropFilter: 'blur(24px)',
+        border: '1.5px solid rgba(34, 230, 255, 0.35)',
+        boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65), 0 0 25px rgba(34, 230, 255, 0.18)',
+        borderRadius: '24px',
         padding: '20px',
         color: '#ffffff',
-        fontFamily: 'var(--font-family)',
-        position: 'relative',
-        zIndex: 20,
+        fontFamily: 'var(--font-family, sans-serif)',
+        zIndex: 40,
+        pointerEvents: 'auto',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '14px',
       }}
     >
-      {/* Close button */}
+      {/* Close button: Top-Right */}
       <button
         type="button"
         onClick={onClose}
-        title="Đóng thông tin xe"
+        title="Quay lại toàn cảnh garage"
         style={{
           position: 'absolute',
-          top: '14px',
-          right: '14px',
+          top: '16px',
+          right: '16px',
           background: 'rgba(255, 255, 255, 0.08)',
-          border: 'none',
+          border: '1px solid rgba(255, 255, 255, 0.12)',
           borderRadius: '50%',
-          width: '24px',
-          height: '24px',
+          width: '28px',
+          height: '28px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           color: '#94a3b8',
           cursor: 'pointer',
           zIndex: 30,
-          pointerEvents: 'auto',
+          transition: 'all 0.18s ease',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = 'rgba(0, 242, 254, 0.2)';
+          e.currentTarget.style.color = '#00f2fe';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+          e.currentTarget.style.color = '#94a3b8';
         }}
       >
-        <X size={14} />
+        <X size={15} />
       </button>
 
-      {/* Header Badge */}
-      <div
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '6px',
-          fontSize: '10px',
-          fontWeight: 700,
-          color: '#34d399',
-          letterSpacing: '0.08em',
-          textTransform: 'uppercase',
-          marginBottom: '6px',
-        }}
-      >
-        <Car size={13} />
-        Bản Sao Số Xe Điện
-      </div>
-
-      {/* Mode Identity Badge */}
-      <div
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '5px',
-          background: 'rgba(5, 150, 105, 0.2)',
-          border: '1px solid rgba(16, 185, 129, 0.5)',
-          boxShadow: '0 0 12px rgba(16, 185, 129, 0.25)',
-          borderRadius: '6px',
-          padding: '3px 8px',
-          fontSize: '9.5px',
-          fontWeight: 800,
-          letterSpacing: '0.07em',
-          color: '#34d399',
-          textTransform: 'uppercase',
-          marginBottom: '10px',
-          width: 'fit-content',
-        }}
-      >
-        <Sparkles size={11} color="#34d399" />
-        <span>CHẾ ĐỘ ĐỒNG SỞ HỮU</span>
-      </div>
-
-      {/* Vehicle Titles */}
-      <h3
-        style={{
-          fontSize: '20px',
-          fontWeight: 800,
-          letterSpacing: '-0.01em',
-          margin: '0 0 2px 0',
-          color: '#ffffff',
-        }}
-      >
-        {displayCode}
-      </h3>
-
-      <div
-        style={{
-          fontSize: '12px',
-          color: '#34d399',
-          fontWeight: 600,
-          marginBottom: '14px',
-        }}
-      >
-        {vehicle.name || 'EVShare Demo EV'}
-      </div>
-
-      {/* Status & Battery Level Grid */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: '8px',
-          marginBottom: '10px',
-        }}
-      >
-        <div
-          style={{
-            background: 'rgba(255, 255, 255, 0.04)',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
-            borderRadius: '10px',
-            padding: '10px',
-          }}
-        >
-          <div style={{ fontSize: '10px', color: '#94a3b8', marginBottom: '4px' }}>
-            Trạng thái
-          </div>
+      {/* =================================================== */}
+      {/* SECTION 1: THÔNG TIN XE                             */}
+      {/* =================================================== */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* Cyan Badge */}
           <div
             style={{
-              fontSize: '13px',
-              fontWeight: 700,
-              color: statusConfig.color,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '5px',
+              background: 'linear-gradient(135deg, rgba(0, 242, 254, 0.35), rgba(8, 20, 36, 0.95))',
+              border: '1.5px solid #00f2fe',
+              boxShadow: '0 0 12px rgba(0, 242, 254, 0.4)',
+              borderRadius: '8px',
+              padding: '2px 8px',
+              fontSize: '12px',
+              fontWeight: 900,
+              color: '#00f2fe',
+              letterSpacing: '0.04em',
             }}
           >
+            {displayCode}
+          </div>
+
+          <div
+            style={{
+              background: 'rgba(16, 185, 129, 0.15)',
+              border: '1px solid rgba(16, 185, 129, 0.4)',
+              borderRadius: '9999px',
+              padding: '2px 8px',
+              fontSize: '9.5px',
+              fontWeight: 800,
+              color: '#34d399',
+              letterSpacing: '0.05em',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              textTransform: 'uppercase',
+            }}
+          >
+            <Sparkles size={10} color="#34d399" />
+            <span>ĐỒNG SỞ HỮU</span>
+          </div>
+        </div>
+
+        <h3
+          style={{
+            fontSize: '18px',
+            fontWeight: 800,
+            letterSpacing: '-0.01em',
+            margin: '4px 0 0 0',
+            color: '#ffffff',
+          }}
+        >
+          {vehicle.name || 'VinFast VF8 / EVShare Hero'}
+        </h3>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: '#94a3b8' }}>
+          <span style={{ color: '#00f2fe', fontWeight: 700 }}>
+            {vehicle.licensePlate || '51K-888.88'}
+          </span>
+          <span>•</span>
+          <span>{vehicle.brand || 'VinFast'} {vehicle.model || 'VF8'}</span>
+          <span>•</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: statusConfig.color, fontWeight: 700 }}>
             <span
               style={{
                 width: '6px',
@@ -545,53 +511,68 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
             {statusConfig.label}
           </div>
         </div>
-
-        <div
-          style={{
-            background: 'rgba(255, 255, 255, 0.04)',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
-            borderRadius: '10px',
-            padding: '10px',
-          }}
-        >
-          <div style={{ fontSize: '10px', color: '#94a3b8', marginBottom: '4px' }}>
-            Mức pin
-          </div>
-          <div
-            style={{
-              fontSize: '13px',
-              fontWeight: 700,
-              color: '#34d399',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-            }}
-          >
-            <Zap size={14} color="#34d399" />
-            {vehicle.currentBatteryLevel}%
-          </div>
-        </div>
       </div>
 
-      {/* Battery Level Progress Bar */}
-      <div style={{ marginBottom: '12px' }}>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            fontSize: '10px',
-            color: '#94a3b8',
-            marginBottom: '4px',
-          }}
-        >
-          <span>Khả dụng</span>
-          <span style={{ color: '#cbd5e1' }}>Ước tính ~{estimatedRangeKm} km</span>
+      {/* =================================================== */}
+      {/* SECTION 2: PIN & TẦM HOẠT ĐỘNG                     */}
+      {/* =================================================== */}
+      <div
+        style={{
+          background: 'rgba(255, 255, 255, 0.03)',
+          border: '1px solid rgba(0, 242, 254, 0.22)',
+          borderRadius: '16px',
+          padding: '14px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10.5px', fontWeight: 800, color: '#38bdf8', letterSpacing: '0.04em' }}>
+            <Zap size={14} color="#00f2fe" />
+            <span>PIN & TẦM HOẠT ĐỘNG</span>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => enterBatteryXrayMode(vehicle.id)}
+            title="Xem X-Ray Pin 3D"
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#00f2fe',
+              fontSize: '10px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '2px',
+              padding: 0,
+            }}
+          >
+            <span>X-Ray 3D</span>
+            <ChevronRight size={12} />
+          </button>
         </div>
+
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+            <span style={{ fontSize: '26px', fontWeight: 900, color: '#ffffff', letterSpacing: '-0.02em' }}>
+              {vehicle.currentBatteryLevel}%
+            </span>
+            <span style={{ fontSize: '11px', color: '#94a3b8' }}>Dung lượng khả dụng</span>
+          </div>
+          <div style={{ fontSize: '12px', fontWeight: 800, color: '#38bdf8' }}>
+            ~{estimatedRangeKm} km
+          </div>
+        </div>
+
+        {/* Gradient Progress Bar */}
         <div
           style={{
             width: '100%',
             height: '6px',
-            background: 'rgba(255, 255, 255, 0.1)',
+            background: 'rgba(255, 255, 255, 0.08)',
             borderRadius: '9999px',
             overflow: 'hidden',
           }}
@@ -600,58 +581,156 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
             style={{
               width: `${vehicle.currentBatteryLevel}%`,
               height: '100%',
-              background: 'linear-gradient(90deg, #059669, #34d399)',
+              background: 'linear-gradient(90deg, #06b6d4 0%, #00f2fe 100%)',
               borderRadius: '9999px',
-              boxShadow: '0 0 10px rgba(52, 211, 153, 0.8)',
+              boxShadow: '0 0 10px rgba(0, 242, 254, 0.7)',
               transition: 'width 0.4s ease',
             }}
           />
         </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '10px', color: '#94a3b8' }}>
+          <span>Tình trạng pin: <strong style={{ color: '#34d399' }}>Tối ưu</strong></span>
+          <span>Dung lượng: <strong style={{ color: '#f8fafc' }}>{vehicle.batteryCapacity || 87.7} kWh</strong></span>
+        </div>
       </div>
 
-      {/* Lịch gần nhất / Lịch của tôi Card */}
-      <div
-        style={{
-          background: 'rgba(16, 185, 129, 0.08)',
-          border: '1px solid rgba(16, 185, 129, 0.25)',
-          borderRadius: '10px',
-          padding: '10px 12px',
-          marginBottom: '16px',
-        }}
-      >
-        <div
-          style={{
-            fontSize: '10px',
-            color: '#94a3b8',
-            textTransform: 'uppercase',
-            fontWeight: 700,
-            marginBottom: '4px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '5px',
-          }}
-        >
-          <Clock size={11} color="#34d399" />
-          <span>LỊCH GẦN NHẤT / LỊCH CỦA TÔI</span>
+      {/* =================================================== */}
+      {/* SECTION 3: TRẠNG THÁI TỔNG QUAN                     */}
+      {/* =================================================== */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div style={{ fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+          TRẠNG THÁI TỔNG QUAN
         </div>
 
-        {(candidateBooking || upcomingBooking) ? (
-          <div style={{ fontSize: '12px' }}>
-            <div style={{ fontWeight: 700, color: '#ffffff' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+          {/* Card 1: Khả dụng */}
+          <div style={statusCardStyle()}>
+            <span style={statusCardLabelStyle()}>Vận hành</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11.5px', fontWeight: 800, color: statusConfig.color }}>
+              <span
+                style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  background: statusConfig.color,
+                }}
+              />
+              <span>{statusConfig.label}</span>
+            </div>
+          </div>
+
+          {/* Card 2: Bảo dưỡng */}
+          <div style={statusCardStyle()}>
+            <span style={statusCardLabelStyle()}>Bảo dưỡng</span>
+            <span style={{ fontSize: '11.5px', fontWeight: 800, color: pendingApprovalMaintenance ? '#fbbf24' : vehicle.status === 'MAINTENANCE' ? '#f59e0b' : '#34d399' }}>
+              {pendingApprovalMaintenance ? 'Chờ phê duyệt' : vehicle.status === 'MAINTENANCE' ? 'Đang bảo dưỡng' : 'Định kỳ ổn định'}
+            </span>
+          </div>
+
+          {/* Card 3: Hư hỏng */}
+          <div style={statusCardStyle()}>
+            <span style={statusCardLabelStyle()}>Ghi nhận hư hỏng</span>
+            <span style={{ fontSize: '11.5px', fontWeight: 800, color: damages.length > 0 ? '#fbbf24' : '#34d399' }}>
+              {damages.length > 0 ? `${damages.length} điểm ghi nhận` : 'Không có hư hỏng'}
+            </span>
+          </div>
+
+          {/* Card 4: Sạc xe */}
+          <div style={statusCardStyle()}>
+            <span style={statusCardLabelStyle()}>Cổng sạc</span>
+            <span style={{ fontSize: '11.5px', fontWeight: 800, color: vehicle.status === 'CHARGING' ? '#00f2fe' : '#38bdf8' }}>
+              {vehicle.status === 'CHARGING' ? 'Đang sạc' : 'Sẵn sàng kết nối'}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* =================================================== */}
+      {/* SECTION 4: LỊCH GẦN NHẤT                           */}
+      {/* =================================================== */}
+      <div
+        style={{
+          background: 'rgba(255, 255, 255, 0.03)',
+          border: '1px solid rgba(0, 242, 254, 0.22)',
+          borderRadius: '16px',
+          padding: '14px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10.5px', fontWeight: 800, color: '#38bdf8', letterSpacing: '0.04em' }}>
+            <Clock size={13} color="#00f2fe" />
+            <span>LỊCH SỬ DỤNG GẦN NHẤT</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setVehicleFeatureMode('CO_OWNER_MY_BOOKINGS')}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#94a3b8',
+              fontSize: '10px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              padding: 0,
+            }}
+          >
+            Lịch của tôi
+          </button>
+        </div>
+
+        {candidateBooking || upcomingBooking ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <div style={{ fontSize: '13px', fontWeight: 800, color: '#ffffff' }}>
               {formatDate((candidateBooking || upcomingBooking)!.startTime)}
             </div>
-            <div style={{ color: '#34d399', fontWeight: 600, fontSize: '11.5px' }}>
+            <div style={{ fontSize: '11.5px', color: '#00f2fe', fontWeight: 700 }}>
               {formatTimeRange((candidateBooking || upcomingBooking)!.startTime, (candidateBooking || upcomingBooking)!.endTime)}
+            </div>
+            <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '2px' }}>
+              Trạng thái: <strong style={{ color: '#34d399' }}>Đã xác nhận</strong>
             </div>
           </div>
         ) : (
-          <div style={{ fontSize: '11px', color: '#cbd5e1' }}>
-            24/09/2026 • 12:00 - 13:00 (Sẵn sàng đặt)
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <span style={{ fontSize: '11.5px', color: '#94a3b8' }}>
+              Chưa có lịch sử dụng sắp tới.
+            </span>
+            <button
+              type="button"
+              disabled={vehicle.status === 'MAINTENANCE'}
+              onClick={() => {
+                if (vehicle.status !== 'MAINTENANCE') setVehicleFeatureMode('BOOKING');
+              }}
+              style={{
+                background: 'linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '7px 12px',
+                color: '#ffffff',
+                fontSize: '11px',
+                fontWeight: 800,
+                cursor: vehicle.status === 'MAINTENANCE' ? 'not-allowed' : 'pointer',
+                opacity: vehicle.status === 'MAINTENANCE' ? 0.5 : 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+              }}
+            >
+              <Calendar size={13} />
+              <span>ĐẶT LỊCH NGAY</span>
+            </button>
           </div>
         )}
       </div>
 
-      {/* Phase 15 Extension: Pending Maintenance Proposal Notice & Voting Gate */}
+      {/* =================================================== */}
+      {/* SECTION 5: NOTICES (Bảo dưỡng chờ duyệt, Trip, v.v.)*/}
+      {/* =================================================== */}
       {pendingApprovalMaintenance && (
         <PendingApprovalMaintenanceNotice
           maintenance={pendingApprovalMaintenance}
@@ -659,502 +738,221 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
         />
       )}
 
-      {/* Phase 10: Active Trip Restoration Card (Section 18 & 19) */}
-      {/* Phase 11: Active Trip State for My Trip vs Other Co-Owner (Section 5 & 17) */}
+      {/* Active Trip Notice */}
       {isMyActiveTrip && activeTrip && (
         <div
           style={{
-            background: 'rgba(2, 132, 199, 0.18)',
-            border: '1px solid rgba(56, 189, 248, 0.55)',
-            boxShadow: '0 0 16px rgba(56, 189, 248, 0.2)',
-            borderRadius: '12px',
+            background: 'rgba(2, 132, 199, 0.16)',
+            border: '1px solid rgba(56, 189, 248, 0.5)',
+            borderRadius: '14px',
             padding: '12px',
             display: 'flex',
             flexDirection: 'column',
             gap: '6px',
-            marginBottom: '14px',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: '11px', fontWeight: 800, color: '#38bdf8', letterSpacing: '0.04em' }}>
-              CHUYẾN ĐI ĐANG DIỄN RA
-            </span>
-            <span
+            <span style={{ fontSize: '11px', fontWeight: 800, color: '#38bdf8' }}>CHUYẾN ĐI ĐANG DIỄN RA</span>
+            <span style={{ fontSize: '10px', color: '#cbd5e1' }}>{displayCode}</span>
+          </div>
+          <div style={{ fontSize: '10.5px', color: '#94a3b8' }}>
+            Khung giờ: <strong style={{ color: '#00f2fe' }}>{formatTimeRange(activeTrip.bookingStartTime, activeTrip.bookingEndTime)}</strong>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+            <button
+              type="button"
+              onClick={() => enterVehicleTripVisualizationMode()}
               style={{
-                fontSize: '9.5px',
+                flex: 1,
+                background: 'linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '6px',
+                color: '#ffffff',
+                fontSize: '11px',
                 fontWeight: 800,
-                background: 'rgba(56, 189, 248, 0.25)',
-                color: '#38bdf8',
-                padding: '2px 8px',
-                borderRadius: '9999px',
+                cursor: 'pointer',
               }}
             >
-              {displayCode}
-            </span>
-          </div>
-
-          <div style={{ fontSize: '11px', color: '#f1f5f9', marginTop: '2px', display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: '#94a3b8' }}>Bắt đầu:</span>
-            <strong style={{ color: '#ffffff' }}>
-              {new Date(activeTrip.startedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} ({formatDate(activeTrip.startedAt)})
-            </strong>
-          </div>
-
-          <div style={{ fontSize: '11px', color: '#f1f5f9', display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: '#94a3b8' }}>Khung giờ đặt:</span>
-            <span style={{ color: '#38bdf8', fontWeight: 700 }}>
-              {formatTimeRange(activeTrip.bookingStartTime, activeTrip.bookingEndTime)}
-            </span>
-          </div>
-
-          <div style={{ fontSize: '10.5px', color: '#94a3b8', borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: '6px', marginTop: '2px' }}>
-            Mức pin: <strong style={{ color: '#34d399' }}>{activeTrip.startBatteryLevel}%</strong> • Odo: <strong style={{ color: '#f8fafc' }}>{Number(activeTrip.startOdometer).toLocaleString()} km</strong>
-          </div>
-        </div>
-      )}
-
-      {/* Inconsistent State: Vehicle IN_USE but no ACTIVE trip found */}
-      {isInconsistentInUseState && (
-        <div
-          style={{
-            background: 'rgba(239, 68, 68, 0.15)',
-            border: '1px solid rgba(239, 68, 68, 0.5)',
-            boxShadow: '0 0 16px rgba(239, 68, 68, 0.15)',
-            borderRadius: '12px',
-            padding: '12px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '6px',
-            marginBottom: '14px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#f87171' }}>
-            <AlertTriangle size={16} />
-            <span style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.04em' }}>
-              CẢNH BÁO TRẠNG THÁI XE
-            </span>
-          </div>
-          <div style={{ fontSize: '11px', color: '#fca5a5', lineHeight: '1.4' }}>
-            Xe đang được đánh dấu IN_USE nhưng không tìm thấy chuyến đi đang hoạt động.
+              XEM CHUYẾN ĐI
+            </button>
+            <button
+              type="button"
+              onClick={() => enterVehicleTripVisualizationMode()}
+              style={{
+                flex: 1,
+                background: 'linear-gradient(135deg, #e11d48 0%, #ef4444 100%)',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '6px',
+                color: '#ffffff',
+                fontSize: '11px',
+                fontWeight: 800,
+                cursor: 'pointer',
+              }}
+            >
+              KẾT THÚC
+            </button>
           </div>
         </div>
       )}
 
+      {/* Other Co-Owner Active Trip */}
       {isOtherUserActiveTrip && activeTrip && (
         <div
           style={{
-            background: 'rgba(245, 158, 11, 0.14)',
-            border: '1px solid rgba(245, 158, 11, 0.45)',
-            boxShadow: '0 0 16px rgba(245, 158, 11, 0.15)',
-            borderRadius: '12px',
+            background: 'rgba(245, 158, 11, 0.12)',
+            border: '1px solid rgba(245, 158, 11, 0.4)',
+            borderRadius: '14px',
             padding: '12px',
             display: 'flex',
             flexDirection: 'column',
-            gap: '6px',
-            marginBottom: '14px',
+            gap: '4px',
+            fontSize: '11px',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '11px', fontWeight: 800, color: '#fbbf24', letterSpacing: '0.04em' }}>
-                XE ĐANG ĐƯỢC SỬ DỤNG
+            <span style={{ fontWeight: 800, color: '#fbbf24' }}>XE ĐANG ĐƯỢC SỬ DỤNG</span>
+            {isOverdue && (
+              <span style={{ fontSize: '9px', fontWeight: 800, background: 'rgba(239, 68, 68, 0.25)', color: '#f87171', padding: '1px 6px', borderRadius: '4px' }}>
+                QUÁ GIỜ
               </span>
-              {isOverdue && (
-                <span
-                  style={{
-                    fontSize: '9px',
-                    fontWeight: 800,
-                    background: 'rgba(239, 68, 68, 0.25)',
-                    color: '#f87171',
-                    border: '1px solid rgba(239, 68, 68, 0.5)',
-                    padding: '1px 6px',
-                    borderRadius: '4px',
-                  }}
-                >
-                  QUÁ GIỜ
-                </span>
-              )}
-            </div>
-            <span
-              style={{
-                fontSize: '9.5px',
-                fontWeight: 800,
-                background: 'rgba(245, 158, 11, 0.25)',
-                color: '#fbbf24',
-                padding: '2px 8px',
-                borderRadius: '9999px',
-              }}
-            >
-              {displayCode}
-            </span>
+            )}
           </div>
-
-          <div style={{ fontSize: '11px', color: '#f1f5f9', marginTop: '2px', display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: '#94a3b8' }}>Người đang sử dụng:</span>
-            <strong style={{ color: '#ffffff' }}>{activeTrip.userName || 'Thành viên nhóm'}</strong>
-          </div>
-
-          <div style={{ fontSize: '11px', color: '#f1f5f9', display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: '#94a3b8' }}>Bắt đầu:</span>
-            <span style={{ color: '#cbd5e1' }}>
-              {formatDateTime(activeTrip.startedAt)}
-            </span>
-          </div>
-
-          <div style={{ fontSize: '11px', color: '#f1f5f9', display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: '#94a3b8' }}>Khung giờ đặt:</span>
-            <span style={{ color: '#fbbf24', fontWeight: 700 }}>
-              {formatTimeRange(activeTrip.bookingStartTime, activeTrip.bookingEndTime)}
-            </span>
-          </div>
-
-          <div style={{ fontSize: '11px', color: '#f1f5f9', display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: '#94a3b8' }}>Dự kiến khả dụng:</span>
-            <span style={{ color: isOverdue ? '#f87171' : '#34d399', fontWeight: 700 }}>
-              {isOverdue
-                ? 'CHUYẾN ĐI ĐANG QUÁ GIỜ'
-                : activeTrip.bookingEndTime
-                ? formatDateTime(activeTrip.bookingEndTime)
-                : 'Sau khi trả xe'}
-            </span>
-          </div>
-
-          {isOverdue && (
-            <div
-              style={{
-                fontSize: '10.5px',
-                color: '#f87171',
-                background: 'rgba(239, 68, 68, 0.1)',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                borderRadius: '6px',
-                padding: '5px 8px',
-                marginTop: '2px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px',
-                fontWeight: 700,
-              }}
-            >
-              <AlertTriangle size={12} />
-              <span>CHUYẾN ĐI ĐANG QUÁ GIỜ</span>
-            </div>
-          )}
-
-          <div style={{ fontSize: '10.5px', color: '#38bdf8', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <Calendar size={12} color="#38bdf8" />
-            <span>Bạn vẫn có thể đặt lịch tương lai nếu không trùng thời gian.</span>
-          </div>
+          <div style={{ color: '#cbd5e1' }}>Người dùng: <strong style={{ color: '#ffffff' }}>{activeTrip.userName || 'Thành viên nhóm'}</strong></div>
+          <div style={{ color: '#94a3b8' }}>Dự kiến trả: <strong style={{ color: '#38bdf8' }}>{activeTrip.bookingEndTime ? formatDateTime(activeTrip.bookingEndTime) : 'Sau chuyến đi'}</strong></div>
         </div>
       )}
 
-      {/* Phase 10: Trip Start Eligibility Notice (Section 15) */}
-      {!isTripActive && !isVehicleInUse && completedHandover && (
-        <div style={{ marginBottom: '14px' }}>
-          {tripEligibility?.eligible ? (
-            <div
-              style={{
-                background: 'rgba(16, 185, 129, 0.15)',
-                border: '1px solid rgba(16, 185, 129, 0.4)',
-                borderRadius: '12px',
-                padding: '10px 12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                color: '#34d399',
-                fontSize: '11.5px',
-                fontWeight: 700,
-              }}
-            >
-              <CheckCircle2 size={16} />
-              <span>XE SẴN SÀNG SỬ DỤNG</span>
-            </div>
-          ) : tripEligibility ? (
-            <div
-              style={{
-                background: 'rgba(245, 158, 11, 0.15)',
-                border: '1px solid rgba(245, 158, 11, 0.4)',
-                borderRadius: '12px',
-                padding: '10px 12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                color: '#fbbf24',
-                fontSize: '11px',
-                fontWeight: 600,
-              }}
-            >
-              <AlertTriangle size={15} />
-              <span>XE ĐÃ NHẬN — {tripEligibility.message || 'CHƯA ĐẾN THỜI GIAN SỬ DỤNG XE'}</span>
-            </div>
-          ) : isEligibilityError ? (
-            <div
-              style={{
-                background: 'rgba(239, 68, 68, 0.15)',
-                border: '1px solid rgba(239, 68, 68, 0.4)',
-                borderRadius: '12px',
-                padding: '10px 12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                color: '#f87171',
-                fontSize: '11px',
-                fontWeight: 600,
-              }}
-            >
-              <AlertTriangle size={15} />
-              <span>{eligibilityErrorMessage || 'Không thể kiểm tra điều kiện bắt đầu chuyến đi.'}</span>
-            </div>
-          ) : null}
-        </div>
-      )}
-
-      {/* Section 3: Exact Role Actions */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {/* Phase 15: Active Maintenance Notice (Requirement 19) */}
-        {vehicle.status === 'MAINTENANCE' && (
-          <div
-            style={{
-              background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.18) 0%, rgba(217, 119, 6, 0.12) 100%)',
-              border: '1px solid rgba(245, 158, 11, 0.5)',
-              borderRadius: '12px',
-              padding: '10px 12px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              color: '#fbbf24',
-              marginBottom: '4px',
-            }}
-          >
-            <Wrench size={18} color="#f59e0b" style={{ flexShrink: 0 }} />
-            <div>
-              <div style={{ fontSize: '12px', fontWeight: 800, color: '#fbbf24' }}>
-                Xe đang được bảo dưỡng
-              </div>
-              <div style={{ fontSize: '10.5px', color: '#cbd5e1', lineHeight: 1.35 }}>
-                Chức năng đặt lịch sử dụng và bắt đầu chuyến đi tạm thời bị khóa.
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Phase 11 & 12: Primary Trip Actions - XEM CHUYẾN ĐI & KẾT THÚC CHUYẾN ĐI (Current Owner Only) */}
-        {isMyActiveTrip ? (
-          <>
-            <button
-              type="button"
-              onClick={() => enterVehicleTripVisualizationMode()}
-              style={highlightActionButtonStyle('linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)', '#00f2fe')}
-            >
-              <Compass size={15} />
-              <span>XEM CHUYẾN ĐI</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => enterVehicleTripVisualizationMode()}
-              style={highlightActionButtonStyle('linear-gradient(135deg, #e11d48 0%, #ef4444 100%)', '#f43f5e')}
-            >
-              <CheckCircle2 size={15} />
-              <span>KẾT THÚC CHUYẾN ĐI</span>
-            </button>
-          </>
-        ) : !isTripActive && !isVehicleInUse && vehicle.status !== 'MAINTENANCE' && completedHandover && tripEligibility?.eligible ? (
-          <button
-            type="button"
-            onClick={() => setVehicleFeatureMode('TRIP_START')}
-            style={highlightActionButtonStyle('linear-gradient(135deg, #0284c7 0%, #06b6d4 100%)', '#00f2fe')}
-          >
-            <Play size={14} fill="currentColor" />
-            <span>BẮT ĐẦU CHUYẾN ĐI</span>
-          </button>
-        ) : null}
-
+      {/* Ready for Check-in / Receipt */}
+      {isEligibleForCheckIn && (
         <button
           type="button"
-          onClick={() => setVehicleFeatureMode('CO_OWNER_MY_BOOKINGS')}
-          style={actionButtonStyle()}
-        >
-          <Clock size={14} color="#34d399" />
-          <span>LỊCH CỦA TÔI</span>
-        </button>
-
-        <button
-          type="button"
-          disabled={vehicle.status === 'MAINTENANCE'}
-          onClick={() => {
-            if (vehicle.status !== 'MAINTENANCE') setVehicleFeatureMode('BOOKING');
-          }}
+          onClick={() => enterVehicleReceiptReviewMode()}
           style={{
-            ...primaryActionButtonStyle(
-              vehicle.status === 'MAINTENANCE'
-                ? 'linear-gradient(135deg, #475569 0%, #334155 100%)'
-                : 'linear-gradient(135deg, #059669 0%, #10b981 100%)'
-            ),
-            opacity: vehicle.status === 'MAINTENANCE' ? 0.6 : 1,
-            cursor: vehicle.status === 'MAINTENANCE' ? 'not-allowed' : 'pointer',
+            background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+            border: '1px solid #10b981',
+            borderRadius: '10px',
+            padding: '9px 14px',
+            color: '#ffffff',
+            fontSize: '11.5px',
+            fontWeight: 800,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+            boxShadow: '0 0 16px rgba(16, 185, 129, 0.4)',
           }}
-          title={vehicle.status === 'MAINTENANCE' ? 'Xe đang bảo dưỡng kỹ thuật' : undefined}
         >
-          <Calendar size={14} />
-          <span>ĐẶT LỊCH SỬ DỤNG</span>
+          <Key size={14} />
+          <span>NHẬN XE ĐỒNG SỞ HỮU</span>
         </button>
+      )}
 
-        <button
-          type="button"
-          onClick={() => setVehicleFeatureMode('CO_OWNERSHIP')}
-          style={actionButtonStyle()}
+      {/* Waiting for Staff Handover */}
+      {isWaitingForStaffHandover && !isEligibleForCheckIn && (
+        <div
+          style={{
+            padding: '8px 12px',
+            background: 'rgba(56, 189, 248, 0.1)',
+            border: '1px solid rgba(56, 189, 248, 0.3)',
+            borderRadius: '10px',
+            color: '#38bdf8',
+            fontSize: '10.5px',
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+          }}
         >
-          <Users size={14} color="#34d399" />
-          <span>ĐỒNG SỞ HỮU</span>
-        </button>
+          <Clock size={13} />
+          <span>XE ĐÃ SẴN SÀNG — CHỜ NHÂN VIÊN GIAO XE</span>
+        </div>
+      )}
 
-        <button
-          type="button"
-          onClick={() => setVehicleFeatureMode('VEHICLE_EXPLORE')}
-          style={actionButtonStyle()}
-        >
-          <Search size={14} color="#34d399" />
-          <span>KHÁM PHÁ XE</span>
-        </button>
-
-        {/* Phase 14: Dedicated 3D Damage History for Co-Owners */}
-        <button
-          type="button"
-          onClick={() => enterVehicleDamageHistoryMode()}
-          style={actionButtonStyle()}
-        >
-          <AlertTriangle size={14} color="#f59e0b" />
-          <span>HƯ HỎNG ĐÃ GHI NHẬN</span>
-        </button>
-
-        {/* Phase 15: Dedicated Maintenance History for Co-Owners */}
-        <button
-          type="button"
-          onClick={() => enterVehicleMaintenanceMode()}
-          style={actionButtonStyle()}
-        >
-          <Wrench size={14} color="#34d399" />
-          <span>LỊCH SỬ BẢO DƯỠNG</span>
-        </button>
-
-        {/* Phase 16: Dedicated 3D X-Ray Battery Health & High-Voltage System */}
-        <button
-          type="button"
-          onClick={() => enterBatteryXrayMode(vehicle.id)}
-          style={actionButtonStyle()}
-        >
-          <Zap size={14} color="#00f2fe" />
-          <span>X-RAY PIN</span>
-        </button>
-
-        {/* Phase 17: Dedicated 3D Charging Management */}
-        <button
-          type="button"
-          onClick={() => enterChargingMode(vehicle.id)}
-          style={actionButtonStyle()}
-        >
-          <BatteryCharging size={14} color="#00f2fe" />
-          <span>SẠC XE</span>
-        </button>
-
-        {/* Conditional Action: NHẬN XE - strictly enabled only when staff has performed HANDED_OVER */}
-        {isEligibleForCheckIn && (
+      {/* =================================================== */}
+      {/* SECTION 6: CÁC TÍNH NĂNG PHỤ TRỢ (QUICK CHIPS)      */}
+      {/* =================================================== */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div style={{ fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+          TÍNH NĂNG NHANH
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
           <button
             type="button"
-            onClick={() => enterVehicleReceiptReviewMode()}
-            style={highlightActionButtonStyle('linear-gradient(135deg, #059669 0%, #10b981 100%)', '#10b981')}
+            onClick={() => setVehicleFeatureMode('CO_OWNERSHIP')}
+            style={secondaryChipButtonStyle()}
           >
-            <Key size={14} />
-            <span>NHẬN XE</span>
+            <Users size={13} color="#34d399" />
+            <span>Đồng sở hữu</span>
           </button>
-        )}
-
-        {isWaitingForStaffHandover && !isEligibleForCheckIn && (
-          <div
-            style={{
-              width: '100%',
-              padding: '9px 12px',
-              background: 'rgba(56, 189, 248, 0.1)',
-              border: '1px solid rgba(56, 189, 248, 0.3)',
-              borderRadius: '10px',
-              color: '#38bdf8',
-              fontSize: '11px',
-              fontWeight: 700,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-            }}
+          <button
+            type="button"
+            onClick={() => enterChargingMode(vehicle.id)}
+            style={secondaryChipButtonStyle()}
           >
-            <Clock size={13} />
-            <span>XE ĐÃ SẴN SÀNG — CHỜ NHÂN VIÊN GIAO XE</span>
-          </div>
-        )}
+            <BatteryCharging size={13} color="#00f2fe" />
+            <span>Sạc xe</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setVehicleFeatureMode('VEHICLE_EXPLORE')}
+            style={secondaryChipButtonStyle()}
+          >
+            <Search size={13} color="#38bdf8" />
+            <span>Khám phá 3D</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => enterVehicleMaintenanceMode()}
+            style={secondaryChipButtonStyle()}
+          >
+            <Wrench size={13} color="#fbbf24" />
+            <span>Lịch sử bảo dưỡng</span>
+          </button>
+        </div>
       </div>
     </div>
   );
 };
 
-function actionButtonStyle(): React.CSSProperties {
+function statusCardStyle(): React.CSSProperties {
   return {
-    pointerEvents: 'auto',
-    width: '100%',
-    background: 'rgba(255, 255, 255, 0.05)',
-    border: '1px solid rgba(255, 255, 255, 0.12)',
+    background: 'rgba(255, 255, 255, 0.03)',
+    border: '1px solid rgba(255, 255, 255, 0.08)',
+    borderRadius: '12px',
+    padding: '8px 10px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '3px',
+  };
+}
+
+function statusCardLabelStyle(): React.CSSProperties {
+  return {
+    fontSize: '9.5px',
+    color: '#94a3b8',
+    textTransform: 'uppercase',
+    fontWeight: 600,
+    letterSpacing: '0.03em',
+  };
+}
+
+function secondaryChipButtonStyle(): React.CSSProperties {
+  return {
+    background: 'rgba(255, 255, 255, 0.04)',
+    border: '1px solid rgba(255, 255, 255, 0.08)',
     borderRadius: '10px',
-    padding: '9px 14px',
+    padding: '7px 10px',
     color: '#f1f5f9',
-    fontSize: '11.5px',
+    fontSize: '11px',
     fontWeight: 700,
-    letterSpacing: '0.04em',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
-    gap: '8px',
-    transition: 'all 0.15s ease',
-  };
-}
-
-function primaryActionButtonStyle(gradient: string): React.CSSProperties {
-  return {
-    pointerEvents: 'auto',
-    width: '100%',
-    background: gradient,
-    border: 'none',
-    borderRadius: '10px',
-    padding: '10px 14px',
-    color: '#ffffff',
-    fontSize: '12px',
-    fontWeight: 800,
-    letterSpacing: '0.04em',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '8px',
-    boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
-    transition: 'all 0.15s ease',
-  };
-}
-
-function highlightActionButtonStyle(gradient: string, glowColor: string): React.CSSProperties {
-  return {
-    pointerEvents: 'auto',
-    width: '100%',
-    background: gradient,
-    border: `1px solid ${glowColor}`,
-    borderRadius: '10px',
-    padding: '10px 14px',
-    color: '#ffffff',
-    fontSize: '12px',
-    fontWeight: 800,
-    letterSpacing: '0.04em',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '8px',
-    boxShadow: `0 0 16px ${glowColor}`,
-    animation: 'pulse 2s infinite',
+    gap: '6px',
     transition: 'all 0.15s ease',
   };
 }

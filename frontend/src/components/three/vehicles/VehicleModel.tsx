@@ -156,88 +156,89 @@ const VehicleModelMesh: React.FC<VehicleModelMeshProps> = ({
           const mat = originalMat as THREE.MeshStandardMaterial;
 
           if (mat.name === 'Material.003') {
-            // Main exterior car body shell: Electric Metallic Cyan-Blue Paint
-            const bodyMat = mat.clone();
-            bodyMat.color = new THREE.Color('#0284c7'); // Electric automotive blue
-            bodyMat.metalness = 0.72;
-            bodyMat.roughness = 0.22;
-            bodyMat.envMapIntensity = 1.25;
-
-            // Subtle interaction sheen without neon washing
-            if (isSelected) {
-              bodyMat.emissive = new THREE.Color('#00f2fe');
-              bodyMat.emissiveIntensity = 0.06;
-            } else if (isHovered) {
-              bodyMat.emissive = new THREE.Color('#38bdf8');
-              bodyMat.emissiveIntensity = 0.03;
-            } else {
-              bodyMat.emissive = new THREE.Color('#000000');
-              bodyMat.emissiveIntensity = 0;
-            }
+            // Main exterior car body shell: Luxury Automotive Metallic Cyan-Blue Paint
+            // Matching the reference design: vibrant, high-gloss clearcoat with crisp specular highlights and curvature depth
+            const bodyMat = new THREE.MeshPhysicalMaterial({
+              color: new THREE.Color('#0284c7'), // Vibrant EV electric cyan-blue matching reference
+              metalness: 0.12,                   // Controlled metallic sheen
+              roughness: 0.26,                   // Smooth automotive gloss for crisp specular rolloff
+              clearcoat: 0.68,                   // Glossy automotive clearcoat layer
+              clearcoatRoughness: 0.10,          // Mirror-smooth clearcoat spread across curves
+              reflectivity: 0.65,                // Dynamic Fresnel reflectance at glancing angles
+              envMapIntensity: 0.48,             // Luminous IBL reflection from showroom lightformers & windows
+              emissive: new THREE.Color('#000000'),
+              emissiveIntensity: 0,
+            });
             mesh.material = bodyMat;
           } else if (mat.name === 'Material.006') {
-            // Panoramic glass & windows: Reflective dark tinted automotive glass
-            const glassMat = mat.clone();
-            glassMat.color = new THREE.Color('#080d1a');
-            glassMat.metalness = 0.85;
-            glassMat.roughness = 0.04;
+            // Panoramic glass & windows: Deep-tinted luxury automotive glass with crisp clearcoat reflection
+            const glassMat = new THREE.MeshPhysicalMaterial({
+              color: new THREE.Color('#060b14'),
+              metalness: 0.04,
+              roughness: 0.08,
+              clearcoat: 0.92,
+              clearcoatRoughness: 0.05,
+              reflectivity: 0.85,
+              envMapIntensity: 0.50,
+            });
             mesh.material = glassMat;
           } else if (mat.name === 'Material.011') {
-            // Wheel rims: High-grade metallic alloy finish
-            const rimMat = mat.clone();
-            rimMat.color = new THREE.Color('#cbd5e1');
-            rimMat.metalness = 0.88;
-            rimMat.roughness = 0.18;
+            // Wheel rims: Precision diamond-cut satin alloy with crisp metallic specular response
+            const rimMat = new THREE.MeshStandardMaterial({
+              color: new THREE.Color('#cbd5e1'),
+              metalness: 0.85,
+              roughness: 0.22,
+              envMapIntensity: 0.60,
+            });
             mesh.material = rimMat;
           } else if (mat.name === 'MA_tire_003.001') {
             // Tires: Matte dark vulcanized rubber
             const tireMat = mat.clone();
-            tireMat.color = new THREE.Color('#18181b');
-            tireMat.metalness = 0.05;
-            tireMat.roughness = 0.88;
+            tireMat.color = new THREE.Color('#121214');
+            tireMat.metalness = 0.02;
+            tireMat.roughness = 0.94;
             mesh.material = tireMat;
           } else if (mat.name === 'Material.009') {
-            // Headlights: Modern white LED emissive bar
+            // Headlights: Modern crisp white LED projector & lightguide
             const headMat = mat.clone();
-            headMat.color = new THREE.Color('#f8fafc');
+            headMat.color = new THREE.Color('#ffffff');
             headMat.emissive = new THREE.Color('#ffffff');
-            headMat.emissiveIntensity = isSelected ? 2.2 : isHovered ? 1.7 : 1.3;
+            headMat.emissiveIntensity = isSelected ? 2.0 : isHovered ? 1.6 : 1.3;
             mesh.material = headMat;
           } else if (mat.name === 'Material.007') {
-            // Taillights: Red LED dynamic taillight bar
+            // Taillights: Precision red LED dynamic taillight bar
             const tailMat = mat.clone();
             tailMat.color = new THREE.Color('#ef4444');
             tailMat.emissive = new THREE.Color('#ef4444');
-            tailMat.emissiveIntensity = isSelected ? 2.0 : isHovered ? 1.5 : 1.1;
+            tailMat.emissiveIntensity = isSelected ? 1.8 : isHovered ? 1.5 : 1.2;
             mesh.material = tailMat;
           } else if (mat.name === 'PD_VehiclePack_bodycolor') {
             // EV02 Stylized Exterior Body Paint: Vibrant Golden Amber with interaction sheen
             const bodyMat = new THREE.MeshStandardMaterial();
-            bodyMat.color = new THREE.Color(isSelected ? '#f59e0b' : isHovered ? '#fbbf24' : '#f59e0b');
-            bodyMat.metalness = 0.35;
-            bodyMat.roughness = 0.35;
-            if (isSelected) {
-              bodyMat.emissive = new THREE.Color('#f59e0b');
-              bodyMat.emissiveIntensity = 0.25;
-            } else if (isHovered) {
-              bodyMat.emissive = new THREE.Color('#fbbf24');
-              bodyMat.emissiveIntensity = 0.15;
-            } else {
-              bodyMat.emissive = new THREE.Color('#000000');
-              bodyMat.emissiveIntensity = 0;
-            }
+            bodyMat.color = new THREE.Color(isSelected ? '#d97706' : isHovered ? '#f59e0b' : '#d97706');
+            bodyMat.metalness = 0.18;
+            bodyMat.roughness = 0.45;
+            bodyMat.emissive = new THREE.Color('#000000');
+            bodyMat.emissiveIntensity = 0;
             mesh.material = bodyMat;
           } else if (mat.name === 'PD_VehiclePack_MAT') {
             // EV02 Interior, glass, tires & trim: Clean dark slate PBR finish
             const trimMat = new THREE.MeshStandardMaterial();
-            trimMat.color = new THREE.Color('#334155');
-            trimMat.metalness = 0.25;
-            trimMat.roughness = 0.55;
+            trimMat.color = new THREE.Color('#1e293b');
+            trimMat.metalness = 0.15;
+            trimMat.roughness = 0.60;
             trimMat.emissive = new THREE.Color('#000000');
             trimMat.emissiveIntensity = 0;
             mesh.material = trimMat;
           } else {
-            mesh.material = originalMat;
+            // Generic vehicle trims: Clamp environment reflection to prevent blowout on untracked trim meshes
+            if ('envMapIntensity' in (originalMat as any)) {
+              const clone = (originalMat as THREE.Material).clone();
+              (clone as any).envMapIntensity = 0.20;
+              mesh.material = clone;
+            } else {
+              mesh.material = originalMat;
+            }
           }
         }
       }

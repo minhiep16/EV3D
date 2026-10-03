@@ -1,7 +1,7 @@
 import React, { Suspense, useMemo, useState } from 'react';
 import { Html } from '@react-three/drei';
 import { VehicleResponse } from '../../types/vehicle';
-import { resolveVehicleCode, getVehicleModelUrl } from '../three/vehicles/vehicleModelConfig';
+import { resolveVehicleCode, getVehicleModelUrl, isMatchingVehicle } from '../three/vehicles/vehicleModelConfig';
 import { VehicleModel } from '../three/vehicles/VehicleModel';
 import { STAFF_GARAGE_LAYOUT } from '../../config/staffGarageLayout';
 
@@ -32,10 +32,7 @@ export const FleetPreviewRow3D: React.FC<FleetPreviewRow3DProps> = ({
   // Find index of currently selected vehicle (or default to 0)
   const selectedIndex = useMemo(() => {
     if (!selectedVehicleId || vehicles.length === 0) return 0;
-    const idx = vehicles.findIndex((v) => {
-      const code = resolveVehicleCode(v);
-      return v.id === selectedVehicleId || code === selectedVehicleId;
-    });
+    const idx = vehicles.findIndex((v) => isMatchingVehicle(v, selectedVehicleId));
     return idx >= 0 ? idx : 0;
   }, [vehicles, selectedVehicleId]);
 
@@ -88,9 +85,7 @@ export const FleetPreviewRow3D: React.FC<FleetPreviewRow3DProps> = ({
       {/* Render each secondary preview vehicle */}
       {previewItems.map(({ vehicle, posX }) => {
         const code = resolveVehicleCode(vehicle);
-        const isSelected =
-          selectedVehicleId === vehicle.id ||
-          selectedVehicleId === code;
+        const isSelected = isMatchingVehicle(vehicle, selectedVehicleId);
 
         const isHovered = hoveredId === (vehicle.id || code);
         const accent = isSelected ? '#00f2fe' : isHovered ? '#38bdf8' : '#64748b';
