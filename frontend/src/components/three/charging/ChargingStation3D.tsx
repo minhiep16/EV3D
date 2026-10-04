@@ -51,11 +51,22 @@ export const ChargingStation3D: React.FC<ChargingStation3DProps> = ({
   const selectedVehiclePartId = useWorldStore((state) => state.selectedVehiclePartId);
   const selectedVehiclePartCode = useWorldStore((state) => state.selectedVehiclePartCode);
   const selectedChargingStationId = useWorldStore((state) => state.selectedChargingStationId);
+  const activeFeature = useWorldStore((state) => state.activeFeature);
 
   const showLabel = useMemo(() => {
-    // For co-owners in overview: suppress redundant floating kiosk labels unless hovered, selected, or actively in charging mode
-    if (!isOperationsRole && !vehicleChargingMode && !isSelected && !isHovered) {
-      return false;
+    // Authoritative garage and vehicle focus state:
+    const isVehicleFocused = Boolean(selectedVehicleId) || Boolean(isVehicleSelected) || selectedZone === 'VEHICLE';
+    const isGarageOverview = activeFeature === 'NONE' && !isVehicleFocused;
+    const isChargingActive = activeFeature === 'CHARGING' || Boolean(vehicleChargingMode);
+
+    // Positive allow-list condition for co-owners: show compact info ONLY in Garage Overview or when Charging is Active
+    if (!isOperationsRole) {
+      if (!isGarageOverview && !isChargingActive) {
+        return false;
+      }
+      if (isGarageOverview && !isSelected && !isHovered) {
+        return false;
+      }
     }
     return shouldShowChargingStationLabel(
       station.id,

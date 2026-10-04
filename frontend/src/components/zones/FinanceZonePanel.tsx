@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Wallet,
@@ -14,8 +14,22 @@ import {
   Receipt,
   Sparkles,
   Wrench,
+  Car,
+  AlertTriangle,
+  ShieldCheck,
+  Plus,
+  PlusCircle,
+  Loader2,
 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { useWorldStore } from '../../store/worldStore';
+import { useAuthStore } from '../../store/authStore';
+import { fetchVehicles } from '../../services/vehicleApi';
+import { fetchVehicleCoOwnership } from '../../services/coOwnershipApi';
+import { useExpenses, useExpenseSummary } from '../../hooks/useExpenses';
+import { ExpenseCategory, EXPENSE_CATEGORY_METADATA } from '../../types/expense';
+import { AddExpenseModal } from './AddExpenseModal';
+import { VehicleResponse } from '../../types/vehicle';
 
 interface FinanceZonePanelProps {
   onClose?: () => void;
@@ -25,17 +39,54 @@ interface FinanceZonePanelProps {
 
 export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
   onClose,
-  monthlyExpense = '3.450.000đ',
+  monthlyExpense: initialMonthlyExpense,
   fundStatus = 'Sẵn sàng hoạt động',
 }) => {
+  const user = useAuthStore((state) => state.user);
+  const selectedVehicleId = useWorldStore((state) => state.selectedVehicleId);
   const clearSelection = useWorldStore((state) => state.clearSelection);
   const selectZone = useWorldStore((state) => state.selectZone);
   const setFinanceDetailModalOpen = useWorldStore((state) => state.setFinanceDetailModalOpen);
   const [showLedgerModal, setShowLedgerModal] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
-  const [historyFilter, setHistoryFilter] = useState<'ALL' | 'EXPENSE' | 'INCOME'>('ALL');
+  const [showAddExpenseModal, setShowAddExpenseModal] = useState(false);
+  const [historyCategoryFilter, setHistoryCategoryFilter] = useState<string>('ALL');
 
-  const isFinanceDetailModalOpen = showLedgerModal || showHistoryModal;
+  // Authoritative vehicle resolution for CO_OWNER
+  const { data: vehicles = [] } = useQuery<VehicleResponse[]>({
+    queryKey: ['vehicles', user?.role, user?.id],
+    queryFn: fetchVehicles,
+  });
+
+  const activeVehicle = useMemo(() => {
+    if (selectedVehicleId) {
+      const match = vehicles.find((v) => v.id === selectedVehicleId || v.vin === selectedVehicleId);
+      if (match) return match;
+    }
+    return vehicles[0] || null;
+  }, [vehicles, selectedVehicleId]);
+
+  const activeVehicleId = activeVehicle?.id;
+
+  // Authoritative co-ownership group members for payer selection
+  const { data: coOwnership } = useQuery({
+    queryKey: ['co-ownership', activeVehicleId],
+    queryFn: () => fetchVehicleCoOwnership(activeVehicleId!),
+    enabled: !!activeVehicleId,
+  });
+  const coOwners = coOwnership?.members || [];
+
+  // Authoritative expense summary & history
+  const { data: summary, isLoading: isSummaryLoading } = useExpenseSummary(activeVehicleId);
+  const { data: expenses = [], isLoading: isExpensesLoading } = useExpenses(activeVehicleId);
+
+  const formattedMonthlyExpense = useMemo(() => {
+    if (isSummaryLoading) return 'Đang tải...';
+    if (!summary || summary.totalExpense == null) return initialMonthlyExpense || '0đ';
+    return `${Number(summary.totalExpense).toLocaleString('vi-VN')}đ`;
+  }, [summary, isSummaryLoading, initialMonthlyExpense]);
+
+  const isFinanceDetailModalOpen = showLedgerModal || showHistoryModal || showAddExpenseModal;
 
   // Synchronize modal open state with worldStore so spatial 3D holograms unmount cleanly
   useEffect(() => {
@@ -236,7 +287,7 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                   marginTop: '1px',
                 }}
               >
-                {monthlyExpense}
+                {formattedMonthlyExpense}
               </div>
             </div>
           </div>
@@ -746,7 +797,7 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                         letterSpacing: '0.02em',
                       }}
                     >
-                      Tháng 9 / 2026
+                      {summary?.month ? `Tháng ${summary.month.slice(5)} / ${summary.month.slice(0, 4)}` : 'Tháng hiện tại'}
                     </span>
                     {/* Count Chip */}
                     <span
@@ -760,7 +811,7 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                         borderRadius: '9999px',
                       }}
                     >
-                      4 giao dịch
+                      {expenses.length} khoản chi
                     </span>
                   </div>
                   <p
@@ -772,43 +823,76 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                       lineHeight: 1.3,
                     }}
                   >
-                    Theo dõi các khoản thu / chi trong quỹ đồng sở hữu
+                    Theo dõi các khoản chi phí thực tế phát sinh của xe đồng sở hữu
                   </p>
                 </div>
               </div>
 
-              {/* Close Button in top-right */}
-              <button
-                type="button"
-                onClick={() => setShowHistoryModal(false)}
-                title="Đóng chi tiết lịch sử"
-                style={{
-                  width: '34px',
-                  height: '34px',
-                  borderRadius: '50%',
-                  background: 'rgba(255, 255, 255, 0.08)',
-                  border: '1px solid rgba(255, 255, 255, 0.18)',
-                  color: '#94a3b8',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'all 0.2s ease',
-                  flexShrink: 0,
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.25)';
-                  e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.5)';
-                  e.currentTarget.style.color = '#ff6b6b';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.18)';
-                  e.currentTarget.style.color = '#94a3b8';
-                }}
-              >
-                <X size={16} />
-              </button>
+              {/* Action Buttons: Thêm chi phí & Đóng */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowAddExpenseModal(true)}
+                  style={{
+                    background: 'linear-gradient(135deg, #00f2fe 0%, #00c6ff 100%)',
+                    border: 'none',
+                    borderRadius: '12px',
+                    padding: '7px 14px',
+                    color: '#041628',
+                    fontSize: '12px',
+                    fontWeight: 750,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    cursor: 'pointer',
+                    boxShadow: '0 0 15px rgba(0, 242, 254, 0.35)',
+                    transition: 'all 0.2s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                    e.currentTarget.style.boxShadow = '0 0 20px rgba(0, 242, 254, 0.55)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 0 15px rgba(0, 242, 254, 0.35)';
+                  }}
+                >
+                  <Plus size={15} color="#041628" />
+                  <span>Thêm chi phí</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowHistoryModal(false)}
+                  title="Đóng chi tiết lịch sử"
+                  style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '50%',
+                    background: 'rgba(255, 255, 255, 0.08)',
+                    border: '1px solid rgba(255, 255, 255, 0.18)',
+                    color: '#94a3b8',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.2s ease',
+                    flexShrink: 0,
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(239, 68, 68, 0.25)';
+                    e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.5)';
+                    e.currentTarget.style.color = '#ff6b6b';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.18)';
+                    e.currentTarget.style.color = '#94a3b8';
+                  }}
+                >
+                  <X size={16} />
+                </button>
+              </div>
             </div>
 
             {/* B. Top Summary Strip */}
@@ -836,27 +920,27 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                   Tổng chi
                 </div>
                 <div style={{ fontSize: '14.5px', fontWeight: 800, color: '#fb7185', letterSpacing: '-0.01em' }}>
-                  3.450.000đ
+                  {expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0).toLocaleString('vi-VN')}đ
                 </div>
               </div>
 
-              {/* Tổng thu */}
+              {/* Chi tháng này */}
               <div
                 style={{
                   background: 'rgba(10, 28, 52, 0.55)',
                   borderRadius: '14px',
                   padding: '10px 12px',
-                  border: '1px solid rgba(52, 211, 153, 0.25)',
+                  border: '1px solid rgba(0, 242, 254, 0.25)',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '3px',
                 }}
               >
                 <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Tổng thu
+                  Chi tháng này
                 </div>
-                <div style={{ fontSize: '14.5px', fontWeight: 800, color: '#34d399', letterSpacing: '-0.01em' }}>
-                  +5.000.000đ
+                <div style={{ fontSize: '14.5px', fontWeight: 800, color: '#00f2fe', letterSpacing: '-0.01em' }}>
+                  {formattedMonthlyExpense}
                 </div>
               </div>
 
@@ -873,30 +957,30 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                 }}
               >
                 <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Giao dịch
+                  Khoản chi
                 </div>
                 <div style={{ fontSize: '14.5px', fontWeight: 800, color: '#f8fafc', letterSpacing: '-0.01em' }}>
-                  4
+                  {expenses.length}
                 </div>
               </div>
 
-              {/* Số dư ảnh hưởng */}
+              {/* Phương tiện */}
               <div
                 style={{
                   background: 'rgba(10, 28, 52, 0.55)',
                   borderRadius: '14px',
                   padding: '10px 12px',
-                  border: '1px solid rgba(0, 242, 254, 0.25)',
+                  border: '1px solid rgba(56, 189, 248, 0.25)',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '3px',
                 }}
               >
                 <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Số dư ròng
+                  Phương tiện
                 </div>
-                <div style={{ fontSize: '14.5px', fontWeight: 800, color: '#00f2fe', letterSpacing: '-0.01em' }}>
-                  +1.550.000đ
+                <div style={{ fontSize: '14px', fontWeight: 800, color: '#38bdf8', letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {activeVehicle?.name || 'EV01'}
                 </div>
               </div>
             </div>
@@ -913,26 +997,32 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                 borderRadius: '12px',
                 border: '1px solid rgba(0, 242, 254, 0.12)',
                 width: 'fit-content',
+                flexWrap: 'wrap',
               }}
             >
               {[
                 { id: 'ALL', label: 'Tất cả' },
-                { id: 'EXPENSE', label: 'Chi phí' },
-                { id: 'INCOME', label: 'Nạp quỹ' },
+                { id: 'CHARGING', label: 'Sạc xe' },
+                { id: 'MAINTENANCE', label: 'Bảo dưỡng' },
+                { id: 'CLEANING', label: 'Vệ sinh' },
+                { id: 'PARKING', label: 'Đỗ xe' },
+                { id: 'TOLL', label: 'Cầu đường' },
+                { id: 'INSURANCE', label: 'Bảo hiểm' },
+                { id: 'OTHER', label: 'Khác' },
               ].map((tab) => {
-                const isTabActive = historyFilter === tab.id;
+                const isTabActive = historyCategoryFilter === tab.id;
                 return (
                   <button
                     key={tab.id}
                     type="button"
-                    onClick={() => setHistoryFilter(tab.id as 'ALL' | 'EXPENSE' | 'INCOME')}
+                    onClick={() => setHistoryCategoryFilter(tab.id)}
                     style={{
                       background: isTabActive
                         ? 'linear-gradient(135deg, rgba(0, 242, 254, 0.35) 0%, rgba(6, 26, 52, 0.90) 100%)'
                         : 'transparent',
                       border: isTabActive ? '1.2px solid #00f2fe' : '1px solid transparent',
                       borderRadius: '8px',
-                      padding: '5px 14px',
+                      padding: '5px 12px',
                       fontSize: '11.5px',
                       fontWeight: isTabActive ? 750 : 600,
                       color: isTabActive ? '#ffffff' : '#94a3b8',
@@ -952,112 +1042,92 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
               style={{
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '12px',
+                gap: '10px',
                 maxHeight: '340px',
                 overflowY: 'auto',
                 paddingRight: '6px',
               }}
             >
-              {[
-                {
-                  group: 'HÔM NAY',
-                  items: [
-                    {
-                      id: 'tx-1',
-                      date: 'Hôm nay, 14:30',
-                      title: 'Trạm sạc VinFast Landmark',
-                      amount: '-185.000đ',
-                      by: 'Nguyen Van A',
-                      type: 'EXPENSE',
-                      categoryLabel: 'Sạc điện',
-                      icon: Zap,
-                      iconColor: '#00f2fe',
-                      iconBg: 'rgba(0, 242, 254, 0.14)',
-                      iconBorder: 'rgba(0, 242, 254, 0.35)',
-                      chipBg: 'rgba(0, 242, 254, 0.12)',
-                      chipColor: '#00f2fe',
-                      chipBorder: 'rgba(0, 242, 254, 0.30)',
-                    },
-                  ],
-                },
-                {
-                  group: 'THÁNG 09/2026',
-                  items: [
-                    {
-                      id: 'tx-2',
-                      date: '28/09/2026',
-                      title: 'Rửa xe & vệ sinh nội thất',
-                      amount: '-120.000đ',
-                      by: 'Tran Thi B',
-                      type: 'EXPENSE',
-                      categoryLabel: 'Vệ sinh',
-                      icon: Sparkles,
-                      iconColor: '#c084fc',
-                      iconBg: 'rgba(168, 85, 247, 0.14)',
-                      iconBorder: 'rgba(168, 85, 247, 0.35)',
-                      chipBg: 'rgba(168, 85, 247, 0.12)',
-                      chipColor: '#c084fc',
-                      chipBorder: 'rgba(168, 85, 247, 0.30)',
-                    },
-                    {
-                      id: 'tx-3',
-                      date: '24/09/2026',
-                      title: 'Bảo dưỡng định kỳ cấp 1',
-                      amount: '-1.450.000đ',
-                      by: 'Le Van C',
-                      type: 'EXPENSE',
-                      categoryLabel: 'Bảo dưỡng',
-                      icon: Wrench,
-                      iconColor: '#fb923c',
-                      iconBg: 'rgba(249, 115, 22, 0.14)',
-                      iconBorder: 'rgba(249, 115, 22, 0.35)',
-                      chipBg: 'rgba(249, 115, 22, 0.12)',
-                      chipColor: '#fb923c',
-                      chipBorder: 'rgba(249, 115, 22, 0.30)',
-                    },
-                    {
-                      id: 'tx-4',
-                      date: '18/09/2026',
-                      title: 'Nạp quỹ đồng sở hữu tháng 9',
-                      amount: '+5.000.000đ',
-                      by: 'Cả nhóm',
-                      type: 'INCOME',
-                      categoryLabel: 'Nạp quỹ',
-                      icon: Wallet,
-                      iconColor: '#34d399',
-                      iconBg: 'rgba(16, 185, 129, 0.14)',
-                      iconBorder: 'rgba(16, 185, 129, 0.35)',
-                      chipBg: 'rgba(16, 185, 129, 0.12)',
-                      chipColor: '#34d399',
-                      chipBorder: 'rgba(16, 185, 129, 0.30)',
-                    },
-                  ],
-                },
-              ].map((section, sIdx) => {
-                const visibleItems = section.items.filter((item) => {
-                  if (historyFilter === 'ALL') return true;
-                  return item.type === historyFilter;
-                });
-                if (visibleItems.length === 0) return null;
+              {isExpensesLoading ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '36px', gap: '8px', color: '#94a3b8' }}>
+                  <Loader2 size={20} className="animate-spin" color="#00f2fe" />
+                  <span style={{ fontSize: '13px' }}>Đang tải lịch sử chi phí...</span>
+                </div>
+              ) : expenses.filter((e) => historyCategoryFilter === 'ALL' || e.category === historyCategoryFilter).length === 0 ? (
+                <div
+                  style={{
+                    textAlign: 'center',
+                    padding: '36px 16px',
+                    background: 'rgba(10, 26, 48, 0.40)',
+                    borderRadius: '16px',
+                    border: '1px dashed rgba(0, 242, 254, 0.20)',
+                  }}
+                >
+                  <FileText size={32} color="#64748b" style={{ margin: '0 auto 8px', display: 'block' }} />
+                  <div style={{ fontSize: '14px', fontWeight: 700, color: '#f8fafc' }}>
+                    Chưa có chi phí nào được ghi nhận.
+                  </div>
+                  <p style={{ fontSize: '12px', color: '#94a3b8', margin: '6px 0 16px' }}>
+                    Ghi nhận các khoản chi sạc, bảo dưỡng, vệ sinh hoặc phí đường bộ cho xe.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddExpenseModal(true)}
+                    style={{
+                      background: 'linear-gradient(135deg, #00f2fe 0%, #00c6ff 100%)',
+                      border: 'none',
+                      borderRadius: '12px',
+                      padding: '8px 18px',
+                      color: '#041628',
+                      fontSize: '12.5px',
+                      fontWeight: 750,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 14px rgba(0, 242, 254, 0.35)',
+                    }}
+                  >
+                    <PlusCircle size={15} />
+                    <span>Thêm chi phí đầu tiên</span>
+                  </button>
+                </div>
+              ) : (
+                expenses
+                  .filter((e) => historyCategoryFilter === 'ALL' || e.category === historyCategoryFilter)
+                  .map((exp) => {
+                    const meta = EXPENSE_CATEGORY_METADATA[exp.category] || EXPENSE_CATEGORY_METADATA.OTHER;
+                    let CategoryIcon = FileText;
+                    if (exp.category === 'CHARGING') CategoryIcon = Zap;
+                    else if (exp.category === 'MAINTENANCE') CategoryIcon = Wrench;
+                    else if (exp.category === 'CLEANING') CategoryIcon = Sparkles;
+                    else if (exp.category === 'PARKING') CategoryIcon = Car;
+                    else if (exp.category === 'TOLL') CategoryIcon = Receipt;
+                    else if (exp.category === 'REPAIR') CategoryIcon = AlertTriangle;
+                    else if (exp.category === 'INSURANCE') CategoryIcon = ShieldCheck;
 
-                return (
-                  <div key={sIdx} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div
-                      style={{
-                        fontSize: '10.5px',
-                        fontWeight: 700,
-                        letterSpacing: '0.08em',
-                        color: '#64748b',
-                        textTransform: 'uppercase',
-                        padding: '2px 4px',
-                      }}
-                    >
-                      {section.group}
-                    </div>
+                    // Format date
+                    let dateDisplay = exp.occurredAt;
+                    try {
+                      const d = new Date(exp.occurredAt);
+                      const now = new Date();
+                      const isToday =
+                        d.getDate() === now.getDate() &&
+                        d.getMonth() === now.getMonth() &&
+                        d.getFullYear() === now.getFullYear();
+                      const hours = String(d.getHours()).padStart(2, '0');
+                      const minutes = String(d.getMinutes()).padStart(2, '0');
+                      const day = String(d.getDate()).padStart(2, '0');
+                      const month = String(d.getMonth() + 1).padStart(2, '0');
+                      const year = d.getFullYear();
+                      dateDisplay = isToday ? `Hôm nay, ${hours}:${minutes}` : `${day}/${month}/${year}`;
+                    } catch {
+                      dateDisplay = exp.occurredAt;
+                    }
 
-                    {visibleItems.map((rec) => (
+                    return (
                       <div
-                        key={rec.id}
+                        key={exp.id}
                         style={{
                           background: 'rgba(10, 26, 48, 0.50)',
                           borderRadius: '16px',
@@ -1086,27 +1156,27 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                               width: '38px',
                               height: '38px',
                               borderRadius: '50%',
-                              background: rec.iconBg,
-                              border: `1.2px solid ${rec.iconBorder}`,
+                              background: meta.chipBg,
+                              border: `1.2px solid ${meta.chipBorder}`,
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
                               flexShrink: 0,
-                              boxShadow: `0 0 12px ${rec.iconBorder}`,
+                              boxShadow: `0 0 12px ${meta.chipBorder}`,
                             }}
                           >
-                            <rec.icon size={17} color={rec.iconColor} />
+                            <CategoryIcon size={17} color={meta.accentColor} />
                           </div>
                           <div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                               <span style={{ fontSize: '13.5px', fontWeight: 700, color: '#f8fafc' }}>
-                                {rec.title}
+                                {exp.description}
                               </span>
                               <span
                                 style={{
-                                  background: rec.chipBg,
-                                  border: `1px solid ${rec.chipBorder}`,
-                                  color: rec.chipColor,
+                                  background: meta.chipBg,
+                                  border: `1px solid ${meta.chipBorder}`,
+                                  color: meta.accentColor,
                                   fontSize: '10px',
                                   fontWeight: 700,
                                   padding: '1px 7px',
@@ -1114,11 +1184,11 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                                   letterSpacing: '0.02em',
                                 }}
                               >
-                                {rec.categoryLabel}
+                                {exp.categoryLabel || meta.label}
                               </span>
                             </div>
                             <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '3px', fontWeight: 500 }}>
-                              {rec.date} · {rec.by}
+                              {dateDisplay} · {exp.paidByUserName || 'Thành viên nhóm'}
                             </div>
                           </div>
                         </div>
@@ -1128,21 +1198,20 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                             style={{
                               fontSize: '15px',
                               fontWeight: 800,
-                              color: rec.type === 'INCOME' ? '#34d399' : '#fb7185',
+                              color: '#fb7185',
                               letterSpacing: '-0.01em',
                             }}
                           >
-                            {rec.amount}
+                            -{Number(exp.amount).toLocaleString('vi-VN')}đ
                           </div>
                           <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px', fontWeight: 600 }}>
-                            {rec.type === 'INCOME' ? 'Cộng quỹ' : 'Trừ quỹ'}
+                            Chi phí xe
                           </div>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                );
-              })}
+                    );
+                  })
+              )}
             </div>
 
             {/* E. Footer Action Bar */}
@@ -1219,6 +1288,15 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
           </div>
         </div>
       )}
+
+      {/* Modal: Thêm chi phí mới */}
+      <AddExpenseModal
+        isOpen={showAddExpenseModal}
+        onClose={() => setShowAddExpenseModal(false)}
+        vehicleId={activeVehicleId || ''}
+        currentUser={user}
+        coOwners={coOwners}
+      />
     </>
   );
 };

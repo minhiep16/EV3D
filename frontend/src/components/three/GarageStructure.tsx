@@ -208,8 +208,8 @@ export const GarageStructure: React.FC = () => {
 
             {/* Ultra-Slender Vertical Dark Titanium Mullion (Hairline) */}
             <mesh position={[panel.width / 2, 0, 0.02]} castShadow>
-              <boxGeometry args={[0.024, 9.0, 0.045]} />
-              <meshStandardMaterial color="#475569" roughness={0.30} metalness={0.80} />
+              <boxGeometry args={[0.038, 9.0, 0.05]} />
+              <meshStandardMaterial color="#334155" roughness={0.30} metalness={0.80} />
             </mesh>
 
             {/* Slender Top Transom Header */}
@@ -471,43 +471,7 @@ export const GarageStructure: React.FC = () => {
           ))}
         </group>
 
-        {/* Former Finance Zone Area Neutral Showroom Gallery Bench & Planter */}
-        <group position={[-5.2, 0, 0.5]} rotation={[0, 0.15, 0]}>
-          {/* Minimalist Gallery Bench Base Legs */}
-          <mesh position={[-0.52, 0.11, 0]} castShadow receiveShadow>
-            <boxGeometry args={[0.04, 0.22, 0.44]} />
-            <meshStandardMaterial color="#334155" metalness={0.8} roughness={0.3} />
-          </mesh>
-          <mesh position={[0.52, 0.11, 0]} castShadow receiveShadow>
-            <boxGeometry args={[0.04, 0.22, 0.44]} />
-            <meshStandardMaterial color="#334155" metalness={0.8} roughness={0.3} />
-          </mesh>
-          {/* Bench Satin White Plinth Slab */}
-          <mesh position={[0, 0.24, 0]} castShadow receiveShadow>
-            <boxGeometry args={[1.35, 0.06, 0.50]} />
-            <meshStandardMaterial color="#ffffff" roughness={0.25} metalness={0.08} />
-          </mesh>
-          {/* Tailored Gallery Leather Cushion */}
-          <mesh position={[0, 0.28, 0]} castShadow receiveShadow>
-            <boxGeometry args={[1.28, 0.04, 0.44]} />
-            <meshStandardMaterial color="#1e293b" roughness={0.65} />
-          </mesh>
-          {/* Subtle Adjacent Low White Planter Cube */}
-          <group position={[-0.95, 0, 0]}>
-            <mesh position={[0, 0.18, 0]} castShadow receiveShadow>
-              <boxGeometry args={[0.38, 0.36, 0.38]} />
-              <meshStandardMaterial color="#ffffff" roughness={0.3} metalness={0.05} />
-            </mesh>
-            <mesh position={[0, 0.35, 0]}>
-              <boxGeometry args={[0.34, 0.02, 0.34]} />
-              <meshStandardMaterial color="#0f172a" roughness={0.9} />
-            </mesh>
-            <mesh position={[0, 0.48, 0]} castShadow>
-              <sphereGeometry args={[0.16, 12, 12]} />
-              <meshStandardMaterial color="#15803d" roughness={0.5} />
-            </mesh>
-          </group>
-        </group>
+
       </group>
 
       {/* =========================================================================
@@ -532,7 +496,7 @@ export const GarageStructure: React.FC = () => {
           <meshStandardMaterial
             color="#ffffff"
             emissive="#ffffff"
-            emissiveIntensity={2.2}
+            emissiveIntensity={1.4}
             side={THREE.DoubleSide}
           />
         </mesh>
@@ -552,7 +516,7 @@ export const GarageStructure: React.FC = () => {
           <meshStandardMaterial
             color="#00e5ff"
             emissive="#00e5ff"
-            emissiveIntensity={1.8}
+            emissiveIntensity={1.0}
             side={THREE.DoubleSide}
           />
         </mesh>
@@ -572,7 +536,7 @@ export const GarageStructure: React.FC = () => {
           <meshStandardMaterial
             color="#ffffff"
             emissive="#ffffff"
-            emissiveIntensity={2.0}
+            emissiveIntensity={1.2}
             side={THREE.DoubleSide}
           />
         </mesh>

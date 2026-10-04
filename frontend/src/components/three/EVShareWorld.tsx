@@ -40,7 +40,7 @@ export const EVShareWorld: React.FC = () => {
             alpha: false,
             powerPreference: 'high-performance',
             toneMapping: THREE.ACESFilmicToneMapping,
-            toneMappingExposure: 0.96,
+            toneMappingExposure: 0.86,
           }}
           style={{ width: '100%', height: '100%' }}
           onPointerMissed={handleNeutralSceneClick}
@@ -65,7 +65,6 @@ export const EVShareWorld: React.FC = () => {
             {/* Functional Garage Zones: Rendered ONLY for CO_OWNER dedicated showroom exploration */}
             {!isOperationsRole &&
               accessibleZones
-                .filter((z) => z !== 'FINANCE')
                 .map((zoneId) => (
                   <GarageZoneObject key={zoneId} zone={getZoneConfig(zoneId, user?.role)} />
                 ))}

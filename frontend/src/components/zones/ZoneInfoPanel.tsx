@@ -2,6 +2,7 @@ import React from 'react';
 import { useWorldStore, GarageZone } from '../../store/worldStore';
 import { useAuthStore } from '../../store/authStore';
 import { FinanceZonePanel } from './FinanceZonePanel';
+import { AiZonePanel } from './AiZonePanel';
 
 interface ZoneInfoPanelProps {
   overrideZone?: GarageZone | null;
@@ -26,11 +27,11 @@ export const ZoneInfoPanel: React.FC<ZoneInfoPanelProps> = ({ overrideZone, onCl
 
   switch (activeZone) {
     case 'FINANCE':
-      return <FinanceZonePanel onClose={onClose} />;
-    // Extensible slots for future zones
     case 'AI':
     case 'ANALYTICS':
     case 'CHARGING':
+      // All major CO_OWNER feature panels are standardized as true 3D spatial world-space holograms in ZoneHologramDisplay
+      return null;
     default:
       return null;
   }

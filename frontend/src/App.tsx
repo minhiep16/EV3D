@@ -6,6 +6,7 @@ import { AuthScene } from './scenes/AuthScene';
 import { GarageScene } from './scenes/GarageScene';
 import { StatusScene } from './scenes/StatusScene';
 import { ProtectedRoute } from './routes/ProtectedRoute';
+import { GarageErrorBoundary } from './components/common/GarageErrorBoundary';
 
 export const App: React.FC = () => {
   return (
@@ -21,7 +22,14 @@ export const App: React.FC = () => {
 
         {/* Protected Garage Space (Phase 01 protected route) */}
         <Route element={<ProtectedRoute />}>
-          <Route path="/garage" element={<GarageScene />} />
+          <Route
+            path="/garage"
+            element={
+              <GarageErrorBoundary>
+                <GarageScene />
+              </GarageErrorBoundary>
+            }
+          />
         </Route>
 
         {/* Root Redirect */}

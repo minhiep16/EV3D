@@ -576,13 +576,15 @@ export const CoOwnerMaintenancePanel: React.FC<CoOwnerMaintenancePanelProps> = (
   const returnToGarageOverview = useWorldStore((state) => state.returnToGarageOverview);
 
   // Authoritative TanStack Query: Fetch maintenance records for co-owner's vehicle
+  const vehicleId = vehicle?.id || 'EV01';
   const {
     data: maintenanceList = [],
     isLoading,
     isError,
   } = useQuery<MaintenanceResponse[]>({
-    queryKey: ['vehicleMaintenance', vehicle.id],
-    queryFn: () => fetchVehicleMaintenance(vehicle.id),
+    queryKey: ['vehicleMaintenance', vehicleId],
+    queryFn: () => (vehicle?.id ? fetchVehicleMaintenance(vehicle.id) : Promise.resolve([])),
+    enabled: !!vehicle?.id,
     staleTime: 5000,
   });
 
@@ -689,7 +691,7 @@ export const CoOwnerMaintenancePanel: React.FC<CoOwnerMaintenancePanelProps> = (
               <span>BẢO DƯỠNG & BIỂU QUYẾT</span>
             </div>
             <div style={{ fontSize: '11px', color: '#34d399', fontWeight: 600 }}>
-              {vehicle.plateNumber || vehicle.modelName || 'EV01'} — Thông tin kỹ thuật
+              {vehicle?.plateNumber || vehicle?.modelName || 'EV01'} — Thông tin kỹ thuật
             </div>
           </div>
         </div>

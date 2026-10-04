@@ -13,6 +13,13 @@ export type GarageZone =
   | 'ANALYTICS'
   | 'AI';
 
+export type ActiveGarageFeature =
+  | 'NONE'
+  | 'FINANCE'
+  | 'AI_ASSISTANT'
+  | 'ANALYTICS'
+  | 'CHARGING';
+
 export type WorldMode = 'GARAGE' | 'LOGIN' | 'REGISTER';
 
 export type VehicleFeatureMode =
@@ -161,6 +168,8 @@ export function getZoneCameraPreset(presetKey: PresetKey, role?: string): Camera
 
 interface WorldState {
   selectedZone: GarageZone | null;
+  activeFeature: ActiveGarageFeature;
+  setActiveFeature: (feature: ActiveGarageFeature) => void;
   hoveredZone: GarageZone | null;
   selectedObjectId: string | null;
   hoveredObjectId: string | null;
@@ -223,7 +232,7 @@ interface WorldState {
   setBookingSelectedDate: (date: Date) => void;
   setBookingSlot: (start: number | null, end: number | null) => void;
   clearBookingSelection: () => void;
-  enterVehicleBookingMode: () => void;
+  enterVehicleBookingMode: (vehicleId?: string | null) => void;
   exitVehicleBookingMode: () => void;
 
   // Phase 09: Vehicle Handover & Check-in Mode
@@ -274,7 +283,7 @@ interface WorldState {
   damageHistorySeverityFilter: DamageSeverity | 'ALL';
   damageHistoryStatusFilter: DamageStatus | 'ALL';
   damageHistoryPartFilter: string | 'ALL';
-  enterVehicleDamageHistoryMode: () => void;
+  enterVehicleDamageHistoryMode: (vehicleId?: string | null) => void;
   exitVehicleDamageHistoryMode: () => void;
   setDamageHistorySeverityFilter: (filter: DamageSeverity | 'ALL') => void;
   setDamageHistoryStatusFilter: (filter: DamageStatus | 'ALL') => void;
@@ -285,7 +294,7 @@ interface WorldState {
   selectedMaintenanceId: string | null;
   maintenanceDraftPreselectedDamageId: string | null;
   maintenanceDraftPreselectedPartCode: string | null;
-  enterVehicleMaintenanceMode: (options?: { preselectedDamageId?: string; preselectedPartCode?: string }) => void;
+  enterVehicleMaintenanceMode: (options?: { preselectedDamageId?: string; preselectedPartCode?: string; vehicleId?: string | null }) => void;
   exitVehicleMaintenanceMode: () => void;
   selectMaintenanceRecord: (id: string | null) => void;
 
@@ -317,6 +326,8 @@ interface WorldState {
 
 export const useWorldStore = create<WorldState>((set) => ({
   selectedZone: null,
+  activeFeature: 'NONE',
+  setActiveFeature: (feature) => set({ activeFeature: feature }),
   hoveredZone: null,
   selectedObjectId: null,
   hoveredObjectId: null,
@@ -413,8 +424,20 @@ export const useWorldStore = create<WorldState>((set) => ({
 
       const isVeh = zone === 'VEHICLE';
 
+      const resolvedActiveFeature: ActiveGarageFeature =
+        zone === 'FINANCE'
+          ? 'FINANCE'
+          : zone === 'AI'
+          ? 'AI_ASSISTANT'
+          : zone === 'ANALYTICS'
+          ? 'ANALYTICS'
+          : zone === 'CHARGING'
+          ? 'CHARGING'
+          : 'NONE';
+
       return {
         selectedZone: zone,
+        activeFeature: resolvedActiveFeature,
         selectedObjectId: zone,
         selectedVehicleId: isVeh ? (state.selectedVehicleId || 'EV01') : null,
         isVehicleSelected: isVeh,
@@ -439,6 +462,12 @@ export const useWorldStore = create<WorldState>((set) => ({
         vehicleTripVisualizationMode: false,
         selectedTripRouteNode: null,
         isFinanceDetailModalOpen: false,
+        // Purge cross-zone stale flags so no previous feature information remains
+        selectedChargingStationId: zone === 'CHARGING' ? state.selectedChargingStationId : null,
+        vehicleChargingMode: false,
+        vehicleMaintenanceMode: false,
+        vehicleBatteryXrayMode: false,
+        vehicleDamageHistoryMode: false,
       };
     }),
 
@@ -454,6 +483,7 @@ export const useWorldStore = create<WorldState>((set) => ({
         return {
           selectedVehicleId: null,
           selectedZone: null,
+          activeFeature: 'NONE',
           selectedObjectId: null,
           vehicleFeatureMode: 'NONE',
           vehicleMode: 'NONE',
@@ -488,6 +518,7 @@ export const useWorldStore = create<WorldState>((set) => ({
       return {
         selectedVehicleId: id,
         selectedZone: 'VEHICLE',
+        activeFeature: 'NONE',
         selectedObjectId: id,
         vehicleFeatureMode: targetMode,
         vehicleMode: targetMode,
@@ -536,6 +567,7 @@ export const useWorldStore = create<WorldState>((set) => ({
   clearSelection: () =>
     set({
       selectedZone: null,
+      activeFeature: 'NONE',
       selectedObjectId: null,
       selectedPosition: null,
       selectedVehicleId: null,
@@ -682,6 +714,7 @@ export const useWorldStore = create<WorldState>((set) => ({
       // 3. In normal garage view: deselect active vehicle or zone
       return {
         selectedZone: null,
+        activeFeature: 'NONE',
         selectedObjectId: null,
         selectedPosition: null,
         selectedVehicleId: null,
@@ -737,6 +770,10 @@ export const useWorldStore = create<WorldState>((set) => ({
         isVehicleSelected: true,
         selectedZone: 'VEHICLE',
         selectedVehicleId: targetVehicleId,
+        isVehicleDetailOpen: false,
+        vehicleBatteryXrayMode: false,
+        vehicleChargingMode: false,
+        selectedChargingStationId: null,
         vehicleCoOwnershipMode: false,
         vehicleBookingMode: false,
         vehicleMaintenanceMode: false,
@@ -840,7 +877,7 @@ export const useWorldStore = create<WorldState>((set) => ({
       hoveredOwnerId: null,
     }),
 
-  enterVehicleBookingMode: () =>
+  enterVehicleBookingMode: (vehicleId?: string | null) =>
     set((state) => {
       let role: string | undefined;
       try {
@@ -853,10 +890,15 @@ export const useWorldStore = create<WorldState>((set) => ({
       if (today.getHours() >= 20) {
         today.setDate(today.getDate() + 1);
       }
+      const targetVehicleId = vehicleId || state.selectedVehicleId || 'EV01';
       return {
         vehicleBookingMode: true,
         vehicleFeatureMode: 'BOOKING',
         vehicleMode: 'BOOKING',
+        isVehicleSelected: true,
+        selectedVehicleId: targetVehicleId,
+        selectedZone: 'VEHICLE',
+        isVehicleDetailOpen: false,
         vehicleCoOwnershipMode: false,
         vehicleInspectionMode: false,
         vehicleHandoverMode: false,
@@ -873,9 +915,6 @@ export const useWorldStore = create<WorldState>((set) => ({
         selectedDamageId: null,
         draftDamage: null,
         selectedMaintenanceId: null,
-        isVehicleSelected: true,
-        selectedVehicleId: state.selectedVehicleId || 'EV01',
-        selectedZone: 'VEHICLE',
         selectedVehiclePartId: null,
         selectedVehiclePartCode: null,
         hoveredVehiclePartId: null,
@@ -883,7 +922,7 @@ export const useWorldStore = create<WorldState>((set) => ({
         hoveredOwnerId: null,
         selectedHandoverCheckpoint: null,
         hoveredHandoverCheckpoint: null,
-        bookingSelectedDate: state.bookingSelectedDate || today,
+        bookingSelectedDate: state.bookingSelectedDate instanceof Date ? state.bookingSelectedDate : today,
         bookingStartHour: null,
         bookingEndHour: null,
       };
@@ -1131,7 +1170,7 @@ export const useWorldStore = create<WorldState>((set) => ({
       draftDamage: null,
     }),
 
-  enterVehicleDamageHistoryMode: () =>
+  enterVehicleDamageHistoryMode: (vehicleId?: string | null) =>
     set((state) => {
       let role: string | undefined;
       try {
@@ -1140,6 +1179,7 @@ export const useWorldStore = create<WorldState>((set) => ({
         role = 'CO_OWNER';
       }
       if (!hasCapability(role, 'canViewDamage')) return {};
+      const targetVehicleId = vehicleId || state.selectedVehicleId || 'EV01';
       return {
         vehicleDamageHistoryMode: true,
         vehicleMaintenanceMode: false,
@@ -1155,6 +1195,13 @@ export const useWorldStore = create<WorldState>((set) => ({
         damageHistoryPartFilter: 'ALL',
         vehicleFeatureMode: 'DAMAGE_HISTORY',
         vehicleMode: 'DAMAGE_HISTORY',
+        isVehicleSelected: true,
+        selectedVehicleId: targetVehicleId,
+        selectedZone: 'VEHICLE',
+        isVehicleDetailOpen: false,
+        vehicleBatteryXrayMode: false,
+        vehicleChargingMode: false,
+        selectedChargingStationId: null,
         vehicleBookingMode: false,
         vehicleCoOwnershipMode: false,
         vehicleInspectionMode: false,
@@ -1163,8 +1210,6 @@ export const useWorldStore = create<WorldState>((set) => ({
         vehicleTripStartMode: false,
         vehicleTripVisualizationMode: false,
         selectedTripRouteNode: null,
-        selectedVehicleId: state.selectedVehicleId || 'EV01',
-        selectedZone: 'VEHICLE',
         selectedVehiclePartId: null,
         hoveredVehiclePartId: null,
         selectedOwnerId: null,
@@ -1225,6 +1270,7 @@ export const useWorldStore = create<WorldState>((set) => ({
         role = 'CO_OWNER';
       }
       if (!hasCapability(role, 'canViewMaintenance')) return {};
+      const targetVehicleId = options?.vehicleId || state.selectedVehicleId || 'EV01';
       return {
         vehicleMaintenanceMode: true,
         vehicleDamageHistoryMode: false,
@@ -1237,6 +1283,13 @@ export const useWorldStore = create<WorldState>((set) => ({
         maintenanceDraftPreselectedPartCode: options?.preselectedPartCode || null,
         vehicleFeatureMode: 'VEHICLE_MAINTENANCE',
         vehicleMode: 'VEHICLE_MAINTENANCE',
+        isVehicleSelected: true,
+        selectedVehicleId: targetVehicleId,
+        selectedZone: 'VEHICLE',
+        isVehicleDetailOpen: false,
+        vehicleBatteryXrayMode: false,
+        vehicleChargingMode: false,
+        selectedChargingStationId: null,
         vehicleBookingMode: false,
         vehicleCoOwnershipMode: false,
         vehicleInspectionMode: false,
@@ -1245,8 +1298,6 @@ export const useWorldStore = create<WorldState>((set) => ({
         vehicleTripStartMode: false,
         vehicleTripVisualizationMode: false,
         selectedTripRouteNode: null,
-        selectedVehicleId: state.selectedVehicleId || 'EV01',
-        selectedZone: 'VEHICLE',
         selectedVehiclePartId: (options?.preselectedPartCode as VehiclePartId) || null,
         hoveredVehiclePartId: null,
         selectedOwnerId: null,
@@ -1434,9 +1485,12 @@ export const useWorldStore = create<WorldState>((set) => ({
     }),
 
   setSelectedChargingStation: (stationId) =>
-    set({
+    set((state) => ({
       selectedChargingStationId: stationId,
-    }),
+      selectedZone: stationId ? 'CHARGING' : (state.selectedZone === 'CHARGING' ? null : state.selectedZone),
+      activeFeature: stationId ? 'CHARGING' : (state.activeFeature === 'CHARGING' ? 'NONE' : state.activeFeature),
+      isFinanceDetailModalOpen: false,
+    })),
 
   selectVehiclePartCode: (code) =>
     set({
@@ -1500,6 +1554,7 @@ export const useWorldStore = create<WorldState>((set) => ({
   resetExperienceState: () =>
     set({
       selectedZone: null,
+      activeFeature: 'NONE',
       hoveredZone: null,
       selectedObjectId: null,
       hoveredObjectId: null,
@@ -1579,10 +1634,10 @@ export const useWorldStore = create<WorldState>((set) => ({
         vehicleChargingMode: isCharging,
         selectedChargingStationId: isCharging ? (state.selectedChargingStationId || 'CS01') : null,
         vehicleBookingMode: isBooking,
-        isVehicleSelected: (isBooking || isBatteryXray || isCharging) ? true : state.isVehicleSelected,
-        selectedZone: (isBooking || isBatteryXray || isCharging) ? 'VEHICLE' : state.selectedZone,
-        selectedVehicleId: (isBooking || isBatteryXray || isCharging) ? (state.selectedVehicleId || 'EV01') : state.selectedVehicleId,
-        bookingSelectedDate: isBooking ? (state.bookingSelectedDate || today) : state.bookingSelectedDate,
+        isVehicleSelected: mode !== 'NONE' ? true : state.isVehicleSelected,
+        selectedZone: mode !== 'NONE' ? 'VEHICLE' : state.selectedZone,
+        selectedVehicleId: mode !== 'NONE' ? (state.selectedVehicleId || 'EV01') : state.selectedVehicleId,
+        bookingSelectedDate: isBooking ? (state.bookingSelectedDate instanceof Date ? state.bookingSelectedDate : today) : state.bookingSelectedDate,
         bookingStartHour: isBooking ? null : state.bookingStartHour,
         bookingEndHour: isBooking ? null : state.bookingEndHour,
         vehicleCoOwnershipMode: mode === 'CO_OWNERSHIP',
@@ -1741,6 +1796,7 @@ export const useWorldStore = create<WorldState>((set) => ({
   returnToGarageOverview: () =>
     set({
       selectedZone: null,
+      activeFeature: 'NONE',
       selectedObjectId: null,
       selectedPosition: null,
       selectedVehicleId: null,

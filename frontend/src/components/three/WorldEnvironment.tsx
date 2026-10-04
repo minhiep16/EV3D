@@ -18,15 +18,15 @@ export const WorldEnvironment: React.FC = () => {
       <Environment resolution={512} frames={1}>
         {/* 1. Overhead Ceiling Dual Ring Reflections (Soft, elegant studio ceiling highlights) */}
         <group rotation={[-Math.PI / 2, 0, 0]} position={[0, 7.4, 2.2]}>
-          <Lightformer form="ring" intensity={2.0} color="#ffffff" scale={14.5} target={[0, 0, 0]} />
-          <Lightformer form="ring" intensity={1.5} color="#00e5ff" scale={9.8} target={[0, 0, 0]} />
-          <Lightformer form="circle" intensity={0.7} color="#ffffff" scale={1.8} target={[0, 0, 0]} />
+          <Lightformer form="ring" intensity={1.25} color="#ffffff" scale={14.5} target={[0, 0, 0]} />
+          <Lightformer form="ring" intensity={0.80} color="#00e5ff" scale={9.8} target={[0, 0, 0]} />
+          <Lightformer form="circle" intensity={0.45} color="#ffffff" scale={1.8} target={[0, 0, 0]} />
         </group>
 
         {/* 2. Panoramic Window Exterior Daylight Bank & Sky Reflection */}
         <Lightformer
           form="rect"
-          intensity={3.2}
+          intensity={1.85}
           color="#e0f2fe"
           scale={[55, 22, 1]}
           position={[0, 7, -25]}
@@ -35,7 +35,7 @@ export const WorldEnvironment: React.FC = () => {
         {/* Horizon daylight strip for crisp water/sky specular gradient */}
         <Lightformer
           form="rect"
-          intensity={1.8}
+          intensity={1.10}
           color="#bae6fd"
           scale={[60, 4, 1]}
           position={[0, 1.5, -24]}
@@ -45,7 +45,7 @@ export const WorldEnvironment: React.FC = () => {
         {/* 3. Front Showroom Daylight Softbox for Gentle Bumper & Hood Rolloff */}
         <Lightformer
           form="rect"
-          intensity={1.6}
+          intensity={0.95}
           color="#ffffff"
           scale={[32, 14, 1]}
           position={[0, 5, 17]}
@@ -55,7 +55,7 @@ export const WorldEnvironment: React.FC = () => {
         {/* 4. Left & Right Fill Lightformers for Vehicle Shoulder Lines & Cylindrical Columns */}
         <Lightformer
           form="rect"
-          intensity={1.6}
+          intensity={0.95}
           color="#f8fafc"
           scale={[22, 16, 1]}
           position={[-18, 6, 2]}
@@ -63,7 +63,7 @@ export const WorldEnvironment: React.FC = () => {
         />
         <Lightformer
           form="rect"
-          intensity={1.6}
+          intensity={0.95}
           color="#f0f9ff"
           scale={[22, 16, 1]}
           position={[18, 6, 2]}
@@ -73,7 +73,7 @@ export const WorldEnvironment: React.FC = () => {
         {/* 5. Floor Bounce Lightformer for Soft Underbody Illumination */}
         <Lightformer
           form="rect"
-          intensity={0.9}
+          intensity={0.45}
           color="#f1f5f9"
           scale={[24, 24, 1]}
           position={[0, -2, 2]}

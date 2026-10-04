@@ -28,6 +28,9 @@ import {
   isGarageZoneFocused,
 } from '../../config/garageZoneVisibility';
 import { ZoneConfig } from '../../config/garageZoneConfigs';
+import { AiAssistantInstallation } from './zones/AiAssistantInstallation';
+import { AnalyticsInstallation } from './zones/AnalyticsInstallation';
+import { FinanceFloatingWalletHotspot } from './zones/FinanceFloatingWalletHotspot';
 
 interface GarageZoneObjectProps {
   zone: ZoneConfig;
@@ -41,6 +44,7 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
   const heroHaloRef = useRef<THREE.MeshBasicMaterial>(null);
 
   const selectedZone = useWorldStore((state) => state.selectedZone);
+  const activeFeature = useWorldStore((state) => state.activeFeature);
   const selectedVehicleId = useWorldStore((state) => state.selectedVehicleId);
   const hoveredZone = useWorldStore((state) => state.hoveredZone);
   const selectZone = useWorldStore((state) => state.selectZone);
@@ -94,6 +98,8 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
 
   const isSelected = selectedZone === zone.id;
   const isHovered = hoveredZone === zone.id;
+  const isVehicleFocused =
+    Boolean(selectedVehicleId) || Boolean(isVehicleSelected) || selectedZone === 'VEHICLE';
 
   const isFocusedBusinessMode =
     vehicleDamageMappingMode ||
@@ -191,9 +197,6 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
       }
     }
     if (coreGroupRef.current) {
-      if (zone.id === 'AI') {
-        coreGroupRef.current.position.y = 1.35 + Math.sin(Date.now() * 0.0025) * 0.08;
-      }
       if (zone.id === 'ANALYTICS') {
         coreGroupRef.current.rotation.y += delta * 0.4;
       }
@@ -214,7 +217,11 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
     if (e.delta > INTERACTION_CONFIG.clickDragThresholdPx) return;
     e.stopPropagation();
     if (isFocusedBusinessMode || !isAccessible) return;
-    selectZone(zone.id);
+    if (isSelected && zone.id === 'AI') {
+      clearSelection();
+    } else {
+      selectZone(zone.id);
+    }
   };
 
   const handlePointerOver = (e: ThreeEvent<PointerEvent>) => {
@@ -270,12 +277,12 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
         <group position={[0, 0, 0]}>
           {/* 1. Ground Floor Cyan Ambient Diffusion Pool (Soft neon glow across reflective floor) */}
           <mesh position={[0, 0.002, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-            <ringGeometry args={[2.90, 4.20, 96]} />
+            <ringGeometry args={[2.98, 3.35, 96]} />
             <meshBasicMaterial
               ref={heroHaloRef}
               color="#00f2fe"
               transparent
-              opacity={0.32}
+              opacity={0.08}
             />
           </mesh>
 
@@ -285,7 +292,7 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
             <meshBasicMaterial
               color="#00f2fe"
               transparent
-              opacity={0.85}
+              opacity={0.45}
             />
           </mesh>
 
@@ -295,7 +302,7 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
             <meshBasicMaterial
               color="#00f2fe"
               transparent
-              opacity={0.95}
+              opacity={0.65}
             />
           </mesh>
 
@@ -303,8 +310,8 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
           <mesh position={[0, 0.022, 0]} receiveShadow>
             <cylinderGeometry args={[2.98, 3.02, 0.044, 96]} />
             <meshStandardMaterial
-              color="#f8fafc"
-              roughness={0.18}
+              color="#f1f5f9"
+              roughness={0.22}
               metalness={0.15}
             />
           </mesh>
@@ -321,7 +328,7 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
             <meshStandardMaterial
               color="#00f2fe"
               emissive="#00f2fe"
-              emissiveIntensity={2.5}
+              emissiveIntensity={1.25}
               side={THREE.DoubleSide}
             />
           </mesh>
@@ -330,8 +337,8 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
           <mesh position={[0, 0.075, 0]} receiveShadow>
             <cylinderGeometry args={[2.94, 2.96, 0.038, 96]} />
             <meshStandardMaterial
-              color="#ffffff"
-              roughness={0.14}
+              color="#f8fafc"
+              roughness={0.18}
               metalness={0.10}
             />
           </mesh>
@@ -350,19 +357,19 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
           <mesh position={[0, 0.103, 0]} receiveShadow>
             <cylinderGeometry args={[2.895, 2.895, 0.008, 96]} />
             <meshPhysicalMaterial
-              color="#ffffff"
-              roughness={0.08}
+              color="#f1f5f9"
+              roughness={0.16}
               metalness={0.08}
-              clearcoat={0.85}
-              clearcoatRoughness={0.05}
-              reflectivity={0.85}
+              clearcoat={0.65}
+              clearcoatRoughness={0.08}
+              reflectivity={0.65}
             />
           </mesh>
 
           {/* Vehicle Contact Grounding Shadow Disc on Turntable */}
           <mesh position={[0, 0.108, 0]} rotation={[-Math.PI / 2, 0, 0]}>
             <ringGeometry args={[0, 2.35, 64]} />
-            <meshBasicMaterial color="#0b1120" transparent opacity={0.32} />
+            <meshBasicMaterial color="#0b1120" transparent opacity={0.42} />
           </mesh>
 
           {/* Concentric Expansion Ring Joint on Turntable Disc */}
@@ -384,8 +391,8 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
           ))}
         </group>
       ) : (
-        /* STANDARD CIRCULAR RAISED PLATFORMS FOR AI, ANALYTICS, CHARGING (FINANCE REMOVED FROM SHOWROOM) */
-        (isSelected || isHovered || isOperationsRole) && zone.id !== 'FINANCE' && (
+        /* STANDARD CIRCULAR RAISED PLATFORMS FOR CHARGING (AI, FINANCE & ANALYTICS USE CUSTOM BASES) */
+        (isSelected || isHovered || isOperationsRole) && zone.id !== 'FINANCE' && zone.id !== 'AI' && zone.id !== 'ANALYTICS' && (
           <group position={[0, 0, 0]}>
             {/* Base Station Pad */}
             <mesh position={[0, 0.02, 0]} receiveShadow>
@@ -656,214 +663,41 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
         </group>
       )}
 
-      {/* ANALYTICS ZONE: 3D Bar-Chart Columns + Large Holographic Analytics HUD Panel (only visible when selected or operations) */}
-      {zone.id === 'ANALYTICS' && (isSelected || isOperationsRole) && (
-        <group position={[0, 0.08, 0]}>
-          {/* Circular Stage Collar */}
-          <mesh position={[0, 0.15, 0]} castShadow receiveShadow>
-            <cylinderGeometry args={[1.3, 1.42, 0.28, 32]} />
-            <meshStandardMaterial color="#f8fafc" roughness={0.25} metalness={0.3} />
-          </mesh>
-
-          {/* 3D Bar-Chart Columns on the platform */}
-          <group position={[0, 0.28, 0]}>
-            {[
-              { pos: [-0.48, 0.15], h: 0.55 },
-              { pos: [-0.22, 0.1], h: 0.9 },
-              { pos: [0.05, 0.0], h: 1.35 },
-              { pos: [0.32, -0.08], h: 1.7 },
-              { pos: [0.58, -0.14], h: 1.15 },
-              { pos: [0.18, 0.32], h: 0.75 },
-            ].map((col, idx) => (
-              <group key={idx} position={[col.pos[0], 0, col.pos[1]]}>
-                {/* Column Body */}
-                <mesh position={[0, col.h / 2, 0]} castShadow>
-                  <boxGeometry args={[0.22, col.h, 0.22]} />
-                  <meshStandardMaterial
-                    color="#0284c7"
-                    roughness={0.2}
-                    metalness={0.5}
-                    transparent
-                    opacity={0.88}
-                  />
-                </mesh>
-                {/* Glowing Top Cap */}
-                <mesh position={[0, col.h + 0.01, 0]}>
-                  <boxGeometry args={[0.225, 0.02, 0.225]} />
-                  <meshBasicMaterial color="#00f2fe" />
-                </mesh>
-              </group>
-            ))}
-          </group>
-
-          {/* Large Floating Holographic Analytics HUD Panel (only visible when selected or operations) */}
-          {(isSelected || isOperationsRole) && (
-            <group position={[0, 1.35, -0.45]}>
-              {/* Curved / Angled Glass HUD Screen */}
-              <mesh>
-                <planeGeometry args={[1.85, 0.95]} />
-                <meshStandardMaterial
-                  color="#031526"
-                  roughness={0.1}
-                  metalness={0.85}
-                  transparent
-                  opacity={0.78}
-                  side={THREE.DoubleSide}
-                />
-              </mesh>
-              <mesh position={[0, 0, 0.005]}>
-                <planeGeometry args={[1.87, 0.97]} />
-                <meshBasicMaterial color="#00f2fe" wireframe transparent opacity={0.65} />
-              </mesh>
-              {/* Line graph line */}
-              <mesh position={[-0.35, 0.1, 0.012]} rotation={[0, 0, 0.15]}>
-                <planeGeometry args={[0.9, 0.015]} />
-                <meshBasicMaterial color="#00f2fe" />
-              </mesh>
-              {/* KPI Circular Donut Ring */}
-              <mesh position={[0.55, 0.1, 0.01]}>
-                <ringGeometry args={[0.18, 0.24, 32]} />
-                <meshBasicMaterial color="#38bdf8" />
-              </mesh>
-              {/* Mini metrics horizontal bars */}
-              {[-0.2, -0.28].map((my, mi) => (
-                <mesh key={mi} position={[-0.35, my, 0.01]}>
-                  <planeGeometry args={[0.85, 0.04]} />
-                  <meshBasicMaterial color={mi === 0 ? '#00f2fe' : '#0284c7'} />
-                </mesh>
-              ))}
-            </group>
-          )}
-        </group>
+      {/* FINANCE ZONE: Option 2 Floating Wallet Hologram Hotspot (always mounted for CO_OWNER, active vs ambient states) */}
+      {zone.id === 'FINANCE' && !isOperationsRole && (
+        <FinanceFloatingWalletHotspot
+          zone={zone}
+          isActive={activeFeature === 'FINANCE'}
+          isHovered={isHovered}
+          isOtherZoneActive={(activeFeature !== 'NONE' && activeFeature !== 'FINANCE') || isVehicleFocused}
+          onSelect={() => selectZone('FINANCE')}
+        />
       )}
 
-      {/* AI ZONE: Floating Spherical AI Bot Assistant (only visible when selected or operations) */}
-      {zone.id === 'AI' && (isSelected || isOperationsRole) && (
-        <group position={[0, 0.08, 0]}>
-          {/* Circular Ground Stage Collar */}
-          <mesh position={[0, 0.16, 0]} castShadow receiveShadow>
-            <cylinderGeometry args={[0.85, 1.05, 0.32, 24]} />
-            <meshStandardMaterial color="#f8fafc" roughness={0.25} metalness={0.3} />
-          </mesh>
+      {/* ANALYTICS ZONE: Persistent 3D World Installation (always mounted, active vs ambient states) */}
+      {zone.id === 'ANALYTICS' && (
+        <AnalyticsInstallation
+          zone={zone}
+          isActive={activeFeature === 'ANALYTICS'}
+          isHovered={isHovered}
+          isOtherZoneActive={(activeFeature !== 'NONE' && activeFeature !== 'ANALYTICS') || isVehicleFocused}
+          onSelect={() => selectZone('ANALYTICS')}
+        />
+      )}
 
-          {/* Floating Cyan Magnetic Levitation Ring */}
-          <mesh position={[0, 0.72, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-            <torusGeometry args={[0.62, 0.035, 16, 32]} />
-            <meshBasicMaterial color="#00f2fe" />
-          </mesh>
-
-          {/* Cute Floating Spherical AI Assistant Bot (Animated smoothly via coreGroupRef) */}
-          <group ref={coreGroupRef} position={[0, 1.35, 0]}>
-            {/* Glossy Pearl-White Spherical Head / Body */}
-            <mesh castShadow>
-              <sphereGeometry args={[0.52, 32, 32]} />
-              <meshStandardMaterial
-                color="#ffffff"
-                roughness={0.15}
-                metalness={0.25}
-              />
-            </mesh>
-
-            {/* Inset Curved Dark Glass Face Visor */}
-            <mesh position={[0, 0.04, 0.33]}>
-              <boxGeometry args={[0.52, 0.28, 0.16]} />
-              <meshStandardMaterial
-                color="#070c18"
-                roughness={0.1}
-                metalness={0.9}
-              />
-            </mesh>
-
-            {/* Glowing Cyan Visor Display (Curved Eyes / Smiling Waveform) */}
-            <mesh position={[0, 0.04, 0.42]}>
-              <planeGeometry args={[0.34, 0.12]} />
-              <meshBasicMaterial color="#00f2fe" transparent opacity={0.95} />
-            </mesh>
-
-            {/* Left Sleek Audio Ear Pod */}
-            <group position={[-0.53, 0.04, 0]}>
-              <mesh rotation={[0, 0, Math.PI / 2]}>
-                <cylinderGeometry args={[0.18, 0.18, 0.08, 24]} />
-                <meshStandardMaterial color="#ffffff" roughness={0.2} metalness={0.3} />
-              </mesh>
-              <mesh rotation={[0, 0, Math.PI / 2]}>
-                <torusGeometry args={[0.16, 0.02, 16, 24]} />
-                <meshBasicMaterial color="#00f2fe" />
-              </mesh>
-            </group>
-
-            {/* Right Sleek Audio Ear Pod */}
-            <group position={[0.53, 0.04, 0]}>
-              <mesh rotation={[0, 0, Math.PI / 2]}>
-                <cylinderGeometry args={[0.18, 0.18, 0.08, 24]} />
-                <meshStandardMaterial color="#ffffff" roughness={0.2} metalness={0.3} />
-              </mesh>
-              <mesh rotation={[0, 0, Math.PI / 2]}>
-                <torusGeometry args={[0.16, 0.02, 16, 24]} />
-                <meshBasicMaterial color="#00f2fe" />
-              </mesh>
-            </group>
-          </group>
-
-          {/* Left Floating Holographic Speech Bubble HUD (only visible when selected or operations) */}
-          {(isSelected || isOperationsRole) && (
-            <group position={[-0.92, 1.45, 0.2]} rotation={[0, 0.35, 0]}>
-              <mesh>
-                <planeGeometry args={[0.55, 0.42]} />
-                <meshStandardMaterial
-                  color="#06192c"
-                  roughness={0.1}
-                  metalness={0.8}
-                  transparent
-                  opacity={0.8}
-                  side={THREE.DoubleSide}
-                />
-              </mesh>
-              <mesh position={[0, 0, 0.005]}>
-                <planeGeometry args={[0.57, 0.44]} />
-                <meshBasicMaterial color="#00f2fe" wireframe transparent opacity={0.65} />
-              </mesh>
-              {/* Chat Dots */}
-              {[-0.12, 0.0, 0.12].map((cx, ci) => (
-                <mesh key={ci} position={[cx, 0.02, 0.01]}>
-                  <circleGeometry args={[0.035, 16]} />
-                  <meshBasicMaterial color="#00f2fe" />
-                </mesh>
-              ))}
-            </group>
-          )}
-
-          {/* Right Floating Holographic Soundwave Telemetry HUD (only visible when selected or operations) */}
-          {(isSelected || isOperationsRole) && (
-            <group position={[0.92, 1.45, 0.2]} rotation={[0, -0.35, 0]}>
-              <mesh>
-                <planeGeometry args={[0.55, 0.42]} />
-                <meshStandardMaterial
-                  color="#06192c"
-                  roughness={0.1}
-                  metalness={0.8}
-                  transparent
-                  opacity={0.8}
-                  side={THREE.DoubleSide}
-                />
-              </mesh>
-              <mesh position={[0, 0, 0.005]}>
-                <planeGeometry args={[0.57, 0.44]} />
-                <meshBasicMaterial color="#00f2fe" wireframe transparent opacity={0.65} />
-              </mesh>
-              {/* Soundwave bars */}
-              {[-0.18, -0.09, 0.0, 0.09, 0.18].map((sx, si) => {
-                const swH = [0.08, 0.18, 0.25, 0.15, 0.09][si];
-                return (
-                  <mesh key={si} position={[sx, 0, 0.01]}>
-                    <planeGeometry args={[0.03, swH]} />
-                    <meshBasicMaterial color="#00f2fe" />
-                  </mesh>
-                );
-              })}
-            </group>
-          )}
-        </group>
+      {/* AI ZONE: Authoritative Ambient & Active 3D Holographic AI Assistant Installation */}
+      {zone.id === 'AI' && (
+        <AiAssistantInstallation
+          zone={zone}
+          isSelected={activeFeature === 'AI_ASSISTANT'}
+          isHovered={isHovered}
+          isFinanceActive={activeFeature === 'FINANCE'}
+          isOtherZoneActive={(activeFeature !== 'NONE' && activeFeature !== 'AI_ASSISTANT') || isVehicleFocused}
+          isVehicleFocused={isVehicleFocused}
+          isFocusedBusinessMode={isFocusedBusinessMode}
+          onSelect={() => selectZone('AI')}
+          onClear={() => clearSelection()}
+        />
       )}
 
       {/* MAINTENANCE ZONE: Service Lift Platform & Diagnostic Console */}

@@ -152,7 +152,7 @@ export function resolveVehicleSlot(
   }
 
   if (!vehicle) {
-    if (process.env.NODE_ENV !== 'production') {
+    if (import.meta.env.DEV) {
       console.warn('[garageSlotConfig] Undefined vehicle passed to resolveVehicleSlot, falling back to DEFAULT_GARAGE_SLOT');
     }
     return {
@@ -192,7 +192,7 @@ export function resolveVehicleSlot(
         targetSlotId = 'BAY_READY_02';
       }
 
-      if (process.env.NODE_ENV !== 'production') {
+      if (import.meta.env.DEV) {
         console.info(`[garageSlotConfig] Vehicle ${resolveVehicleCode(vehicle) || vehicle.id || 'unassigned'} assigned to slot: ${targetSlotId}`);
       }
     }

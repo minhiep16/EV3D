@@ -220,19 +220,25 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
 
   // Stable date string key for slot IDs (e.g. "2026-09-24")
   const dateKey = useMemo(() => {
-    const y = selectedDate.getFullYear();
-    const m = String(selectedDate.getMonth() + 1).padStart(2, '0');
-    const d = String(selectedDate.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
+    try {
+      const d = selectedDate instanceof Date && !isNaN(selectedDate.getTime()) ? selectedDate : new Date(selectedDate || Date.now());
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    } catch {
+      return '2026-10-05';
+    }
   }, [selectedDate]);
 
   // Build full array of first-class slot objects with stable IDs and precise coordinates
   const slots = useMemo<BookingTimelineSlot[]>(() => {
     const now = new Date();
+    const d = selectedDate instanceof Date && !isNaN(selectedDate.getTime()) ? selectedDate : new Date(selectedDate || Date.now());
     const isToday =
-      selectedDate.getDate() === now.getDate() &&
-      selectedDate.getMonth() === now.getMonth() &&
-      selectedDate.getFullYear() === now.getFullYear();
+      d.getDate() === now.getDate() &&
+      d.getMonth() === now.getMonth() &&
+      d.getFullYear() === now.getFullYear();
 
     const evaluateSlot = (
       hour: number,

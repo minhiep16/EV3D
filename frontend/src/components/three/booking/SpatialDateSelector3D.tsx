@@ -13,20 +13,26 @@ export const SpatialDateSelector3D: React.FC<SpatialDateSelector3DProps> = ({
   onSelectDate,
   position = [0.0, 3.35, 2.4],
 }) => {
-  const isToday = (date: Date) => {
-    const today = new Date();
-    return (
-      date.getDate() === today.getDate() &&
-      date.getMonth() === today.getMonth() &&
-      date.getFullYear() === today.getFullYear()
-    );
+  const isToday = (date: Date | string | null | undefined) => {
+    try {
+      const today = new Date();
+      const d = date instanceof Date && !isNaN(date.getTime()) ? date : new Date(date || Date.now());
+      return (
+        d.getDate() === today.getDate() &&
+        d.getMonth() === today.getMonth() &&
+        d.getFullYear() === today.getFullYear()
+      );
+    } catch {
+      return false;
+    }
   };
 
   const handlePrevDay = () => {
     // Do not allow navigating before today
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const prev = new Date(selectedDate);
+    const baseDate = selectedDate instanceof Date && !isNaN(selectedDate.getTime()) ? selectedDate : new Date(selectedDate || Date.now());
+    const prev = new Date(baseDate);
     prev.setDate(prev.getDate() - 1);
     prev.setHours(0, 0, 0, 0);
 
@@ -36,29 +42,35 @@ export const SpatialDateSelector3D: React.FC<SpatialDateSelector3DProps> = ({
   };
 
   const handleNextDay = () => {
-    const next = new Date(selectedDate);
+    const baseDate = selectedDate instanceof Date && !isNaN(selectedDate.getTime()) ? selectedDate : new Date(selectedDate || Date.now());
+    const next = new Date(baseDate);
     next.setDate(next.getDate() + 1);
     onSelectDate(next);
   };
 
-  const formatVietnameseDate = (date: Date) => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const checkDate = new Date(date);
-    checkDate.setHours(0, 0, 0, 0);
+  const formatVietnameseDate = (date: Date | string | null | undefined) => {
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const d = date instanceof Date && !isNaN(date.getTime()) ? date : new Date(date || Date.now());
+      const checkDate = new Date(d);
+      checkDate.setHours(0, 0, 0, 0);
 
-    const diffDays = Math.round((checkDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      const diffDays = Math.round((checkDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
 
-    if (diffDays === 0) return `Hôm nay, ${day}/${month}/${year}`;
-    if (diffDays === 1) return `Ngày mai, ${day}/${month}/${year}`;
+      if (diffDays === 0) return `Hôm nay, ${day}/${month}/${year}`;
+      if (diffDays === 1) return `Ngày mai, ${day}/${month}/${year}`;
 
-    const dayNames = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
-    const dayName = dayNames[date.getDay()];
-    return `${dayName}, ${day}/${month}/${year}`;
+      const dayNames = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
+      const dayName = dayNames[d.getDay()];
+      return `${dayName}, ${day}/${month}/${year}`;
+    } catch {
+      return '--/--/----';
+    }
   };
 
   const canGoPrev = !isToday(selectedDate);

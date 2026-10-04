@@ -72,14 +72,16 @@ export const DamageHistoryPanel: React.FC<DamageHistoryPanelProps> = ({
   const canCreateMaintenance = hasCapability(user?.role, 'canCreateMaintenance');
 
   // TanStack Query: Fetch authoritative damage records for this isolated vehicle (unconditional hook)
+  const vehicleId = vehicle?.id || 'EV01';
   const {
     data: damages = [],
     isLoading,
     isError,
     refetch,
   } = useQuery<DamageRecordResponse[]>({
-    queryKey: ['vehicleDamages', vehicle.id],
-    queryFn: () => fetchVehicleDamages(vehicle.id),
+    queryKey: ['vehicleDamages', vehicleId],
+    queryFn: () => (vehicle?.id ? fetchVehicleDamages(vehicle.id) : Promise.resolve([])),
+    enabled: !!vehicle?.id,
     staleTime: 5000,
   });
 
@@ -225,7 +227,7 @@ export const DamageHistoryPanel: React.FC<DamageHistoryPanelProps> = ({
               <span>LỊCH SỬ HƯ HỎNG</span>
             </div>
             <div style={{ fontSize: '11px', color: '#00f2fe', fontWeight: 600 }}>
-              {vehicle.plateNumber || vehicle.modelName || 'Xe EV'} — Digital Twin
+              {vehicle?.plateNumber || vehicle?.modelName || 'Xe EV'} — Digital Twin
             </div>
           </div>
         </div>

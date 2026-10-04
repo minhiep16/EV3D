@@ -117,7 +117,7 @@ export const CO_OWNER_ZONE_CONFIGS: Record<GarageZone, ZoneConfig> = {
   },
   FINANCE: {
     ...OPERATIONS_ZONE_CONFIGS.FINANCE,
-    position: [-5.2, 0, 0.5],
+    position: [-4.2, 0, 3.2],
   },
   GOVERNANCE: {
     ...OPERATIONS_ZONE_CONFIGS.GOVERNANCE,

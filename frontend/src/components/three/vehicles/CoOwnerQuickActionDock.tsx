@@ -14,7 +14,8 @@ interface CoOwnerQuickActionDockProps {
 }
 
 export const CoOwnerQuickActionDock: React.FC<CoOwnerQuickActionDockProps> = ({ vehicle }) => {
-  const setVehicleFeatureMode = useWorldStore((state) => state.setVehicleFeatureMode);
+  const enterVehicleBookingMode = useWorldStore((state) => state.enterVehicleBookingMode);
+  const enterVehicleInspectionMode = useWorldStore((state) => state.enterVehicleInspectionMode);
   const enterVehicleMaintenanceMode = useWorldStore((state) => state.enterVehicleMaintenanceMode);
   const enterVehicleDamageHistoryMode = useWorldStore((state) => state.enterVehicleDamageHistoryMode);
   const enterBatteryXrayMode = useWorldStore((state) => state.enterBatteryXrayMode);
@@ -48,7 +49,7 @@ export const CoOwnerQuickActionDock: React.FC<CoOwnerQuickActionDockProps> = ({ 
         type="button"
         disabled={isMaintenance}
         onClick={() => {
-          if (!isMaintenance) setVehicleFeatureMode('BOOKING');
+          if (!isMaintenance) enterVehicleBookingMode(vehicle.id);
         }}
         title={isMaintenance ? 'Xe đang bảo dưỡng kỹ thuật' : 'Đặt lịch sử dụng xe'}
         style={dockItemButtonStyle(isMaintenance)}
@@ -62,7 +63,7 @@ export const CoOwnerQuickActionDock: React.FC<CoOwnerQuickActionDockProps> = ({ 
       {/* 2. KHÁM PHÁ */}
       <button
         type="button"
-        onClick={() => setVehicleFeatureMode('VEHICLE_EXPLORE')}
+        onClick={() => enterVehicleInspectionMode(vehicle.id)}
         title="Khám phá chi tiết các bộ phận xe 3D"
         style={dockItemButtonStyle(false)}
       >
@@ -75,7 +76,7 @@ export const CoOwnerQuickActionDock: React.FC<CoOwnerQuickActionDockProps> = ({ 
       {/* 3. BẢO DƯỠNG */}
       <button
         type="button"
-        onClick={() => enterVehicleMaintenanceMode()}
+        onClick={() => enterVehicleMaintenanceMode({ vehicleId: vehicle.id })}
         title="Lịch sử bảo dưỡng và phê duyệt đề xuất"
         style={dockItemButtonStyle(false)}
       >
@@ -88,7 +89,7 @@ export const CoOwnerQuickActionDock: React.FC<CoOwnerQuickActionDockProps> = ({ 
       {/* 4. HƯ HỎNG */}
       <button
         type="button"
-        onClick={() => enterVehicleDamageHistoryMode()}
+        onClick={() => enterVehicleDamageHistoryMode(vehicle.id)}
         title="Lịch sử hư hỏng đã ghi nhận"
         style={dockItemButtonStyle(false)}
       >

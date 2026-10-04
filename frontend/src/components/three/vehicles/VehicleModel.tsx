@@ -156,30 +156,30 @@ const VehicleModelMesh: React.FC<VehicleModelMeshProps> = ({
           const mat = originalMat as THREE.MeshStandardMaterial;
 
           if (mat.name === 'Material.003') {
-            // Main exterior car body shell: Luxury Automotive Metallic Cyan-Blue Paint
-            // Matching the reference design: vibrant, high-gloss clearcoat with crisp specular highlights and curvature depth
+            // Main exterior car body shell: Luxury Automotive Metallic EV Blue Paint
+            // Tuned PBR response: moderate metalness protects against diffuse washout, clearcoat gives rich gloss with contour depth
             const bodyMat = new THREE.MeshPhysicalMaterial({
-              color: new THREE.Color('#0284c7'), // Vibrant EV electric cyan-blue matching reference
-              metalness: 0.12,                   // Controlled metallic sheen
-              roughness: 0.26,                   // Smooth automotive gloss for crisp specular rolloff
-              clearcoat: 0.68,                   // Glossy automotive clearcoat layer
-              clearcoatRoughness: 0.10,          // Mirror-smooth clearcoat spread across curves
-              reflectivity: 0.65,                // Dynamic Fresnel reflectance at glancing angles
-              envMapIntensity: 0.48,             // Luminous IBL reflection from showroom lightformers & windows
+              color: new THREE.Color('#0284c7'), // Recognizable rich EV electric blue
+              metalness: 0.46,                   // Moderate metalness eliminates chalky diffuse wash & retains body color
+              roughness: 0.32,                   // Controlled gloss rolloff preventing harsh highlight clipping
+              clearcoat: 0.82,                   // Premium automotive clearcoat layer
+              clearcoatRoughness: 0.14,          // Soft clearcoat highlight spread across curves
+              reflectivity: 0.58,                // Controlled Fresnel reflectance
+              envMapIntensity: 0.42,             // Crisp, non-scorching IBL reflection
               emissive: new THREE.Color('#000000'),
               emissiveIntensity: 0,
             });
             mesh.material = bodyMat;
           } else if (mat.name === 'Material.006') {
-            // Panoramic glass & windows: Deep-tinted luxury automotive glass with crisp clearcoat reflection
+            // Panoramic glass & windows: Smoked luxury automotive glass with readable subtle reflection
             const glassMat = new THREE.MeshPhysicalMaterial({
-              color: new THREE.Color('#060b14'),
-              metalness: 0.04,
-              roughness: 0.08,
-              clearcoat: 0.92,
-              clearcoatRoughness: 0.05,
-              reflectivity: 0.85,
-              envMapIntensity: 0.50,
+              color: new THREE.Color('#0f172a'), // Smoked dark navy/slate glass (not crushed #000000)
+              metalness: 0.10,
+              roughness: 0.10,
+              clearcoat: 0.88,
+              clearcoatRoughness: 0.08,
+              reflectivity: 0.72,
+              envMapIntensity: 0.65,             // Subtle environment sky & frame reflection
             });
             mesh.material = glassMat;
           } else if (mat.name === 'Material.011') {

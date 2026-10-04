@@ -201,7 +201,7 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
       const resolved = resolveVehicleSlot(vehicle, role);
       if (resolved) return resolved;
     } catch (err) {
-      if (process.env.NODE_ENV !== 'production') {
+      if (import.meta.env.DEV) {
         console.warn(`[VehicleBay] Failed to resolve slot for vehicle ${vehicle?.id || vehicleCode}:`, err);
       }
     }
@@ -968,7 +968,7 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
         try {
           vehicleSlot = resolveVehicleSlot(vehicle, role, effectiveVehicles);
         } catch (err) {
-          if (process.env.NODE_ENV !== 'production') {
+          if (import.meta.env.DEV) {
             console.warn(`[VehicleFleetTwinContainer] Failed resolving slot for ${vehicleCode}:`, err);
           }
           vehicleSlot = DEFAULT_GARAGE_SLOT;

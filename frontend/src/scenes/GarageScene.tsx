@@ -11,17 +11,14 @@ import { resolveVehicleCode, sortStaffFleetVehicles, resolveAuthoritativeHeroVeh
 import {
   LogOut,
   Warehouse,
+  Sparkles,
+  RotateCcw,
+  Car,
+  Bell,
   ArrowLeft,
   ShieldCheck,
   Eye,
-  Sparkles,
-  RotateCcw,
   Zap,
-  Car,
-  DollarSign,
-  Bot,
-  TrendingUp,
-  Bell,
 } from 'lucide-react';
 import { StaffGarageFleetSidebar } from '../components/fleet/StaffGarageFleetSidebar';
 import { StaffVehicleDetailPanel } from '../components/fleet/StaffVehicleDetailPanel';
@@ -63,6 +60,7 @@ export const GarageScene: React.FC = () => {
   const isVehicleDetailOpen = useWorldStore((state) => state.isVehicleDetailOpen);
   const closeVehicleDetail = useWorldStore((state) => state.closeVehicleDetail);
   const selectedZone = useWorldStore((state) => state.selectedZone);
+  const activeFeature = useWorldStore((state) => state.activeFeature);
   const selectZone = useWorldStore((state) => state.selectZone);
   const clearSelection = useWorldStore((state) => state.clearSelection);
   const returnToGarageOverview = useWorldStore((state) => state.returnToGarageOverview);
@@ -572,7 +570,20 @@ export const GarageScene: React.FC = () => {
         /* ======================================================== */
         /* CO_OWNER DEDICATED EXPERIENCE (COMPLETELY PRESERVED)     */
         /* ======================================================== */
-        <>
+        <div
+          id="co-owner-hud-overlay-root"
+          className="co-owner-hud-overlay-root"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'none',
+            zIndex: 20,
+            transform: 'scale(var(--ui-scale, 1))',
+            transformOrigin: 'top left',
+            width: 'calc(100% / var(--ui-scale, 1))',
+            height: 'calc(100% / var(--ui-scale, 1))',
+          }}
+        >
           {/* A. Unified Top Header: Branding on Left, Return Navigation Controls, User Profile & Logout on Right */}
           <div
             style={{
@@ -858,147 +869,63 @@ export const GarageScene: React.FC = () => {
             </div>
           )}
 
-          {/* Subtle Secondary Zone Entry Points (Finance, AI, Analytics, Charging) */}
-          {!showBackToVehicle && (
-            <div
-              data-ui-interactive="true"
-              style={{
-                position: 'absolute',
-                left: '24px',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px',
-                zIndex: 25,
-                pointerEvents: 'auto',
-              }}
-            >
-              {[
-                { id: 'FINANCE' as const, label: 'Tài chính', icon: DollarSign },
-                { id: 'AI' as const, label: 'Trợ lý AI', icon: Bot },
-                { id: 'ANALYTICS' as const, label: 'Phân tích', icon: TrendingUp },
-                { id: 'CHARGING' as const, label: 'Khu vực sạc', icon: Zap },
-              ].map(({ id, label, icon: Icon }) => {
-                const isActive = selectedZone === id;
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    data-ui-interactive="true"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (isActive) {
-                        clearSelection();
-                      } else {
-                        selectZone(id);
-                      }
-                    }}
-                    title={`Khu vực ${label.toLowerCase()}`}
-                    style={{
-                      background: isActive
-                        ? 'linear-gradient(135deg, rgba(0, 242, 254, 0.40) 0%, rgba(6, 26, 52, 0.96) 100%)'
-                        : 'rgba(6, 20, 38, 0.82)',
-                      backdropFilter: 'blur(24px)',
-                      WebkitBackdropFilter: 'blur(24px)',
-                      border: isActive
-                        ? '1.8px solid #00f2fe'
-                        : '1px solid rgba(0, 242, 254, 0.20)',
-                      boxShadow: isActive
-                        ? '0 8px 24px rgba(0, 0, 0, 0.6), 0 0 24px rgba(0, 242, 254, 0.48), inset 0 0 12px rgba(0, 242, 254, 0.22)'
-                        : '0 4px 14px rgba(0, 0, 0, 0.35)',
-                      borderRadius: '9999px',
-                      padding: isActive ? '8px 18px 8px 10px' : '7px 16px 7px 9px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      cursor: 'pointer',
-                      transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-                      color: isActive ? '#ffffff' : '#cbd5e1',
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isActive) {
-                        e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.5)';
-                        e.currentTarget.style.background = 'rgba(8, 28, 54, 0.92)';
-                        e.currentTarget.style.color = '#ffffff';
-                        e.currentTarget.style.transform = 'translateX(3px)';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isActive) {
-                        e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.20)';
-                        e.currentTarget.style.background = 'rgba(6, 20, 38, 0.82)';
-                        e.currentTarget.style.color = '#cbd5e1';
-                        e.currentTarget.style.transform = 'translateX(0)';
-                      }
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: '30px',
-                        height: '30px',
-                        borderRadius: '50%',
-                        background: isActive ? 'rgba(0, 242, 254, 0.28)' : 'rgba(255, 255, 255, 0.06)',
-                        border: `1.5px solid ${isActive ? '#00f2fe' : 'rgba(255, 255, 255, 0.16)'}`,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                        boxShadow: isActive ? '0 0 12px rgba(0, 242, 254, 0.5)' : 'none',
-                      }}
-                    >
-                      <Icon size={14} color={isActive ? '#ffffff' : '#94a3b8'} />
-                    </div>
-                    <span style={{ fontSize: '12.5px', fontWeight: isActive ? 800 : 600, letterSpacing: '0.02em' }}>
-                      {label}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
+
 
           {/* Screen-Space Fixed CO_OWNER Part Inspection Panel */}
-          {vehicleInspectionMode && <CoOwnerVehiclePartPanel />}
+          {vehicleInspectionMode && (
+            <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0])?.id || 'ev'}-part-inspection`}>
+              <CoOwnerVehiclePartPanel />
+            </PanelErrorBoundary>
+          )}
 
           {/* Dedicated Phase 14 Screen-Space Damage History Panel for CO_OWNER */}
-          {vehicleDamageHistoryMode && currentCoOwnerVehicle && (
-            <DamageHistoryPanel
-              vehicle={currentCoOwnerVehicle}
-              onClose={returnToVehicleOverview}
-            />
+          {vehicleDamageHistoryMode && (currentCoOwnerVehicle || vehicles[0]) && (
+            <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0])?.id || 'ev'}-damage-history`}>
+              <DamageHistoryPanel
+                vehicle={currentCoOwnerVehicle || vehicles[0]}
+                onClose={returnToVehicleOverview}
+              />
+            </PanelErrorBoundary>
           )}
 
           {/* Dedicated Phase 15 Screen-Space Maintenance History Panel for CO_OWNER */}
-          {vehicleMaintenanceMode && currentCoOwnerVehicle && (
-            <CoOwnerMaintenancePanel
-              vehicle={currentCoOwnerVehicle}
-              onClose={returnToVehicleOverview}
-            />
+          {vehicleMaintenanceMode && (currentCoOwnerVehicle || vehicles[0]) && (
+            <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0])?.id || 'ev'}-maintenance`}>
+              <CoOwnerMaintenancePanel
+                vehicle={currentCoOwnerVehicle || vehicles[0]}
+                onClose={returnToVehicleOverview}
+              />
+            </PanelErrorBoundary>
           )}
 
           {/* Dedicated Screen-Space Fixed CO_OWNER Booking Detail Panel */}
           {vehicleBookingMode && (currentCoOwnerVehicle || vehicles[0]) && (
-            <CoOwnerBookingPanel
-              vehicle={currentCoOwnerVehicle || vehicles[0]}
-              onClose={returnToVehicleOverview}
-            />
+            <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0])?.id || 'ev'}-booking`}>
+              <CoOwnerBookingPanel
+                vehicle={currentCoOwnerVehicle || vehicles[0]}
+                onClose={returnToVehicleOverview}
+              />
+            </PanelErrorBoundary>
           )}
 
           {/* Dedicated Phase 16 Screen-Space Battery Health / X-Ray Panel for CO_OWNER */}
           {vehicleBatteryXrayMode && (currentCoOwnerVehicle || vehicles[0]) && (
-            <BatteryHealthPanel
-              vehicle={currentCoOwnerVehicle || vehicles[0]}
-              onClose={returnToVehicleOverview}
-            />
+            <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0])?.id || 'ev'}-battery-xray`}>
+              <BatteryHealthPanel
+                vehicle={currentCoOwnerVehicle || vehicles[0]}
+                onClose={returnToVehicleOverview}
+              />
+            </PanelErrorBoundary>
           )}
 
-          {/* Dedicated Phase 17 Screen-Space Charging Panel for CO_OWNER */}
-          {vehicleChargingMode && (currentCoOwnerVehicle || vehicles[0]) && (
-            <ChargingPanel
-              vehicle={currentCoOwnerVehicle || vehicles[0]}
-              onClose={returnToVehicleOverview}
-            />
+          {/* Dedicated Phase 17 Screen-Space Charging Panel for CO_OWNER (only during vehicle-focused charging, never during showroom zone modes) */}
+          {!selectedZone && activeFeature === 'NONE' && vehicleChargingMode && (currentCoOwnerVehicle || vehicles[0]) && (
+            <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0])?.id || 'ev'}-charging`}>
+              <ChargingPanel
+                vehicle={currentCoOwnerVehicle || vehicles[0]}
+                onClose={returnToVehicleOverview}
+              />
+            </PanelErrorBoundary>
           )}
 
           {/* Authoritative Redesigned Showroom Zone Info Panel (e.g. Finance) for CO_OWNER */}
@@ -1074,7 +1001,7 @@ export const GarageScene: React.FC = () => {
               vehicle={currentCoOwnerVehicle}
             />
           )}
-        </>
+        </div>
       )}
     </div>
   );

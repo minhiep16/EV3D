@@ -22,15 +22,15 @@ export const GarageFloor: React.FC = () => {
         <MeshReflectorMaterial
           blur={[200, 50]}
           resolution={1024}
-          mirror={0.74}
+          mirror={0.55}
           mixBlur={0.65}
-          mixStrength={3.4}
-          roughness={0.05}
+          mixStrength={1.6}
+          roughness={0.08}
           depthScale={1.2}
           minDepthThreshold={0.2}
           maxDepthThreshold={1.5}
-          color="#f8fafc"
-          metalness={0.10}
+          color="#e2e8f0"
+          metalness={0.05}
         />
       </mesh>
 
@@ -57,13 +57,13 @@ export const GarageFloor: React.FC = () => {
         {/* Crisp Cyan Concentric Accent Ring embedded in showroom floor */}
         <mesh rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[3.48, 3.52, 96]} />
-          <meshBasicMaterial color="#00f2fe" transparent opacity={0.45} />
+          <meshBasicMaterial color="#00f2fe" transparent opacity={0.24} />
         </mesh>
 
-        {/* Soft, diffuse cyan floor bounce spreading gently outward from hero podium LED strip */}
+        {/* Soft, subtle cyan floor bounce under hero podium bezel */}
         <mesh rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[2.95, 4.60, 96]} />
-          <meshBasicMaterial color="#00f2fe" transparent opacity={0.22} />
+          <ringGeometry args={[2.98, 3.45, 96]} />
+          <meshBasicMaterial color="#00f2fe" transparent opacity={0.06} />
         </mesh>
       </group>
 

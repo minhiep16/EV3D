@@ -49,11 +49,17 @@ export const CoOwnerBookingPanel: React.FC<CoOwnerBookingPanelProps> = ({
     refetchInterval: 1000 * 45,
   });
 
-  const formatVietnameseDate = (date: Date) => {
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-    return `${day}/${month}/${year}`;
+  const formatVietnameseDate = (date: Date | string | null | undefined) => {
+    try {
+      const d = date instanceof Date && !isNaN(date.getTime()) ? date : new Date(date || Date.now());
+      if (isNaN(d.getTime())) return '--/--/----';
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      return `${day}/${month}/${year}`;
+    } catch {
+      return '--/--/----';
+    }
   };
 
   const startTimeStr = hasSelection ? `${String(startHour).padStart(2, '0')}:00` : '--:--';
@@ -81,10 +87,11 @@ export const CoOwnerBookingPanel: React.FC<CoOwnerBookingPanelProps> = ({
     setSuccessMessage(null);
 
     try {
-      const startTime = new Date(selectedDate);
+      const baseDate = selectedDate instanceof Date && !isNaN(selectedDate.getTime()) ? selectedDate : new Date(selectedDate || Date.now());
+      const startTime = new Date(baseDate);
       startTime.setHours(startHour, 0, 0, 0);
 
-      const endTime = new Date(selectedDate);
+      const endTime = new Date(baseDate);
       endTime.setHours(endHour, 0, 0, 0);
 
       await createVehicleBooking(vehicle.id, {

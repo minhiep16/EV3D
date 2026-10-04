@@ -79,7 +79,7 @@ export const GARAGE_ZONE_ANCHORS: {
   CO_OWNER: {
     VEHICLE: [0.0, 0.09, 1.8],
     CHARGING: [5.2, 0, 0.5],
-    FINANCE: [-5.2, 0, 0.5],
+    FINANCE: [-4.2, 0, 3.2],
     ANALYTICS: [3.2, 0, -3.8],
     AI: [-3.2, 0, -3.8],
     MAINTENANCE: [-9.0, 0, 0.5],
@@ -347,9 +347,9 @@ export function financeZoneCamera(role?: string, viewportWidth?: number): Garage
   const isCoOwner = !role || role === 'CO_OWNER';
   if (isCoOwner) {
     const factor = getResponsiveDistanceFactor(viewportWidth);
-    const distZ = 11.5 * factor;
+    const distZ = 11.8 * factor;
     return {
-      target: [0.35, 1.25, 1.8],
+      target: [0.8, 1.25, 1.8],
       position: [0.35, 2.10, 1.8 + distZ],
       fov: 40,
       minDistance: 6.0,
@@ -360,7 +360,7 @@ export function financeZoneCamera(role?: string, viewportWidth?: number): Garage
       enableZoom: true,
       enablePan: true,
       panelSide: 'right',
-      horizontalOffset: 0.35,
+      horizontalOffset: 2.40,
       safeFramingDistance: distZ,
       transitionDuration: 0.65,
     };
@@ -369,10 +369,52 @@ export function financeZoneCamera(role?: string, viewportWidth?: number): Garage
 }
 
 export function aiZoneCamera(role?: string, viewportWidth?: number): GarageCameraPreset {
+  const isCoOwner = !role || role === 'CO_OWNER';
+  if (isCoOwner) {
+    const factor = getResponsiveDistanceFactor(viewportWidth);
+    const distZ = 12.2 * factor;
+    return {
+      target: [1.65, 1.40, 1.50],
+      position: [1.65, 2.35, 1.50 + distZ],
+      fov: 40,
+      minDistance: 5.5,
+      maxDistance: 22.0,
+      minPolarAngle: 0.40,
+      maxPolarAngle: 1.42,
+      enableRotate: true,
+      enableZoom: true,
+      enablePan: true,
+      panelSide: 'right',
+      horizontalOffset: 2.40,
+      safeFramingDistance: distZ,
+      transitionDuration: 0.65,
+    };
+  }
   return zoneFocusCamera('AI', role, viewportWidth);
 }
 
 export function analyticsZoneCamera(role?: string, viewportWidth?: number): GarageCameraPreset {
+  const isCoOwner = !role || role === 'CO_OWNER';
+  if (isCoOwner) {
+    const factor = getResponsiveDistanceFactor(viewportWidth);
+    const distZ = 12.2 * factor;
+    return {
+      target: [2.50, 1.30, 0.50],
+      position: [2.50, 2.30, 0.50 + distZ],
+      fov: 40,
+      minDistance: 5.5,
+      maxDistance: 22.0,
+      minPolarAngle: 0.40,
+      maxPolarAngle: 1.42,
+      enableRotate: true,
+      enableZoom: true,
+      enablePan: true,
+      panelSide: 'right',
+      horizontalOffset: 2.50,
+      safeFramingDistance: distZ,
+      transitionDuration: 0.65,
+    };
+  }
   return zoneFocusCamera('ANALYTICS', role, viewportWidth);
 }
 
