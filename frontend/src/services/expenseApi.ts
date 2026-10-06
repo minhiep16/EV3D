@@ -4,6 +4,8 @@ import {
   ExpenseSummaryResponse,
   CreateExpensePayload,
   ExpenseFilterParams,
+  ExpenseShareResponse,
+  CostSharingSummaryResponse,
 } from '../types/expense';
 
 export async function fetchExpenses(params: ExpenseFilterParams): Promise<ExpenseResponse[]> {
@@ -69,3 +71,35 @@ export async function createExpense(payload: CreateExpensePayload): Promise<Expe
     throw err;
   }
 }
+
+export async function fetchExpenseShares(expenseId: string): Promise<ExpenseShareResponse[]> {
+  try {
+    const res = await authenticatedFetch(`/api/expenses/${expenseId}/shares`);
+    return await safeParseResponse<ExpenseShareResponse[]>(res);
+  } catch (err) {
+    if (err instanceof TypeError || (err instanceof Error && err.message.includes('fetch'))) {
+      throw new Error('Không thể kết nối đến máy chủ danh sách phân bổ chi phí.');
+    }
+    throw err;
+  }
+}
+
+export async function fetchCostSharingSummary(
+  vehicleId: string,
+  month?: string
+): Promise<CostSharingSummaryResponse> {
+  try {
+    const searchParams = new URLSearchParams();
+    searchParams.set('vehicleId', vehicleId);
+    if (month) searchParams.set('month', month);
+
+    const res = await authenticatedFetch(`/api/expenses/shares/summary?${searchParams.toString()}`);
+    return await safeParseResponse<CostSharingSummaryResponse>(res);
+  } catch (err) {
+    if (err instanceof TypeError || (err instanceof Error && err.message.includes('fetch'))) {
+      throw new Error('Không thể kết nối đến máy chủ tổng hợp phân bổ chi phí.');
+    }
+    throw err;
+  }
+}
+

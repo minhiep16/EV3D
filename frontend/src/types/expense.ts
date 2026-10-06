@@ -125,3 +125,6 @@ export const EXPENSE_CATEGORY_METADATA: Record<
     chipBorder: 'rgba(148, 163, 184, 0.30)',
   },
 };
+
+export * from './expenseShare';
+

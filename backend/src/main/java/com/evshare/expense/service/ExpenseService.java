@@ -37,6 +37,7 @@ public class ExpenseService {
     private final GroupMemberRepository memberRepository;
     private final GroupVehicleRepository groupVehicleRepository;
     private final UserRepository userRepository;
+    private final ExpenseShareService expenseShareService;
 
     public ExpenseService(
             ExpenseRepository expenseRepository,
@@ -44,7 +45,8 @@ public class ExpenseService {
             CoOwnershipGroupRepository groupRepository,
             GroupMemberRepository memberRepository,
             GroupVehicleRepository groupVehicleRepository,
-            UserRepository userRepository
+            UserRepository userRepository,
+            ExpenseShareService expenseShareService
     ) {
         this.expenseRepository = expenseRepository;
         this.vehicleRepository = vehicleRepository;
@@ -52,6 +54,7 @@ public class ExpenseService {
         this.memberRepository = memberRepository;
         this.groupVehicleRepository = groupVehicleRepository;
         this.userRepository = userRepository;
+        this.expenseShareService = expenseShareService;
     }
 
     /**
@@ -128,6 +131,10 @@ public class ExpenseService {
         );
 
         Expense saved = expenseRepository.save(expense);
+
+        // Phase 19: Authoritative Cost Sharing Allocation Generation
+        expenseShareService.generateSharesForExpense(saved);
+
         return ExpenseResponse.fromEntity(saved);
     }
 

@@ -66,6 +66,9 @@ public class Expense {
     @Column(name = "updated_at")
     private Instant updatedAt;
 
+    @OneToMany(mappedBy = "expense", cascade = CascadeType.ALL, orphanRemoval = true)
+    private java.util.List<ExpenseShare> shares = new java.util.ArrayList<>();
+
     public Expense() {
     }
 
@@ -202,5 +205,13 @@ public class Expense {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public java.util.List<ExpenseShare> getShares() {
+        return shares;
+    }
+
+    public void setShares(java.util.List<ExpenseShare> shares) {
+        this.shares = shares;
     }
 }

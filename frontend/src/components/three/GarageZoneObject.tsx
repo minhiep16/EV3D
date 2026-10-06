@@ -391,8 +391,8 @@ export const GarageZoneObject: React.FC<GarageZoneObjectProps> = ({ zone }) => {
           ))}
         </group>
       ) : (
-        /* STANDARD CIRCULAR RAISED PLATFORMS FOR CHARGING (AI, FINANCE & ANALYTICS USE CUSTOM BASES) */
-        (isSelected || isHovered || isOperationsRole) && zone.id !== 'FINANCE' && zone.id !== 'AI' && zone.id !== 'ANALYTICS' && (
+        /* STANDARD CIRCULAR RAISED PLATFORMS (AI, FINANCE, CHARGING IN CO_OWNER & ANALYTICS USE CUSTOM BASES) */
+        (isSelected || isHovered || isOperationsRole) && zone.id !== 'FINANCE' && zone.id !== 'AI' && zone.id !== 'ANALYTICS' && (isOperationsRole || zone.id !== 'CHARGING') && (
           <group position={[0, 0, 0]}>
             {/* Base Station Pad */}
             <mesh position={[0, 0.02, 0]} receiveShadow>

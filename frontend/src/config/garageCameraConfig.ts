@@ -78,7 +78,7 @@ export const GARAGE_ZONE_ANCHORS: {
 } = {
   CO_OWNER: {
     VEHICLE: [0.0, 0.09, 1.8],
-    CHARGING: [5.2, 0, 0.5],
+    CHARGING: [4.0, 0, 3.2],
     FINANCE: [-4.2, 0, 3.2],
     ANALYTICS: [3.2, 0, -3.8],
     AI: [-3.2, 0, -3.8],

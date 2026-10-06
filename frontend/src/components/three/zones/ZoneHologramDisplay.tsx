@@ -86,8 +86,8 @@ export const ZoneHologramDisplay: React.FC<ZoneHologramDisplayProps> = ({ overri
         <group name="ChargingSpatialHologramCluster">
           {/* Right-Side 3D World-Space Holographic Charging Console */}
           <ChargingControlHologram3D
-            position={[6.5, 1.5, 2.80]}
-            rotation={[0, -0.1745, 0]}
+            position={[6.0, 1.5, 3.2]}
+            rotation={[0, -0.20, 0]}
           />
         </group>
       );

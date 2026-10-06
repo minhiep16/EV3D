@@ -13,16 +13,16 @@ export const CHARGING_STATION_VISUALS: Record<string, StationVisualConfig> = {
   CS01: {
     code: 'CS01',
     bayId: 'BAY_CHARGING_01',
-    stationPosition: [6.5, 0.14, 0.5],
-    kioskOffset: [1.35, 0, 0],
-    socketOffset: [1.35 + 0.42, 0.95, 0.05],
+    stationPosition: [3.5, 0.14, 3.2],
+    kioskOffset: [0, 0, 0],
+    socketOffset: [0.42, 0.95, 0.05],
   },
   CS02: {
     code: 'CS02',
     bayId: 'BAY_CHARGING_02',
-    stationPosition: [6.5, 0.14, -3.8],
-    kioskOffset: [1.35, 0, 0],
-    socketOffset: [1.35 + 0.42, 0.95, 0.05],
+    stationPosition: [4.5, 0.14, 3.2],
+    kioskOffset: [0, 0, 0],
+    socketOffset: [0.42, 0.95, 0.05],
   },
 };
 

@@ -21,18 +21,24 @@ import {
   Plus,
   PlusCircle,
   Loader2,
+  Users,
+  PieChart,
+  ArrowLeft,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useWorldStore } from '../../../store/worldStore';
 import { useAuthStore } from '../../../store/authStore';
 import { fetchVehicles } from '../../../services/vehicleApi';
 import { fetchVehicleCoOwnership } from '../../../services/coOwnershipApi';
-import { useExpenses, useExpenseSummary } from '../../../hooks/useExpenses';
+import { useExpenses, useExpenseSummary, useCostSharingSummary } from '../../../hooks/useExpenses';
 import { EXPENSE_CATEGORY_METADATA } from '../../../types/expense';
 import { AddExpenseModal } from '../../zones/AddExpenseModal';
+import { ExpenseItemShares } from '../../zones/ExpenseItemShares';
 import { VehicleResponse } from '../../../types/vehicle';
 
-export type FinanceView = 'MAIN' | 'EXPENSE_HISTORY' | 'FUND_DETAIL';
+export type FinanceView = 'MAIN' | 'EXPENSE_HISTORY' | 'FUND_DETAIL' | 'COST_SHARING';
 
 // Authoritative Finance Console Dimensions (Single-Slot Standardized Hierarchy)
 export const FINANCE_MAIN_WIDTH = 360;
@@ -78,6 +84,7 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
   const [financeView, setFinanceView] = useState<FinanceView>('MAIN');
   const [showAddExpenseModal, setShowAddExpenseModal] = useState(false);
   const [historyCategoryFilter, setHistoryCategoryFilter] = useState<string>('ALL');
+  const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null);
 
   // Animation & DOM references
   const floorRingRef = useRef<THREE.MeshBasicMaterial>(null);
@@ -114,6 +121,7 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
   // Authoritative expense summary & history
   const { data: summary, isLoading: isSummaryLoading } = useExpenseSummary(activeVehicleId);
   const { data: expenses = [], isLoading: isExpensesLoading } = useExpenses(activeVehicleId);
+  const { data: costSharingSummary, isLoading: isCostSharingLoading } = useCostSharingSummary(activeVehicleId);
 
   const formattedMonthlyExpense = useMemo(() => {
     if (isSummaryLoading) return 'Đang tải...';
@@ -710,8 +718,8 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                     style={{
                       background: 'rgba(10, 30, 56, 0.78)',
                       border: '1.4px solid rgba(0, 242, 254, 0.35)',
-                      borderRadius: '20px',
-                      padding: '16px 20px',
+                      borderRadius: '18px',
+                      padding: '13px 18px',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
@@ -732,11 +740,11 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                       e.currentTarget.style.boxShadow = '0 4px 18px rgba(0, 0, 0, 0.28)';
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                       <div
                         style={{
-                          width: '44px',
-                          height: '44px',
+                          width: '40px',
+                          height: '40px',
                           borderRadius: '50%',
                           background: 'rgba(0, 242, 254, 0.16)',
                           border: '1.4px solid rgba(0, 242, 254, 0.50)',
@@ -746,46 +754,128 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                           flexShrink: 0,
                         }}
                       >
-                        <BarChart3 size={20} color="#00f2fe" />
+                        <BarChart3 size={19} color="#00f2fe" />
                       </div>
                       <div>
-                        <div style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 500 }}>
+                        <div style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 500 }}>
                           Chi tháng này
                         </div>
                         <div
                           style={{
-                            fontSize: '22px',
+                            fontSize: '20px',
                             fontWeight: 800,
                             color: '#ffffff',
                             letterSpacing: '-0.01em',
-                            marginTop: '2px',
+                            marginTop: '1px',
                           }}
                         >
                           {formattedMonthlyExpense}
                         </div>
                       </div>
                     </div>
-                    <ChevronRight size={19} color="#38bdf8" />
+                    <ChevronRight size={18} color="#38bdf8" />
                   </div>
 
-                  {/* Item 2: Trạng thái */}
+                  {/* Item 2: Phần chi phí của bạn (Cost Sharing Summary Card) */}
+                  <div
+                    onClick={() => setFinanceView('COST_SHARING')}
+                    style={{
+                      background: 'rgba(10, 30, 56, 0.85)',
+                      border: '1.4px solid rgba(0, 242, 254, 0.40)',
+                      borderRadius: '18px',
+                      padding: '12px 16px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      boxShadow: '0 4px 18px rgba(0, 0, 0, 0.32)',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = '#00f2fe';
+                      e.currentTarget.style.background = 'rgba(14, 40, 76, 0.95)';
+                      e.currentTarget.style.transform = 'translateX(-2px)';
+                      e.currentTarget.style.boxShadow = '0 6px 24px rgba(0, 242, 254, 0.35)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.40)';
+                      e.currentTarget.style.background = 'rgba(10, 30, 56, 0.85)';
+                      e.currentTarget.style.transform = 'translateX(0)';
+                      e.currentTarget.style.boxShadow = '0 4px 18px rgba(0, 0, 0, 0.32)';
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                        <div
+                          style={{
+                            width: '32px',
+                            height: '32px',
+                            borderRadius: '50%',
+                            background: 'rgba(0, 242, 254, 0.16)',
+                            border: '1.4px solid rgba(0, 242, 254, 0.50)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <Users size={16} color="#00f2fe" />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            Phần chi phí của bạn
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#38bdf8', fontWeight: 700 }}>
+                            Tỷ lệ: {costSharingSummary?.userOwnershipPercentage != null ? `${costSharingSummary.userOwnershipPercentage}%` : '...'}
+                          </div>
+                        </div>
+                      </div>
+                      <ChevronRight size={17} color="#38bdf8" />
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', paddingTop: '2px' }}>
+                      <div style={{ background: 'rgba(4, 16, 36, 0.60)', padding: '6px 10px', borderRadius: '10px', border: '1px solid rgba(0, 242, 254, 0.15)' }}>
+                        <div style={{ fontSize: '10px', color: '#94a3b8' }}>Phải chịu</div>
+                        <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#f8fafc', marginTop: '1px' }}>
+                          {costSharingSummary?.userRequiredShare != null ? `${Number(costSharingSummary.userRequiredShare).toLocaleString('vi-VN')}đ` : '...'}
+                        </div>
+                      </div>
+                      <div style={{ background: 'rgba(4, 16, 36, 0.60)', padding: '6px 10px', borderRadius: '10px', border: '1px solid rgba(0, 242, 254, 0.15)' }}>
+                        <div style={{ fontSize: '10px', color: '#94a3b8' }}>Chênh lệch</div>
+                        <div
+                          style={{
+                            fontSize: '13.5px',
+                            fontWeight: 800,
+                            marginTop: '1px',
+                            color: (costSharingSummary?.userNetPosition ?? 0) > 0 ? '#10b981' : (costSharingSummary?.userNetPosition ?? 0) < 0 ? '#fb7185' : '#38bdf8',
+                          }}
+                        >
+                          {costSharingSummary?.userNetPosition != null
+                            ? `${(costSharingSummary.userNetPosition > 0 ? '+' : '')}${Number(costSharingSummary.userNetPosition).toLocaleString('vi-VN')}đ`
+                            : '...'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Item 3: Trạng thái */}
                   <div
                     style={{
                       background: 'rgba(10, 30, 56, 0.78)',
                       border: '1.4px solid rgba(0, 242, 254, 0.35)',
-                      borderRadius: '20px',
-                      padding: '16px 20px',
+                      borderRadius: '18px',
+                      padding: '12px 18px',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       boxShadow: '0 4px 18px rgba(0, 0, 0, 0.28)',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                       <div
                         style={{
-                          width: '44px',
-                          height: '44px',
+                          width: '38px',
+                          height: '38px',
                           borderRadius: '50%',
                           background: 'rgba(16, 185, 129, 0.18)',
                           border: '1.4px solid rgba(16, 185, 129, 0.55)',
@@ -795,27 +885,27 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                           flexShrink: 0,
                         }}
                       >
-                        <Zap size={20} color="#10b981" />
+                        <Zap size={18} color="#10b981" />
                       </div>
                       <div>
-                        <div style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 500 }}>
-                          Trạng thái
+                        <div style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 500 }}>
+                          Trạng thái quỹ
                         </div>
                         <div
                           style={{
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '7px',
-                            fontSize: '16px',
+                            gap: '6px',
+                            fontSize: '15px',
                             fontWeight: 700,
                             color: '#10b981',
-                            marginTop: '2px',
+                            marginTop: '1px',
                           }}
                         >
                           <div
                             style={{
-                              width: '8px',
-                              height: '8px',
+                              width: '7px',
+                              height: '7px',
                               borderRadius: '50%',
                               background: '#10b981',
                               boxShadow: '0 0 10px #10b981',
@@ -825,7 +915,7 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                         </div>
                       </div>
                     </div>
-                    <ChevronRight size={19} color="#38bdf8" />
+                    <ChevronRight size={18} color="#38bdf8" />
                   </div>
 
                   {/* Primary Action Button: Mở bảng quỹ */}
@@ -835,46 +925,84 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                     style={{
                       background: 'linear-gradient(135deg, #00f2fe 0%, #00c6ff 100%)',
                       border: 'none',
-                      borderRadius: '18px',
-                      padding: '16px 22px',
+                      borderRadius: '16px',
+                      padding: '13px 20px',
                       color: '#041628',
-                      fontSize: '16px',
+                      fontSize: '15px',
                       fontWeight: 800,
                       letterSpacing: '0.01em',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       cursor: 'pointer',
-                      boxShadow: '0 8px 26px rgba(0, 242, 254, 0.50)',
+                      boxShadow: '0 6px 22px rgba(0, 242, 254, 0.45)',
                       transition: 'all 0.2s ease',
                     }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.transform = 'translateY(-2px)';
-                      e.currentTarget.style.boxShadow = '0 12px 34px rgba(0, 242, 254, 0.72)';
+                      e.currentTarget.style.boxShadow = '0 10px 30px rgba(0, 242, 254, 0.70)';
                     }}
                     onMouseLeave={(e) => {
                       e.currentTarget.style.transform = 'translateY(0)';
-                      e.currentTarget.style.boxShadow = '0 8px 26px rgba(0, 242, 254, 0.50)';
+                      e.currentTarget.style.boxShadow = '0 6px 22px rgba(0, 242, 254, 0.45)';
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <ExternalLink size={20} color="#041628" />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                      <ExternalLink size={18} color="#041628" />
                       <span>Mở bảng quỹ</span>
                     </div>
-                    <ChevronRight size={20} color="#041628" />
+                    <ChevronRight size={18} color="#041628" />
                   </button>
 
-                  {/* Secondary Action Button: Lịch sử chi phí */}
+                  {/* Secondary Action Button: Phân bổ chi phí */}
+                  <button
+                    type="button"
+                    onClick={() => setFinanceView('COST_SHARING')}
+                    style={{
+                      background: 'rgba(10, 30, 56, 0.85)',
+                      border: '1.4px solid rgba(0, 242, 254, 0.45)',
+                      borderRadius: '16px',
+                      padding: '12px 20px',
+                      color: '#00f2fe',
+                      fontSize: '14.5px',
+                      fontWeight: 700,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = '#00f2fe';
+                      e.currentTarget.style.background = 'rgba(14, 38, 70, 0.95)';
+                      e.currentTarget.style.transform = 'translateX(-2px)';
+                      e.currentTarget.style.boxShadow = '0 6px 24px rgba(0, 242, 254, 0.30)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.45)';
+                      e.currentTarget.style.background = 'rgba(10, 30, 56, 0.85)';
+                      e.currentTarget.style.transform = 'translateX(0)';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                      <Users size={18} color="#00f2fe" />
+                      <span>Phân bổ chi phí</span>
+                    </div>
+                    <ChevronRight size={18} color="#00f2fe" />
+                  </button>
+
+                  {/* Tertiary Action Button: Lịch sử chi phí */}
                   <button
                     type="button"
                     onClick={() => setFinanceView('EXPENSE_HISTORY')}
                     style={{
-                      background: 'rgba(10, 30, 56, 0.78)',
-                      border: '1.4px solid rgba(0, 242, 254, 0.35)',
-                      borderRadius: '18px',
-                      padding: '15px 22px',
+                      background: 'rgba(10, 30, 56, 0.75)',
+                      border: '1.2px solid rgba(0, 242, 254, 0.30)',
+                      borderRadius: '16px',
+                      padding: '12px 20px',
                       color: '#ffffff',
-                      fontSize: '15px',
+                      fontSize: '14px',
                       fontWeight: 650,
                       display: 'flex',
                       alignItems: 'center',
@@ -886,20 +1014,20 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                       e.currentTarget.style.borderColor = '#00f2fe';
                       e.currentTarget.style.background = 'rgba(14, 38, 70, 0.90)';
                       e.currentTarget.style.transform = 'translateX(-2px)';
-                      e.currentTarget.style.boxShadow = '0 6px 24px rgba(0, 242, 254, 0.25)';
+                      e.currentTarget.style.boxShadow = '0 6px 24px rgba(0, 242, 254, 0.20)';
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.35)';
-                      e.currentTarget.style.background = 'rgba(10, 30, 56, 0.78)';
+                      e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.30)';
+                      e.currentTarget.style.background = 'rgba(10, 30, 56, 0.75)';
                       e.currentTarget.style.transform = 'translateX(0)';
                       e.currentTarget.style.boxShadow = 'none';
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <FileText size={19} color="#00f2fe" />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                      <FileText size={18} color="#00f2fe" />
                       <span>Lịch sử chi phí</span>
                     </div>
-                    <ChevronRight size={19} color="#00f2fe" />
+                    <ChevronRight size={18} color="#00f2fe" />
                   </button>
                 </div>
               )}
@@ -1260,95 +1388,119 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                             dateDisplay = exp.occurredAt;
                           }
 
+                          const isExpanded = expandedExpenseId === exp.id;
                           return (
                             <div
                               key={exp.id}
                               style={{
-                                background: 'rgba(10, 30, 56, 0.65)',
+                                background: isExpanded ? 'rgba(14, 38, 70, 0.90)' : 'rgba(10, 30, 56, 0.65)',
                                 borderRadius: '15px',
                                 padding: '11px 14px',
-                                minHeight: '56px',
-                                border: '1.2px solid rgba(0, 242, 254, 0.16)',
+                                border: `1.2px solid ${isExpanded ? '#00f2fe' : 'rgba(0, 242, 254, 0.16)'}`,
                                 display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
+                                flexDirection: 'column',
                                 transition: 'all 0.2s ease',
-                                boxShadow: '0 3px 10px rgba(0, 0, 0, 0.20)',
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.background = 'rgba(14, 38, 70, 0.85)';
-                                e.currentTarget.style.borderColor = '#00f2fe';
-                                e.currentTarget.style.transform = 'translateX(-2px)';
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.background = 'rgba(10, 30, 56, 0.65)';
-                                e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.16)';
-                                e.currentTarget.style.transform = 'translateX(0)';
+                                boxShadow: isExpanded ? '0 0 16px rgba(0, 242, 254, 0.25)' : '0 3px 10px rgba(0, 0, 0, 0.20)',
                               }}
                             >
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '11px', minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    width: '34px',
-                                    height: '34px',
-                                    borderRadius: '50%',
-                                    background: meta.chipBg,
-                                    border: `1.4px solid ${meta.chipBorder}`,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    flexShrink: 0,
-                                  }}
-                                >
-                                  <CategoryIcon size={16} color={meta.accentColor} />
-                                </div>
-                                <div style={{ minWidth: 0 }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <span
-                                      style={{
-                                        fontSize: '13.5px',
-                                        fontWeight: 750,
-                                        color: '#f8fafc',
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                        whiteSpace: 'nowrap',
-                                      }}
-                                    >
-                                      {exp.description}
-                                    </span>
-                                    <span
-                                      style={{
-                                        background: meta.chipBg,
-                                        border: `1px solid ${meta.chipBorder}`,
-                                        color: meta.accentColor,
-                                        fontSize: '10px',
-                                        fontWeight: 700,
-                                        padding: '2px 6px',
-                                        borderRadius: '9999px',
-                                        whiteSpace: 'nowrap',
-                                      }}
-                                    >
-                                      {exp.categoryLabel || meta.label}
-                                    </span>
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center',
+                                  cursor: 'pointer',
+                                }}
+                                onClick={() => setExpandedExpenseId(isExpanded ? null : exp.id)}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '11px', minWidth: 0 }}>
+                                  <div
+                                    style={{
+                                      width: '34px',
+                                      height: '34px',
+                                      borderRadius: '50%',
+                                      background: meta.chipBg,
+                                      border: `1.4px solid ${meta.chipBorder}`,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    <CategoryIcon size={16} color={meta.accentColor} />
                                   </div>
-                                  <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px', fontWeight: 500 }}>
-                                    {dateDisplay} · {exp.paidByUserName || 'Thành viên'}
+                                  <div style={{ minWidth: 0 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      <span
+                                        style={{
+                                          fontSize: '13.5px',
+                                          fontWeight: 750,
+                                          color: '#f8fafc',
+                                          overflow: 'hidden',
+                                          textOverflow: 'ellipsis',
+                                          whiteSpace: 'nowrap',
+                                        }}
+                                      >
+                                        {exp.description}
+                                      </span>
+                                      <span
+                                        style={{
+                                          background: meta.chipBg,
+                                          border: `1px solid ${meta.chipBorder}`,
+                                          color: meta.accentColor,
+                                          fontSize: '10px',
+                                          fontWeight: 700,
+                                          padding: '2px 6px',
+                                          borderRadius: '9999px',
+                                          whiteSpace: 'nowrap',
+                                        }}
+                                      >
+                                        {exp.categoryLabel || meta.label}
+                                      </span>
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px', fontWeight: 500 }}>
+                                      {dateDisplay} · {exp.paidByUserName || 'Thành viên'}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: '10px' }}>
+                                  <div
+                                    style={{
+                                      fontSize: '14.5px',
+                                      fontWeight: 800,
+                                      color: '#fb7185',
+                                      letterSpacing: '-0.01em',
+                                    }}
+                                  >
+                                    -{Number(exp.amount).toLocaleString('vi-VN')}đ
+                                  </div>
+                                  <div
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '3px',
+                                      fontSize: '10.5px',
+                                      fontWeight: 650,
+                                      color: '#00f2fe',
+                                      marginTop: '3px',
+                                      background: 'rgba(0, 242, 254, 0.10)',
+                                      padding: '2px 6px',
+                                      borderRadius: '6px',
+                                      border: '1px solid rgba(0, 242, 254, 0.25)',
+                                    }}
+                                  >
+                                    <span>Phân bổ</span>
+                                    {isExpanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
                                   </div>
                                 </div>
                               </div>
 
-                              <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: '10px' }}>
-                                <div
-                                  style={{
-                                    fontSize: '14.5px',
-                                    fontWeight: 800,
-                                    color: '#fb7185',
-                                    letterSpacing: '-0.01em',
-                                  }}
-                                >
-                                  -{Number(exp.amount).toLocaleString('vi-VN')}đ
+                              {/* Expandable Expense Allocation Detail */}
+                              {isExpanded && (
+                                <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(0, 242, 254, 0.15)' }}>
+                                  <ExpenseItemShares expenseId={exp.id} expenseAmount={Number(exp.amount)} />
                                 </div>
-                              </div>
+                              )}
                             </div>
                           );
                         })
@@ -1389,6 +1541,28 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                       >
                         <Plus size={15} color="#041628" />
                         <span>Thêm chi phí</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setFinanceView('COST_SHARING')}
+                        style={{
+                          background: 'rgba(0, 242, 254, 0.10)',
+                          border: '1.2px solid rgba(0, 242, 254, 0.35)',
+                          borderRadius: '14px',
+                          padding: '9px 14px',
+                          color: '#00f2fe',
+                          fontSize: '12.5px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          transition: 'all 0.2s ease',
+                        }}
+                      >
+                        <Users size={14} color="#00f2fe" />
+                        <span>Phân bổ chi phí</span>
                       </button>
 
                       <button
@@ -1707,6 +1881,308 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                     >
                       Đóng
                     </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ========================================================
+                  VIEW 4: COST SHARING DETAIL SUB-VIEW (SAME 3D SLOT)
+                  ======================================================== */}
+              {financeView === 'COST_SHARING' && (
+                <div
+                  key="finance-cost-sharing-view"
+                  className="finance-view-fade-in"
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    height: '100%',
+                    gap: '12px',
+                    overflow: 'hidden',
+                  }}
+                >
+                  {/* A. Header */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '13px' }}>
+                      <div
+                        style={{
+                          width: '46px',
+                          height: '46px',
+                          borderRadius: '16px',
+                          background: 'rgba(0, 242, 254, 0.16)',
+                          border: '2px solid #00f2fe',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          boxShadow: '0 0 18px rgba(0, 242, 254, 0.45)',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <Users size={24} color="#00f2fe" />
+                      </div>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <h2
+                            style={{
+                              fontSize: '20px',
+                              fontWeight: 850,
+                              margin: 0,
+                              letterSpacing: '-0.01em',
+                              color: '#ffffff',
+                              lineHeight: 1.2,
+                              textTransform: 'uppercase',
+                            }}
+                          >
+                            Phân bổ chi phí
+                          </h2>
+                          <span
+                            style={{
+                              background: 'rgba(0, 242, 254, 0.12)',
+                              border: '1.2px solid rgba(0, 242, 254, 0.35)',
+                              color: '#00f2fe',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              padding: '2px 8px',
+                              borderRadius: '9999px',
+                            }}
+                          >
+                            Tỷ lệ sở hữu
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#38bdf8', fontWeight: 500, marginTop: '2px' }}>
+                          Theo tỷ lệ sở hữu {activeVehicle?.name || 'EV01'} · Tháng {costSharingSummary?.month ? `${costSharingSummary.month.slice(5)}/${costSharingSummary.month.slice(0, 4)}` : '10/2026'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setFinanceView('MAIN')}
+                      style={{
+                        background: 'rgba(10, 30, 56, 0.85)',
+                        border: '1.4px solid rgba(0, 242, 254, 0.35)',
+                        borderRadius: '12px',
+                        padding: '8px 12px',
+                        color: '#38bdf8',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        transition: 'all 0.2s',
+                      }}
+                    >
+                      <ArrowLeft size={14} color="#38bdf8" />
+                      <span>Quay lại</span>
+                    </button>
+                  </div>
+
+                  {/* B. Hero Metrics Area */}
+                  <div
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(8, 28, 54, 0.85) 0%, rgba(4, 16, 36, 0.95) 100%)',
+                      border: '1.4px solid rgba(0, 242, 254, 0.35)',
+                      borderRadius: '18px',
+                      padding: '14px 16px',
+                      flexShrink: 0,
+                      boxShadow: '0 4px 20px rgba(0, 0, 0, 0.35)',
+                    }}
+                  >
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                      <div>
+                        <div style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          Tổng chi tháng này
+                        </div>
+                        <div style={{ fontSize: '19px', fontWeight: 800, color: '#ffffff', marginTop: '2px' }}>
+                          {costSharingSummary?.totalExpense != null
+                            ? `${Number(costSharingSummary.totalExpense).toLocaleString('vi-VN')}đ`
+                            : '0đ'}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          Phần của bạn ({costSharingSummary?.userOwnershipPercentage ?? 0}%)
+                        </div>
+                        <div style={{ fontSize: '19px', fontWeight: 800, color: '#38bdf8', marginTop: '2px' }}>
+                          {costSharingSummary?.userRequiredShare != null
+                            ? `${Number(costSharingSummary.userRequiredShare).toLocaleString('vi-VN')}đ`
+                            : '0đ'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: '10px',
+                        paddingTop: '8px',
+                        borderTop: '1px solid rgba(0, 242, 254, 0.15)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        fontSize: '12px',
+                      }}
+                    >
+                      <div style={{ color: '#94a3b8' }}>
+                        Đã thanh toán: <strong style={{ color: '#f8fafc' }}>{costSharingSummary?.userPaidAmount != null ? `${Number(costSharingSummary.userPaidAmount).toLocaleString('vi-VN')}đ` : '0đ'}</strong>
+                      </div>
+                      <div
+                        style={{
+                          fontWeight: 700,
+                          color: (costSharingSummary?.userNetPosition ?? 0) > 0 ? '#10b981' : (costSharingSummary?.userNetPosition ?? 0) < 0 ? '#fb7185' : '#38bdf8',
+                        }}
+                      >
+                        {(costSharingSummary?.userNetPosition ?? 0) > 0
+                          ? `+${Number(costSharingSummary?.userNetPosition).toLocaleString('vi-VN')}đ (Trả dư)`
+                          : (costSharingSummary?.userNetPosition ?? 0) < 0
+                          ? `${Number(costSharingSummary?.userNetPosition).toLocaleString('vi-VN')}đ (Còn thiếu)`
+                          : '0đ (Cân bằng)'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* C. Co-Owner Allocation Breakdown List */}
+                  <div
+                    style={{
+                      flex: 1,
+                      minHeight: 0,
+                      overflowY: 'auto',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      paddingRight: '4px',
+                    }}
+                  >
+                    <div style={{ fontSize: '11.5px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em', margin: '2px 0' }}>
+                      Chi tiết phân bổ theo đồng sở hữu ({costSharingSummary?.memberBreakdown?.length || 0})
+                    </div>
+
+                    {isCostSharingLoading ? (
+                      <div style={{ textAlign: 'center', padding: '24px 0', color: '#94a3b8' }}>
+                        <Loader2 size={24} className="animate-spin" style={{ margin: '0 auto 8px', color: '#00f2fe' }} />
+                        <span>Đang tính toán phân bổ máy chủ...</span>
+                      </div>
+                    ) : costSharingSummary?.memberBreakdown?.map((member) => {
+                      const isCurrent = member.isCurrentUser;
+                      const net = member.netPosition;
+                      return (
+                        <div
+                          key={member.userId}
+                          style={{
+                            background: isCurrent ? 'rgba(0, 242, 254, 0.10)' : 'rgba(10, 30, 56, 0.65)',
+                            border: isCurrent ? '1.5px solid rgba(0, 242, 254, 0.60)' : '1px solid rgba(0, 242, 254, 0.18)',
+                            borderRadius: '14px',
+                            padding: '10px 14px',
+                            boxShadow: isCurrent ? '0 0 16px rgba(0, 242, 254, 0.20)' : '0 2px 8px rgba(0,0,0,0.2)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontSize: '13.5px', fontWeight: 750, color: isCurrent ? '#00f2fe' : '#f8fafc' }}>
+                                {member.userName} {isCurrent && '(Bạn)'}
+                              </span>
+                              <span
+                                style={{
+                                  background: 'rgba(0, 242, 254, 0.15)',
+                                  border: '1px solid rgba(0, 242, 254, 0.35)',
+                                  color: '#38bdf8',
+                                  fontSize: '10.5px',
+                                  fontWeight: 700,
+                                  padding: '1px 6px',
+                                  borderRadius: '9999px',
+                                }}
+                              >
+                                {member.ownershipPercentage}%
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#f8fafc' }}>
+                              {Number(member.requiredShare).toLocaleString('vi-VN')}đ
+                            </div>
+                          </div>
+
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              fontSize: '11px',
+                              marginTop: '6px',
+                              paddingTop: '6px',
+                              borderTop: '1px dashed rgba(255, 255, 255, 0.08)',
+                              color: '#94a3b8',
+                            }}
+                          >
+                            <div>
+                              Đã trả: <span style={{ color: '#cbd5e1', fontWeight: 600 }}>{Number(member.paidAmount).toLocaleString('vi-VN')}đ</span>
+                            </div>
+                            <div>
+                              Chênh lệch:{' '}
+                              <span
+                                style={{
+                                  fontWeight: 700,
+                                  color: net > 0 ? '#10b981' : net < 0 ? '#fb7185' : '#38bdf8',
+                                }}
+                              >
+                                {net > 0 ? `+${Number(net).toLocaleString('vi-VN')}đ (Trả dư)` : net < 0 ? `${Number(net).toLocaleString('vi-VN')}đ (Thiếu)` : '0đ'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* D. Bottom invariant notice & actions */}
+                  <div
+                    style={{
+                      paddingTop: '8px',
+                      borderTop: '1px solid rgba(255, 255, 255, 0.10)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <div style={{ fontSize: '10.5px', color: '#64748b' }}>
+                      ✓ Tổng phân bổ = Chi phí (100%) · Tự động chuẩn hóa
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setFinanceView('EXPENSE_HISTORY')}
+                        style={{
+                          background: 'rgba(0, 242, 254, 0.12)',
+                          border: '1.2px solid rgba(0, 242, 254, 0.35)',
+                          borderRadius: '12px',
+                          padding: '7px 12px',
+                          color: '#00f2fe',
+                          fontSize: '11.5px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                        }}
+                      >
+                        <Receipt size={13} color="#00f2fe" />
+                        <span>Xem chi tiết</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFinanceView('MAIN')}
+                        style={{
+                          background: 'linear-gradient(135deg, rgba(0, 242, 254, 0.30) 0%, rgba(6, 26, 52, 0.95) 100%)',
+                          border: '1.2px solid #00f2fe',
+                          borderRadius: '12px',
+                          padding: '7px 14px',
+                          color: '#ffffff',
+                          fontSize: '11.5px',
+                          fontWeight: 750,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Đóng
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

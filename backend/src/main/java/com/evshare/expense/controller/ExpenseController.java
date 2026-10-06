@@ -1,10 +1,13 @@
 package com.evshare.expense.controller;
 
+import com.evshare.expense.dto.CostSharingSummaryResponse;
 import com.evshare.expense.dto.CreateExpenseRequest;
 import com.evshare.expense.dto.ExpenseResponse;
+import com.evshare.expense.dto.ExpenseShareResponse;
 import com.evshare.expense.dto.ExpenseSummaryResponse;
 import com.evshare.expense.entity.ExpenseCategory;
 import com.evshare.expense.service.ExpenseService;
+import com.evshare.expense.service.ExpenseShareService;
 import com.evshare.security.UserPrincipal;
 import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -23,9 +26,11 @@ import java.util.UUID;
 public class ExpenseController {
 
     private final ExpenseService expenseService;
+    private final ExpenseShareService expenseShareService;
 
-    public ExpenseController(ExpenseService expenseService) {
+    public ExpenseController(ExpenseService expenseService, ExpenseShareService expenseShareService) {
         this.expenseService = expenseService;
+        this.expenseShareService = expenseShareService;
     }
 
     /**
@@ -111,6 +116,47 @@ public class ExpenseController {
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         ExpenseSummaryResponse summary = expenseService.getMonthlySummary(vehicleId, month, principal);
+        return ResponseEntity.ok(summary);
+    }
+
+    /**
+     * Get authoritative cost-sharing allocations for an expense
+     */
+    @GetMapping("/expenses/{expenseId}/shares")
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
+    public ResponseEntity<List<ExpenseShareResponse>> getExpenseShares(
+            @PathVariable UUID expenseId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        List<ExpenseShareResponse> shares = expenseShareService.getExpenseShares(expenseId, principal);
+        return ResponseEntity.ok(shares);
+    }
+
+    /**
+     * Monthly cost-sharing summary for vehicle
+     */
+    @GetMapping("/expenses/shares/summary")
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
+    public ResponseEntity<CostSharingSummaryResponse> getCostSharingSummary(
+            @RequestParam UUID vehicleId,
+            @RequestParam(required = false) String month,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        CostSharingSummaryResponse summary = expenseShareService.getCostSharingSummary(vehicleId, month, principal);
+        return ResponseEntity.ok(summary);
+    }
+
+    /**
+     * Nested convenience endpoint: GET /api/vehicles/{vehicleId}/expenses/shares/summary
+     */
+    @GetMapping("/vehicles/{vehicleId}/expenses/shares/summary")
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
+    public ResponseEntity<CostSharingSummaryResponse> getCostSharingSummaryByVehicle(
+            @PathVariable UUID vehicleId,
+            @RequestParam(required = false) String month,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        CostSharingSummaryResponse summary = expenseShareService.getCostSharingSummary(vehicleId, month, principal);
         return ResponseEntity.ok(summary);
     }
 }

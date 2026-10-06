@@ -4,12 +4,16 @@ import {
   fetchExpenseSummary,
   fetchExpenseById,
   createExpense,
+  fetchExpenseShares,
+  fetchCostSharingSummary,
 } from '../services/expenseApi';
 import {
   ExpenseResponse,
   ExpenseSummaryResponse,
   CreateExpensePayload,
   ExpenseCategory,
+  ExpenseShareResponse,
+  CostSharingSummaryResponse,
 } from '../types/expense';
 
 export function useExpenses(
@@ -69,6 +73,45 @@ export function useExpenseById(expenseId: string | null | undefined) {
   });
 }
 
+export function useExpenseShares(expenseId: string | null | undefined) {
+  return useQuery<ExpenseShareResponse[]>({
+    queryKey: ['expense-shares', expenseId],
+    queryFn: () => {
+      if (!expenseId) return Promise.resolve([]);
+      return fetchExpenseShares(expenseId);
+    },
+    enabled: !!expenseId,
+    staleTime: 5000,
+  });
+}
+
+export function useCostSharingSummary(
+  vehicleId: string | null | undefined,
+  month?: string
+) {
+  return useQuery<CostSharingSummaryResponse>({
+    queryKey: ['cost-sharing-summary', vehicleId, month],
+    queryFn: () => {
+      if (!vehicleId) {
+        return Promise.resolve({
+          vehicleId: '',
+          month: month || '',
+          totalExpense: 0,
+          userId: '',
+          userOwnershipPercentage: 0,
+          userRequiredShare: 0,
+          userPaidAmount: 0,
+          userNetPosition: 0,
+          memberBreakdown: [],
+        });
+      }
+      return fetchCostSharingSummary(vehicleId, month);
+    },
+    enabled: !!vehicleId,
+    staleTime: 5000,
+  });
+}
+
 export function useCreateExpense() {
   const queryClient = useQueryClient();
 
@@ -77,7 +120,10 @@ export function useCreateExpense() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
       queryClient.invalidateQueries({ queryKey: ['expense-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['expense-shares'] });
+      queryClient.invalidateQueries({ queryKey: ['cost-sharing-summary'] });
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
     },
   });
 }
+

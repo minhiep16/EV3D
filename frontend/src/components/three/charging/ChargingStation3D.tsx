@@ -122,12 +122,12 @@ export const ChargingStation3D: React.FC<ChargingStation3DProps> = ({
       code: station.code,
       bayId: 'BAY_CHARGING_01',
       stationPosition: [
-        station.posX ? Number(station.posX) : 6.5,
+        station.posX ? Number(station.posX) : 3.5,
         station.posY ? Number(station.posY) : 0.14,
-        station.posZ ? Number(station.posZ) : 0.5,
+        station.posZ ? Number(station.posZ) : 3.2,
       ] as [number, number, number],
-      kioskOffset: [1.35, 0, 0] as [number, number, number],
-      socketOffset: [1.35 + 0.42, 0.95, 0.05] as [number, number, number],
+      kioskOffset: [0, 0, 0] as [number, number, number],
+      socketOffset: [0.42, 0.95, 0.05] as [number, number, number],
     };
   }, [station]);
 
@@ -177,6 +177,7 @@ export const ChargingStation3D: React.FC<ChargingStation3DProps> = ({
   return (
     <group
       position={[baseX + offX, baseY + offY, baseZ + offZ]}
+      rotation={[0, -0.15, 0]}
       onClick={handleClick}
       onPointerOver={handlePointerOver}
       onPointerOut={handlePointerOut}

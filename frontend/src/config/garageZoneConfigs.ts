@@ -95,12 +95,10 @@ export const OPERATIONS_ZONE_CONFIGS: Record<GarageZone, ZoneConfig> = {
 
 /**
  * CO_OWNER Dedicated Garage Zone Spatial Layout (Reference Design):
- * Rear-Center:
- *                      [ TRỢ LÝ AI (-2.2, -4.2) ]
- * Mid row:
- * [ TÀI CHÍNH (-5.4, -0.6) ]                  [ PHÂN TÍCH (3.0, -4.0) ]
- * Foreground hero:
- *                  [ EV01 (0.0, 1.8) ]        [ SẠC (5.0, 0.8) ]
+ * Background row:
+ *                      [ TRỢ LÝ AI (-3.2, -3.8) ]                  [ PHÂN TÍCH (3.2, -3.8) ]
+ * Foreground horizontal axis:
+ * [ TÀI CHÍNH (-4.2, 3.2) ]             [ EV01 (0.0, 1.8) ]        [ SẠC (CS01: 3.5, CS02: 4.5, z: 3.2) ]
  */
 export const CO_OWNER_ZONE_CONFIGS: Record<GarageZone, ZoneConfig> = {
   VEHICLE: {
@@ -109,7 +107,7 @@ export const CO_OWNER_ZONE_CONFIGS: Record<GarageZone, ZoneConfig> = {
   },
   CHARGING: {
     ...OPERATIONS_ZONE_CONFIGS.CHARGING,
-    position: [5.2, 0, 0.5],
+    position: [4.0, 0, 3.2],
   },
   MAINTENANCE: {
     ...OPERATIONS_ZONE_CONFIGS.MAINTENANCE,

@@ -77,7 +77,7 @@ export const ChargingWorld: React.FC = () => {
   // Determine fallback stations if database has not returned yet
   const effectiveStations = useMemo(() => {
     if (stations && stations.length > 0) return stations;
-    // Fallback seed definitions matching V20 Flyway migration
+    // Fallback seed definitions matching showroom layout
     return [
       {
         id: 'station-cs01-uuid',
@@ -87,9 +87,9 @@ export const ChargingWorld: React.FC = () => {
         maxPowerKw: 150,
         connectorType: 'CCS2' as const,
         locationLabel: 'Khu vực Sạc Nhanh - Bay CS-01',
-        posX: 6.5,
+        posX: 3.5,
         posY: 0.14,
-        posZ: 0.5,
+        posZ: 3.2,
         createdAt: '',
         updatedAt: '',
       },
@@ -101,9 +101,9 @@ export const ChargingWorld: React.FC = () => {
         maxPowerKw: 60,
         connectorType: 'CCS2' as const,
         locationLabel: 'Khu vực Sạc Nhanh - Bay CS-02',
-        posX: 6.5,
+        posX: 4.5,
         posY: 0.14,
-        posZ: -3.8,
+        posZ: 3.2,
         createdAt: '',
         updatedAt: '',
       },
@@ -136,8 +136,8 @@ export const ChargingWorld: React.FC = () => {
     if (!connectedStation || !activeVehicle) return null;
 
     const visual = CHARGING_STATION_VISUALS[connectedStation.code] || {
-      stationPosition: [connectedStation.posX ?? 6.5, connectedStation.posY ?? 0.14, connectedStation.posZ ?? 0.5] as [number, number, number],
-      socketOffset: [1.77, 0.95, 0.05] as [number, number, number],
+      stationPosition: [connectedStation.posX ?? 3.5, connectedStation.posY ?? 0.14, connectedStation.posZ ?? 3.2] as [number, number, number],
+      socketOffset: [0.42, 0.95, 0.05] as [number, number, number],
     };
 
     const startWorld: [number, number, number] = [
