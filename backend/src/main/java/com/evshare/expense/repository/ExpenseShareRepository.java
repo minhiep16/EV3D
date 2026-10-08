@@ -25,14 +25,14 @@ public interface ExpenseShareRepository extends JpaRepository<ExpenseShare, UUID
 
     List<ExpenseShare> findByUserId(UUID userId);
 
-    @Query("SELECT es FROM ExpenseShare es JOIN es.expense e WHERE e.vehicle.id = :vehicleId AND e.occurredAt >= :from AND e.occurredAt < :to")
+    @Query("SELECT es FROM ExpenseShare es JOIN es.expense e WHERE e.vehicle.id = :vehicleId AND e.status = com.evshare.expense.entity.ExpenseStatus.APPROVED AND e.occurredAt >= :from AND e.occurredAt < :to")
     List<ExpenseShare> findByVehicleIdAndOccurredAtBetween(
             @Param("vehicleId") UUID vehicleId,
             @Param("from") Instant from,
             @Param("to") Instant to
     );
 
-    @Query("SELECT COALESCE(SUM(es.shareAmount), 0) FROM ExpenseShare es JOIN es.expense e WHERE e.vehicle.id = :vehicleId AND es.user.id = :userId AND e.occurredAt >= :from AND e.occurredAt < :to")
+    @Query("SELECT COALESCE(SUM(es.shareAmount), 0) FROM ExpenseShare es JOIN es.expense e WHERE e.vehicle.id = :vehicleId AND es.user.id = :userId AND e.status = com.evshare.expense.entity.ExpenseStatus.APPROVED AND e.occurredAt >= :from AND e.occurredAt < :to")
     BigDecimal sumShareAmountByVehicleIdAndUserIdAndOccurredAtBetween(
             @Param("vehicleId") UUID vehicleId,
             @Param("userId") UUID userId,

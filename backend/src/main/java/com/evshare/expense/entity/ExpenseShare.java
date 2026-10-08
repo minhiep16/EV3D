@@ -33,12 +33,40 @@ public class ExpenseShare {
     @Column(name = "ownership_percentage", precision = 7, scale = 4, nullable = false)
     private BigDecimal ownershipPercentage;
 
+    @Column(name = "allocation_percentage", precision = 7, scale = 4)
+    private BigDecimal allocationPercentage;
+
     @Column(name = "share_amount", precision = 14, scale = 2, nullable = false)
     private BigDecimal shareAmount;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", length = 30, nullable = false)
     private ExpenseShareStatus status = ExpenseShareStatus.ALLOCATED;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "allocation_policy", length = 30)
+    private ExpenseAllocationPolicy allocationPolicy;
+
+    @Column(name = "member_km_snapshot", precision = 10, scale = 2)
+    private BigDecimal memberKmSnapshot;
+
+    @Column(name = "total_km_snapshot", precision = 10, scale = 2)
+    private BigDecimal totalKmSnapshot;
+
+    @Column(name = "raw_calculated_amount", precision = 14, scale = 2)
+    private BigDecimal rawCalculatedAmount;
+
+    @Column(name = "redistribution_adjustment", precision = 14, scale = 2)
+    private BigDecimal redistributionAdjustment;
+
+    @Column(name = "allocation_period_start")
+    private Instant allocationPeriodStart;
+
+    @Column(name = "allocation_period_end")
+    private Instant allocationPeriodEnd;
+
+    @Column(name = "calculation_version", length = 20)
+    private String calculationVersion;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
@@ -75,6 +103,9 @@ public class ExpenseShare {
         if (this.status == null) {
             this.status = ExpenseShareStatus.ALLOCATED;
         }
+        if (this.allocationPercentage == null) {
+            this.allocationPercentage = this.ownershipPercentage;
+        }
     }
 
     public UUID getId() {
@@ -109,6 +140,14 @@ public class ExpenseShare {
         this.ownershipPercentage = ownershipPercentage;
     }
 
+    public BigDecimal getAllocationPercentage() {
+        return allocationPercentage != null ? allocationPercentage : ownershipPercentage;
+    }
+
+    public void setAllocationPercentage(BigDecimal allocationPercentage) {
+        this.allocationPercentage = allocationPercentage;
+    }
+
     public BigDecimal getShareAmount() {
         return shareAmount;
     }
@@ -131,5 +170,69 @@ public class ExpenseShare {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public ExpenseAllocationPolicy getAllocationPolicy() {
+        return allocationPolicy;
+    }
+
+    public void setAllocationPolicy(ExpenseAllocationPolicy allocationPolicy) {
+        this.allocationPolicy = allocationPolicy;
+    }
+
+    public BigDecimal getMemberKmSnapshot() {
+        return memberKmSnapshot;
+    }
+
+    public void setMemberKmSnapshot(BigDecimal memberKmSnapshot) {
+        this.memberKmSnapshot = memberKmSnapshot;
+    }
+
+    public BigDecimal getTotalKmSnapshot() {
+        return totalKmSnapshot;
+    }
+
+    public void setTotalKmSnapshot(BigDecimal totalKmSnapshot) {
+        this.totalKmSnapshot = totalKmSnapshot;
+    }
+
+    public BigDecimal getRawCalculatedAmount() {
+        return rawCalculatedAmount;
+    }
+
+    public void setRawCalculatedAmount(BigDecimal rawCalculatedAmount) {
+        this.rawCalculatedAmount = rawCalculatedAmount;
+    }
+
+    public BigDecimal getRedistributionAdjustment() {
+        return redistributionAdjustment;
+    }
+
+    public void setRedistributionAdjustment(BigDecimal redistributionAdjustment) {
+        this.redistributionAdjustment = redistributionAdjustment;
+    }
+
+    public Instant getAllocationPeriodStart() {
+        return allocationPeriodStart;
+    }
+
+    public void setAllocationPeriodStart(Instant allocationPeriodStart) {
+        this.allocationPeriodStart = allocationPeriodStart;
+    }
+
+    public Instant getAllocationPeriodEnd() {
+        return allocationPeriodEnd;
+    }
+
+    public void setAllocationPeriodEnd(Instant allocationPeriodEnd) {
+        this.allocationPeriodEnd = allocationPeriodEnd;
+    }
+
+    public String getCalculationVersion() {
+        return calculationVersion;
+    }
+
+    public void setCalculationVersion(String calculationVersion) {
+        this.calculationVersion = calculationVersion;
     }
 }

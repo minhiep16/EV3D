@@ -30,4 +30,12 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             @Param("endTime") Instant endTime,
             @Param("activeStatuses") Collection<BookingStatus> activeStatuses
     );
+
+    @Query("SELECT b FROM Booking b WHERE b.vehicle.id = :vehicleId " +
+           "AND b.status = 'CONFIRMED' " +
+           "AND b.startTime <= :time AND b.endTime >= :time ORDER BY b.startTime DESC")
+    List<Booking> findBookingsByVehicleAndOccurredTime(
+            @Param("vehicleId") UUID vehicleId,
+            @Param("time") Instant time
+    );
 }

@@ -7,6 +7,16 @@ public record ExpenseSummaryResponse(
         String month,
         BigDecimal totalExpense,
         long transactionCount,
-        Map<String, BigDecimal> categoryBreakdown
+        Map<String, BigDecimal> categoryBreakdown,
+        long pendingCount,
+        BigDecimal pendingAmount
 ) {
+    public ExpenseSummaryResponse(
+            String month,
+            BigDecimal totalExpense,
+            long transactionCount,
+            Map<String, BigDecimal> categoryBreakdown
+    ) {
+        this(month, totalExpense, transactionCount, categoryBreakdown, 0, BigDecimal.ZERO);
+    }
 }

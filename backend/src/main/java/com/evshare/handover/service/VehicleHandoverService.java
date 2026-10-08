@@ -234,14 +234,23 @@ public class VehicleHandoverService {
         if (inspectionRepository == null) {
             return Optional.empty();
         }
-        List<VehicleInspection> completed = inspectionRepository.findCompletedByVehicleIdOrderByCompletedAtDesc(vehicleId);
+        List<VehicleInspection> completed = inspectionRepository.findCompletedByVehicleIdAndTypeOrderByCompletedAtDesc(
+                vehicleId,
+                com.evshare.inspection.entity.InspectionType.PRE_HANDOVER
+        );
         if (completed == null || completed.isEmpty()) {
-            return inspectionRepository.findLatestCompletedByVehicleId(vehicleId);
+            completed = inspectionRepository.findCompletedByVehicleIdOrderByCompletedAtDesc(vehicleId);
+        }
+        if (completed == null || completed.isEmpty()) {
+            return Optional.empty();
         }
 
         java.util.Set<UUID> consumedInspectionIds = handoverRepository.findUsedInspectionIds(vehicleId, currentHandoverId);
 
         for (VehicleInspection insp : completed) {
+            if (insp.getInspectionType() != null && insp.getInspectionType() != com.evshare.inspection.entity.InspectionType.PRE_HANDOVER) {
+                continue;
+            }
             if (consumedInspectionIds == null || !consumedInspectionIds.contains(insp.getId())) {
                 return Optional.of(insp);
             }
@@ -359,21 +368,7 @@ public class VehicleHandoverService {
             resp.setRecipientEmail(target.getUser().getEmail());
         }
 
-        Instant now = Instant.now();
-        Instant prepWindowStart = target.getStartTime().minus(Duration.ofMinutes(PREPARATION_WINDOW_MINUTES));
-        resp.setPreparationWindowStartTime(prepWindowStart);
-
-        if (now.isBefore(prepWindowStart.minusSeconds(30))) {
-            long secondsUntil = Duration.between(now, prepWindowStart).getSeconds();
-            resp.setSecondsUntilPreparation(Math.max(0, secondsUntil));
-            resp.setReason(HandoverEligibilityReason.TOO_EARLY);
-            resp.setMessage("CHƯA ĐẾN THỜI GIAN CHUẨN BỊ XE");
-            resp.setEligibleForInspection(false);
-            resp.setHandoverAllowed(false);
-            return resp;
-        }
-
-        // Within preparation window up to end time
+        // Resolve existing handover if any
         Optional<VehicleHandover> bookingHandoverOpt = handoverRepository.findByBookingId(target.getId());
         VehicleHandover handover = bookingHandoverOpt.orElse(null);
 
@@ -381,9 +376,37 @@ public class VehicleHandoverService {
             resp.setHandoverId(handover.getId());
             resp.setHandoverStatus(handover.getStatus() != null ? handover.getStatus().name() : null);
             resp.setHandover(VehicleHandoverResponse.fromEntity(handover));
+        } else {
+            // Case A: Handover has not been created yet in DB
+            resp.setHandoverId(null);
+            resp.setHandoverStatus(null);
+            resp.setHandover(null);
+        }
 
+        // Authoritative inspection evaluation: resolve matching unconsumed inspection for this vehicle/handover context
+        VehicleInspection targetInsp = (handover != null && handover.getInspection() != null)
+                ? handover.getInspection()
+                : findLatestEligibleInspectionForHandover(vehicleId, handover != null ? handover.getId() : null).orElse(null);
+
+        populateInspectionDetails(resp, targetInsp);
+
+        Instant now = Instant.now();
+        Instant prepWindowStart = target.getStartTime().minus(Duration.ofMinutes(PREPARATION_WINDOW_MINUTES));
+        resp.setPreparationWindowStartTime(prepWindowStart);
+
+        // Time gate: if too early, preserve inspection result in response but keep handover action strictly disabled
+        if (now.isBefore(prepWindowStart.minusSeconds(30))) {
+            long secondsUntil = Duration.between(now, prepWindowStart).getSeconds();
+            resp.setSecondsUntilPreparation(Math.max(0, secondsUntil));
+            resp.setReason(HandoverEligibilityReason.TOO_EARLY);
+            resp.setMessage("CHƯA ĐẾN THỜI GIAN CHUẨN BỊ XE");
+            resp.setEligibleForInspection(true);
+            resp.setHandoverAllowed(false);
+            return resp;
+        }
+
+        if (handover != null) {
             if (handover.getStatus() == HandoverStatus.READY_FOR_HANDOVER) {
-                populateInspectionDetails(resp, handover.getInspection());
                 resp.setReason(HandoverEligibilityReason.READY);
                 resp.setMessage("XE ĐÃ SẴN SÀNG ĐỂ BÀN GIAO");
                 resp.setHandoverAllowed(true);
@@ -392,7 +415,6 @@ public class VehicleHandoverService {
             }
 
             if (handover.getStatus() == HandoverStatus.HANDED_OVER) {
-                populateInspectionDetails(resp, handover.getInspection());
                 resp.setReason(HandoverEligibilityReason.HANDED_OVER);
                 resp.setMessage("XE ĐÃ ĐƯỢC BÀN GIAO — ĐANG CHỜ ĐỒNG SỞ HỮU XÁC NHẬN");
                 resp.setHandoverAllowed(false);
@@ -401,26 +423,14 @@ public class VehicleHandoverService {
             }
 
             if (handover.getStatus() == HandoverStatus.OWNER_CONFIRMED) {
-                populateInspectionDetails(resp, handover.getInspection());
                 resp.setReason(HandoverEligibilityReason.HANDED_OVER);
                 resp.setMessage("ĐỒNG SỞ HỮU ĐÃ NHẬN XE");
                 resp.setHandoverAllowed(false);
                 resp.setEligibleForInspection(false);
                 return resp;
             }
-        } else {
-            // Case A: Handover has not been created yet in DB
-            resp.setHandoverId(null);
-            resp.setHandoverStatus(null);
-            resp.setHandover(null);
         }
 
-        // Inspection evaluation for this specific handover cycle
-        VehicleInspection targetInsp = (handover != null && handover.getInspection() != null)
-                ? handover.getInspection()
-                : findLatestEligibleInspectionForHandover(vehicleId, handover != null ? handover.getId() : null).orElse(null);
-
-        populateInspectionDetails(resp, targetInsp);
         evaluateInspectionReadiness(resp);
         return resp;
     }

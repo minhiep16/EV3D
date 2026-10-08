@@ -6,6 +6,9 @@ import {
   createExpense,
   fetchExpenseShares,
   fetchCostSharingSummary,
+  submitExpenseApproval,
+  fetchExpenseApprovals,
+  cancelExpense,
 } from '../services/expenseApi';
 import {
   ExpenseResponse,
@@ -14,7 +17,10 @@ import {
   ExpenseCategory,
   ExpenseShareResponse,
   CostSharingSummaryResponse,
+  ExpenseApprovalRequest,
+  ExpenseApprovalStatusResponse,
 } from '../types/expense';
+import { useAuthStore } from '../store/authStore';
 
 export function useExpenses(
   vehicleId: string | null | undefined,
@@ -73,41 +79,34 @@ export function useExpenseById(expenseId: string | null | undefined) {
   });
 }
 
-export function useExpenseShares(expenseId: string | null | undefined) {
+export function useExpenseShares(
+  expenseId: string | null | undefined,
+  options?: { enabled?: boolean }
+) {
   return useQuery<ExpenseShareResponse[]>({
     queryKey: ['expense-shares', expenseId],
     queryFn: () => {
       if (!expenseId) return Promise.resolve([]);
       return fetchExpenseShares(expenseId);
     },
-    enabled: !!expenseId,
+    enabled: Boolean(expenseId && (options?.enabled ?? true)),
     staleTime: 5000,
   });
 }
 
 export function useCostSharingSummary(
   vehicleId: string | null | undefined,
-  month?: string
+  month?: string,
+  options?: { enabled?: boolean }
 ) {
+  const user = useAuthStore((state) => state.user);
   return useQuery<CostSharingSummaryResponse>({
-    queryKey: ['cost-sharing-summary', vehicleId, month],
+    queryKey: ['cost-sharing-summary', vehicleId, month, user?.id],
     queryFn: () => {
-      if (!vehicleId) {
-        return Promise.resolve({
-          vehicleId: '',
-          month: month || '',
-          totalExpense: 0,
-          userId: '',
-          userOwnershipPercentage: 0,
-          userRequiredShare: 0,
-          userPaidAmount: 0,
-          userNetPosition: 0,
-          memberBreakdown: [],
-        });
-      }
+      if (!vehicleId) throw new Error('vehicleId is required');
       return fetchCostSharingSummary(vehicleId, month);
     },
-    enabled: !!vehicleId,
+    enabled: Boolean(vehicleId && (options?.enabled ?? true)),
     staleTime: 5000,
   });
 }
@@ -123,6 +122,54 @@ export function useCreateExpense() {
       queryClient.invalidateQueries({ queryKey: ['expense-shares'] });
       queryClient.invalidateQueries({ queryKey: ['cost-sharing-summary'] });
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+    },
+  });
+}
+
+export function useExpenseApprovals(expenseId: string | null | undefined) {
+  return useQuery<ExpenseApprovalStatusResponse>({
+    queryKey: ['expense-approvals', expenseId],
+    queryFn: () => {
+      if (!expenseId) throw new Error('Missing expense ID');
+      return fetchExpenseApprovals(expenseId);
+    },
+    enabled: !!expenseId,
+    staleTime: 5000,
+  });
+}
+
+export function useSubmitExpenseApproval() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      expenseId,
+      payload,
+    }: {
+      expenseId: string;
+      payload: ExpenseApprovalRequest;
+    }) => submitExpenseApproval(expenseId, payload),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['expense-approvals', variables.expenseId] });
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['expense-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['expense-shares'] });
+      queryClient.invalidateQueries({ queryKey: ['cost-sharing-summary'] });
+    },
+  });
+}
+
+export function useCancelExpense() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (expenseId: string) => cancelExpense(expenseId),
+    onSuccess: (_, expenseId) => {
+      queryClient.invalidateQueries({ queryKey: ['expense-approvals', expenseId] });
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['expense-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['expense-shares'] });
+      queryClient.invalidateQueries({ queryKey: ['cost-sharing-summary'] });
     },
   });
 }

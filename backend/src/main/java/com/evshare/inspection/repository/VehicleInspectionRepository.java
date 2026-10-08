@@ -1,6 +1,7 @@
 package com.evshare.inspection.repository;
 
 import com.evshare.inspection.entity.InspectionStatus;
+import com.evshare.inspection.entity.InspectionType;
 import com.evshare.inspection.entity.VehicleInspection;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -17,8 +18,16 @@ public interface VehicleInspectionRepository extends JpaRepository<VehicleInspec
     @Query("SELECT vi FROM VehicleInspection vi WHERE vi.vehicle.id = :vehicleId AND vi.status = 'COMPLETED' ORDER BY vi.completedAt DESC")
     List<VehicleInspection> findCompletedByVehicleIdOrderByCompletedAtDesc(@Param("vehicleId") UUID vehicleId);
 
+    @Query("SELECT vi FROM VehicleInspection vi WHERE vi.vehicle.id = :vehicleId AND vi.status = 'COMPLETED' AND vi.inspectionType = :type ORDER BY vi.completedAt DESC")
+    List<VehicleInspection> findCompletedByVehicleIdAndTypeOrderByCompletedAtDesc(@Param("vehicleId") UUID vehicleId, @Param("type") InspectionType type);
+
     default Optional<VehicleInspection> findLatestCompletedByVehicleId(UUID vehicleId) {
         List<VehicleInspection> list = findCompletedByVehicleIdOrderByCompletedAtDesc(vehicleId);
+        return list.isEmpty() ? Optional.empty() : Optional.of(list.get(0));
+    }
+
+    default Optional<VehicleInspection> findLatestCompletedByVehicleIdAndType(UUID vehicleId, InspectionType type) {
+        List<VehicleInspection> list = findCompletedByVehicleIdAndTypeOrderByCompletedAtDesc(vehicleId, type);
         return list.isEmpty() ? Optional.empty() : Optional.of(list.get(0));
     }
 
@@ -32,3 +41,4 @@ public interface VehicleInspectionRepository extends JpaRepository<VehicleInspec
 
     List<VehicleInspection> findByVehicleIdOrderByStartedAtDesc(UUID vehicleId);
 }
+

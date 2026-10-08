@@ -1,5 +1,6 @@
 package com.evshare.expense.dto;
 
+import com.evshare.expense.entity.ExpenseAllocationPolicy;
 import com.evshare.expense.entity.ExpenseCategory;
 import com.evshare.expense.entity.ExpenseSourceType;
 import jakarta.validation.constraints.DecimalMin;
@@ -37,6 +38,20 @@ public class CreateExpenseRequest {
     @Size(max = 100, message = "Mã tham chiếu nguồn không được vượt quá 100 ký tự")
     private String sourceReferenceId;
 
+    @Size(max = 500, message = "Đường dẫn chứng từ không được vượt quá 500 ký tự")
+    private String evidenceUrl;
+
+    @Size(max = 500, message = "Ghi chú chứng từ không được vượt quá 500 ký tự")
+    private String evidenceNote;
+
+    private ExpenseAllocationPolicy allocationPolicy;
+
+    private UUID responsibleUserId;
+
+    private UUID relatedTripId;
+
+    private UUID relatedBookingId;
+
     public CreateExpenseRequest() {
     }
 
@@ -50,6 +65,21 @@ public class CreateExpenseRequest {
             ExpenseSourceType sourceType,
             String sourceReferenceId
     ) {
+        this(vehicleId, category, amount, description, occurredAt, paidByUserId, sourceType, sourceReferenceId, null, null);
+    }
+
+    public CreateExpenseRequest(
+            UUID vehicleId,
+            ExpenseCategory category,
+            BigDecimal amount,
+            String description,
+            Instant occurredAt,
+            UUID paidByUserId,
+            ExpenseSourceType sourceType,
+            String sourceReferenceId,
+            String evidenceUrl,
+            String evidenceNote
+    ) {
         this.vehicleId = vehicleId;
         this.category = category;
         this.amount = amount;
@@ -58,6 +88,8 @@ public class CreateExpenseRequest {
         this.paidByUserId = paidByUserId;
         this.sourceType = sourceType != null ? sourceType : ExpenseSourceType.MANUAL;
         this.sourceReferenceId = sourceReferenceId;
+        this.evidenceUrl = evidenceUrl;
+        this.evidenceNote = evidenceNote;
     }
 
     public UUID getVehicleId() {
@@ -122,5 +154,53 @@ public class CreateExpenseRequest {
 
     public void setSourceReferenceId(String sourceReferenceId) {
         this.sourceReferenceId = sourceReferenceId;
+    }
+
+    public String getEvidenceUrl() {
+        return evidenceUrl;
+    }
+
+    public void setEvidenceUrl(String evidenceUrl) {
+        this.evidenceUrl = evidenceUrl;
+    }
+
+    public String getEvidenceNote() {
+        return evidenceNote;
+    }
+
+    public void setEvidenceNote(String evidenceNote) {
+        this.evidenceNote = evidenceNote;
+    }
+
+    public ExpenseAllocationPolicy getAllocationPolicy() {
+        return allocationPolicy;
+    }
+
+    public void setAllocationPolicy(ExpenseAllocationPolicy allocationPolicy) {
+        this.allocationPolicy = allocationPolicy;
+    }
+
+    public UUID getResponsibleUserId() {
+        return responsibleUserId;
+    }
+
+    public void setResponsibleUserId(UUID responsibleUserId) {
+        this.responsibleUserId = responsibleUserId;
+    }
+
+    public UUID getRelatedTripId() {
+        return relatedTripId;
+    }
+
+    public void setRelatedTripId(UUID relatedTripId) {
+        this.relatedTripId = relatedTripId;
+    }
+
+    public UUID getRelatedBookingId() {
+        return relatedBookingId;
+    }
+
+    public void setRelatedBookingId(UUID relatedBookingId) {
+        this.relatedBookingId = relatedBookingId;
     }
 }

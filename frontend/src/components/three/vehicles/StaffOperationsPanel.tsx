@@ -11,7 +11,8 @@ import { Booking } from '../../../types/booking';
 import { TripData } from '../../../types/trip';
 import { fetchActiveVehicleHandovers, fetchHandoverEligibility } from '../../../services/handoverApi';
 import { fetchVehicleBookings } from '../../../services/bookingApi';
-import { fetchActiveTripForVehicle } from '../../../services/tripApi';
+import { fetchActiveTripForVehicle, confirmTripReturnApi } from '../../../services/tripApi';
+import { useQueryClient } from '@tanstack/react-query';
 import { fetchVehicleDamages } from '../../../services/damageApi';
 import { DamageRecordResponse } from '../../../types/damage';
 import { useAuthStore } from '../../../store/authStore';
@@ -102,6 +103,36 @@ export const StaffOperationsPanel: React.FC<StaffOperationsPanelProps> = ({
   const enterVehicleHandoverMode = useWorldStore((state) => state.enterVehicleHandoverMode);
   const enterVehicleDamageMappingMode = useWorldStore((state) => state.enterVehicleDamageMappingMode);
   const enterVehicleDamageHistoryMode = useWorldStore((state) => state.enterVehicleDamageHistoryMode);
+  const queryClient = useQueryClient();
+
+  const [isConfirmingReturn, setIsConfirmingReturn] = React.useState(false);
+  const [returnSuccessMsg, setReturnSuccessMsg] = React.useState<string | null>(null);
+  const [returnErrorMsg, setReturnErrorMsg] = React.useState<string | null>(null);
+
+  const handleConfirmReturn = async () => {
+    if (!activeTrip?.id || isConfirmingReturn) return;
+    setIsConfirmingReturn(true);
+    setReturnErrorMsg(null);
+    setReturnSuccessMsg(null);
+    try {
+      await confirmTripReturnApi(activeTrip.id, {
+        endBatteryLevel: vehicle.currentBatteryLevel,
+        endOdometer: Number(vehicle.odometer) || undefined,
+        conditionNote: 'Nhân viên đã tiếp nhận phương tiện và kiểm tra tình trạng.',
+      });
+      setReturnSuccessMsg('Xác nhận trả xe thành công! Chi phí điện đã được ghi nhận tự động.');
+      queryClient.invalidateQueries({ queryKey: ['activeTrip', vehicle.id] });
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['expenseShares'] });
+      queryClient.invalidateQueries({ queryKey: ['costSharingSummary'] });
+      queryClient.invalidateQueries({ queryKey: ['handoverHistory'] });
+    } catch (err: any) {
+      setReturnErrorMsg(err.message || 'Không thể xác nhận trả xe. Vui lòng thử lại.');
+    } finally {
+      setIsConfirmingReturn(false);
+    }
+  };
 
   // TanStack Query: Fetch active vehicle handovers
   const { data: activeHandovers = [] } = useQuery<VehicleHandoverData[]>({
@@ -519,34 +550,108 @@ export const StaffOperationsPanel: React.FC<StaffOperationsPanelProps> = ({
             </div>
           </div>
 
-          {/* STAFF RESTRICTION BANNER & DISABLED ACTIONS */}
+          {/* STAFF RETURN VERIFICATION & CHARGING COST SETTLEMENT */}
           <div
             style={{
-              background: 'rgba(30, 41, 59, 0.75)',
-              border: '1px solid rgba(148, 163, 184, 0.25)',
-              borderRadius: '10px',
+              background: 'rgba(15, 23, 42, 0.85)',
+              border: '1px solid rgba(0, 242, 254, 0.35)',
+              borderRadius: '12px',
               padding: '12px',
-              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
             }}
           >
             <div
               style={{
-                color: '#fbbf24',
+                color: '#00f2fe',
+                fontSize: '11px',
+                fontWeight: 750,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.03em',
+              }}
+            >
+              <ShieldCheck size={14} color="#00f2fe" />
+              <span>TIẾP NHẬN & XÁC NHẬN TRẢ XE</span>
+            </div>
+
+            <p style={{ margin: 0, fontSize: '10.5px', color: '#94a3b8', lineHeight: 1.4 }}>
+              Nhân viên kiểm tra tình trạng thực tế và xác nhận trả xe để hệ thống tự động tính chi phí điện tiêu thụ của chuyến đi.
+            </p>
+
+            {returnErrorMsg && (
+              <div
+                style={{
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.40)',
+                  borderRadius: '8px',
+                  padding: '6px 10px',
+                  color: '#f87171',
+                  fontSize: '10.5px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <AlertTriangle size={12} color="#f87171" />
+                <span>{returnErrorMsg}</span>
+              </div>
+            )}
+
+            {returnSuccessMsg && (
+              <div
+                style={{
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  border: '1px solid rgba(16, 185, 129, 0.40)',
+                  borderRadius: '8px',
+                  padding: '6px 10px',
+                  color: '#34d399',
+                  fontSize: '10.5px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <ShieldCheck size={12} color="#34d399" />
+                <span>{returnSuccessMsg}</span>
+              </div>
+            )}
+
+            <button
+              type="button"
+              disabled={isConfirmingReturn}
+              onClick={handleConfirmReturn}
+              style={{
+                width: '100%',
+                background: isConfirmingReturn
+                  ? 'rgba(0, 242, 254, 0.3)'
+                  : 'linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '10px',
+                color: '#070b14',
                 fontSize: '11.5px',
-                fontWeight: 700,
+                fontWeight: 800,
+                letterSpacing: '0.03em',
+                cursor: isConfirmingReturn ? 'not-allowed' : 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '6px',
-                marginBottom: '4px',
+                gap: '8px',
+                boxShadow: '0 4px 14px rgba(0, 242, 254, 0.35)',
+                transition: 'all 0.2s ease',
               }}
             >
-              <AlertTriangle size={14} color="#fbbf24" />
-              <span>KHÓA BÀN GIAO VẬN HÀNH</span>
-            </div>
-            <p style={{ margin: 0, fontSize: '10.5px', color: '#94a3b8', lineHeight: 1.4 }}>
-              EV01 đang được sử dụng. Không thể thực hiện bàn giao mới cho đến khi chuyến đi hiện tại kết thúc.
-            </p>
+              <Zap size={14} color="#070b14" />
+              <span>
+                {isConfirmingReturn
+                  ? 'ĐANG XÁC NHẬN TRẢ XE...'
+                  : 'XÁC NHẬN TRẢ XE & TÍNH CHI PHÍ ĐIỆN'}
+              </span>
+            </button>
           </div>
         </>
       ) : isInconsistentInUseState ? (

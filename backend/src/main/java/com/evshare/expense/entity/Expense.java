@@ -52,11 +52,43 @@ public class Expense {
     private User createdBy;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "allocation_policy", length = 30, nullable = false)
+    private ExpenseAllocationPolicy allocationPolicy = ExpenseAllocationPolicy.OWNERSHIP_RATIO;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "responsible_user_id", referencedColumnName = "id")
+    private User responsibleUser;
+
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "related_trip_id", length = 36)
+    private UUID relatedTripId;
+
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "related_booking_id", length = 36)
+    private UUID relatedBookingId;
+
+    @Enumerated(EnumType.STRING)
     @Column(name = "source_type", length = 50)
     private ExpenseSourceType sourceType = ExpenseSourceType.MANUAL;
 
     @Column(name = "source_reference_id", length = 100)
     private String sourceReferenceId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", length = 30, nullable = false)
+    private ExpenseStatus status = ExpenseStatus.PENDING_VERIFICATION;
+
+    @Column(name = "evidence_url", length = 500)
+    private String evidenceUrl;
+
+    @Column(name = "evidence_note", length = 500)
+    private String evidenceNote;
+
+    @Column(name = "approved_at")
+    private Instant approvedAt;
+
+    @Column(name = "rejected_at")
+    private Instant rejectedAt;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
@@ -68,6 +100,9 @@ public class Expense {
 
     @OneToMany(mappedBy = "expense", cascade = CascadeType.ALL, orphanRemoval = true)
     private java.util.List<ExpenseShare> shares = new java.util.ArrayList<>();
+
+    @OneToMany(mappedBy = "expense", cascade = CascadeType.ALL, orphanRemoval = true)
+    private java.util.List<ExpenseApproval> approvals = new java.util.ArrayList<>();
 
     public Expense() {
     }
@@ -85,6 +120,40 @@ public class Expense {
             ExpenseSourceType sourceType,
             String sourceReferenceId
     ) {
+        this(
+                id,
+                vehicle,
+                coOwnershipGroup,
+                category,
+                amount,
+                description,
+                occurredAt,
+                paidBy,
+                createdBy,
+                sourceType,
+                sourceReferenceId,
+                ExpenseStatus.PENDING_VERIFICATION,
+                null,
+                null
+        );
+    }
+
+    public Expense(
+            UUID id,
+            Vehicle vehicle,
+            CoOwnershipGroup coOwnershipGroup,
+            ExpenseCategory category,
+            BigDecimal amount,
+            String description,
+            Instant occurredAt,
+            User paidBy,
+            User createdBy,
+            ExpenseSourceType sourceType,
+            String sourceReferenceId,
+            ExpenseStatus status,
+            String evidenceUrl,
+            String evidenceNote
+    ) {
         this.id = id != null ? id : UUID.randomUUID();
         this.vehicle = vehicle;
         this.coOwnershipGroup = coOwnershipGroup;
@@ -96,6 +165,9 @@ public class Expense {
         this.createdBy = createdBy;
         this.sourceType = sourceType != null ? sourceType : ExpenseSourceType.MANUAL;
         this.sourceReferenceId = sourceReferenceId;
+        this.status = status != null ? status : ExpenseStatus.PENDING_VERIFICATION;
+        this.evidenceUrl = evidenceUrl;
+        this.evidenceNote = evidenceNote;
     }
 
     @PrePersist
@@ -108,6 +180,12 @@ public class Expense {
         }
         if (this.sourceType == null) {
             this.sourceType = ExpenseSourceType.MANUAL;
+        }
+        if (this.status == null) {
+            this.status = ExpenseStatus.PENDING_VERIFICATION;
+        }
+        if (this.allocationPolicy == null) {
+            this.allocationPolicy = ExpenseAllocationPolicy.OWNERSHIP_RATIO;
         }
     }
 
@@ -213,5 +291,85 @@ public class Expense {
 
     public void setShares(java.util.List<ExpenseShare> shares) {
         this.shares = shares;
+    }
+
+    public ExpenseStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(ExpenseStatus status) {
+        this.status = status;
+    }
+
+    public String getEvidenceUrl() {
+        return evidenceUrl;
+    }
+
+    public void setEvidenceUrl(String evidenceUrl) {
+        this.evidenceUrl = evidenceUrl;
+    }
+
+    public String getEvidenceNote() {
+        return evidenceNote;
+    }
+
+    public void setEvidenceNote(String evidenceNote) {
+        this.evidenceNote = evidenceNote;
+    }
+
+    public Instant getApprovedAt() {
+        return approvedAt;
+    }
+
+    public void setApprovedAt(Instant approvedAt) {
+        this.approvedAt = approvedAt;
+    }
+
+    public Instant getRejectedAt() {
+        return rejectedAt;
+    }
+
+    public void setRejectedAt(Instant rejectedAt) {
+        this.rejectedAt = rejectedAt;
+    }
+
+    public java.util.List<ExpenseApproval> getApprovals() {
+        return approvals;
+    }
+
+    public void setApprovals(java.util.List<ExpenseApproval> approvals) {
+        this.approvals = approvals;
+    }
+
+    public ExpenseAllocationPolicy getAllocationPolicy() {
+        return allocationPolicy;
+    }
+
+    public void setAllocationPolicy(ExpenseAllocationPolicy allocationPolicy) {
+        this.allocationPolicy = allocationPolicy != null ? allocationPolicy : ExpenseAllocationPolicy.OWNERSHIP_RATIO;
+    }
+
+    public User getResponsibleUser() {
+        return responsibleUser;
+    }
+
+    public void setResponsibleUser(User responsibleUser) {
+        this.responsibleUser = responsibleUser;
+    }
+
+    public UUID getRelatedTripId() {
+        return relatedTripId;
+    }
+
+    public void setRelatedTripId(UUID relatedTripId) {
+        this.relatedTripId = relatedTripId;
+    }
+
+    public UUID getRelatedBookingId() {
+        return relatedBookingId;
+    }
+
+    public void setRelatedBookingId(UUID relatedBookingId) {
+        this.relatedBookingId = relatedBookingId;
     }
 }

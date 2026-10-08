@@ -46,6 +46,17 @@ public class VehicleInspectionService {
 
     @Transactional(readOnly = true)
     public Optional<VehicleInspectionResponse> getLatestCompletedInspection(UUID vehicleId) {
+        return getLatestCompletedInspection(vehicleId, InspectionType.PRE_HANDOVER);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<VehicleInspectionResponse> getLatestCompletedInspection(UUID vehicleId, InspectionType type) {
+        if (type != null) {
+            Optional<VehicleInspection> typeMatch = inspectionRepository.findLatestCompletedByVehicleIdAndType(vehicleId, type);
+            if (typeMatch.isPresent()) {
+                return typeMatch.map(VehicleInspectionResponse::fromEntity);
+            }
+        }
         return inspectionRepository.findLatestCompletedByVehicleId(vehicleId)
                 .map(VehicleInspectionResponse::fromEntity);
     }

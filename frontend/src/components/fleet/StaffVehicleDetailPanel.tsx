@@ -269,6 +269,7 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
   const {
     data: latestInspection,
     isLoading: isLatestInspectionLoading,
+    isError: isLatestInspectionError,
     refetch: refetchLatestInspection,
   } = useQuery<VehicleInspectionResponse | null>({
     queryKey: ['latestCompletedInspection', vehicle.id],
@@ -292,17 +293,27 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
   // Strictly require a fresh, unconsumed inspection for the upcoming handover cycle (Requirements 10 & 11)
   const isInspectionPassed = useMemo(() => {
     // 1. Authoritative: Backend eligibility explicitly confirms an unconsumed inspection is available and fresh
-    if (eligibility) {
-      return Boolean(
-        eligibility.inspectionAvailable &&
-        eligibility.inspectionFresh &&
-        (eligibility.inspectionResult === 'PASS' || eligibility.inspectionResult === 'PASS_WITH_NOTES')
-      );
+    if (
+      eligibility?.inspectionAvailable &&
+      eligibility?.inspectionFresh &&
+      (eligibility?.inspectionResult === 'PASS' || eligibility?.inspectionResult === 'PASS_WITH_NOTES')
+    ) {
+      return true;
     }
-    // 2. Fallback only if eligibility not loaded yet: inspect whether latestInspection is not consumed by historical handovers
-    if (latestInspection && (latestInspection.overallResult === 'PASS' || latestInspection.overallResult === 'PASS_WITH_NOTES')) {
+    // 2. Authoritative: Latest completed inspection is fresh and PASS/PASS_WITH_NOTES, and not consumed by older handovers
+    if (
+      latestInspection &&
+      latestInspection.status === 'COMPLETED' &&
+      latestInspection.inspectionType === 'PRE_HANDOVER' &&
+      (latestInspection.overallResult === 'PASS' || latestInspection.overallResult === 'PASS_WITH_NOTES')
+    ) {
       const isConsumed = handoverHistory.some((h) => h.inspectionId === latestInspection.id);
-      return !isConsumed;
+      const isFresh = latestInspection.completedAt
+        ? Date.now() - new Date(latestInspection.completedAt).getTime() < 24 * 3600 * 1000
+        : true;
+      if (!isConsumed && isFresh) {
+        return true;
+      }
     }
     return false;
   }, [eligibility, latestInspection, handoverHistory]);
@@ -321,6 +332,14 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
       (eligibility?.inspectionAvailable && !eligibility?.inspectionFresh)
     );
   }, [eligibility]);
+
+  const isInspectionInProgress = useMemo(() => {
+    return Boolean(
+      activeInspection &&
+      activeInspection.status === 'IN_PROGRESS' &&
+      !isInspectionPassed
+    );
+  }, [activeInspection, isInspectionPassed]);
 
   const handoverBlockReason = useMemo(() => {
     if (vehicle.status === 'MAINTENANCE' || eligibility?.reason === 'VEHICLE_MAINTENANCE') {
@@ -2097,7 +2116,7 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <CheckCircle2 size={14} color="#34d399" />
                       <span style={{ fontSize: '11px', fontWeight: 800, color: '#34d399' }}>
-                        ĐÃ KIỂM TRA TIỀN BÀN GIAO
+                        KIỂM TRA XE ĐẠT YÊU CẦU
                       </span>
                     </div>
                     {(latestInspection?.overallResult || eligibility?.inspectionResult) && (
@@ -2145,6 +2164,12 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
                           {latestInspection?.abnormalCount || 0}
                         </strong>{' '}
                         bất thường
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Tham chiếu:</span>
+                      <span style={{ color: '#cbd5e1' }}>
+                        {code} {targetBookingId ? `• Đặt lịch #${targetBookingId.substring(0, 8).toUpperCase()}` : ''}
                       </span>
                     </div>
                   </div>
@@ -2207,7 +2232,7 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#f87171' }}>
                     <XCircle size={15} />
-                    <span style={{ fontSize: '11.5px', fontWeight: 800 }}>KIỂM TRA KHÔNG ĐẠT TIÊU CHUẨN</span>
+                    <span style={{ fontSize: '11.5px', fontWeight: 800 }}>KIỂM TRA XE KHÔNG ĐẠT</span>
                   </div>
                   <div style={{ fontSize: '11px', color: '#cbd5e1', lineHeight: '1.45' }}>
                     Xe có hư hỏng nghiêm trọng chưa đủ điều kiện an toàn để bàn giao. Vui lòng chuyển sang bảo dưỡng.
@@ -2289,8 +2314,91 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
                     <span>KIỂM TRA LẠI XE</span>
                   </button>
                 </div>
+              ) : isInspectionInProgress ? (
+                /* Unfinished Inspection Case */
+                <div
+                  style={{
+                    background: 'rgba(56, 189, 248, 0.1)',
+                    border: '1px solid rgba(56, 189, 248, 0.4)',
+                    borderRadius: '10px',
+                    padding: '12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#38bdf8' }}>
+                    <Clock size={15} />
+                    <span style={{ fontSize: '11.5px', fontWeight: 800 }}>KIỂM TRA XE CHƯA HOÀN TẤT</span>
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#e2e8f0', lineHeight: '1.45' }}>
+                    Phiên kiểm tra đang được thực hiện dở dang. Vui lòng tiếp tục đánh giá và hoàn tất biên bản.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => enterVehicleInspectionMode()}
+                    style={{
+                      background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                      border: 'none',
+                      borderRadius: '8px',
+                      padding: '8px 12px',
+                      color: '#ffffff',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <Shield size={13} />
+                    <span>TIẾP TỤC KIỂM TRA XE</span>
+                  </button>
+                </div>
+              ) : isLatestInspectionError ? (
+                /* Network / Server Error Case */
+                <div
+                  style={{
+                    background: 'rgba(239, 68, 68, 0.12)',
+                    border: '1px solid rgba(239, 68, 68, 0.45)',
+                    borderRadius: '10px',
+                    padding: '12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#f87171' }}>
+                    <AlertTriangle size={15} />
+                    <span style={{ fontSize: '11.5px', fontWeight: 800 }}>KHÔNG THỂ TẢI KẾT QUẢ KIỂM TRA XE</span>
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#cbd5e1', lineHeight: '1.45' }}>
+                    Có lỗi khi kết nối máy chủ để tải biên bản kiểm tra. Vui lòng thử tải lại.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      refetchLatestInspection();
+                      refetchEligibility();
+                    }}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.08)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '6px',
+                      padding: '7px 12px',
+                      color: '#ffffff',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      alignSelf: 'flex-start',
+                    }}
+                  >
+                    TẢI LẠI KẾT QUẢ
+                  </button>
+                </div>
               ) : (
-                /* Ineligible Case: No Inspection Record or Other */
+                /* Ineligible Case: No Inspection Record */
                 <div
                   style={{
                     background: 'rgba(245, 158, 11, 0.1)',

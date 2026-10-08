@@ -4,5 +4,6 @@ public enum ExpenseSourceType {
     MANUAL,
     CHARGING_SESSION,
     MAINTENANCE_REQUEST,
+    TRIP,
     OTHER
 }

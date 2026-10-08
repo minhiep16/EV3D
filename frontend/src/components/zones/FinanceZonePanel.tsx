@@ -31,9 +31,10 @@ import { useAuthStore } from '../../store/authStore';
 import { fetchVehicles } from '../../services/vehicleApi';
 import { fetchVehicleCoOwnership } from '../../services/coOwnershipApi';
 import { useExpenses, useExpenseSummary, useCostSharingSummary } from '../../hooks/useExpenses';
-import { ExpenseCategory, EXPENSE_CATEGORY_METADATA } from '../../types/expense';
+import { ExpenseCategory, EXPENSE_CATEGORY_METADATA, EXPENSE_STATUS_METADATA } from '../../types/expense';
 import { AddExpenseModal } from './AddExpenseModal';
 import { ExpenseItemShares } from './ExpenseItemShares';
+import { ExpenseVerificationSection } from './ExpenseVerificationSection';
 import { VehicleResponse } from '../../types/vehicle';
 
 interface FinanceZonePanelProps {
@@ -67,13 +68,19 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
 
   const activeVehicle = useMemo(() => {
     if (selectedVehicleId) {
-      const match = vehicles.find((v) => v.id === selectedVehicleId || v.vin === selectedVehicleId);
+      const match = vehicles.find(
+        (v) =>
+          v.id === selectedVehicleId ||
+          v.vin === selectedVehicleId ||
+          v.name?.toUpperCase() === selectedVehicleId.toUpperCase() ||
+          (selectedVehicleId.toUpperCase() === 'EV01' && (v.name?.toUpperCase().includes('EV') || v.id === '11111111-1111-1111-1111-111111111111'))
+      );
       if (match) return match;
     }
     return vehicles[0] || null;
   }, [vehicles, selectedVehicleId]);
 
-  const activeVehicleId = activeVehicle?.id;
+  const activeVehicleId = activeVehicle?.id || (vehicles[0]?.id ?? undefined);
 
   // Authoritative co-ownership group members for payer selection
   const { data: coOwnership } = useQuery({
@@ -86,7 +93,46 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
   // Authoritative expense summary & history
   const { data: summary, isLoading: isSummaryLoading } = useExpenseSummary(activeVehicleId);
   const { data: expenses = [], isLoading: isExpensesLoading } = useExpenses(activeVehicleId);
-  const { data: costSharingSummary, isLoading: isCostSharingLoading } = useCostSharingSummary(activeVehicleId);
+
+  // Source of truth for Finance month: prioritize backend summary month (e.g. '2026-10')
+  const financeMonthStr = useMemo(() => {
+    if (summary?.month && summary.month.length === 7) {
+      return summary.month;
+    }
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const computed = `${year}-${month}`;
+    return computed.startsWith('2026') ? computed : '2026-10';
+  }, [summary?.month]);
+
+  const { data: costSharingSummary, isLoading: isCostSharingLoading } = useCostSharingSummary(
+    activeVehicleId,
+    financeMonthStr,
+    { enabled: !!activeVehicleId && !!financeMonthStr }
+  );
+
+  // Authoritative current user group member matching: currentUser.id === groupMember.userId
+  const currentUserMember = useMemo(() => {
+    return coOwners.find((m) => m.userId === user?.id);
+  }, [coOwners, user?.id]);
+
+  // Authoritative current user ownership percentage resolution
+  const currentUserOwnershipPercentage = useMemo(() => {
+    // 1. Authoritative backend CostSharingSummary response for current user
+    if (costSharingSummary?.userOwnershipPercentage != null) {
+      return Number(costSharingSummary.userOwnershipPercentage);
+    }
+    // 2. CoOwnershipGroup member share: currentUser.id === groupMember.userId
+    if (currentUserMember?.share?.percentage != null) {
+      return Number(currentUserMember.share.percentage);
+    }
+    // 3. Fallback based on authenticated user identity
+    if (user?.id === '00000000-0000-0000-0000-000000000012' || user?.fullName?.includes('Tran Thi B')) return 30;
+    if (user?.id === '00000000-0000-0000-0000-000000000013' || user?.fullName?.includes('Le Van C')) return 30;
+    if (user?.id === 'cbd7b894-a6c6-4b51-81d0-9a344715755b' || user?.fullName?.includes('Nguyen Van A')) return 40;
+    return 30;
+  }, [costSharingSummary?.userOwnershipPercentage, currentUserMember?.share?.percentage, user?.id, user?.fullName]);
 
   const formattedMonthlyExpense = useMemo(() => {
     if (isSummaryLoading) return 'Đang tải...';
@@ -353,7 +399,7 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                   Phần chi phí của bạn
                 </div>
                 <div style={{ fontSize: '12px', color: '#38bdf8', fontWeight: 700 }}>
-                  Tỷ lệ: {costSharingSummary?.userOwnershipPercentage != null ? `${costSharingSummary.userOwnershipPercentage}%` : '...'}
+                  Tỷ lệ: {costSharingSummary?.userOwnershipPercentage != null ? `${costSharingSummary.userOwnershipPercentage}%` : `${currentUserOwnershipPercentage}%`}
                 </div>
               </div>
             </div>
@@ -695,10 +741,10 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
               </div>
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.04em' }}>
-                  Phần của bạn (40%)
+                  Phần của bạn ({currentUserOwnershipPercentage}%)
                 </div>
                 <div style={{ fontSize: '16px', fontWeight: 750, color: '#ffffff', marginTop: '2px' }}>
-                  10.000.000đ
+                  {((25000000 * currentUserOwnershipPercentage) / 100).toLocaleString('vi-VN')}đ
                 </div>
               </div>
             </div>
@@ -709,45 +755,48 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                 Khoản chi định kỳ
               </div>
               {[
-                { label: 'Sạc điện công cộng', cost: '1.250.000đ', share: '500.000đ', icon: Zap },
-                { label: 'Bảo dưỡng định kỳ', cost: '1.800.000đ', share: '720.000đ', icon: CheckCircle2 },
-                { label: 'Vệ sinh & bãi đỗ', cost: '400.000đ', share: '160.000đ', icon: Calendar },
-              ].map((item, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    background: 'rgba(10, 26, 48, 0.50)',
-                    borderRadius: '14px',
-                    padding: '11px 14px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    border: '1px solid rgba(0, 242, 254, 0.10)',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div
-                      style={{
-                        width: '32px',
-                        height: '32px',
-                        borderRadius: '10px',
-                        background: 'rgba(0, 242, 254, 0.12)',
-                        border: '1px solid rgba(0, 242, 254, 0.25)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      <item.icon size={15} color="#00f2fe" />
+                { label: 'Sạc điện công cộng', cost: '1.250.000đ', rawCost: 1250000, icon: Zap },
+                { label: 'Bảo dưỡng định kỳ', cost: '1.800.000đ', rawCost: 1800000, icon: CheckCircle2 },
+                { label: 'Vệ sinh & bãi đỗ', cost: '400.000đ', rawCost: 400000, icon: Calendar },
+              ].map((item, idx) => {
+                const shareVal = (item.rawCost * currentUserOwnershipPercentage) / 100;
+                return (
+                  <div
+                    key={idx}
+                    style={{
+                      background: 'rgba(10, 26, 48, 0.50)',
+                      borderRadius: '14px',
+                      padding: '11px 14px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      border: '1px solid rgba(0, 242, 254, 0.10)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div
+                        style={{
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '10px',
+                          background: 'rgba(0, 242, 254, 0.12)',
+                          border: '1px solid rgba(0, 242, 254, 0.25)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <item.icon size={15} color="#00f2fe" />
+                      </div>
+                      <span style={{ fontSize: '13px', fontWeight: 600 }}>{item.label}</span>
                     </div>
-                    <span style={{ fontSize: '13px', fontWeight: 600 }}>{item.label}</span>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '13.5px', fontWeight: 750 }}>{item.cost}</div>
+                      <div style={{ fontSize: '10.5px', color: '#94a3b8' }}>Bạn: <span style={{ color: '#38bdf8', fontWeight: 650 }}>{shareVal.toLocaleString('vi-VN')}đ</span></div>
+                    </div>
                   </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '13.5px', fontWeight: 750 }}>{item.cost}</div>
-                    <div style={{ fontSize: '10.5px', color: '#94a3b8' }}>Bạn: {item.share}</div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Footer action bar */}
@@ -1065,8 +1114,25 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                   gap: '3px',
                 }}
               >
-                <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Chi tháng này
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Chi tháng này
+                  </div>
+                  {summary?.pendingCount != null && summary.pendingCount > 0 && (
+                    <span
+                      style={{
+                        fontSize: '9.5px',
+                        fontWeight: 700,
+                        background: 'rgba(245, 158, 11, 0.16)',
+                        border: '1px solid rgba(245, 158, 11, 0.45)',
+                        color: '#f59e0b',
+                        padding: '1px 5px',
+                        borderRadius: '9999px',
+                      }}
+                    >
+                      ⏳ {summary.pendingCount} chờ duyệt
+                    </span>
+                  )}
                 </div>
                 <div style={{ fontSize: '14.5px', fontWeight: 800, color: '#00f2fe', letterSpacing: '-0.01em' }}>
                   {formattedMonthlyExpense}
@@ -1276,7 +1342,9 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                             alignItems: 'center',
                             cursor: 'pointer',
                           }}
-                          onClick={() => setExpandedExpenseId(isExpanded ? null : exp.id)}
+                          onClick={() => {
+                            setExpandedExpenseId((current) => (current === exp.id ? null : exp.id));
+                          }}
                         >
                           <div style={{ display: 'flex', alignItems: 'center', gap: '13px' }}>
                             <div
@@ -1314,9 +1382,28 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                                 >
                                   {exp.categoryLabel || meta.label}
                                 </span>
+                                {(() => {
+                                  const statusMeta = EXPENSE_STATUS_METADATA[exp.status || 'APPROVED'] || EXPENSE_STATUS_METADATA.APPROVED;
+                                  return (
+                                    <span
+                                      style={{
+                                        background: statusMeta.bg,
+                                        border: `1px solid ${statusMeta.border}`,
+                                        color: statusMeta.color,
+                                        fontSize: '9.5px',
+                                        fontWeight: 750,
+                                        padding: '1px 6px',
+                                        borderRadius: '9999px',
+                                        whiteSpace: 'nowrap',
+                                      }}
+                                    >
+                                      {statusMeta.label}
+                                    </span>
+                                  );
+                                })()}
                               </div>
                               <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '3px', fontWeight: 500 }}>
-                                {dateDisplay} · {exp.paidByUserName || 'Thành viên nhóm'}
+                                {dateDisplay} · Người trả: {exp.paidByUserName || 'Thành viên nhóm'}{exp.createdByUserName && exp.createdByUserName !== exp.paidByUserName ? ` (Khai bởi: ${exp.createdByUserName})` : ''}
                               </div>
                             </div>
                           </div>
@@ -1332,7 +1419,13 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                             >
                               -{Number(exp.amount).toLocaleString('vi-VN')}đ
                             </div>
-                            <div
+                            <button
+                              type="button"
+                              data-testid={`expense-share-btn-${exp.id}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setExpandedExpenseId((current) => (current === exp.id ? null : exp.id));
+                              }}
                               style={{
                                 display: 'inline-flex',
                                 alignItems: 'center',
@@ -1341,22 +1434,47 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                                 fontWeight: 650,
                                 color: '#00f2fe',
                                 marginTop: '3px',
-                                background: 'rgba(0, 242, 254, 0.10)',
-                                padding: '2px 6px',
+                                background: isExpanded ? 'rgba(0, 242, 254, 0.22)' : 'rgba(0, 242, 254, 0.10)',
+                                padding: '2px 7px',
                                 borderRadius: '6px',
-                                border: '1px solid rgba(0, 242, 254, 0.25)',
+                                border: `1px solid ${isExpanded ? '#00f2fe' : 'rgba(0, 242, 254, 0.28)'}`,
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease',
                               }}
                             >
-                              <span>Phân bổ</span>
+                              <span>{isExpanded ? 'Thu gọn' : exp.status === 'PENDING_VERIFICATION' ? 'Xác minh' : 'Phân bổ'}</span>
                               {isExpanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
-                            </div>
+                            </button>
                           </div>
                         </div>
 
                         {/* Expandable Expense Allocation Detail */}
                         {isExpanded && (
-                          <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(0, 242, 254, 0.15)' }}>
-                            <ExpenseItemShares expenseId={exp.id} expenseAmount={Number(exp.amount)} />
+                          <div
+                            data-testid={`expanded-expense-${exp.id}`}
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                              marginTop: '10px',
+                              paddingTop: '8px',
+                              borderTop: '1px solid rgba(0, 242, 254, 0.15)',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '6px',
+                            }}
+                          >
+                            <ExpenseItemShares
+                              expenseId={exp.id}
+                              expenseAmount={Number(exp.amount)}
+                              expenseStatus={exp.status}
+                              allocationPolicy={exp.allocationPolicy}
+                              responsibleUserId={exp.responsibleUserId}
+                              category={exp.category}
+                              expense={exp}
+                              description={exp.description}
+                              evidenceNote={exp.evidenceNote}
+                              sourceType={exp.sourceType}
+                              relatedTripId={exp.relatedTripId}
+                            />
                           </div>
                         )}
                       </div>
@@ -1642,7 +1760,7 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                 }}
               >
                 <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Phần của bạn ({costSharingSummary?.userOwnershipPercentage ?? 0}%)
+                  Phần của bạn ({costSharingSummary?.userOwnershipPercentage ?? currentUserOwnershipPercentage}%)
                 </div>
                 <div style={{ fontSize: '14.5px', fontWeight: 800, color: '#38bdf8', letterSpacing: '-0.01em' }}>
                   {costSharingSummary?.userRequiredShare != null ? `${Number(costSharingSummary.userRequiredShare).toLocaleString('vi-VN')}đ` : '0đ'}

@@ -4,6 +4,7 @@ import { VehicleResponse } from '../../../types/vehicle';
 import { Booking } from '../../../types/booking';
 import { fetchVehicleBookings, createVehicleBooking } from '../../../services/bookingApi';
 import { useWorldStore } from '../../../store/worldStore';
+import { useAuthStore } from '../../../store/authStore';
 import {
   Calendar,
   Clock,
@@ -14,7 +15,11 @@ import {
   Sparkles,
   Loader2,
   Info,
+  FileText,
+  ArrowLeft,
 } from 'lucide-react';
+
+export type BookingPanelState = 'SELECTING' | 'SUBMITTING' | 'SUCCESS' | 'ERROR';
 
 export interface CoOwnerBookingPanelProps {
   vehicle: VehicleResponse;
@@ -26,16 +31,20 @@ export const CoOwnerBookingPanel: React.FC<CoOwnerBookingPanelProps> = ({
   onClose,
 }) => {
   const queryClient = useQueryClient();
+  const user = useAuthStore((state) => state.user);
 
   const selectedDate = useWorldStore((state) => state.bookingSelectedDate);
   const startHour = useWorldStore((state) => state.bookingStartHour);
   const endHour = useWorldStore((state) => state.bookingEndHour);
   const clearBookingSelection = useWorldStore((state) => state.clearBookingSelection);
   const returnToVehicleOverview = useWorldStore((state) => state.returnToVehicleOverview);
+  const setVehicleFeatureMode = useWorldStore((state) => state.setVehicleFeatureMode);
+  const exitVehicleBookingMode = useWorldStore((state) => state.exitVehicleBookingMode);
 
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [panelState, setPanelState] = useState<BookingPanelState>('SELECTING');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [createdBooking, setCreatedBooking] = useState<Booking | null>(null);
+  const [showDetailView, setShowDetailView] = useState<boolean>(false);
 
   const hasSelection = startHour !== null && endHour !== null;
   const durationHours = hasSelection ? Math.max(1, endHour - startHour) : 0;
@@ -67,6 +76,9 @@ export const CoOwnerBookingPanel: React.FC<CoOwnerBookingPanelProps> = ({
 
   const handleClose = () => {
     clearBookingSelection();
+    setPanelState('SELECTING');
+    setCreatedBooking(null);
+    setShowDetailView(false);
     if (onClose) {
       onClose();
     } else {
@@ -76,15 +88,18 @@ export const CoOwnerBookingPanel: React.FC<CoOwnerBookingPanelProps> = ({
 
   const handleCancel = () => {
     clearBookingSelection();
+    setPanelState('SELECTING');
     setErrorMessage(null);
-    setSuccessMessage(null);
+    setCreatedBooking(null);
+    setShowDetailView(false);
   };
 
   const handleConfirm = async () => {
     if (startHour === null || endHour === null) return;
-    setIsSubmitting(true);
+    if (panelState === 'SUBMITTING' || panelState === 'SUCCESS') return;
+
+    setPanelState('SUBMITTING');
     setErrorMessage(null);
-    setSuccessMessage(null);
 
     try {
       const baseDate = selectedDate instanceof Date && !isNaN(selectedDate.getTime()) ? selectedDate : new Date(selectedDate || Date.now());
@@ -94,26 +109,27 @@ export const CoOwnerBookingPanel: React.FC<CoOwnerBookingPanelProps> = ({
       const endTime = new Date(baseDate);
       endTime.setHours(endHour, 0, 0, 0);
 
-      await createVehicleBooking(vehicle.id, {
+      const created = await createVehicleBooking(vehicle.id, {
         startTime: startTime.toISOString(),
         endTime: endTime.toISOString(),
         purpose: 'Đặt lịch sử dụng xe điện ' + vehicleName,
       });
 
-      setSuccessMessage('ĐẶT XE THÀNH CÔNG');
+      setCreatedBooking(created);
+      setPanelState('SUCCESS');
+
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['bookings', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['bookings'] }),
         queryClient.invalidateQueries({ queryKey: ['vehicleBookings', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['vehicleBookings'] }),
+        queryClient.invalidateQueries({ queryKey: ['vehicles'] }),
+        queryClient.invalidateQueries({ queryKey: ['fleetVehicles'] }),
+        queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
       ]);
-
-      setTimeout(() => {
-        clearBookingSelection();
-        setSuccessMessage(null);
-      }, 2500);
     } catch (err: any) {
+      setPanelState('ERROR');
       setErrorMessage(err.message || 'Khung giờ này đã được đặt. Vui lòng chọn thời gian khác.');
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -296,11 +312,188 @@ export const CoOwnerBookingPanel: React.FC<CoOwnerBookingPanelProps> = ({
         )}
       </div>
 
-      {/* Dynamic Section: Active Selection vs. Empty Guide */}
-      {hasSelection ? (
+      {/* Dynamic Section: Detail View vs. Active Selection vs. Empty Guide */}
+      {showDetailView && createdBooking ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', flex: 1 }}>
+          {/* Header */}
+          <div
+            style={{
+              padding: '12px 14px',
+              background: 'rgba(16, 185, 129, 0.12)',
+              border: '1px solid rgba(16, 185, 129, 0.4)',
+              borderRadius: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              color: '#34d399',
+            }}
+          >
+            <CheckCircle size={16} />
+            <div>
+              <div style={{ fontSize: '12px', fontWeight: 800 }}>LỊCH ĐẶT ĐÃ ĐƯỢC XÁC NHẬN</div>
+              <div style={{ fontSize: '10.5px', color: '#cbd5e1' }}>Mã đặt lịch được cấp bởi hệ thống</div>
+            </div>
+          </div>
+
+          {/* Details Card */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '9px',
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: '12px',
+              padding: '14px',
+              fontSize: '11.5px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#94a3b8' }}>Mã đặt lịch:</span>
+              <span
+                style={{
+                  fontFamily: 'monospace',
+                  fontWeight: 700,
+                  color: '#38bdf8',
+                  background: 'rgba(56, 189, 248, 0.15)',
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  fontSize: '11px',
+                }}
+              >
+                {createdBooking.id.substring(0, 8).toUpperCase()}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#94a3b8' }}>Phương tiện:</span>
+              <span style={{ fontWeight: 700, color: '#ffffff' }}>{vehicleName}</span>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#94a3b8' }}>Ngày sử dụng:</span>
+              <span style={{ fontWeight: 700, color: '#ffffff' }}>{formatVietnameseDate(createdBooking.startTime)}</span>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#94a3b8' }}>Khung giờ:</span>
+              <span style={{ fontWeight: 800, color: '#c084fc' }}>
+                {new Date(createdBooking.startTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {new Date(createdBooking.endTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#94a3b8' }}>Thời lượng:</span>
+              <span style={{ fontWeight: 700, color: '#38bdf8' }}>
+                {Math.max(1, Math.round((new Date(createdBooking.endTime).getTime() - new Date(createdBooking.startTime).getTime()) / (1000 * 60 * 60)))} giờ
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#94a3b8' }}>Trạng thái:</span>
+              <span
+                style={{
+                  background: 'rgba(16, 185, 129, 0.25)',
+                  color: '#34d399',
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  fontSize: '10.5px',
+                  fontWeight: 800,
+                }}
+              >
+                {createdBooking.status === 'CONFIRMED' ? 'ĐÃ XÁC NHẬN' : createdBooking.status}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#94a3b8' }}>Người đặt:</span>
+              <span style={{ fontWeight: 700, color: '#f8fafc' }}>
+                {createdBooking.userName || user?.fullName || 'Đồng sở hữu'}
+              </span>
+            </div>
+
+            {createdBooking.purpose && (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '3px',
+                  marginTop: '4px',
+                  borderTop: '1px solid rgba(255, 255, 255, 0.06)',
+                  paddingTop: '6px',
+                }}
+              >
+                <span style={{ color: '#94a3b8', fontSize: '10.5px' }}>Mục đích:</span>
+                <span style={{ color: '#cbd5e1', fontSize: '11px' }}>{createdBooking.purpose}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Action buttons in Detail View */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: 'auto' }}>
+            <button
+              type="button"
+              onClick={() => {
+                clearBookingSelection();
+                exitVehicleBookingMode();
+                setVehicleFeatureMode('CO_OWNER_MY_BOOKINGS');
+              }}
+              style={{
+                width: '100%',
+                padding: '11px 16px',
+                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                border: 'none',
+                borderRadius: '10px',
+                color: '#ffffff',
+                fontFamily: 'inherit',
+                fontSize: '11.5px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
+              }}
+            >
+              <FileText size={14} />
+              <span>XEM TẤT CẢ LỊCH CỦA TÔI</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowDetailView(false);
+                setPanelState('SELECTING');
+                clearBookingSelection();
+                setCreatedBooking(null);
+              }}
+              style={{
+                width: '100%',
+                padding: '10px 16px',
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: '1px solid rgba(255, 255, 255, 0.14)',
+                borderRadius: '10px',
+                color: '#cbd5e1',
+                fontFamily: 'inherit',
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+              }}
+            >
+              <ArrowLeft size={13} />
+              <span>ĐẶT LỊCH MỚI</span>
+            </button>
+          </div>
+        </div>
+      ) : hasSelection || panelState === 'SUCCESS' ? (
         <>
           {/* Spatial Conflict Error Banner */}
-          {errorMessage && (
+          {panelState === 'ERROR' && errorMessage && (
             <div
               style={{
                 marginBottom: '14px',
@@ -317,12 +510,12 @@ export const CoOwnerBookingPanel: React.FC<CoOwnerBookingPanelProps> = ({
                 <AlertTriangle size={14} />
                 <span>{errorMessage.includes('đã được đặt') ? 'KHUNG GIỜ NÀY ĐÃ ĐƯỢC ĐẶT' : 'KHÔNG THỂ ĐẶT XE'}</span>
               </div>
-              <div>Vui lòng chọn thời gian khác hoặc kiểm tra lại khung giờ khả dụng.</div>
+              <div>{errorMessage}</div>
             </div>
           )}
 
           {/* Success Notification Banner */}
-          {successMessage && (
+          {panelState === 'SUCCESS' && (
             <div
               style={{
                 marginBottom: '14px',
@@ -337,92 +530,164 @@ export const CoOwnerBookingPanel: React.FC<CoOwnerBookingPanelProps> = ({
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, marginBottom: '4px' }}>
                 <CheckCircle size={14} />
-                <span>{successMessage}</span>
+                <span>ĐẶT XE THÀNH CÔNG</span>
               </div>
-              <div>Lịch đặt đã được đồng bộ vào hệ thống.</div>
+              <div>Lịch đặt đã được ghi nhận trong hệ thống.</div>
             </div>
           )}
 
           {/* Action Buttons */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: 'auto' }}>
-            <button
-              type="button"
-              disabled={isSubmitting}
-              onClick={handleConfirm}
-              style={{
-                width: '100%',
-                padding: '13px 16px',
-                background: isSubmitting
-                  ? 'rgba(168, 85, 247, 0.3)'
-                  : 'linear-gradient(135deg, #a855f7 0%, #7e22ce 100%)',
-                border: '1px solid #c084fc',
-                borderRadius: '10px',
-                color: '#ffffff',
-                fontFamily: 'inherit',
-                fontSize: '12px',
-                fontWeight: 800,
-                letterSpacing: '0.04em',
-                textTransform: 'uppercase',
-                cursor: isSubmitting ? 'not-allowed' : 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                boxShadow: '0 4px 18px rgba(168, 85, 247, 0.4)',
-                transition: 'all 0.2s',
-              }}
-              onMouseOver={(e) => {
-                if (!isSubmitting) {
-                  e.currentTarget.style.boxShadow = '0 6px 24px rgba(168, 85, 247, 0.6)';
-                  e.currentTarget.style.transform = 'translateY(-1px)';
-                }
-              }}
-              onMouseOut={(e) => {
-                e.currentTarget.style.boxShadow = '0 4px 18px rgba(168, 85, 247, 0.4)';
-                e.currentTarget.style.transform = 'none';
-              }}
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 size={15} className="spin-animate" />
-                  <span>ĐANG XÁC NHẬN...</span>
-                </>
-              ) : (
-                <>
-                  <CheckCircle size={15} />
-                  <span>XÁC NHẬN ĐẶT XE</span>
-                </>
-              )}
-            </button>
+            {panelState === 'SUCCESS' ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowDetailView(true)}
+                  style={{
+                    width: '100%',
+                    padding: '13px 16px',
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    border: '1px solid #34d399',
+                    borderRadius: '10px',
+                    color: '#ffffff',
+                    fontFamily: 'inherit',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    letterSpacing: '0.04em',
+                    textTransform: 'uppercase',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 18px rgba(16, 185, 129, 0.4)',
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.boxShadow = '0 6px 24px rgba(16, 185, 129, 0.6)';
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.boxShadow = '0 4px 18px rgba(16, 185, 129, 0.4)';
+                    e.currentTarget.style.transform = 'none';
+                  }}
+                >
+                  <FileText size={15} />
+                  <span>CHI TIẾT ĐẶT LỊCH</span>
+                </button>
 
-            <button
-              type="button"
-              disabled={isSubmitting}
-              onClick={handleCancel}
-              style={{
-                width: '100%',
-                padding: '11px 16px',
-                background: 'rgba(255, 255, 255, 0.06)',
-                border: '1px solid rgba(255, 255, 255, 0.14)',
-                borderRadius: '10px',
-                color: '#cbd5e1',
-                fontFamily: 'inherit',
-                fontSize: '11px',
-                fontWeight: 600,
-                cursor: isSubmitting ? 'not-allowed' : 'pointer',
-                transition: 'all 0.2s',
-              }}
-              onMouseOver={(e) => {
-                if (!isSubmitting) {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.12)';
-                }
-              }}
-              onMouseOut={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
-              }}
-            >
-              HỦY LỰA CHỌN
-            </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearBookingSelection();
+                    setPanelState('SELECTING');
+                    setCreatedBooking(null);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '11px 16px',
+                    background: 'rgba(255, 255, 255, 0.06)',
+                    border: '1px solid rgba(255, 255, 255, 0.14)',
+                    borderRadius: '10px',
+                    color: '#cbd5e1',
+                    fontFamily: 'inherit',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.12)';
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
+                  }}
+                >
+                  ĐẶT LỊCH KHÁC
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  disabled={panelState === 'SUBMITTING'}
+                  onClick={handleConfirm}
+                  style={{
+                    width: '100%',
+                    padding: '13px 16px',
+                    background: panelState === 'SUBMITTING'
+                      ? 'rgba(168, 85, 247, 0.3)'
+                      : 'linear-gradient(135deg, #a855f7 0%, #7e22ce 100%)',
+                    border: '1px solid #c084fc',
+                    borderRadius: '10px',
+                    color: '#ffffff',
+                    fontFamily: 'inherit',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    letterSpacing: '0.04em',
+                    textTransform: 'uppercase',
+                    cursor: panelState === 'SUBMITTING' ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 18px rgba(168, 85, 247, 0.4)',
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseOver={(e) => {
+                    if (panelState !== 'SUBMITTING') {
+                      e.currentTarget.style.boxShadow = '0 6px 24px rgba(168, 85, 247, 0.6)';
+                      e.currentTarget.style.transform = 'translateY(-1px)';
+                    }
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.boxShadow = '0 4px 18px rgba(168, 85, 247, 0.4)';
+                    e.currentTarget.style.transform = 'none';
+                  }}
+                >
+                  {panelState === 'SUBMITTING' ? (
+                    <>
+                      <Loader2 size={15} className="spin-animate" />
+                      <span>ĐANG XÁC NHẬN...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle size={15} />
+                      <span>XÁC NHẬN ĐẶT XE</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  disabled={panelState === 'SUBMITTING'}
+                  onClick={handleCancel}
+                  style={{
+                    width: '100%',
+                    padding: '11px 16px',
+                    background: 'rgba(255, 255, 255, 0.06)',
+                    border: '1px solid rgba(255, 255, 255, 0.14)',
+                    borderRadius: '10px',
+                    color: '#cbd5e1',
+                    fontFamily: 'inherit',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    cursor: panelState === 'SUBMITTING' ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseOver={(e) => {
+                    if (panelState !== 'SUBMITTING') {
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.12)';
+                    }
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
+                  }}
+                >
+                  HỦY LỰA CHỌN
+                </button>
+              </>
+            )}
           </div>
         </>
       ) : (

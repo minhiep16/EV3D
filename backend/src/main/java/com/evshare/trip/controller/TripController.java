@@ -3,6 +3,7 @@ package com.evshare.trip.controller;
 import com.evshare.common.exception.UnauthorizedException;
 import com.evshare.security.UserPrincipal;
 import com.evshare.trip.dto.CompleteTripRequest;
+import com.evshare.trip.dto.ConfirmTripReturnRequest;
 import com.evshare.trip.dto.TripResponse;
 import com.evshare.trip.dto.TripStartEligibilityResponse;
 import com.evshare.trip.service.TripService;
@@ -135,6 +136,30 @@ public class TripController {
                 principal.getId(),
                 principal.getUser().getRole(),
                 request != null ? request.getEndOdometer() : null
+        );
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * STAFF confirms vehicle return and verifies condition & energy usage (Phase 18 & 19).
+     * Authoritatively creates verified trip energy expense.
+     * Exclusively accessible by STAFF or ADMIN.
+     */
+    @PostMapping("/trips/{tripId}/confirm-return")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    public ResponseEntity<TripResponse> confirmReturn(
+            @PathVariable UUID tripId,
+            @RequestBody(required = false) ConfirmTripReturnRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        if (principal == null || principal.getUser() == null) {
+            throw new UnauthorizedException("Vui lòng đăng nhập để xác nhận trả xe");
+        }
+        TripResponse response = tripService.confirmTripReturn(
+                tripId,
+                request,
+                principal.getId(),
+                principal.getUser().getRole()
         );
         return ResponseEntity.ok(response);
     }

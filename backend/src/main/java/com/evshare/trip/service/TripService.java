@@ -16,6 +16,11 @@ import com.evshare.trip.entity.Trip;
 import com.evshare.trip.entity.TripStatus;
 import com.evshare.trip.repository.TripRepository;
 import com.evshare.user.entity.Role;
+import com.evshare.user.entity.User;
+import com.evshare.user.repository.UserRepository;
+import com.evshare.charging.repository.ChargingSessionRepository;
+import com.evshare.expense.service.ExpenseService;
+import com.evshare.trip.dto.ConfirmTripReturnRequest;
 import com.evshare.vehicle.entity.Vehicle;
 import com.evshare.vehicle.entity.VehicleStatus;
 import com.evshare.vehicle.repository.VehicleRepository;
@@ -28,6 +33,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -79,8 +85,10 @@ public class TripService {
     private final VehicleRepository vehicleRepository;
     private final VehicleEnergyModelService energyModelService;
     private final VehicleBatteryHealthRepository batteryHealthRepository;
+    private final ExpenseService expenseService;
+    private final UserRepository userRepository;
+    private final ChargingSessionRepository chargingSessionRepository;
 
-    @Autowired
     public TripService(
             TripRepository tripRepository,
             BookingRepository bookingRepository,
@@ -89,12 +97,30 @@ public class TripService {
             VehicleEnergyModelService energyModelService,
             VehicleBatteryHealthRepository batteryHealthRepository
     ) {
+        this(tripRepository, bookingRepository, handoverRepository, vehicleRepository, energyModelService, batteryHealthRepository, null, null, null);
+    }
+
+    @Autowired
+    public TripService(
+            TripRepository tripRepository,
+            BookingRepository bookingRepository,
+            VehicleHandoverRepository handoverRepository,
+            VehicleRepository vehicleRepository,
+            VehicleEnergyModelService energyModelService,
+            VehicleBatteryHealthRepository batteryHealthRepository,
+            @org.springframework.context.annotation.Lazy ExpenseService expenseService,
+            UserRepository userRepository,
+            ChargingSessionRepository chargingSessionRepository
+    ) {
         this.tripRepository = tripRepository;
         this.bookingRepository = bookingRepository;
         this.handoverRepository = handoverRepository;
         this.vehicleRepository = vehicleRepository;
         this.energyModelService = energyModelService != null ? energyModelService : new VehicleEnergyModelService();
         this.batteryHealthRepository = batteryHealthRepository;
+        this.expenseService = expenseService;
+        this.userRepository = userRepository;
+        this.chargingSessionRepository = chargingSessionRepository;
     }
 
     /**
@@ -491,6 +517,138 @@ public class TripService {
         }
 
         // 12. Persist trip
+        Trip savedTrip = tripRepository.save(trip);
+        return TripResponse.fromEntity(savedTrip);
+    }
+
+    /**
+     * STAFF confirms vehicle return and verifies condition & energy usage (Phase 18 & 19).
+     * Authoritatively creates verified trip energy expense.
+     * Exclusively accessible by STAFF or ADMIN.
+     */
+    @Transactional
+    public TripResponse confirmTripReturn(
+            UUID tripId,
+            ConfirmTripReturnRequest request,
+            UUID staffUserId,
+            Role staffUserRole
+    ) {
+        if (staffUserRole != Role.STAFF && staffUserRole != Role.ADMIN) {
+            throw new AccessDeniedException("Chỉ nhân viên hoặc quản trị viên mới có quyền xác nhận trả xe.");
+        }
+
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy chuyến đi với mã: " + tripId));
+
+        User staff = userRepository != null ? userRepository.findById(staffUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy nhân viên: " + staffUserId)) : null;
+
+        if (trip.getReturnVerifiedAt() != null) {
+            throw new IllegalStateException("Chuyến đi này đã được nhân viên xác nhận trả xe trước đó.");
+        }
+
+        Vehicle vehicle = trip.getVehicle();
+        if (vehicle == null) {
+            throw new IllegalStateException("CHUYẾN ĐI THIẾU THÔNG TIN PHƯƠNG TIỆN");
+        }
+
+        // 1. If trip was still ACTIVE, finalize it
+        if (trip.getStatus() == TripStatus.ACTIVE) {
+            trip.setStatus(TripStatus.COMPLETED);
+            trip.setEndedAt(Instant.now());
+        }
+
+        // 2. Update ending telemetry if provided by staff inspection
+        if (request != null && request.getEndBatteryLevel() != null) {
+            trip.setEndBatteryLevel(request.getEndBatteryLevel());
+            trip.setEndSocPercent(new BigDecimal(request.getEndBatteryLevel()));
+        }
+        if (request != null && request.getEndOdometer() != null) {
+            trip.setEndOdometer(request.getEndOdometer());
+        }
+
+        // Re-read managed vehicle to avoid optimistic locking
+        Vehicle managedVehicle = vehicleRepository.findById(vehicle.getId()).orElse(vehicle);
+        if (trip.getEndBatteryLevel() != null) {
+            managedVehicle.setCurrentBatteryLevel(trip.getEndBatteryLevel());
+        }
+        if (trip.getEndOdometer() != null) {
+            managedVehicle.setOdometer(trip.getEndOdometer());
+        }
+        managedVehicle.setStatus(VehicleStatus.AVAILABLE);
+        vehicleRepository.save(managedVehicle);
+
+        // 3. Complete linked booking if needed
+        Booking booking = trip.getBooking();
+        if (booking != null) {
+            Booking managedBooking = bookingRepository.findById(booking.getId()).orElse(booking);
+            if (managedBooking.getStatus() == BookingStatus.CONFIRMED || managedBooking.getStatus() == BookingStatus.PENDING) {
+                managedBooking.setStatus(BookingStatus.COMPLETED);
+                bookingRepository.save(managedBooking);
+            }
+        }
+
+        // 4. Reliable SOC / Energy verification (Section 3 & Scenario F)
+        BigDecimal capacityKwh = managedVehicle.getUsableBatteryCapacityKwh() != null
+                ? managedVehicle.getUsableBatteryCapacityKwh()
+                : (managedVehicle.getGrossBatteryCapacityKwh() != null ? managedVehicle.getGrossBatteryCapacityKwh() : new BigDecimal("65.0"));
+
+        BigDecimal verifiedEnergyKwh = null;
+        boolean hasReliableData = trip.getStartBatteryLevel() != null
+                && trip.getEndBatteryLevel() != null
+                && trip.getStartOdometer() != null
+                && trip.getEndOdometer() != null
+                && trip.getEndOdometer().compareTo(trip.getStartOdometer()) >= 0;
+
+        if (hasReliableData) {
+            // Find intermediate charging energy delivered during trip
+            BigDecimal intermediateKwh = BigDecimal.ZERO;
+            if (chargingSessionRepository != null && trip.getStartedAt() != null) {
+                Instant tripEnd = trip.getEndedAt() != null ? trip.getEndedAt() : Instant.now();
+                List<com.evshare.charging.entity.ChargingSession> sessions = chargingSessionRepository.findByVehicleIdOrderByCreatedAtDesc(managedVehicle.getId());
+                for (var s : sessions) {
+                    if (s.getStartedAt() != null && !s.getStartedAt().isBefore(trip.getStartedAt()) && !s.getStartedAt().isAfter(tripEnd)) {
+                        if (s.getEnergyDeliveredKwh() != null && s.getEnergyDeliveredKwh().compareTo(BigDecimal.ZERO) > 0) {
+                            intermediateKwh = intermediateKwh.add(s.getEnergyDeliveredKwh());
+                        }
+                    }
+                }
+            }
+
+            if (trip.getEnergyConsumedKwh() != null && trip.getEnergyConsumedKwh().compareTo(BigDecimal.ZERO) > 0) {
+                verifiedEnergyKwh = trip.getEnergyConsumedKwh().add(intermediateKwh);
+            } else {
+                BigDecimal startSoc = new BigDecimal(trip.getStartBatteryLevel());
+                BigDecimal endSoc = new BigDecimal(trip.getEndBatteryLevel());
+                BigDecimal deltaSoc = startSoc.subtract(endSoc);
+                if (deltaSoc.compareTo(BigDecimal.ZERO) > 0) {
+                    BigDecimal energyFromSoc = deltaSoc.divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP).multiply(capacityKwh);
+                    verifiedEnergyKwh = energyFromSoc.add(intermediateKwh);
+                } else if (intermediateKwh.compareTo(BigDecimal.ZERO) > 0) {
+                    verifiedEnergyKwh = intermediateKwh;
+                }
+            }
+        }
+
+        // 5. Automatic Expense Creation (Sections 4, 5, 7, 9)
+        if (verifiedEnergyKwh != null && verifiedEnergyKwh.compareTo(BigDecimal.ZERO) > 0) {
+            if (expenseService != null) {
+                expenseService.createTripEnergyExpense(trip, verifiedEnergyKwh, staff);
+            }
+        } else {
+            // Inconsistent/missing data: keep charging reconciliation pending (Scenario F)
+            String pendingNote = "[Chờ đối soát dữ liệu điện]";
+            String note = request != null && request.getConditionNote() != null ? request.getConditionNote() + " " + pendingNote : pendingNote;
+            trip.setReturnNote(note);
+        }
+
+        // 6. Record staff return verification metadata
+        trip.setReturnVerifiedBy(staff);
+        trip.setReturnVerifiedAt(Instant.now());
+        if (trip.getReturnNote() == null && request != null) {
+            trip.setReturnNote(request.getConditionNote());
+        }
+
         Trip savedTrip = tripRepository.save(trip);
         return TripResponse.fromEntity(savedTrip);
     }

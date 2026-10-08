@@ -6,6 +6,8 @@ import {
   ExpenseFilterParams,
   ExpenseShareResponse,
   CostSharingSummaryResponse,
+  ExpenseApprovalRequest,
+  ExpenseApprovalStatusResponse,
 } from '../types/expense';
 
 export async function fetchExpenses(params: ExpenseFilterParams): Promise<ExpenseResponse[]> {
@@ -98,6 +100,52 @@ export async function fetchCostSharingSummary(
   } catch (err) {
     if (err instanceof TypeError || (err instanceof Error && err.message.includes('fetch'))) {
       throw new Error('Không thể kết nối đến máy chủ tổng hợp phân bổ chi phí.');
+    }
+    throw err;
+  }
+}
+
+export async function submitExpenseApproval(
+  expenseId: string,
+  payload: ExpenseApprovalRequest
+): Promise<ExpenseApprovalStatusResponse> {
+  try {
+    const res = await authenticatedFetch(`/api/expenses/${expenseId}/approvals`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return await safeParseResponse<ExpenseApprovalStatusResponse>(res);
+  } catch (err) {
+    if (err instanceof TypeError || (err instanceof Error && err.message.includes('fetch'))) {
+      throw new Error('Không thể gửi xác nhận chi phí. Vui lòng thử lại.');
+    }
+    throw err;
+  }
+}
+
+export async function fetchExpenseApprovals(
+  expenseId: string
+): Promise<ExpenseApprovalStatusResponse> {
+  try {
+    const res = await authenticatedFetch(`/api/expenses/${expenseId}/approvals`);
+    return await safeParseResponse<ExpenseApprovalStatusResponse>(res);
+  } catch (err) {
+    if (err instanceof TypeError || (err instanceof Error && err.message.includes('fetch'))) {
+      throw new Error('Không thể tải tiến trình xác minh của khoản chi.');
+    }
+    throw err;
+  }
+}
+
+export async function cancelExpense(expenseId: string): Promise<ExpenseResponse> {
+  try {
+    const res = await authenticatedFetch(`/api/expenses/${expenseId}/cancel`, {
+      method: 'POST',
+    });
+    return await safeParseResponse<ExpenseResponse>(res);
+  } catch (err) {
+    if (err instanceof TypeError || (err instanceof Error && err.message.includes('fetch'))) {
+      throw new Error('Không thể hủy khoản chi. Vui lòng kiểm tra quyền hạn.');
     }
     throw err;
   }

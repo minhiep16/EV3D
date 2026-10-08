@@ -37,6 +37,10 @@ public class TripResponse {
     private BigDecimal energyConsumptionKwhPer100Km;
     private BigDecimal usableBatteryCapacityKwh;
     private BigDecimal grossBatteryCapacityKwh;
+    private UUID returnVerifiedByUserId;
+    private String returnVerifiedByUserName;
+    private Instant returnVerifiedAt;
+    private String returnNote;
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -89,6 +93,12 @@ public class TripResponse {
             int used = trip.getStartBatteryLevel() - trip.getEndBatteryLevel();
             res.setBatteryUsed(Math.max(0, used));
         }
+        if (trip.getReturnVerifiedBy() != null) {
+            res.setReturnVerifiedByUserId(trip.getReturnVerifiedBy().getId());
+            res.setReturnVerifiedByUserName(trip.getReturnVerifiedBy().getFullName());
+        }
+        res.setReturnVerifiedAt(trip.getReturnVerifiedAt());
+        res.setReturnNote(trip.getReturnNote());
         res.setCreatedAt(trip.getCreatedAt());
         res.setUpdatedAt(trip.getUpdatedAt());
         return res;
@@ -332,5 +342,37 @@ public class TripResponse {
 
     public void setGrossBatteryCapacityKwh(BigDecimal grossBatteryCapacityKwh) {
         this.grossBatteryCapacityKwh = grossBatteryCapacityKwh;
+    }
+
+    public UUID getReturnVerifiedByUserId() {
+        return returnVerifiedByUserId;
+    }
+
+    public void setReturnVerifiedByUserId(UUID returnVerifiedByUserId) {
+        this.returnVerifiedByUserId = returnVerifiedByUserId;
+    }
+
+    public String getReturnVerifiedByUserName() {
+        return returnVerifiedByUserName;
+    }
+
+    public void setReturnVerifiedByUserName(String returnVerifiedByUserName) {
+        this.returnVerifiedByUserName = returnVerifiedByUserName;
+    }
+
+    public Instant getReturnVerifiedAt() {
+        return returnVerifiedAt;
+    }
+
+    public void setReturnVerifiedAt(Instant returnVerifiedAt) {
+        this.returnVerifiedAt = returnVerifiedAt;
+    }
+
+    public String getReturnNote() {
+        return returnNote;
+    }
+
+    public void setReturnNote(String returnNote) {
+        this.returnNote = returnNote;
     }
 }

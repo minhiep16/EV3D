@@ -136,3 +136,44 @@ export async function completeTripApi(tripId: string, endOdometer?: number): Pro
   }
 }
 
+export interface ConfirmTripReturnPayload {
+  endBatteryLevel?: number;
+  endOdometer?: number;
+  conditionNote?: string;
+  damageObserved?: boolean;
+  evidenceUrl?: string;
+}
+
+/**
+ * STAFF confirms vehicle return and verifies condition & energy usage (Phase 18 & 19).
+ * Authoritatively creates verified trip energy expense.
+ * Exclusively accessible by STAFF or ADMIN.
+ */
+export async function confirmTripReturnApi(
+  tripId: string,
+  payload?: ConfirmTripReturnPayload
+): Promise<TripData> {
+  try {
+    const res = await authenticatedFetch(`/api/trips/${tripId}/confirm-return`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: payload ? JSON.stringify(payload) : undefined,
+    });
+    return await safeParseResponse<TripData>(res);
+  } catch (err: any) {
+    if (err.status === 403) {
+      throw new Error(err.message || 'Chỉ nhân viên hoặc quản trị viên mới có quyền xác nhận trả xe.');
+    }
+    if (err.status === 409 || err.status === 400) {
+      throw new Error(err.message || 'Chuyến đi đã được xác nhận trả xe trước đó hoặc không hợp lệ.');
+    }
+    if (err.message) {
+      throw new Error(err.message);
+    }
+    throw new Error('Không thể xác nhận trả xe. Vui lòng thử lại.');
+  }
+}
+
+

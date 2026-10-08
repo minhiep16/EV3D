@@ -306,9 +306,9 @@ public class MaintenanceService {
         MaintenanceRequest maintenance = maintenanceRequestRepository.findByIdWithDetails(maintenanceId)
                 .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu bảo dưỡng không tồn tại: " + maintenanceId));
 
-        // Strict Approval Gate
+        // Strict Approval Gate (Section 14: Common expense voting gate)
         if (maintenance.getStatus() == MaintenanceStatus.PENDING_APPROVAL) {
-            throw new IllegalStateException("Yêu cầu bảo dưỡng chưa được các đồng sở hữu phê duyệt.");
+            throw new IllegalStateException("Đề xuất chưa được các thành viên thông qua.");
         }
 
         if (maintenance.getStatus() != MaintenanceStatus.APPROVED && maintenance.getStatus() != MaintenanceStatus.SCHEDULED) {

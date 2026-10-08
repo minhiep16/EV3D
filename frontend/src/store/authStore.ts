@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { queryClient } from '../services/queryClient';
 
 export interface User {
   id: string;
@@ -74,6 +75,15 @@ export const useAuthStore = create<AuthState>((set) => {
       } catch (e) {
         console.error('Failed to persist auth session to sessionStorage', e);
       }
+      try {
+        queryClient.removeQueries({ queryKey: ['cost-sharing-summary'] });
+        queryClient.removeQueries({ queryKey: ['expense-shares'] });
+        queryClient.removeQueries({ queryKey: ['expense-approvals'] });
+        queryClient.invalidateQueries({ queryKey: ['expenses'] });
+        queryClient.invalidateQueries({ queryKey: ['expense-summary'] });
+      } catch (e) {
+        // Safe query cache isolation
+      }
       set({
         user,
         accessToken,
@@ -118,6 +128,15 @@ export const useAuthStore = create<AuthState>((set) => {
         }
       } catch (e) {
         console.error('Failed to remove auth session', e);
+      }
+      try {
+        queryClient.removeQueries({ queryKey: ['cost-sharing-summary'] });
+        queryClient.removeQueries({ queryKey: ['expense-shares'] });
+        queryClient.removeQueries({ queryKey: ['expense-approvals'] });
+        queryClient.invalidateQueries({ queryKey: ['expenses'] });
+        queryClient.invalidateQueries({ queryKey: ['expense-summary'] });
+      } catch (e) {
+        // Safe query cache isolation
       }
       set({
         user: null,

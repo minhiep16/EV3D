@@ -34,4 +34,14 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
     Optional<Trip> findFirstByVehicleIdAndStatusOrderByEndedAtDesc(UUID vehicleId, TripStatus status);
 
     Optional<Trip> findFirstByVehicleIdOrderByCreatedAtDesc(UUID vehicleId);
+
+    @Query("SELECT t FROM Trip t WHERE t.vehicle.id = :vehicleId AND t.startedAt <= :time AND (t.endedAt IS NULL OR t.endedAt >= :time) ORDER BY t.startedAt DESC")
+    List<Trip> findTripsByVehicleAndOccurredTime(@Param("vehicleId") UUID vehicleId, @Param("time") java.time.Instant time);
+
+    @Query("SELECT t FROM Trip t WHERE t.vehicle.id = :vehicleId AND t.status = 'COMPLETED' AND ((t.startedAt >= :start AND t.startedAt < :end) OR (t.endedAt IS NOT NULL AND t.endedAt >= :start AND t.endedAt < :end)) ORDER BY t.startedAt ASC")
+    List<Trip> findCompletedTripsByVehicleInPeriod(
+            @Param("vehicleId") UUID vehicleId,
+            @Param("start") java.time.Instant start,
+            @Param("end") java.time.Instant end
+    );
 }

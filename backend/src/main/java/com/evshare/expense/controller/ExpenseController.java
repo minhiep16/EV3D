@@ -2,6 +2,8 @@ package com.evshare.expense.controller;
 
 import com.evshare.expense.dto.CostSharingSummaryResponse;
 import com.evshare.expense.dto.CreateExpenseRequest;
+import com.evshare.expense.dto.ExpenseApprovalRequest;
+import com.evshare.expense.dto.ExpenseApprovalStatusResponse;
 import com.evshare.expense.dto.ExpenseResponse;
 import com.evshare.expense.dto.ExpenseShareResponse;
 import com.evshare.expense.dto.ExpenseSummaryResponse;
@@ -158,5 +160,45 @@ public class ExpenseController {
     ) {
         CostSharingSummaryResponse summary = expenseShareService.getCostSharingSummary(vehicleId, month, principal);
         return ResponseEntity.ok(summary);
+    }
+
+    /**
+     * Submit an independent approval decision for an expense
+     */
+    @PostMapping("/expenses/{expenseId}/approvals")
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
+    public ResponseEntity<ExpenseApprovalStatusResponse> submitApproval(
+            @PathVariable UUID expenseId,
+            @Valid @RequestBody ExpenseApprovalRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        ExpenseApprovalStatusResponse response = expenseService.submitApproval(expenseId, request, principal);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Get independent approval and verification status for an expense
+     */
+    @GetMapping("/expenses/{expenseId}/approvals")
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
+    public ResponseEntity<ExpenseApprovalStatusResponse> getApprovalStatus(
+            @PathVariable UUID expenseId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        ExpenseApprovalStatusResponse response = expenseService.getApprovalStatus(expenseId, principal);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Cancel a pending expense (creator only)
+     */
+    @PostMapping("/expenses/{expenseId}/cancel")
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'ADMIN')")
+    public ResponseEntity<ExpenseResponse> cancelExpense(
+            @PathVariable UUID expenseId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        ExpenseResponse response = expenseService.cancelExpense(expenseId, principal);
+        return ResponseEntity.ok(response);
     }
 }

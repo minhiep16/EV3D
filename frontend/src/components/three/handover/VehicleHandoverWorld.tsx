@@ -239,6 +239,8 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandovers', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandover', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['latestCompletedInspection', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['activeVehicleInspection', vehicle.id] }),
       ]);
     } catch (err: any) {
       setErrorMessage(err.message || 'Không thể bắt đầu kiểm tra xe.');
@@ -272,6 +274,8 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandovers', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandover', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['latestCompletedInspection', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['activeVehicleInspection', vehicle.id] }),
       ]);
     } catch (err: any) {
       setErrorMessage(err.message || 'Không thể lưu kết quả kiểm tra.');

@@ -65,6 +65,16 @@ public class Trip {
     @Column(name = "soc_consumed_percent", precision = 5, scale = 2)
     private BigDecimal socConsumedPercent;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "return_verified_by_user_id")
+    private User returnVerifiedBy;
+
+    @Column(name = "return_verified_at")
+    private Instant returnVerifiedAt;
+
+    @Column(name = "return_note", length = 500)
+    private String returnNote;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;
@@ -206,5 +216,29 @@ public class Trip {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public User getReturnVerifiedBy() {
+        return returnVerifiedBy;
+    }
+
+    public void setReturnVerifiedBy(User returnVerifiedBy) {
+        this.returnVerifiedBy = returnVerifiedBy;
+    }
+
+    public Instant getReturnVerifiedAt() {
+        return returnVerifiedAt;
+    }
+
+    public void setReturnVerifiedAt(Instant returnVerifiedAt) {
+        this.returnVerifiedAt = returnVerifiedAt;
+    }
+
+    public String getReturnNote() {
+        return returnNote;
+    }
+
+    public void setReturnNote(String returnNote) {
+        this.returnNote = returnNote;
     }
 }

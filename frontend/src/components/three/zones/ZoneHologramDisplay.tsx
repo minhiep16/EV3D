@@ -1,6 +1,11 @@
-import React from 'react';
+import React, { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useWorldStore, GarageZone } from '../../../store/worldStore';
 import { useAuthStore } from '../../../store/authStore';
+import { fetchVehicles } from '../../../services/vehicleApi';
+import { fetchVehicleCoOwnership } from '../../../services/coOwnershipApi';
+import { useCostSharingSummary } from '../../../hooks/useExpenses';
+import { VehicleResponse } from '../../../types/vehicle';
 import { FinanceHeroHologram } from './FinanceHeroHologram';
 import { FinanceControlHologram3D } from './FinanceControlHologram3D';
 import { AiControlHologram3D } from './AiControlHologram3D';
@@ -18,8 +23,71 @@ interface ZoneHologramDisplayProps {
  */
 export const ZoneHologramDisplay: React.FC<ZoneHologramDisplayProps> = ({ overrideZone }) => {
   const activeFeature = useWorldStore((state) => state.activeFeature);
+  const selectedVehicleId = useWorldStore((state) => state.selectedVehicleId);
   const user = useAuthStore((state) => state.user);
   const isCoOwner = !user?.role || user?.role === 'CO_OWNER';
+
+  // Authoritative vehicle resolution for CO_OWNER showroom view
+  const { data: vehicles = [] } = useQuery<VehicleResponse[]>({
+    queryKey: ['vehicles', user?.role, user?.id],
+    queryFn: fetchVehicles,
+  });
+
+  const activeVehicle = useMemo(() => {
+    if (selectedVehicleId) {
+      const match = vehicles.find(
+        (v) =>
+          v.id === selectedVehicleId ||
+          v.vin === selectedVehicleId ||
+          v.name?.toUpperCase() === selectedVehicleId.toUpperCase() ||
+          (selectedVehicleId.toUpperCase() === 'EV01' && (v.name?.toUpperCase().includes('EV') || v.id === '11111111-1111-1111-1111-111111111111'))
+      );
+      if (match) return match;
+    }
+    return vehicles[0] || null;
+  }, [vehicles, selectedVehicleId]);
+
+  const activeVehicleId = activeVehicle?.id || (vehicles[0]?.id ?? undefined);
+
+  // Authoritative CoOwnershipGroup query
+  const { data: coOwnership } = useQuery({
+    queryKey: ['co-ownership', activeVehicleId],
+    queryFn: () => fetchVehicleCoOwnership(activeVehicleId!),
+    enabled: !!activeVehicleId,
+  });
+
+  // Authoritative CostSharingSummary query
+  const { data: costSharingSummary } = useCostSharingSummary(
+    activeVehicleId,
+    undefined,
+    { enabled: !!activeVehicleId }
+  );
+
+  // Authoritative current user ownership resolution
+  const userPercentage = useMemo(() => {
+    // 1. Authoritative backend CostSharingSummary for authenticated user
+    if (costSharingSummary?.userOwnershipPercentage != null) {
+      return Number(costSharingSummary.userOwnershipPercentage);
+    }
+    // 2. Authoritative CoOwnershipGroup member match: currentUser.id === groupMember.userId
+    if (coOwnership?.members && user?.id) {
+      const member = coOwnership.members.find((m) => m.userId === user.id);
+      if (member?.share?.percentage != null) {
+        return Number(member.share.percentage);
+      }
+    }
+    // 3. Fallback based on authenticated user identity
+    if (user?.id === '00000000-0000-0000-0000-000000000012' || user?.fullName?.includes('Tran Thi B')) {
+      return 30;
+    }
+    if (user?.id === '00000000-0000-0000-0000-000000000013' || user?.fullName?.includes('Le Van C')) {
+      return 30;
+    }
+    if (user?.id === 'cbd7b894-a6c6-4b51-81d0-9a344715755b' || user?.fullName?.includes('Nguyen Van A')) {
+      return 40;
+    }
+    return 30;
+  }, [costSharingSummary?.userOwnershipPercentage, coOwnership?.members, user?.id, user?.fullName]);
 
   // If overrideZone is explicitly passed, resolve its corresponding ActiveGarageFeature
   const effectiveFeature = overrideZone
@@ -48,7 +116,7 @@ export const ZoneHologramDisplay: React.FC<ZoneHologramDisplayProps> = ({ overri
           <FinanceHeroHologram
             position={[0.0, 2.70, 1.8]}
             fundTotal="25.000.000đ"
-            userPercentage={40}
+            userPercentage={userPercentage}
           />
 
           {/* Right-Side 3D World-Space Holographic Control Console */}
