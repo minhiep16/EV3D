@@ -13,6 +13,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -118,6 +119,27 @@ public class TripController {
     }
 
     /**
+     * CO_OWNER requests vehicle return (Phase 10-12 & Section 7).
+     * Exclusively accessible by the authenticated CO_OWNER who owns the active trip.
+     */
+    @PostMapping("/trips/{tripId}/request-return")
+    @PreAuthorize("hasRole('CO_OWNER')")
+    public ResponseEntity<TripResponse> requestReturn(
+            @PathVariable UUID tripId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        if (principal == null || principal.getUser() == null) {
+            throw new UnauthorizedException("Vui lòng đăng nhập để yêu cầu trả xe");
+        }
+        TripResponse response = tripService.requestTripReturn(
+                tripId,
+                principal.getId(),
+                principal.getUser().getRole()
+        );
+        return ResponseEntity.ok(response);
+    }
+
+    /**
      * Complete / check-out an active trip (Phase 12 & Phase 18 Realistic EV Energy Model).
      * Exclusively accessible by the authenticated CO_OWNER who owns the active trip.
      */
@@ -138,6 +160,16 @@ public class TripController {
                 request != null ? request.getEndOdometer() : null
         );
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Retrieve all pending vehicle return requests (STEP 2: STAFF receives vehicle).
+     * Exclusively accessible by STAFF or ADMIN.
+     */
+    @GetMapping("/trips/pending-returns")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    public ResponseEntity<List<TripResponse>> getPendingReturns() {
+        return ResponseEntity.ok(tripService.getPendingReturnTrips());
     }
 
     /**

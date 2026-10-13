@@ -431,6 +431,14 @@ public class ExpenseService {
         return savedExpense;
     }
 
+    @Transactional(readOnly = true)
+    public Optional<Expense> findByRelatedTripId(UUID tripId) {
+        if (tripId == null) {
+            return Optional.empty();
+        }
+        return expenseRepository.findByRelatedTripId(tripId);
+    }
+
     /**
      * Independent Co-Owner Expense Verification / Approval
      * Critical transparency rules:

@@ -1,6 +1,7 @@
 package com.evshare.trip.dto;
 
 import java.math.BigDecimal;
+import java.util.UUID;
 
 public class ConfirmTripReturnRequest {
 
@@ -9,6 +10,7 @@ public class ConfirmTripReturnRequest {
     private String conditionNote;
     private String evidenceUrl;
     private Boolean damageObserved;
+    private UUID inspectionId;
 
     public ConfirmTripReturnRequest() {
     }
@@ -65,5 +67,13 @@ public class ConfirmTripReturnRequest {
 
     public void setDamageObserved(Boolean damageObserved) {
         this.damageObserved = damageObserved;
+    }
+
+    public UUID getInspectionId() {
+        return inspectionId;
+    }
+
+    public void setInspectionId(UUID inspectionId) {
+        this.inspectionId = inspectionId;
     }
 }

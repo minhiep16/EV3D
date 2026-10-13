@@ -44,4 +44,7 @@ public interface TripRepository extends JpaRepository<Trip, UUID> {
             @Param("start") java.time.Instant start,
             @Param("end") java.time.Instant end
     );
+
+    @Query("SELECT t FROM Trip t WHERE t.returnRequestedAt IS NOT NULL AND t.returnVerifiedAt IS NULL ORDER BY t.returnRequestedAt ASC")
+    List<Trip> findPendingReturnTrips();
 }

@@ -108,25 +108,60 @@ export const StaffOperationsPanel: React.FC<StaffOperationsPanelProps> = ({
   const [isConfirmingReturn, setIsConfirmingReturn] = React.useState(false);
   const [returnSuccessMsg, setReturnSuccessMsg] = React.useState<string | null>(null);
   const [returnErrorMsg, setReturnErrorMsg] = React.useState<string | null>(null);
+  const [staffEndBattery, setStaffEndBattery] = React.useState<number | string>(
+    vehicle.currentBatteryLevel ?? 80
+  );
+  const [staffEndOdometer, setStaffEndOdometer] = React.useState<number | string>(
+    vehicle.odometer ?? 12450
+  );
+  const [conditionNote, setConditionNote] = React.useState<string>(
+    'Đã kiểm tra xe, ngoại quan và pin bình thường.'
+  );
+  const [damageObserved, setDamageObserved] = React.useState<boolean>(false);
+
+  // Sync default values when vehicle or activeTrip changes
+  React.useEffect(() => {
+    if (vehicle.currentBatteryLevel != null) {
+      setStaffEndBattery(vehicle.currentBatteryLevel);
+    }
+  }, [vehicle.currentBatteryLevel]);
+
+  React.useEffect(() => {
+    if (vehicle.odometer != null) {
+      setStaffEndOdometer(vehicle.odometer);
+    }
+  }, [vehicle.odometer]);
+
+  const numEndBattery = Number(staffEndBattery);
+  const numEndOdo = Number(staffEndOdometer);
+  const startOdo = activeTrip?.startOdometer != null ? Number(activeTrip.startOdometer) : Number(vehicle.odometer ?? 0);
+  const distanceTraveled = numEndOdo >= startOdo ? Math.round((numEndOdo - startOdo) * 10) / 10 : 0;
+  const isEndBatteryValid = !isNaN(numEndBattery) && numEndBattery >= 0 && numEndBattery <= 100;
+  const isEndOdoValid = !isNaN(numEndOdo) && numEndOdo >= startOdo;
+  const canConfirmReturn = isEndBatteryValid && isEndOdoValid && !isConfirmingReturn;
 
   const handleConfirmReturn = async () => {
-    if (!activeTrip?.id || isConfirmingReturn) return;
+    if (!activeTrip?.id || !canConfirmReturn) return;
     setIsConfirmingReturn(true);
     setReturnErrorMsg(null);
     setReturnSuccessMsg(null);
     try {
       await confirmTripReturnApi(activeTrip.id, {
-        endBatteryLevel: vehicle.currentBatteryLevel,
-        endOdometer: Number(vehicle.odometer) || undefined,
-        conditionNote: 'Nhân viên đã tiếp nhận phương tiện và kiểm tra tình trạng.',
+        endBatteryLevel: numEndBattery,
+        endOdometer: numEndOdo,
+        conditionNote: conditionNote.trim() || 'Nhân viên đã tiếp nhận phương tiện và kiểm tra tình trạng.',
+        damageObserved,
       });
-      setReturnSuccessMsg('Xác nhận trả xe thành công! Chi phí điện đã được ghi nhận tự động.');
+      setReturnSuccessMsg('Xác nhận trả xe thành công! Chi phí năng lượng đã được phân bổ 100% cho người sử dụng.');
       queryClient.invalidateQueries({ queryKey: ['activeTrip', vehicle.id] });
+      queryClient.invalidateQueries({ queryKey: ['pendingReturns'] });
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+      queryClient.invalidateQueries({ queryKey: ['vehicleBookings', vehicle.id] });
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
       queryClient.invalidateQueries({ queryKey: ['expenseShares'] });
       queryClient.invalidateQueries({ queryKey: ['costSharingSummary'] });
       queryClient.invalidateQueries({ queryKey: ['handoverHistory'] });
+      queryClient.invalidateQueries({ queryKey: ['vehicleDamages', vehicle.id] });
     } catch (err: any) {
       setReturnErrorMsg(err.message || 'Không thể xác nhận trả xe. Vui lòng thử lại.');
     } finally {
@@ -556,10 +591,10 @@ export const StaffOperationsPanel: React.FC<StaffOperationsPanelProps> = ({
               background: 'rgba(15, 23, 42, 0.85)',
               border: '1px solid rgba(0, 242, 254, 0.35)',
               borderRadius: '12px',
-              padding: '12px',
+              padding: '14px',
               display: 'flex',
               flexDirection: 'column',
-              gap: '8px',
+              gap: '10px',
             }}
           >
             <div
@@ -575,12 +610,165 @@ export const StaffOperationsPanel: React.FC<StaffOperationsPanelProps> = ({
               }}
             >
               <ShieldCheck size={14} color="#00f2fe" />
-              <span>TIẾP NHẬN & XÁC NHẬN TRẢ XE</span>
+              <span>TIẾP NHẬN & KIỂM TRA TRẢ XE</span>
             </div>
 
-            <p style={{ margin: 0, fontSize: '10.5px', color: '#94a3b8', lineHeight: 1.4 }}>
-              Nhân viên kiểm tra tình trạng thực tế và xác nhận trả xe để hệ thống tự động tính chi phí điện tiêu thụ của chuyến đi.
-            </p>
+            {/* Return Request Notification Badge */}
+            {activeTrip.returnRequestedAt ? (
+              <div
+                style={{
+                  background: 'rgba(0, 242, 254, 0.12)',
+                  border: '1px solid rgba(0, 242, 254, 0.35)',
+                  borderRadius: '8px',
+                  padding: '8px 10px',
+                  fontSize: '10.5px',
+                  color: '#e0f2fe',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '3px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 700, color: '#38bdf8' }}>
+                  <AlertCircle size={12} color="#38bdf8" />
+                  <span>YÊU CẦU TRẢ XE: ĐANG CHỜ TIẾP NHẬN</span>
+                </div>
+                <div style={{ color: '#94a3b8', fontSize: '9.5px' }}>
+                  Gửi lúc: {formatDateTime(activeTrip.returnRequestedAt)}
+                </div>
+                <div style={{ color: '#cbd5e1', fontSize: '10px' }}>
+                  Đồng sở hữu đang chờ nhân viên kiểm tra thực tế và hoàn tất thủ tục.
+                </div>
+              </div>
+            ) : (
+              <div
+                style={{
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid rgba(255, 255, 255, 0.07)',
+                  borderRadius: '8px',
+                  padding: '6px 10px',
+                  fontSize: '10px',
+                  color: '#94a3b8',
+                }}
+              >
+                Chưa có yêu cầu trả xe trực tuyến. Nhân viên có thể tiếp nhận trực tiếp khi xe quay về trạm.
+              </div>
+            )}
+
+            {/* Return Inspection Form Controls */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {/* Ending Battery (SOC) Input */}
+              <div>
+                <label style={{ display: 'block', fontSize: '10px', color: '#94a3b8', fontWeight: 600, marginBottom: '3px' }}>
+                  MỨC PIN KHI TRẢ XE (SOC - %) <span style={{ color: '#f87171' }}>*</span>
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={staffEndBattery}
+                  onChange={(e) => setStaffEndBattery(e.target.value)}
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    background: 'rgba(0, 0, 0, 0.4)',
+                    border: `1px solid ${isEndBatteryValid ? 'rgba(0, 242, 254, 0.4)' : '#ef4444'}`,
+                    borderRadius: '6px',
+                    padding: '6px 10px',
+                    color: '#ffffff',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    outline: 'none',
+                  }}
+                />
+                {!isEndBatteryValid && (
+                  <div style={{ color: '#f87171', fontSize: '9.5px', marginTop: '2px' }}>
+                    * Mức pin phải từ 0% đến 100%
+                  </div>
+                )}
+              </div>
+
+              {/* Ending Odometer Input */}
+              <div>
+                <label style={{ display: 'block', fontSize: '10px', color: '#94a3b8', fontWeight: 600, marginBottom: '3px' }}>
+                  ODOMETER KHI TRẢ XE (KM) <span style={{ color: '#f87171' }}>*</span>
+                </label>
+                <input
+                  type="number"
+                  min={startOdo}
+                  value={staffEndOdometer}
+                  onChange={(e) => setStaffEndOdometer(e.target.value)}
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    background: 'rgba(0, 0, 0, 0.4)',
+                    border: `1px solid ${isEndOdoValid ? 'rgba(0, 242, 254, 0.4)' : '#ef4444'}`,
+                    borderRadius: '6px',
+                    padding: '6px 10px',
+                    color: '#ffffff',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    outline: 'none',
+                  }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9.5px', marginTop: '2px' }}>
+                  <span style={{ color: '#94a3b8' }}>Bắt đầu: {startOdo.toLocaleString()} km</span>
+                  <span style={{ color: isEndOdoValid ? '#34d399' : '#f87171', fontWeight: 700 }}>
+                    Đã đi: {distanceTraveled} km
+                  </span>
+                </div>
+                {!isEndOdoValid && (
+                  <div style={{ color: '#f87171', fontSize: '9.5px', marginTop: '1px' }}>
+                    * Odometer kết thúc không được nhỏ hơn bắt đầu ({startOdo.toLocaleString()} km)
+                  </div>
+                )}
+              </div>
+
+              {/* Condition Note Input */}
+              <div>
+                <label style={{ display: 'block', fontSize: '10px', color: '#94a3b8', fontWeight: 600, marginBottom: '3px' }}>
+                  GHI CHÚ KIỂM TRA TÌNH TRẠNG
+                </label>
+                <input
+                  type="text"
+                  value={conditionNote}
+                  onChange={(e) => setConditionNote(e.target.value)}
+                  placeholder="Ghi chú ngoại quan, vệ sinh, pin..."
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    background: 'rgba(0, 0, 0, 0.4)',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    borderRadius: '6px',
+                    padding: '6px 10px',
+                    color: '#cbd5e1',
+                    fontSize: '11px',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+
+              {/* Damage Observed Checkbox */}
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '10.5px',
+                  color: damageObserved ? '#fbbf24' : '#cbd5e1',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  padding: '4px 0',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={damageObserved}
+                  onChange={(e) => setDamageObserved(e.target.checked)}
+                  style={{ accentColor: '#fbbf24', width: '14px', height: '14px', cursor: 'pointer' }}
+                />
+                <span>Phát hiện vết xước hoặc hư hỏng mới</span>
+              </label>
+            </div>
 
             {returnErrorMsg && (
               <div
@@ -622,36 +810,39 @@ export const StaffOperationsPanel: React.FC<StaffOperationsPanelProps> = ({
 
             <button
               type="button"
-              disabled={isConfirmingReturn}
+              disabled={!canConfirmReturn}
               onClick={handleConfirmReturn}
               style={{
                 width: '100%',
-                background: isConfirmingReturn
-                  ? 'rgba(0, 242, 254, 0.3)'
+                background: !canConfirmReturn
+                  ? 'rgba(0, 242, 254, 0.2)'
                   : 'linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)',
                 border: 'none',
                 borderRadius: '8px',
                 padding: '10px',
-                color: '#070b14',
+                color: !canConfirmReturn ? '#64748b' : '#070b14',
                 fontSize: '11.5px',
                 fontWeight: 800,
                 letterSpacing: '0.03em',
-                cursor: isConfirmingReturn ? 'not-allowed' : 'pointer',
+                cursor: !canConfirmReturn ? 'not-allowed' : 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '8px',
-                boxShadow: '0 4px 14px rgba(0, 242, 254, 0.35)',
+                boxShadow: canConfirmReturn ? '0 4px 14px rgba(0, 242, 254, 0.35)' : 'none',
                 transition: 'all 0.2s ease',
               }}
             >
-              <Zap size={14} color="#070b14" />
+              <Zap size={14} color={!canConfirmReturn ? '#64748b' : '#070b14'} />
               <span>
                 {isConfirmingReturn
-                  ? 'ĐANG XÁC NHẬN TRẢ XE...'
-                  : 'XÁC NHẬN TRẢ XE & TÍNH CHI PHÍ ĐIỆN'}
+                  ? 'ĐANG TIẾP NHẬN & HOÀN TẤT...'
+                  : 'XÁC NHẬN TIẾP NHẬN & HOÀN TẤT TRẢ XE'}
               </span>
             </button>
+            <div style={{ fontSize: '9px', color: '#64748b', textAlign: 'center' }}>
+              Chi phí điện thực tế sẽ được phân bổ 100% cho người sử dụng sau khi xác nhận.
+            </div>
           </div>
         </>
       ) : isInconsistentInUseState ? (

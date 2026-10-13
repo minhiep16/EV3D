@@ -6,7 +6,10 @@ import { fetchVehicles } from '../../services/vehicleApi';
 import { VehicleResponse } from '../../types/vehicle';
 import { resolveVehicleCode, sortStaffFleetVehicles, isMatchingVehicle } from '../three/vehicles/vehicleModelConfig';
 import { FleetVehicleListItem } from './FleetVehicleListItem';
-import { Search, X, RefreshCw } from 'lucide-react';
+import { fetchPendingReturnTrips } from '../../services/tripApi';
+import { TripData } from '../../types/trip';
+import { formatTime } from '../../utils/dateTimeUtils';
+import { Search, X, RefreshCw, AlertCircle, ArrowRight, Clock } from 'lucide-react';
 
 export const StaffGarageFleetSidebar: React.FC = () => {
   const user = useAuthStore((state) => state.user);
@@ -34,6 +37,14 @@ export const StaffGarageFleetSidebar: React.FC = () => {
     queryFn: fetchVehicles,
     enabled: authReady,
     staleTime: 6000,
+  });
+
+  // TanStack Query for Pending Vehicle Returns (STEP 2: STAFF receives vehicle)
+  const { data: pendingReturns = [] } = useQuery<TripData[]>({
+    queryKey: ['pendingReturns'],
+    queryFn: fetchPendingReturnTrips,
+    enabled: authReady,
+    refetchInterval: 4000,
   });
 
   // Sort: EV01 first, EV02 second, then remaining fleet (Single Source of Truth)
@@ -217,6 +228,159 @@ export const StaffGarageFleetSidebar: React.FC = () => {
               <X size={12} />
             </button>
           )}
+        </div>
+      )}
+
+      {/* Pending Return Requests Queue (STEP 2: STAFF receives vehicle) */}
+      {pendingReturns.length > 0 && (
+        <div
+          style={{
+            marginBottom: '10px',
+            padding: '8px',
+            background: 'rgba(0, 242, 254, 0.08)',
+            border: '1px solid rgba(0, 242, 254, 0.3)',
+            borderRadius: '10px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              fontSize: '11px',
+              fontWeight: 800,
+              color: '#00f2fe',
+              letterSpacing: '0.04em',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <AlertCircle size={13} color="#00f2fe" />
+              <span>XE CHỜ TIẾP NHẬN</span>
+            </div>
+            <span
+              style={{
+                fontSize: '10px',
+                padding: '1px 6px',
+                borderRadius: '999px',
+                background: 'rgba(0, 242, 254, 0.25)',
+                color: '#ffffff',
+                fontWeight: 800,
+              }}
+            >
+              {pendingReturns.length}
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '180px', overflowY: 'auto' }}>
+            {pendingReturns.map((trip) => {
+              const vCode = trip.vehicleCode || trip.vehicleName || 'EV01';
+              const plate = trip.licensePlate || '51E-123.45';
+              const userFullName = trip.userName || 'Đồng sở hữu';
+              const bookingRef = trip.bookingId ? `#${trip.bookingId.substring(0, 8).toUpperCase()}` : '--';
+              const tripRef = trip.id ? `#${trip.id.substring(0, 8).toUpperCase()}` : '--';
+              const startTimeStr = formatTime(trip.startedAt);
+              const reqTimeStr = formatTime(trip.returnRequestedAt);
+
+              return (
+                <div
+                  key={trip.id}
+                  style={{
+                    background: 'rgba(15, 23, 42, 0.9)',
+                    border: '1px solid rgba(56, 189, 248, 0.25)',
+                    borderRadius: '8px',
+                    padding: '8px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                    fontSize: '10px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontWeight: 800, color: '#ffffff' }}>{vCode}</span>
+                    <span
+                      style={{
+                        fontSize: '9px',
+                        fontWeight: 700,
+                        color: '#fbbf24',
+                        background: 'rgba(245, 158, 11, 0.15)',
+                        border: '1px solid rgba(245, 158, 11, 0.3)',
+                        padding: '1px 5px',
+                        borderRadius: '4px',
+                      }}
+                    >
+                      CHỜ NHẬN XE
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8' }}>
+                    <span>Biển số:</span>
+                    <span style={{ color: '#cbd5e1', fontWeight: 600 }}>{plate}</span>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8' }}>
+                    <span>Người đi:</span>
+                    <span style={{ color: '#38bdf8', fontWeight: 700 }}>{userFullName}</span>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8' }}>
+                    <span>Lịch đặt:</span>
+                    <span style={{ color: '#cbd5e1' }}>{bookingRef}</span>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8' }}>
+                    <span>Chuyến đi:</span>
+                    <span style={{ color: '#cbd5e1' }}>{tripRef}</span>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8' }}>
+                    <span>Bắt đầu:</span>
+                    <span style={{ color: '#e2e8f0' }}>{startTimeStr}</span>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8' }}>
+                    <span>Yêu cầu trả:</span>
+                    <span style={{ color: '#00f2fe', fontWeight: 600 }}>{reqTimeStr}</span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => selectVehicle(trip.vehicleId, role)}
+                    style={{
+                      marginTop: '4px',
+                      width: '100%',
+                      padding: '5px',
+                      borderRadius: '6px',
+                      background: 'linear-gradient(135deg, rgba(0, 242, 254, 0.3), rgba(6, 182, 212, 0.4))',
+                      border: '1px solid #00f2fe',
+                      color: '#ffffff',
+                      fontSize: '10px',
+                      fontWeight: 800,
+                      letterSpacing: '0.04em',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px',
+                      transition: 'all 0.15s ease',
+                      boxShadow: '0 2px 8px rgba(0, 242, 254, 0.25)',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 242, 254, 0.45), rgba(6, 182, 212, 0.6))';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 242, 254, 0.3), rgba(6, 182, 212, 0.4))';
+                    }}
+                  >
+                    <span>TIẾP NHẬN XE</span>
+                    <ArrowRight size={11} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

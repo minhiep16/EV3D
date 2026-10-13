@@ -26,6 +26,7 @@ import {
   ArrowLeft,
   ChevronDown,
   ChevronUp,
+  CreditCard,
 } from 'lucide-react';
 import { useQuery, QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '../../../services/queryClient';
@@ -1755,22 +1756,44 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                                         {exp.categoryLabel || meta.label}
                                       </span>
                                       {(() => {
+                                        const isPersonalCharging =
+                                          (exp.category === 'CHARGING' || exp.allocationPolicy === 'USER_RESPONSIBILITY') &&
+                                          exp.status === 'APPROVED';
                                         const statusMeta = EXPENSE_STATUS_METADATA[exp.status || 'APPROVED'] || EXPENSE_STATUS_METADATA.APPROVED;
                                         return (
-                                          <span
-                                            style={{
-                                              background: statusMeta.bg,
-                                              border: `1px solid ${statusMeta.border}`,
-                                              color: statusMeta.color,
-                                              fontSize: '9.5px',
-                                              fontWeight: 750,
-                                              padding: '2px 6px',
-                                              borderRadius: '9999px',
-                                              whiteSpace: 'nowrap',
-                                            }}
-                                          >
-                                            {statusMeta.label}
-                                          </span>
+                                          <>
+                                            <span
+                                              style={{
+                                                background: statusMeta.bg,
+                                                border: `1px solid ${statusMeta.border}`,
+                                                color: statusMeta.color,
+                                                fontSize: '9.5px',
+                                                fontWeight: 750,
+                                                padding: '2px 6px',
+                                                borderRadius: '9999px',
+                                                whiteSpace: 'nowrap',
+                                              }}
+                                            >
+                                              {statusMeta.label}
+                                            </span>
+                                            {isPersonalCharging && (
+                                              <span
+                                                data-testid={`payment-status-badge-${exp.id}`}
+                                                style={{
+                                                  background: 'rgba(245, 158, 11, 0.15)',
+                                                  border: '1px solid rgba(245, 158, 11, 0.40)',
+                                                  color: '#fbbf24',
+                                                  fontSize: '9.5px',
+                                                  fontWeight: 750,
+                                                  padding: '2px 6px',
+                                                  borderRadius: '9999px',
+                                                  whiteSpace: 'nowrap',
+                                                }}
+                                              >
+                                                CHỜ THANH TOÁN
+                                              </span>
+                                            )}
+                                          </>
                                         );
                                       })()}
                                     </div>
@@ -1801,34 +1824,64 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                                   >
                                     -{Number(exp.amount).toLocaleString('vi-VN')}đ
                                   </div>
-                                  <button
-                                    type="button"
-                                    data-testid={`expense-share-btn-${exp.id}`}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setExpandedExpenseId((current) => (current === exp.id ? null : exp.id));
-                                    }}
-                                    onPointerDown={(e) => e.stopPropagation()}
-                                    style={{
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '3px',
-                                      fontSize: '10.5px',
-                                      fontWeight: 650,
-                                      color: '#00f2fe',
-                                      marginTop: '3px',
-                                      background: isExpanded ? 'rgba(0, 242, 254, 0.22)' : 'rgba(0, 242, 254, 0.10)',
-                                      padding: '2px 7px',
-                                      borderRadius: '6px',
-                                      border: `1px solid ${isExpanded ? '#00f2fe' : 'rgba(0, 242, 254, 0.28)'}`,
-                                      cursor: 'pointer',
-                                      pointerEvents: 'auto',
-                                      transition: 'all 0.15s ease',
-                                    }}
-                                  >
-                                    <span>{isExpanded ? 'Thu gọn' : exp.status === 'PENDING_VERIFICATION' ? 'Xác minh' : 'Phân bổ'}</span>
-                                    {isExpanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
-                                  </button>
+                                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
+                                    {((exp.category === 'CHARGING' || exp.allocationPolicy === 'USER_RESPONSIBILITY') && exp.status === 'APPROVED') && (
+                                      <button
+                                        type="button"
+                                        data-testid={`pay-action-btn-${exp.id}`}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setExpandedExpenseId((current) => (current === exp.id ? null : exp.id));
+                                        }}
+                                        onPointerDown={(e) => e.stopPropagation()}
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '3px',
+                                          fontSize: '10.5px',
+                                          fontWeight: 750,
+                                          color: '#fbbf24',
+                                          background: 'rgba(245, 158, 11, 0.15)',
+                                          padding: '2px 7px',
+                                          borderRadius: '6px',
+                                          border: '1px solid rgba(245, 158, 11, 0.40)',
+                                          cursor: 'pointer',
+                                          pointerEvents: 'auto',
+                                          transition: 'all 0.15s ease',
+                                        }}
+                                      >
+                                        <CreditCard size={11} />
+                                        <span>THANH TOÁN</span>
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      data-testid={`expense-share-btn-${exp.id}`}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setExpandedExpenseId((current) => (current === exp.id ? null : exp.id));
+                                      }}
+                                      onPointerDown={(e) => e.stopPropagation()}
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '3px',
+                                        fontSize: '10.5px',
+                                        fontWeight: 650,
+                                        color: '#00f2fe',
+                                        background: isExpanded ? 'rgba(0, 242, 254, 0.22)' : 'rgba(0, 242, 254, 0.10)',
+                                        padding: '2px 7px',
+                                        borderRadius: '6px',
+                                        border: `1px solid ${isExpanded ? '#00f2fe' : 'rgba(0, 242, 254, 0.28)'}`,
+                                        cursor: 'pointer',
+                                        pointerEvents: 'auto',
+                                        transition: 'all 0.15s ease',
+                                      }}
+                                    >
+                                      <span>{isExpanded ? 'Thu gọn' : exp.status === 'PENDING_VERIFICATION' ? 'Xác minh' : 'Phân bổ'}</span>
+                                      {isExpanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+                                    </button>
+                                  </div>
                                 </div>
                               </div>
 

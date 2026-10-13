@@ -41,6 +41,10 @@ public class TripResponse {
     private String returnVerifiedByUserName;
     private Instant returnVerifiedAt;
     private String returnNote;
+    private Instant returnRequestedAt;
+    private BigDecimal verifiedExpenseAmount;
+    private UUID returnInspectionId;
+    private String returnInspectionResult;
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -99,6 +103,13 @@ public class TripResponse {
         }
         res.setReturnVerifiedAt(trip.getReturnVerifiedAt());
         res.setReturnNote(trip.getReturnNote());
+        res.setReturnRequestedAt(trip.getReturnRequestedAt());
+        if (trip.getReturnInspection() != null) {
+            res.setReturnInspectionId(trip.getReturnInspection().getId());
+            if (trip.getReturnInspection().getOverallResult() != null) {
+                res.setReturnInspectionResult(trip.getReturnInspection().getOverallResult().name());
+            }
+        }
         res.setCreatedAt(trip.getCreatedAt());
         res.setUpdatedAt(trip.getUpdatedAt());
         return res;
@@ -374,5 +385,37 @@ public class TripResponse {
 
     public void setReturnNote(String returnNote) {
         this.returnNote = returnNote;
+    }
+
+    public Instant getReturnRequestedAt() {
+        return returnRequestedAt;
+    }
+
+    public void setReturnRequestedAt(Instant returnRequestedAt) {
+        this.returnRequestedAt = returnRequestedAt;
+    }
+
+    public BigDecimal getVerifiedExpenseAmount() {
+        return verifiedExpenseAmount;
+    }
+
+    public void setVerifiedExpenseAmount(BigDecimal verifiedExpenseAmount) {
+        this.verifiedExpenseAmount = verifiedExpenseAmount;
+    }
+
+    public UUID getReturnInspectionId() {
+        return returnInspectionId;
+    }
+
+    public void setReturnInspectionId(UUID returnInspectionId) {
+        this.returnInspectionId = returnInspectionId;
+    }
+
+    public String getReturnInspectionResult() {
+        return returnInspectionResult;
+    }
+
+    public void setReturnInspectionResult(String returnInspectionResult) {
+        this.returnInspectionResult = returnInspectionResult;
     }
 }

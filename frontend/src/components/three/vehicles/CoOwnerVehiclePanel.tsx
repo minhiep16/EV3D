@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import React, { useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { VehicleResponse } from '../../../types/vehicle';
 import { VehicleHandoverData } from '../../../types/handover';
 import { Booking } from '../../../types/booking';
@@ -14,7 +14,7 @@ import {
 import { resolveVehicleCode } from './vehicleModelConfig';
 import { fetchActiveVehicleHandovers } from '../../../services/handoverApi';
 import { fetchVehicleBookings } from '../../../services/bookingApi';
-import { fetchActiveTripForVehicle } from '../../../services/tripApi';
+import { fetchActiveTripForVehicle, requestTripReturnApi } from '../../../services/tripApi';
 import { fetchVehicleMaintenance, fetchMaintenanceApproval } from '../../../services/maintenanceApi';
 import { fetchVehicleDamages } from '../../../services/damageApi';
 import { useAuthStore } from '../../../store/authStore';
@@ -38,6 +38,7 @@ import {
   BatteryCharging,
   ShieldCheck,
   ChevronRight,
+  Flag,
 } from 'lucide-react';
 
 function formatDate(isoString?: string): string {
@@ -261,10 +262,35 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
   const setVehicleFeatureMode = useWorldStore((state) => state.setVehicleFeatureMode);
   const enterVehicleReceiptReviewMode = useWorldStore((state) => state.enterVehicleReceiptReviewMode);
   const enterVehicleTripVisualizationMode = useWorldStore((state) => state.enterVehicleTripVisualizationMode);
+  const enterVehicleTripStartMode = useWorldStore((state) => state.enterVehicleTripStartMode);
   const enterVehicleDamageHistoryMode = useWorldStore((state) => state.enterVehicleDamageHistoryMode);
   const enterVehicleMaintenanceMode = useWorldStore((state) => state.enterVehicleMaintenanceMode);
   const enterBatteryXrayMode = useWorldStore((state) => state.enterBatteryXrayMode);
   const enterChargingMode = useWorldStore((state) => state.enterChargingMode);
+
+  const queryClient = useQueryClient();
+  const [showReturnConfirm, setShowReturnConfirm] = useState(false);
+  const [isSubmittingReturn, setIsSubmittingReturn] = useState(false);
+  const [returnError, setReturnError] = useState<string | null>(null);
+
+  const handleRequestReturn = async () => {
+    if (!activeTrip?.id || isSubmittingReturn) return;
+    setIsSubmittingReturn(true);
+    setReturnError(null);
+    try {
+      await requestTripReturnApi(activeTrip.id);
+      setShowReturnConfirm(false);
+      queryClient.invalidateQueries({ queryKey: ['activeTrip', vehicle.id] });
+      queryClient.invalidateQueries({ queryKey: ['vehicleBookings', vehicle.id] });
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+      queryClient.invalidateQueries({ queryKey: ['activeVehicleHandovers', vehicle.id] });
+      queryClient.invalidateQueries({ queryKey: ['bookingHandover'] });
+    } catch (err: any) {
+      setReturnError(err.message || 'Không thể gửi yêu cầu trả xe. Vui lòng thử lại.');
+    } finally {
+      setIsSubmittingReturn(false);
+    }
+  };
 
   // TanStack Queries (authoritative server state)
   const { data: activeHandovers = [] } = useQuery<VehicleHandoverData[]>({
@@ -647,154 +673,438 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
       </div>
 
       {/* =================================================== */}
-      {/* SECTION 4: LỊCH GẦN NHẤT                           */}
+      {/* SECTION 4: THÔNG TIN VẬN HÀNH / CHUYẾN ĐI / LỊCH ĐẶT */}
       {/* =================================================== */}
-      <div
-        style={{
-          background: 'rgba(255, 255, 255, 0.03)',
-          border: '1px solid rgba(0, 242, 254, 0.22)',
-          borderRadius: '16px',
-          padding: '14px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '8px',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10.5px', fontWeight: 800, color: '#38bdf8', letterSpacing: '0.04em' }}>
-            <Clock size={13} color="#00f2fe" />
-            <span>LỊCH SỬ DỤNG GẦN NHẤT</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setVehicleFeatureMode('CO_OWNER_MY_BOOKINGS')}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#94a3b8',
-              fontSize: '10px',
-              fontWeight: 700,
-              cursor: 'pointer',
-              padding: 0,
-            }}
-          >
-            Lịch của tôi
-          </button>
-        </div>
-
-        {candidateBooking || upcomingBooking ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            <div style={{ fontSize: '13px', fontWeight: 800, color: '#ffffff' }}>
-              {formatDate((candidateBooking || upcomingBooking)!.startTime)}
+      {isMyActiveTrip && activeTrip ? (
+        /* CASE A: CO_OWNER ACTIVE TRIP CARD (Section 4 & 5) */
+        <div
+          style={{
+            background: 'linear-gradient(135deg, rgba(2, 132, 199, 0.22) 0%, rgba(8, 20, 36, 0.95) 100%)',
+            border: `1.5px solid ${activeTrip.returnRequestedAt ? '#f59e0b' : '#00f2fe'}`,
+            boxShadow: `0 0 20px ${activeTrip.returnRequestedAt ? 'rgba(245, 158, 11, 0.25)' : 'rgba(0, 242, 254, 0.25)'}`,
+            borderRadius: '16px',
+            padding: '14px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 900, color: '#ffffff', letterSpacing: '0.02em' }}>
+                CHUYẾN ĐI CỦA TÔI
+              </span>
+              <span
+                style={{
+                  background: activeTrip.returnRequestedAt ? 'rgba(245, 158, 11, 0.2)' : 'rgba(0, 242, 254, 0.2)',
+                  border: `1px solid ${activeTrip.returnRequestedAt ? '#f59e0b' : '#00f2fe'}`,
+                  borderRadius: '9999px',
+                  padding: '2px 8px',
+                  fontSize: '9.5px',
+                  fontWeight: 800,
+                  color: activeTrip.returnRequestedAt ? '#fbbf24' : '#00f2fe',
+                }}
+              >
+                {activeTrip.returnRequestedAt ? 'CHỜ TRẢ XE' : 'ĐANG SỬ DỤNG'}
+              </span>
             </div>
-            <div style={{ fontSize: '11.5px', color: '#00f2fe', fontWeight: 700 }}>
-              {formatTimeRange((candidateBooking || upcomingBooking)!.startTime, (candidateBooking || upcomingBooking)!.endTime)}
-            </div>
-            <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '2px' }}>
-              Trạng thái: <strong style={{ color: '#34d399' }}>Đã xác nhận</strong>
-            </div>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <span style={{ fontSize: '11.5px', color: '#94a3b8' }}>
-              Chưa có lịch sử dụng sắp tới.
+            <span style={{ fontSize: '10px', color: '#94a3b8' }}>
+              {activeTrip.vehicleCode || displayCode}
             </span>
-            <button
-              type="button"
-              disabled={vehicle.status === 'MAINTENANCE'}
-              onClick={() => {
-                if (vehicle.status !== 'MAINTENANCE') setVehicleFeatureMode('BOOKING');
-              }}
+          </div>
+
+          {showReturnConfirm ? (
+            /* SUBVIEW: RETURN REQUEST CONFIRMATION (Section 7) */
+            <div
               style={{
-                background: 'linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '7px 12px',
-                color: '#ffffff',
-                fontSize: '11px',
-                fontWeight: 800,
-                cursor: vehicle.status === 'MAINTENANCE' ? 'not-allowed' : 'pointer',
-                opacity: vehicle.status === 'MAINTENANCE' ? 0.5 : 1,
+                background: 'rgba(245, 158, 11, 0.1)',
+                border: '1px solid rgba(245, 158, 11, 0.4)',
+                borderRadius: '12px',
+                padding: '12px',
                 display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
+                flexDirection: 'column',
+                gap: '8px',
               }}
             >
-              <Calendar size={13} />
-              <span>ĐẶT LỊCH NGAY</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#fbbf24', fontSize: '11px', fontWeight: 800 }}>
+                <AlertTriangle size={14} color="#fbbf24" />
+                <span>XÁC NHẬN YÊU CẦU TRẢ XE</span>
+              </div>
+
+              <div style={{ fontSize: '10.5px', display: 'flex', flexDirection: 'column', gap: '4px', color: '#cbd5e1' }}>
+                <div>Phương tiện: <strong style={{ color: '#ffffff' }}>{displayCode} ({vehicle.licensePlate || '51K-888.88'})</strong></div>
+                <div>Bắt đầu lúc: <strong style={{ color: '#ffffff' }}>{formatDateTime(activeTrip.startedAt)}</strong></div>
+                <div>Thời gian gửi yêu cầu: <strong style={{ color: '#00f2fe' }}>{formatDateTime(new Date().toISOString())}</strong></div>
+                <div>Trạng thái hiện tại: <strong style={{ color: '#34d399' }}>ĐANG SỬ DỤNG</strong></div>
+              </div>
+
+              {returnError && (
+                <div style={{ color: '#f87171', fontSize: '10px', fontWeight: 600 }}>
+                  {returnError}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                <button
+                  type="button"
+                  disabled={isSubmittingReturn}
+                  onClick={handleRequestReturn}
+                  style={{
+                    flex: 1,
+                    background: 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '8px',
+                    color: '#ffffff',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    cursor: isSubmittingReturn ? 'not-allowed' : 'pointer',
+                    opacity: isSubmittingReturn ? 0.6 : 1,
+                  }}
+                >
+                  {isSubmittingReturn ? 'ĐANG GỬI...' : 'GỬI YÊU CẦU TRẢ XE'}
+                </button>
+                <button
+                  type="button"
+                  disabled={isSubmittingReturn}
+                  onClick={() => setShowReturnConfirm(false)}
+                  style={{
+                    flex: 1,
+                    background: 'rgba(255, 255, 255, 0.08)',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    borderRadius: '8px',
+                    padding: '8px',
+                    color: '#cbd5e1',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  TIẾP TỤC CHUYẾN ĐI
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* SUBVIEW: PERSISTED ACTIVE TRIP DETAILS (Section 5) */
+            <>
+              <div
+                style={{
+                  background: 'rgba(0, 0, 0, 0.3)',
+                  borderRadius: '10px',
+                  padding: '10px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '5px',
+                  fontSize: '10.5px',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Biển số xe:</span>
+                  <span style={{ color: '#f8fafc', fontWeight: 600 }}>{vehicle.licensePlate || activeTrip.licensePlate || 'Chưa có dữ liệu cập nhật'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Mã lịch đặt:</span>
+                  <span style={{ color: '#cbd5e1', fontWeight: 600 }}>{activeTrip.bookingId ? activeTrip.bookingId.substring(0, 8).toUpperCase() : 'Chưa có dữ liệu cập nhật'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Thời gian bắt đầu:</span>
+                  <span style={{ color: '#f8fafc', fontWeight: 600 }}>{formatDateTime(activeTrip.startedAt)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Dự kiến kết thúc:</span>
+                  <span style={{ color: '#00f2fe', fontWeight: 600 }}>{activeTrip.bookingEndTime ? formatDateTime(activeTrip.bookingEndTime) : 'Chưa có dữ liệu cập nhật'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Pin bắt đầu (SOC):</span>
+                  <span style={{ color: '#34d399', fontWeight: 700 }}>{activeTrip.startBatteryLevel != null ? `${activeTrip.startBatteryLevel}%` : 'Chưa có dữ liệu cập nhật'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Pin mới nhất (SOC):</span>
+                  <span style={{ color: '#38bdf8', fontWeight: 700 }}>{vehicle.currentBatteryLevel != null ? `${vehicle.currentBatteryLevel}%` : 'Chưa có dữ liệu cập nhật'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Odometer bắt đầu:</span>
+                  <span style={{ color: '#cbd5e1', fontWeight: 600 }}>{activeTrip.startOdometer != null ? `${Number(activeTrip.startOdometer).toLocaleString('vi-VN')} km` : 'Chưa có dữ liệu cập nhật'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Odometer mới nhất:</span>
+                  <span style={{ color: '#f8fafc', fontWeight: 600 }}>{vehicle.odometer != null ? `${Number(vehicle.odometer).toLocaleString('vi-VN')} km` : 'Chưa có dữ liệu cập nhật'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Quãng đường đã đi:</span>
+                  <span style={{ color: '#00f2fe', fontWeight: 700 }}>
+                    {activeTrip.distanceTraveled != null
+                      ? `${activeTrip.distanceTraveled} km`
+                      : (vehicle.odometer != null && activeTrip.startOdometer != null && Number(vehicle.odometer) >= Number(activeTrip.startOdometer))
+                      ? `${(Number(vehicle.odometer) - Number(activeTrip.startOdometer)).toFixed(1)} km`
+                      : 'Chưa có dữ liệu cập nhật'}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Phiên sạc trong chuyến:</span>
+                  <span style={{ color: '#cbd5e1' }}>Không phát sinh phiên sạc</span>
+                </div>
+              </div>
+
+              {activeTrip.returnRequestedAt && (
+                /* Information Notice: Waiting for Staff (Section 8) */
+                <div
+                  style={{
+                    background: 'rgba(245, 158, 11, 0.12)',
+                    border: '1px solid rgba(245, 158, 11, 0.4)',
+                    borderRadius: '10px',
+                    padding: '8px 10px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#fbbf24', fontSize: '10.5px', fontWeight: 800 }}>
+                    <Clock size={12} color="#fbbf24" />
+                    <span>ĐANG CHỜ NHÂN VIÊN NHẬN XE</span>
+                  </div>
+                  <div style={{ fontSize: '10px', color: '#e2e8f0', lineHeight: 1.4 }}>
+                    Nhân viên sẽ kiểm tra tình trạng xe, pin và số km trước khi hoàn tất trả xe.
+                  </div>
+                  <div style={{ fontSize: '9px', color: '#94a3b8' }}>
+                    Yêu cầu gửi lúc: {formatDateTime(activeTrip.returnRequestedAt)}
+                  </div>
+                </div>
+              )}
+
+              {/* Actions (Section 4) */}
+              <div style={{ display: 'flex', gap: '8px', marginTop: '2px' }}>
+                <button
+                  type="button"
+                  onClick={() => enterVehicleTripVisualizationMode()}
+                  style={{
+                    flex: 1,
+                    background: 'linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '8px',
+                    color: '#041325',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '5px',
+                  }}
+                >
+                  <Compass size={13} color="#041325" />
+                  <span>CHI TIẾT CHUYẾN ĐI</span>
+                </button>
+
+                {!activeTrip.returnRequestedAt ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReturnError(null);
+                      setShowReturnConfirm(true);
+                    }}
+                    style={{
+                      flex: 1,
+                      background: 'linear-gradient(135deg, #d97706 0%, #f59e0b 100%)',
+                      border: 'none',
+                      borderRadius: '8px',
+                      padding: '8px',
+                      color: '#ffffff',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '5px',
+                    }}
+                  >
+                    <Flag size={13} />
+                    <span>YÊU CẦU TRẢ XE</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled
+                    style={{
+                      flex: 1,
+                      background: 'rgba(255, 255, 255, 0.06)',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      borderRadius: '8px',
+                      padding: '8px',
+                      color: '#94a3b8',
+                      fontSize: '10.5px',
+                      fontWeight: 700,
+                      cursor: 'not-allowed',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '5px',
+                    }}
+                  >
+                    <CheckCircle2 size={12} color="#34d399" />
+                    <span>ĐÃ GỬI YÊU CẦU</span>
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      ) : !isTripActive && completedHandover ? (
+        /* CASE B: HANDOVER COMPLETED -> PROMINENT "BẮT ĐẦU CHUYẾN ĐI" (Section 3) */
+        <div
+          style={{
+            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.18) 0%, rgba(8, 20, 36, 0.95) 100%)',
+            border: '1.5px solid #10b981',
+            boxShadow: '0 0 20px rgba(16, 185, 129, 0.25)',
+            borderRadius: '16px',
+            padding: '14px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#34d399', letterSpacing: '0.03em' }}>
+                XE ĐÃ BÀN GIAO THÀNH CÔNG
+              </span>
+            </div>
+            <span
+              style={{
+                background: 'rgba(16, 185, 129, 0.25)',
+                color: '#34d399',
+                padding: '2px 8px',
+                borderRadius: '9999px',
+                fontSize: '9.5px',
+                fontWeight: 800,
+              }}
+            >
+              SẴN SÀNG
+            </span>
+          </div>
+
+          <p style={{ margin: 0, fontSize: '11px', color: '#cbd5e1', lineHeight: 1.45 }}>
+            Nhân viên đã hoàn tất bàn giao xe. Xe đã sẵn sàng để bạn khởi hành chuyến đi.
+          </p>
+
+          <button
+            type="button"
+            onClick={() => enterVehicleTripStartMode()}
+            style={{
+              width: '100%',
+              marginTop: '4px',
+              background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+              border: 'none',
+              borderRadius: '10px',
+              padding: '10px',
+              color: '#ffffff',
+              fontSize: '12px',
+              fontWeight: 800,
+              letterSpacing: '0.04em',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '7px',
+              boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
+            }}
+          >
+            <Play size={14} fill="#ffffff" />
+            <span>BẮT ĐẦU CHUYẾN ĐI</span>
+          </button>
+        </div>
+      ) : (
+        /* CASE C: NORMAL UPCOMING SCHEDULE / BOOKING (Section 4) */
+        <div
+          style={{
+            background: 'rgba(255, 255, 255, 0.03)',
+            border: '1px solid rgba(0, 242, 254, 0.22)',
+            borderRadius: '16px',
+            padding: '14px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10.5px', fontWeight: 800, color: '#38bdf8', letterSpacing: '0.04em' }}>
+              <Clock size={13} color="#00f2fe" />
+              <span>LỊCH SỬ DỤNG GẦN NHẤT</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setVehicleFeatureMode('CO_OWNER_MY_BOOKINGS')}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#94a3b8',
+                fontSize: '10px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                padding: 0,
+              }}
+            >
+              Lịch của tôi
             </button>
           </div>
-        )}
-      </div>
+
+          {candidateBooking || upcomingBooking ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              <div style={{ fontSize: '13px', fontWeight: 800, color: '#ffffff' }}>
+                {formatDate((candidateBooking || upcomingBooking)!.startTime)}
+              </div>
+              <div style={{ fontSize: '11.5px', color: '#00f2fe', fontWeight: 700 }}>
+                {formatTimeRange((candidateBooking || upcomingBooking)!.startTime, (candidateBooking || upcomingBooking)!.endTime)}
+              </div>
+              <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '2px' }}>
+                Trạng thái: <strong style={{ color: '#34d399' }}>Đã xác nhận</strong>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '11.5px', color: '#94a3b8' }}>
+                Chưa có lịch sử dụng sắp tới.
+              </span>
+              <button
+                type="button"
+                disabled={vehicle.status === 'MAINTENANCE'}
+                onClick={() => {
+                  if (vehicle.status !== 'MAINTENANCE') setVehicleFeatureMode('BOOKING');
+                }}
+                style={{
+                  background: 'linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '7px 12px',
+                  color: '#ffffff',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  cursor: vehicle.status === 'MAINTENANCE' ? 'not-allowed' : 'pointer',
+                  opacity: vehicle.status === 'MAINTENANCE' ? 0.5 : 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                }}
+              >
+                <Calendar size={13} />
+                <span>ĐẶT LỊCH NGAY</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* =================================================== */}
-      {/* SECTION 5: NOTICES (Bảo dưỡng chờ duyệt, Trip, v.v.)*/}
+      {/* SECTION 5: NOTICES (Bảo dưỡng chờ duyệt, v.v.)       */}
       {/* =================================================== */}
       {pendingApprovalMaintenance && (
         <PendingApprovalMaintenanceNotice
           maintenance={pendingApprovalMaintenance}
           onOpenMaintenance={() => enterVehicleMaintenanceMode()}
         />
-      )}
-
-      {/* Active Trip Notice */}
-      {isMyActiveTrip && activeTrip && (
-        <div
-          style={{
-            background: 'rgba(2, 132, 199, 0.16)',
-            border: '1px solid rgba(56, 189, 248, 0.5)',
-            borderRadius: '14px',
-            padding: '12px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '6px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: '11px', fontWeight: 800, color: '#38bdf8' }}>CHUYẾN ĐI ĐANG DIỄN RA</span>
-            <span style={{ fontSize: '10px', color: '#cbd5e1' }}>{displayCode}</span>
-          </div>
-          <div style={{ fontSize: '10.5px', color: '#94a3b8' }}>
-            Khung giờ: <strong style={{ color: '#00f2fe' }}>{formatTimeRange(activeTrip.bookingStartTime, activeTrip.bookingEndTime)}</strong>
-          </div>
-          <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-            <button
-              type="button"
-              onClick={() => enterVehicleTripVisualizationMode()}
-              style={{
-                flex: 1,
-                background: 'linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '6px',
-                color: '#ffffff',
-                fontSize: '11px',
-                fontWeight: 800,
-                cursor: 'pointer',
-              }}
-            >
-              XEM CHUYẾN ĐI
-            </button>
-            <button
-              type="button"
-              onClick={() => enterVehicleTripVisualizationMode()}
-              style={{
-                flex: 1,
-                background: 'linear-gradient(135deg, #e11d48 0%, #ef4444 100%)',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '6px',
-                color: '#ffffff',
-                fontSize: '11px',
-                fontWeight: 800,
-                cursor: 'pointer',
-              }}
-            >
-              KẾT THÚC
-            </button>
-          </div>
-        </div>
       )}
 
       {/* Other Co-Owner Active Trip */}

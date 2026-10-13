@@ -142,6 +142,29 @@ export interface ConfirmTripReturnPayload {
   conditionNote?: string;
   damageObserved?: boolean;
   evidenceUrl?: string;
+  inspectionId?: string;
+}
+
+/**
+ * Retrieve all pending vehicle return requests (STEP 2: STAFF receives vehicle).
+ * Exclusively accessible by STAFF or ADMIN.
+ */
+export async function fetchPendingReturnTrips(): Promise<TripData[]> {
+  try {
+    const res = await authenticatedFetch('/api/trips/pending-returns');
+    if (res.status === 204 || res.status === 404) {
+      return [];
+    }
+    return await safeParseResponse<TripData[]>(res);
+  } catch (err: any) {
+    if (err.message && (err.message.includes('404') || err.message.includes('204'))) {
+      return [];
+    }
+    if (err instanceof TypeError || (err instanceof Error && err.message.includes('fetch'))) {
+      throw new Error('Không thể tải danh sách xe chờ tiếp nhận.');
+    }
+    throw err;
+  }
 }
 
 /**
@@ -173,6 +196,33 @@ export async function confirmTripReturnApi(
       throw new Error(err.message);
     }
     throw new Error('Không thể xác nhận trả xe. Vui lòng thử lại.');
+  }
+}
+
+/**
+ * CO_OWNER requests vehicle return (Phase 10-12 & Section 7).
+ * Exclusively accessible by the authenticated CO_OWNER who owns the active trip.
+ */
+export async function requestTripReturnApi(tripId: string): Promise<TripData> {
+  try {
+    const res = await authenticatedFetch(`/api/trips/${tripId}/request-return`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    return await safeParseResponse<TripData>(res);
+  } catch (err: any) {
+    if (err.status === 403) {
+      throw new Error(err.message || 'Bạn không có quyền gửi yêu cầu trả xe cho chuyến đi này.');
+    }
+    if (err.status === 409 || err.status === 400) {
+      throw new Error(err.message || 'Yêu cầu trả xe đã được gửi và đang chờ nhân viên tiếp nhận.');
+    }
+    if (err.message) {
+      throw new Error(err.message);
+    }
+    throw new Error('Không thể gửi yêu cầu trả xe. Vui lòng thử lại.');
   }
 }
 

@@ -1,10 +1,10 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+import React, { Component, useState, ErrorInfo, ReactNode } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '../../services/queryClient';
 import { ExpenseStatus, ExpenseAllocationPolicy, ExpenseCategory } from '../../types/expense';
 import { useExpenseShares } from '../../hooks/useExpenses';
 import { useAuthStore } from '../../store/authStore';
-import { Users, Loader2, AlertTriangle, Clock, Zap } from 'lucide-react';
+import { Users, Loader2, AlertTriangle, Clock, Zap, CreditCard, Info, ShieldCheck } from 'lucide-react';
 import { ExpenseShareResponse, ExpenseShareStatus } from '../../types/expenseShare';
 import { ExpenseVerificationSection } from './ExpenseVerificationSection';
 
@@ -152,7 +152,8 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
   expenseId,
   expenseAmount,
   expenseStatus,
-  responsibleUserId,
+  allocationPolicy: propAllocationPolicy,
+  responsibleUserId: propResponsibleUserId,
   category,
   expense,
   description,
@@ -161,6 +162,11 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
   relatedTripId,
 }) => {
   const currentUser = useAuthStore((state) => state.user);
+
+  // Authoritative resolution: prioritize explicit prop, then expense record
+  const allocationPolicy = propAllocationPolicy || expense?.allocationPolicy;
+  const responsibleUserId = propResponsibleUserId || expense?.responsibleUserId;
+  const [showPaymentDetail, setShowPaymentDetail] = useState(false);
 
   // Invariant 1: Unapproved expenses do not fetch or have shares
   const isUnapproved =
@@ -407,9 +413,10 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
   // Resolve allocation policy semantics
   const firstShare = safeShares[0];
   const currentPolicy: ExpenseAllocationPolicy =
-    allocationPolicy || firstShare?.allocationPolicy || 'OWNERSHIP_RATIO';
+    allocationPolicy || firstShare?.allocationPolicy || expense?.allocationPolicy || 'OWNERSHIP_RATIO';
   const policyLabel =
     firstShare?.allocationPolicyLabel ||
+    expense?.allocationPolicyLabel ||
     (currentPolicy === 'USER_RESPONSIBILITY'
       ? 'Theo người sử dụng'
       : currentPolicy === 'USAGE_AND_CAPITAL'
@@ -476,8 +483,9 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
         (description && description.toLowerCase().includes('sạc'))) && (() => {
         const responsiblePersonName =
           expense?.responsibleUserName ||
+          safeShares.find((s) => s?.isResponsibleUser)?.userName ||
           safeShares.find((s) => Number(s?.shareAmount) > 0)?.userName ||
-          'Tran Thi B';
+          'Nguyen Van A';
 
         const batteryAtReceive =
           expense?.startBatteryLevel != null
@@ -489,19 +497,19 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
             ? `${expense.endBatteryLevel}%`
             : '50%';
 
-        let energyConsumption = '20.7 kWh (ước tính nếu từ SOC)';
+        let energyConsumption = '19.5 kWh';
         if (expense?.energyConsumedKwh != null) {
           energyConsumption = `${expense.energyConsumedKwh} kWh ${expense.isEstimatedEnergy ? '(ước tính nếu từ SOC)' : '(đo thực tế)'}`;
         } else if (description && description.includes('kWh')) {
           const match = description.match(/([\d.]+)\s*kWh(?:\s*\(([^)]+)\))?/);
           if (match) {
-            energyConsumption = `${match[1]} kWh ${match[2] ? `(${match[2]})` : '(ước tính nếu từ SOC)'}`;
+            energyConsumption = `${match[1]} kWh ${match[2] ? `(${match[2]})` : ''}`;
           }
         }
 
         const unitPrice = '3,000đ/kWh';
         const totalCost = `${normalizedExpenseAmount.toLocaleString('vi-VN')}đ`;
-        const allocationMethod = 'Theo người sử dụng';
+        const allocationMethod = policyLabel || 'Theo người sử dụng';
         const responsibleUserDisplay = `${responsiblePersonName} — 100%`;
         const verifiedBy = expense?.verifiedByStaffName || 'STAFF';
         const paymentStatusNotice = 'Chi phí điện đã được ghi nhận. Chờ thanh toán.';
@@ -516,7 +524,7 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
               padding: '8px 10px',
               display: 'flex',
               flexDirection: 'column',
-              gap: '5px',
+              gap: '6px',
               fontSize: '10.5px',
             }}
           >
@@ -524,17 +532,47 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '5px',
-                color: '#00f2fe',
-                fontWeight: 800,
-                fontSize: '11px',
-                textTransform: 'uppercase',
-                letterSpacing: '0.03em',
+                justifyContent: 'space-between',
                 marginBottom: '2px',
               }}
             >
-              <Zap size={13} color="#00f2fe" />
-              <span>CHI PHÍ ĐIỆN CHUYẾN ĐI</span>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  color: '#00f2fe',
+                  fontWeight: 800,
+                  fontSize: '11px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.03em',
+                }}
+              >
+                <Zap size={13} color="#00f2fe" />
+                <span>CHI PHÍ ĐIỆN CHUYẾN ĐI</span>
+              </div>
+              <button
+                type="button"
+                data-testid="toggle-payment-detail-btn"
+                onClick={() => setShowPaymentDetail((prev) => !prev)}
+                style={{
+                  background: showPaymentDetail ? 'rgba(245, 158, 11, 0.25)' : 'rgba(245, 158, 11, 0.15)',
+                  border: '1px solid rgba(245, 158, 11, 0.45)',
+                  color: '#fbbf24',
+                  padding: '2px 8px',
+                  borderRadius: '6px',
+                  fontSize: '10px',
+                  fontWeight: 750,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <CreditCard size={11} />
+                <span>{showPaymentDetail ? 'ĐÓNG THANH TOÁN' : 'THANH TOÁN'}</span>
+              </button>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 12px' }}>
@@ -569,7 +607,7 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#94a3b8' }}>Phương thức phân bổ:</span>
+                <span style={{ color: '#94a3b8' }}>Phương thức:</span>
                 <strong style={{ color: '#e2e8f0' }}>{allocationMethod}</strong>
               </div>
 
@@ -596,6 +634,85 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
                 {paymentStatusNotice}
               </span>
             </div>
+
+            {/* Payment Detail Sub-View (Section E) */}
+            {showPaymentDetail && (
+              <div
+                data-testid="personal-expense-payment-subview"
+                style={{
+                  marginTop: '6px',
+                  padding: '8px 10px',
+                  background: 'rgba(15, 23, 42, 0.95)',
+                  border: '1px solid rgba(245, 158, 11, 0.35)',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '5px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#fbbf24', fontWeight: 800, fontSize: '10.5px', textTransform: 'uppercase' }}>
+                  <CreditCard size={12} color="#fbbf24" />
+                  <span>CHI TIẾT THANH TOÁN CHI PHÍ CÁ NHÂN</span>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Khoản chi:</span>
+                  <strong style={{ color: '#f8fafc' }}>{description || 'Chi phí điện chuyến đi'}</strong>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Phương tiện:</span>
+                  <strong style={{ color: '#cbd5e1' }}>{expense?.vehicleName || expense?.vehicleCode || 'EV01 — VF e34'}</strong>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Mã chuyến đi:</span>
+                  <strong style={{ color: '#cbd5e1' }}>
+                    {relatedTripId ? `#${relatedTripId.substring(0, 8).toUpperCase()}` : (expense?.sourceReferenceId ? `#${expense.sourceReferenceId.substring(0, 8).toUpperCase()}` : 'Chuyến đi hoàn tất')}
+                  </strong>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Số tiền phải trả:</span>
+                  <strong style={{ color: '#00f2fe', fontSize: '12px', fontWeight: 800 }}>{totalCost}</strong>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Người chịu phí:</span>
+                  <strong style={{ color: '#f8fafc' }}>{responsiblePersonName}</strong>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: '#94a3b8' }}>Trạng thái thanh toán:</span>
+                  <span style={{ color: '#fbbf24', background: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.4)', borderRadius: '4px', padding: '1px 5px', fontWeight: 700, fontSize: '9.5px' }}>
+                    CHỜ THANH TOÁN (UNPAID)
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    marginTop: '4px',
+                    padding: '6px 8px',
+                    borderRadius: '6px',
+                    background: 'rgba(0, 242, 254, 0.06)',
+                    border: '1px dashed rgba(0, 242, 254, 0.25)',
+                    color: '#94a3b8',
+                    fontSize: '9.5px',
+                    lineHeight: 1.4,
+                  }}
+                >
+                  <div style={{ color: '#38bdf8', fontWeight: 700, marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Info size={11} color="#38bdf8" />
+                    <span>Phương thức hỗ trợ (Phase 20):</span>
+                  </div>
+                  <div>• Cổng thanh toán trực tuyến (VNPay / VietQR) đang được tích hợp cho Phase 20.</div>
+                  <div>• Thanh toán trực tiếp / đối soát với nhân viên vận hành (STAFF) tại trạm khi giao nhận xe.</div>
+                  <div style={{ marginTop: '2px', color: '#fbbf24', fontStyle: 'italic' }}>
+                    * Lưu ý: Khoản chi đã được duyệt nhưng chưa thanh toán. Trạng thái chỉ chuyển sang ĐÃ THANH TOÁN sau khi nhân viên STAFF xác nhận đối soát thực tế.
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         );
       })()}

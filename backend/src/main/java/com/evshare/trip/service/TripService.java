@@ -20,6 +20,10 @@ import com.evshare.user.entity.User;
 import com.evshare.user.repository.UserRepository;
 import com.evshare.charging.repository.ChargingSessionRepository;
 import com.evshare.expense.service.ExpenseService;
+import com.evshare.inspection.entity.InspectionStatus;
+import com.evshare.inspection.entity.InspectionType;
+import com.evshare.inspection.entity.VehicleInspection;
+import com.evshare.inspection.repository.VehicleInspectionRepository;
 import com.evshare.trip.dto.ConfirmTripReturnRequest;
 import com.evshare.vehicle.entity.Vehicle;
 import com.evshare.vehicle.entity.VehicleStatus;
@@ -88,6 +92,7 @@ public class TripService {
     private final ExpenseService expenseService;
     private final UserRepository userRepository;
     private final ChargingSessionRepository chargingSessionRepository;
+    private final VehicleInspectionRepository inspectionRepository;
 
     public TripService(
             TripRepository tripRepository,
@@ -97,7 +102,7 @@ public class TripService {
             VehicleEnergyModelService energyModelService,
             VehicleBatteryHealthRepository batteryHealthRepository
     ) {
-        this(tripRepository, bookingRepository, handoverRepository, vehicleRepository, energyModelService, batteryHealthRepository, null, null, null);
+        this(tripRepository, bookingRepository, handoverRepository, vehicleRepository, energyModelService, batteryHealthRepository, null, null, null, null);
     }
 
     @Autowired
@@ -110,7 +115,8 @@ public class TripService {
             VehicleBatteryHealthRepository batteryHealthRepository,
             @org.springframework.context.annotation.Lazy ExpenseService expenseService,
             UserRepository userRepository,
-            ChargingSessionRepository chargingSessionRepository
+            ChargingSessionRepository chargingSessionRepository,
+            VehicleInspectionRepository inspectionRepository
     ) {
         this.tripRepository = tripRepository;
         this.bookingRepository = bookingRepository;
@@ -121,6 +127,16 @@ public class TripService {
         this.expenseService = expenseService;
         this.userRepository = userRepository;
         this.chargingSessionRepository = chargingSessionRepository;
+        this.inspectionRepository = inspectionRepository;
+    }
+
+    /**
+     * Retrieve all pending vehicle return requests (STEP 2: STAFF receives vehicle).
+     */
+    @Transactional(readOnly = true)
+    public List<TripResponse> getPendingReturnTrips() {
+        List<Trip> trips = tripRepository.findPendingReturnTrips();
+        return trips.stream().map(this::enrichTripResponse).toList();
     }
 
     /**
@@ -358,6 +374,16 @@ public class TripService {
         return TripResponse.fromEntity(savedTrip);
     }
 
+    private TripResponse enrichTripResponse(Trip trip) {
+        if (trip == null) return null;
+        TripResponse res = TripResponse.fromEntity(trip);
+        if (trip.getStatus() == TripStatus.COMPLETED && expenseService != null) {
+            expenseService.findByRelatedTripId(trip.getId())
+                    .ifPresent(exp -> res.setVerifiedExpenseAmount(exp.getAmount()));
+        }
+        return res;
+    }
+
     /**
      * Retrieve trip associated with a booking (Section 11).
      */
@@ -370,7 +396,7 @@ public class TripService {
             throw new AccessDeniedException(MSG_NOT_BOOKING_OWNER);
         }
 
-        return tripRepository.findByBookingId(bookingId).map(TripResponse::fromEntity);
+        return tripRepository.findByBookingId(bookingId).map(this::enrichTripResponse);
     }
 
     /**
@@ -378,7 +404,7 @@ public class TripService {
      */
     @Transactional(readOnly = true)
     public Optional<TripResponse> getActiveTripForVehicle(UUID vehicleId) {
-        return tripRepository.findByVehicleIdAndStatus(vehicleId, TripStatus.ACTIVE).map(TripResponse::fromEntity);
+        return tripRepository.findByVehicleIdAndStatus(vehicleId, TripStatus.ACTIVE).map(this::enrichTripResponse);
     }
 
     @Transactional(readOnly = true)
@@ -390,7 +416,41 @@ public class TripService {
         if (currentUserRole == Role.CO_OWNER && (trip.getUser() == null || !trip.getUser().getId().equals(currentUserId))) {
             throw new AccessDeniedException("BẠN KHÔNG CÓ QUYỀN XEM CHUYẾN ĐI NÀY");
         }
-        return Optional.of(TripResponse.fromEntity(trip));
+        return Optional.of(enrichTripResponse(trip));
+    }
+
+    /**
+     * CO_OWNER requests vehicle return (Phase 10-12 & Section 7).
+     * Validates: authenticated CO_OWNER, authorized active trip, correct vehicle, trip not already completed, no duplicate return request.
+     * Records return_requested_at without finalizing STAFF inspection.
+     */
+    @Transactional
+    public TripResponse requestTripReturn(UUID tripId, UUID currentUserId, Role currentUserRole) {
+        if (currentUserRole != Role.CO_OWNER) {
+            throw new AccessDeniedException("Chỉ chủ xe của chuyến đi mới có quyền yêu cầu trả xe.");
+        }
+
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy chuyến đi với mã: " + tripId));
+
+        if (trip.getUser() == null || !trip.getUser().getId().equals(currentUserId)) {
+            throw new AccessDeniedException(MSG_NOT_TRIP_OWNER);
+        }
+
+        if (trip.getStatus() == TripStatus.COMPLETED) {
+            throw new IllegalStateException(MSG_TRIP_ALREADY_COMPLETED);
+        }
+        if (trip.getStatus() != TripStatus.ACTIVE) {
+            throw new IllegalStateException(MSG_TRIP_NOT_ACTIVE);
+        }
+
+        if (trip.getReturnRequestedAt() != null) {
+            throw new DuplicateResourceException("Yêu cầu trả xe đã được gửi và đang chờ nhân viên tiếp nhận.");
+        }
+
+        trip.setReturnRequestedAt(Instant.now());
+        Trip savedTrip = tripRepository.save(trip);
+        return enrichTripResponse(savedTrip);
     }
 
     /**
@@ -518,7 +578,7 @@ public class TripService {
 
         // 12. Persist trip
         Trip savedTrip = tripRepository.save(trip);
-        return TripResponse.fromEntity(savedTrip);
+        return enrichTripResponse(savedTrip);
     }
 
     /**
@@ -544,7 +604,8 @@ public class TripService {
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy nhân viên: " + staffUserId)) : null;
 
         if (trip.getReturnVerifiedAt() != null) {
-            throw new IllegalStateException("Chuyến đi này đã được nhân viên xác nhận trả xe trước đó.");
+            // Idempotent: return existing confirmed trip without duplicating expenses or mutations
+            return enrichTripResponse(trip);
         }
 
         Vehicle vehicle = trip.getVehicle();
@@ -552,20 +613,46 @@ public class TripService {
             throw new IllegalStateException("CHUYẾN ĐI THIẾU THÔNG TIN PHƯƠNG TIỆN");
         }
 
-        // 1. If trip was still ACTIVE, finalize it
-        if (trip.getStatus() == TripStatus.ACTIVE) {
-            trip.setStatus(TripStatus.COMPLETED);
-            trip.setEndedAt(Instant.now());
+        // Section 9: Validate mandatory inspection values recorded by staff
+        if (request == null || request.getEndBatteryLevel() == null || request.getEndOdometer() == null) {
+            throw new IllegalArgumentException("Nhân viên phải ghi nhận đầy đủ mức pin kết thúc (SOC) và số km trên đồng hồ (odometer).");
+        }
+        if (request.getEndBatteryLevel() < 0 || request.getEndBatteryLevel() > 100) {
+            throw new IllegalArgumentException("Mức pin kết thúc (SOC) phải nằm trong khoảng từ 0% đến 100%.");
+        }
+        if (trip.getStartOdometer() != null && request.getEndOdometer().compareTo(trip.getStartOdometer()) < 0) {
+            throw new IllegalArgumentException("Số km kết thúc (" + request.getEndOdometer() + " km) không thể nhỏ hơn số km bắt đầu (" + trip.getStartOdometer() + " km).");
         }
 
-        // 2. Update ending telemetry if provided by staff inspection
-        if (request != null && request.getEndBatteryLevel() != null) {
-            trip.setEndBatteryLevel(request.getEndBatteryLevel());
-            trip.setEndSocPercent(new BigDecimal(request.getEndBatteryLevel()));
+        // 1. Link & validate Return Inspection if provided or found
+        if (request.getInspectionId() != null && inspectionRepository != null) {
+            VehicleInspection inspection = inspectionRepository.findById(request.getInspectionId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy biên bản kiểm tra: " + request.getInspectionId()));
+            if (!inspection.getVehicle().getId().equals(vehicle.getId())) {
+                throw new IllegalArgumentException("Biên bản kiểm tra không thuộc về phương tiện này.");
+            }
+            if (inspection.getStatus() != InspectionStatus.COMPLETED) {
+                throw new IllegalStateException("Biên bản kiểm tra chưa hoàn tất, không thể xác nhận trả xe.");
+            }
+            trip.setReturnInspection(inspection);
+        } else if (inspectionRepository != null && trip.getReturnInspection() == null) {
+            inspectionRepository.findLatestCompletedByVehicleIdAndType(vehicle.getId(), InspectionType.POST_TRIP)
+                    .ifPresent(trip::setReturnInspection);
         }
-        if (request != null && request.getEndOdometer() != null) {
-            trip.setEndOdometer(request.getEndOdometer());
+
+        // 2. If trip was still ACTIVE, finalize it
+        Instant now = Instant.now();
+        if (trip.getStatus() == TripStatus.ACTIVE) {
+            trip.setStatus(TripStatus.COMPLETED);
+            trip.setEndedAt(now);
+        } else if (trip.getEndedAt() == null) {
+            trip.setEndedAt(now);
         }
+
+        // 3. Update ending telemetry recorded by staff inspection
+        trip.setEndBatteryLevel(request.getEndBatteryLevel());
+        trip.setEndSocPercent(new BigDecimal(request.getEndBatteryLevel()));
+        trip.setEndOdometer(request.getEndOdometer());
 
         // Re-read managed vehicle to avoid optimistic locking
         Vehicle managedVehicle = vehicleRepository.findById(vehicle.getId()).orElse(vehicle);
@@ -578,7 +665,7 @@ public class TripService {
         managedVehicle.setStatus(VehicleStatus.AVAILABLE);
         vehicleRepository.save(managedVehicle);
 
-        // 3. Complete linked booking if needed
+        // 4. Complete linked booking if needed
         Booking booking = trip.getBooking();
         if (booking != null) {
             Booking managedBooking = bookingRepository.findById(booking.getId()).orElse(booking);
@@ -588,7 +675,7 @@ public class TripService {
             }
         }
 
-        // 4. Reliable SOC / Energy verification (Section 3 & Scenario F)
+        // 5. Reliable SOC / Energy verification (Section 3 & Scenario F)
         BigDecimal capacityKwh = managedVehicle.getUsableBatteryCapacityKwh() != null
                 ? managedVehicle.getUsableBatteryCapacityKwh()
                 : (managedVehicle.getGrossBatteryCapacityKwh() != null ? managedVehicle.getGrossBatteryCapacityKwh() : new BigDecimal("65.0"));
@@ -604,7 +691,7 @@ public class TripService {
             // Find intermediate charging energy delivered during trip
             BigDecimal intermediateKwh = BigDecimal.ZERO;
             if (chargingSessionRepository != null && trip.getStartedAt() != null) {
-                Instant tripEnd = trip.getEndedAt() != null ? trip.getEndedAt() : Instant.now();
+                Instant tripEnd = trip.getEndedAt() != null ? trip.getEndedAt() : now;
                 List<com.evshare.charging.entity.ChargingSession> sessions = chargingSessionRepository.findByVehicleIdOrderByCreatedAtDesc(managedVehicle.getId());
                 for (var s : sessions) {
                     if (s.getStartedAt() != null && !s.getStartedAt().isBefore(trip.getStartedAt()) && !s.getStartedAt().isAfter(tripEnd)) {
@@ -615,22 +702,26 @@ public class TripService {
                 }
             }
 
+            BigDecimal deltaSoc = new BigDecimal(trip.getStartBatteryLevel() - trip.getEndBatteryLevel());
+            if (trip.getSocConsumedPercent() == null) {
+                trip.setSocConsumedPercent(deltaSoc.max(BigDecimal.ZERO));
+            }
+
             if (trip.getEnergyConsumedKwh() != null && trip.getEnergyConsumedKwh().compareTo(BigDecimal.ZERO) > 0) {
                 verifiedEnergyKwh = trip.getEnergyConsumedKwh().add(intermediateKwh);
             } else {
-                BigDecimal startSoc = new BigDecimal(trip.getStartBatteryLevel());
-                BigDecimal endSoc = new BigDecimal(trip.getEndBatteryLevel());
-                BigDecimal deltaSoc = startSoc.subtract(endSoc);
                 if (deltaSoc.compareTo(BigDecimal.ZERO) > 0) {
                     BigDecimal energyFromSoc = deltaSoc.divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP).multiply(capacityKwh);
+                    trip.setEnergyConsumedKwh(energyFromSoc);
                     verifiedEnergyKwh = energyFromSoc.add(intermediateKwh);
                 } else if (intermediateKwh.compareTo(BigDecimal.ZERO) > 0) {
+                    trip.setEnergyConsumedKwh(BigDecimal.ZERO);
                     verifiedEnergyKwh = intermediateKwh;
                 }
             }
         }
 
-        // 5. Automatic Expense Creation (Sections 4, 5, 7, 9)
+        // 6. Automatic Expense Creation (Sections 4, 5, 7, 9)
         if (verifiedEnergyKwh != null && verifiedEnergyKwh.compareTo(BigDecimal.ZERO) > 0) {
             if (expenseService != null) {
                 expenseService.createTripEnergyExpense(trip, verifiedEnergyKwh, staff);
@@ -642,14 +733,14 @@ public class TripService {
             trip.setReturnNote(note);
         }
 
-        // 6. Record staff return verification metadata
+        // 7. Record staff return verification metadata
         trip.setReturnVerifiedBy(staff);
-        trip.setReturnVerifiedAt(Instant.now());
+        trip.setReturnVerifiedAt(now);
         if (trip.getReturnNote() == null && request != null) {
             trip.setReturnNote(request.getConditionNote());
         }
 
         Trip savedTrip = tripRepository.save(trip);
-        return TripResponse.fromEntity(savedTrip);
+        return enrichTripResponse(savedTrip);
     }
 }

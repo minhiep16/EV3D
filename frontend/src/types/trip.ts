@@ -31,6 +31,14 @@ export interface TripData {
   energyConsumptionKwhPer100Km?: number | null;
   usableBatteryCapacityKwh?: number | null;
   grossBatteryCapacityKwh?: number | null;
+  returnRequestedAt?: string | null;
+  returnVerifiedAt?: string | null;
+  returnVerifiedByUserId?: string | null;
+  returnVerifiedByUserName?: string | null;
+  returnNote?: string | null;
+  returnInspectionId?: string | null;
+  returnInspectionResult?: string | null;
+  verifiedExpenseAmount?: number | null;
 }
 
 export interface TripStartEligibilityData {

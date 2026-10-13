@@ -6,7 +6,7 @@ import { TripData } from '../../../types/trip';
 import { VehicleResponse } from '../../../types/vehicle';
 import { useWorldStore } from '../../../store/worldStore';
 import { useAuthStore } from '../../../store/authStore';
-import { completeTripApi } from '../../../services/tripApi';
+import { completeTripApi, requestTripReturnApi } from '../../../services/tripApi';
 import {
   Car,
   Clock,
@@ -161,6 +161,35 @@ export const TripTelemetryPanel3D: React.FC<TripTelemetryPanel3DProps> = ({
     }
   }, [activeTripState.bookingStartTime, activeTripState.bookingEndTime]);
 
+  // Execute Return Request Mutation (Section 7)
+  const handleRequestReturn = useCallback(async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    setErrorMessage(null);
+
+    try {
+      const updatedTrip = await requestTripReturnApi(activeTripState.id);
+      setActiveTripState(updatedTrip);
+      setCheckoutStep('TELEMETRY');
+
+      // Targeted TanStack Query invalidation
+      queryClient.invalidateQueries({ queryKey: ['activeTrip', vehicle.id] });
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+      queryClient.invalidateQueries({ queryKey: ['vehicleBookings', vehicle.id] });
+      queryClient.invalidateQueries({ queryKey: ['vehicleRelevantBooking', vehicle.id] });
+      queryClient.invalidateQueries({ queryKey: ['activeVehicleHandovers', vehicle.id] });
+      queryClient.invalidateQueries({ queryKey: ['handoverHistory', vehicle.id] });
+      queryClient.invalidateQueries({ queryKey: ['bookingHandover'] });
+      queryClient.invalidateQueries({ queryKey: ['handoverByBooking'] });
+      queryClient.invalidateQueries({ queryKey: ['tripEligibility'] });
+      queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] });
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Không thể gửi yêu cầu trả xe. Vui lòng thử lại.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [isSubmitting, activeTripState.id, vehicle.id, queryClient]);
+
   // Execute End Trip / Check-out Mutation
   const handleConfirmCheckout = useCallback(async () => {
     if (isSubmitting) return;
@@ -199,13 +228,13 @@ export const TripTelemetryPanel3D: React.FC<TripTelemetryPanel3DProps> = ({
       case 'PREPARE_CHECKOUT':
         return '#f59e0b';
       case 'CONFIRM_CHECKOUT':
-        return '#ef4444';
+        return '#00f2fe';
       case 'CHECKOUT_COMPLETED':
         return '#10b981';
       default:
-        return '#00f2fe';
+        return activeTripState.returnRequestedAt ? '#38bdf8' : '#00f2fe';
     }
-  }, [checkoutStep]);
+  }, [checkoutStep, activeTripState.returnRequestedAt]);
 
   return (
     <group position={panelPosition}>
@@ -483,40 +512,100 @@ export const TripTelemetryPanel3D: React.FC<TripTelemetryPanel3DProps> = ({
                   </div>
                 </div>
 
-                {/* Actions: KẾT THÚC CHUYẾN ĐI (Only for Trip Owner) & QUAY LẠI XE */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {isOwner && (
-                    <button
-                      type="button"
-                      onClick={() => setCheckoutStep('PREPARE_CHECKOUT')}
+                {/* Return Request Notification if already submitted */}
+                {activeTripState.returnRequestedAt && (
+                  <div
+                    style={{
+                      background: 'rgba(0, 242, 254, 0.12)',
+                      border: '1px solid rgba(0, 242, 254, 0.45)',
+                      borderRadius: '10px',
+                      padding: '10px 12px',
+                      marginBottom: '12px',
+                    }}
+                  >
+                    <div
                       style={{
-                        width: '100%',
-                        background: 'linear-gradient(135deg, #e11d48 0%, #ef4444 100%)',
-                        border: '1px solid #f43f5e',
-                        boxShadow: '0 0 16px rgba(244, 63, 94, 0.4)',
-                        borderRadius: '10px',
-                        padding: '11px',
-                        color: '#ffffff',
-                        fontSize: '12px',
-                        fontWeight: 800,
-                        letterSpacing: '0.04em',
-                        cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '8px',
-                        transition: 'all 0.15s ease',
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.boxShadow = '0 0 22px rgba(244, 63, 94, 0.7)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.boxShadow = '0 0 16px rgba(244, 63, 94, 0.4)';
+                        gap: '6px',
+                        color: '#00f2fe',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        marginBottom: '3px',
                       }}
                     >
-                      <Flag size={14} />
-                      <span>KẾT THÚC CHUYẾN ĐI</span>
-                    </button>
+                      <Clock size={13} color="#00f2fe" />
+                      <span>ĐANG CHỜ NHÂN VIÊN NHẬN XE</span>
+                    </div>
+                    <div style={{ color: '#cbd5e1', fontSize: '10.5px', lineHeight: 1.4 }}>
+                      Nhân viên sẽ kiểm tra tình trạng xe, pin và số km trước khi hoàn tất trả xe.
+                    </div>
+                  </div>
+                )}
+
+                {/* Actions: YÊU CẦU TRẢ XE (Only for Trip Owner) & QUAY LẠI XE */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {isOwner && (
+                    activeTripState.returnRequestedAt ? (
+                      <button
+                        type="button"
+                        disabled
+                        style={{
+                          width: '100%',
+                          background: 'rgba(0, 242, 254, 0.15)',
+                          border: '1px solid rgba(0, 242, 254, 0.35)',
+                          borderRadius: '10px',
+                          padding: '11px',
+                          color: '#94a3b8',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          letterSpacing: '0.04em',
+                          cursor: 'not-allowed',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                        }}
+                      >
+                        <Clock size={14} color="#00f2fe" />
+                        <span>ĐÃ GỬI YÊU CẦU TRẢ XE</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setErrorMessage(null);
+                          setCheckoutStep('CONFIRM_CHECKOUT');
+                        }}
+                        style={{
+                          width: '100%',
+                          background: 'linear-gradient(135deg, #e11d48 0%, #ef4444 100%)',
+                          border: '1px solid #f43f5e',
+                          boxShadow: '0 0 16px rgba(244, 63, 94, 0.4)',
+                          borderRadius: '10px',
+                          padding: '11px',
+                          color: '#ffffff',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          letterSpacing: '0.04em',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          transition: 'all 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.boxShadow = '0 0 22px rgba(244, 63, 94, 0.7)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.boxShadow = '0 0 16px rgba(244, 63, 94, 0.4)';
+                        }}
+                      >
+                        <Flag size={14} />
+                        <span>YÊU CẦU TRẢ XE</span>
+                      </button>
+                    )
                   )}
 
                   <button
@@ -725,7 +814,7 @@ export const TripTelemetryPanel3D: React.FC<TripTelemetryPanel3DProps> = ({
               </>
             )}
 
-            {/* VIEW 3: CONFIRM CHECKOUT (Deliberate Step 2 with Idempotency Protection) */}
+            {/* VIEW 3: CONFIRM RETURN REQUEST (Section 7) */}
             {checkoutStep === 'CONFIRM_CHECKOUT' && (
               <>
                 <div
@@ -735,14 +824,14 @@ export const TripTelemetryPanel3D: React.FC<TripTelemetryPanel3DProps> = ({
                     gap: '6px',
                     fontSize: '9.5px',
                     fontWeight: 700,
-                    color: '#ef4444',
+                    color: '#00f2fe',
                     letterSpacing: '0.08em',
                     textTransform: 'uppercase',
                     marginBottom: '4px',
                   }}
                 >
-                  <AlertTriangle size={12} color="#ef4444" />
-                  <span>XÁC NHẬN TRẢ XE • BƯỚC 2/2</span>
+                  <AlertTriangle size={12} color="#00f2fe" />
+                  <span>XÁC NHẬN YÊU CẦU TRẢ XE</span>
                 </div>
 
                 <h3
@@ -754,22 +843,61 @@ export const TripTelemetryPanel3D: React.FC<TripTelemetryPanel3DProps> = ({
                     lineHeight: 1.3,
                   }}
                 >
-                  XÁC NHẬN KẾT THÚC CHUYẾN ĐI?
+                  XÁC NHẬN YÊU CẦU TRẢ XE
                 </h3>
 
                 <div
                   style={{
-                    background: 'rgba(239, 68, 68, 0.12)',
-                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    background: 'rgba(255, 255, 255, 0.04)',
+                    border: '1px solid rgba(255, 255, 255, 0.09)',
                     borderRadius: '12px',
                     padding: '12px',
                     marginBottom: '14px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
                     fontSize: '11.5px',
-                    color: '#fca5a5',
-                    lineHeight: 1.5,
                   }}
                 >
-                  Sau khi xác nhận, chuyến đi hiện tại sẽ được kết thúc. Hệ thống sẽ chốt thông số pin và số km từ cảm biến xe {activeTripState.vehicleCode || vehicle.name || 'EV01'}.
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#94a3b8' }}>Phương tiện:</span>
+                    <strong style={{ color: '#ffffff' }}>
+                      {activeTripState.vehicleCode || vehicle.model || vehicle.name || 'EV01'}
+                    </strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#94a3b8' }}>Bắt đầu chuyến đi:</span>
+                    <strong style={{ color: '#38bdf8' }}>
+                      {startedAtFormatted}
+                    </strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#94a3b8' }}>Thời gian yêu cầu trả:</span>
+                    <strong style={{ color: '#00f2fe' }}>
+                      {new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                    </strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#94a3b8' }}>Trạng thái hiện tại:</span>
+                    <span style={{ color: '#34d399', fontWeight: 800, background: 'rgba(16, 185, 129, 0.2)', padding: '1px 6px', borderRadius: '4px' }}>
+                      ĐANG SỬ DỤNG
+                    </span>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    background: 'rgba(0, 242, 254, 0.08)',
+                    border: '1px solid rgba(0, 242, 254, 0.25)',
+                    borderRadius: '10px',
+                    padding: '9px 11px',
+                    marginBottom: '14px',
+                    fontSize: '10.5px',
+                    color: '#cbd5e1',
+                    lineHeight: 1.4,
+                  }}
+                >
+                  Sau khi bạn gửi yêu cầu, nhân viên trực trạm sẽ tiếp nhận, kiểm tra thực tế tình trạng xe, mức pin và số km trước khi hoàn tất trả xe.
                 </div>
 
                 {errorMessage && (
@@ -796,17 +924,17 @@ export const TripTelemetryPanel3D: React.FC<TripTelemetryPanel3DProps> = ({
                   <button
                     type="button"
                     disabled={isSubmitting}
-                    onClick={handleConfirmCheckout}
+                    onClick={handleRequestReturn}
                     style={{
                       width: '100%',
                       background: isSubmitting
-                        ? 'rgba(239, 68, 68, 0.4)'
-                        : 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
-                      border: '1px solid #ef4444',
-                      boxShadow: isSubmitting ? 'none' : '0 0 18px rgba(239, 68, 68, 0.5)',
+                        ? 'rgba(0, 242, 254, 0.4)'
+                        : 'linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)',
+                      border: 'none',
+                      boxShadow: isSubmitting ? 'none' : '0 0 18px rgba(0, 242, 254, 0.4)',
                       borderRadius: '10px',
                       padding: '12px',
-                      color: '#ffffff',
+                      color: '#070b14',
                       fontSize: '12px',
                       fontWeight: 800,
                       letterSpacing: '0.04em',
@@ -816,18 +944,17 @@ export const TripTelemetryPanel3D: React.FC<TripTelemetryPanel3DProps> = ({
                       justifyContent: 'center',
                       gap: '8px',
                       transition: 'all 0.15s ease',
-                      opacity: isSubmitting ? 0.7 : 1,
                     }}
                   >
                     {isSubmitting ? (
                       <>
                         <Loader2 size={15} className="animate-spin" />
-                        <span>ĐANG HOÀN TẤT TRẢ XE...</span>
+                        <span>ĐANG GỬI YÊU CẦU...</span>
                       </>
                     ) : (
                       <>
                         <CheckCircle2 size={15} />
-                        <span>XÁC NHẬN TRẢ XE</span>
+                        <span>GỬI YÊU CẦU TRẢ XE</span>
                       </>
                     )}
                   </button>
@@ -837,7 +964,7 @@ export const TripTelemetryPanel3D: React.FC<TripTelemetryPanel3DProps> = ({
                     disabled={isSubmitting}
                     onClick={() => {
                       setErrorMessage(null);
-                      setCheckoutStep('PREPARE_CHECKOUT');
+                      setCheckoutStep('TELEMETRY');
                     }}
                     style={{
                       width: '100%',
@@ -853,11 +980,10 @@ export const TripTelemetryPanel3D: React.FC<TripTelemetryPanel3DProps> = ({
                       alignItems: 'center',
                       justifyContent: 'center',
                       gap: '6px',
-                      opacity: isSubmitting ? 0.5 : 1,
                     }}
                   >
                     <ArrowLeft size={13} />
-                    <span>QUAY LẠI</span>
+                    <span>TIẾP TỤC CHUYẾN ĐI</span>
                   </button>
                 </div>
               </>
@@ -1081,6 +1207,32 @@ export const TripTelemetryPanel3D: React.FC<TripTelemetryPanel3DProps> = ({
                       <span style={{ color: '#94a3b8' }}>Dung lượng pin khả dụng:</span>
                       <span style={{ color: '#a7f3d0', fontWeight: 600 }}>
                         {activeTripState.usableBatteryCapacityKwh} kWh
+                      </span>
+                    </div>
+                  )}
+
+                  {activeTripState.verifiedExpenseAmount != null && (
+                    <div
+                      style={{
+                        borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                        paddingTop: '6px',
+                        marginTop: '2px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                      }}
+                    >
+                      <span style={{ color: '#94a3b8' }}>Chi phí điện xác nhận:</span>
+                      <strong style={{ color: '#34d399' }}>
+                        {Number(activeTripState.verifiedExpenseAmount).toLocaleString('vi-VN')} đ (100%)
+                      </strong>
+                    </div>
+                  )}
+
+                  {activeTripState.returnNote && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px' }}>
+                      <span style={{ color: '#94a3b8' }}>Kiểm tra trả xe:</span>
+                      <span style={{ color: '#cbd5e1' }}>
+                        {activeTripState.returnNote}
                       </span>
                     </div>
                   )}

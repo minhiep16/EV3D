@@ -75,6 +75,13 @@ public class Trip {
     @Column(name = "return_note", length = 500)
     private String returnNote;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "return_inspection_id")
+    private com.evshare.inspection.entity.VehicleInspection returnInspection;
+
+    @Column(name = "return_requested_at")
+    private Instant returnRequestedAt;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;
@@ -240,5 +247,21 @@ public class Trip {
 
     public void setReturnNote(String returnNote) {
         this.returnNote = returnNote;
+    }
+
+    public Instant getReturnRequestedAt() {
+        return returnRequestedAt;
+    }
+
+    public void setReturnRequestedAt(Instant returnRequestedAt) {
+        this.returnRequestedAt = returnRequestedAt;
+    }
+
+    public com.evshare.inspection.entity.VehicleInspection getReturnInspection() {
+        return returnInspection;
+    }
+
+    public void setReturnInspection(com.evshare.inspection.entity.VehicleInspection returnInspection) {
+        this.returnInspection = returnInspection;
     }
 }

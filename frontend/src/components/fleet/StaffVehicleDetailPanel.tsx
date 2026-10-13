@@ -38,6 +38,11 @@ import { fetchVehicleDamages, recordVehicleDamage } from '../../services/damageA
 import { getPartById, SEMANTIC_HITBOX_DEFINITIONS, PART_STATUS_CONFIG } from '../../data/vehicleParts';
 import { DamageType, DamageSeverity } from '../../types/damage';
 import { VehiclePartId } from '../../types/vehiclePart';
+import { fetchActiveTripForVehicle, confirmTripReturnApi } from '../../services/tripApi';
+import { TripData } from '../../types/trip';
+import { fetchVehicleChargingSessions } from '../../services/chargingApi';
+import { ChargingSessionResponse } from '../../types/charging';
+import { formatDateTime } from '../../utils/dateTimeUtils';
 import {
   Battery,
   BatteryCharging,
@@ -67,6 +72,8 @@ import {
   XCircle,
   RotateCcw,
   ShieldCheck,
+  AlertCircle,
+  FileText,
 } from 'lucide-react';
 
 interface StaffVehicleDetailPanelProps {
@@ -74,7 +81,7 @@ interface StaffVehicleDetailPanelProps {
   onClose?: () => void;
 }
 
-type DetailTab = 'STATUS' | 'HANDOVER' | 'MAINTENANCE';
+type DetailTab = 'STATUS' | 'HANDOVER' | 'RETURN' | 'MAINTENANCE';
 
 type PartOption = {
   id: VehiclePartId;
@@ -179,6 +186,198 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
   const [draftNote, setDraftNote] = useState('');
   const [isSavingDamage, setIsSavingDamage] = useState(false);
   const [damageSaveError, setDamageSaveError] = useState<string | null>(null);
+
+  // TanStack Query: Fetch active trip for vehicle (authoritative for return workflow)
+  const { data: activeTrip, refetch: refetchActiveTrip } = useQuery<TripData | null>({
+    queryKey: ['activeTrip', vehicle.id],
+    queryFn: () => fetchActiveTripForVehicle(vehicle.id),
+    enabled: !!vehicle.id,
+    refetchInterval: 3000,
+  });
+
+  // TanStack Query: Fetch charging sessions for vehicle (to show intermediate charging during trip)
+  const { data: chargingSessions = [] } = useQuery<ChargingSessionResponse[]>({
+    queryKey: ['vehicleChargingSessions', vehicle.id],
+    queryFn: () => fetchVehicleChargingSessions(vehicle.id),
+    enabled: !!vehicle.id,
+    refetchInterval: 5000,
+  });
+
+  // Filter sessions that took place during activeTrip
+  const tripChargingSessions = useMemo(() => {
+    if (!activeTrip?.startedAt) return [];
+    const tripStartMs = new Date(activeTrip.startedAt).getTime();
+    const tripEndMs = activeTrip.endedAt ? new Date(activeTrip.endedAt).getTime() : Date.now();
+    return chargingSessions.filter((s) => {
+      if (!s.startedAt) return false;
+      const sMs = new Date(s.startedAt).getTime();
+      return sMs >= tripStartMs && sMs <= tripEndMs;
+    });
+  }, [chargingSessions, activeTrip]);
+
+  // Auto switch to RETURN tab if pending return requested
+  useEffect(() => {
+    if (activeTrip?.returnRequestedAt && activeTab !== 'RETURN') {
+      setActiveTab('RETURN');
+    }
+  }, [activeTrip?.returnRequestedAt]);
+
+  // Return inspection and checkout state (STEP 3 & STEP 4)
+  const [returnEndingSoc, setReturnEndingSoc] = useState<number | string>(vehicle.currentBatteryLevel ?? 80);
+  const [returnEndingOdo, setReturnEndingOdo] = useState<number | string>(vehicle.odometer ?? 12450);
+  const [returnConditionNote, setReturnConditionNote] = useState<string>('Xe bình thường, đã tiếp nhận đầy đủ.');
+  const [returnDamageObserved, setReturnDamageObserved] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (vehicle.currentBatteryLevel != null) {
+      setReturnEndingSoc(vehicle.currentBatteryLevel);
+    }
+  }, [vehicle.currentBatteryLevel]);
+
+  useEffect(() => {
+    if (vehicle.odometer != null) {
+      setReturnEndingOdo(vehicle.odometer);
+    }
+  }, [vehicle.odometer]);
+
+  const startSoc = activeTrip?.startBatteryLevel != null ? Number(activeTrip.startBatteryLevel) : 100;
+  const startOdo = activeTrip?.startOdometer != null ? Number(activeTrip.startOdometer) : Number(vehicle.odometer ?? 0);
+  const numEndSoc = Number(returnEndingSoc);
+  const numEndOdo = Number(returnEndingOdo);
+  const isEndSocValid = !isNaN(numEndSoc) && numEndSoc >= 0 && numEndSoc <= 100;
+  const isEndOdoValid = !isNaN(numEndOdo) && numEndOdo >= startOdo;
+  const distanceTraveled = isEndOdoValid ? Math.max(0, Math.round((numEndOdo - startOdo) * 10) / 10) : 0;
+
+  // 8-Part Checklist
+  interface ReturnCheckItem {
+    partCode: string;
+    nameVi: string;
+    status: 'GOOD' | 'SCRATCH' | 'UNCHECKED';
+    note?: string;
+  }
+
+  const [returnChecklist, setReturnChecklist] = useState<ReturnCheckItem[]>([
+    { partCode: 'BODY', nameVi: 'Thân xe', status: 'GOOD' },
+    { partCode: 'WINDSHIELD', nameVi: 'Kính xe', status: 'GOOD' },
+    { partCode: 'WHEEL_FL', nameVi: 'Bánh xe', status: 'GOOD' },
+    { partCode: 'HEADLIGHT_L', nameVi: 'Đèn xe', status: 'GOOD' },
+    { partCode: 'INTERIOR', nameVi: 'Nội thất', status: 'GOOD' },
+    { partCode: 'BATTERY', nameVi: 'Pin và hệ thống điện', status: 'GOOD' },
+    { partCode: 'CHARGING_PORT', nameVi: 'Cổng sạc', status: 'GOOD' },
+    { partCode: 'GENERAL', nameVi: 'Tình trạng chung', status: 'GOOD' },
+  ]);
+
+  const [savedInspectionId, setSavedInspectionId] = useState<string | null>(null);
+  const [isSavingInspection, setIsSavingInspection] = useState<boolean>(false);
+  const [inspectionSaveMsg, setInspectionSaveMsg] = useState<string | null>(null);
+  const [inspectionSaveError, setInspectionSaveError] = useState<string | null>(null);
+
+  const handleUpdateChecklistItem = (partCode: string, status: 'GOOD' | 'SCRATCH' | 'UNCHECKED') => {
+    setReturnChecklist((prev) =>
+      prev.map((item) => (item.partCode === partCode ? { ...item, status } : item))
+    );
+  };
+
+  const handleSaveInspection = async () => {
+    if (!vehicle.id) return;
+    setIsSavingInspection(true);
+    setInspectionSaveMsg(null);
+    setInspectionSaveError(null);
+    try {
+      const inspectionRes = await startInspectionApi(vehicle.id, 'POST_TRIP');
+      const inspId = inspectionRes.id;
+
+      for (const item of returnChecklist) {
+        const cond: InspectionItemCondition =
+          item.status === 'GOOD' ? 'GOOD' : item.status === 'SCRATCH' ? 'SCRATCH' : 'NORMAL';
+        await submitInspectionItemApi(inspId, {
+          vehiclePartCode: item.partCode,
+          conditionStatus: cond,
+          note: item.note || (item.status === 'GOOD' ? 'Đạt tiêu chuẩn' : 'Có vấn đề / trầy xước khi trả xe'),
+        });
+      }
+
+      const hasIssues = returnChecklist.some((i) => i.status === 'SCRATCH');
+      const overallResult: InspectionOverallResult = hasIssues ? 'PASS_WITH_NOTES' : 'PASS';
+      const completeRes = await completeInspectionApi(inspId, {
+        overallResult,
+        summaryNote: hasIssues
+          ? 'Biên bản kiểm tra trả xe ghi nhận một số vấn đề cần lưu ý.'
+          : 'Biên bản kiểm tra trả xe hoàn tất: tất cả bộ phận đạt tiêu chuẩn kỹ thuật.',
+      });
+
+      setSavedInspectionId(completeRes.id);
+      setInspectionSaveMsg(`Đã lưu biên bản kiểm tra: #${completeRes.id.substring(0, 8).toUpperCase()}`);
+      queryClient.invalidateQueries({ queryKey: ['latestCompletedInspection', vehicle.id] });
+    } catch (err: any) {
+      setInspectionSaveError(err.message || 'Không thể lưu kết quả kiểm tra.');
+    } finally {
+      setIsSavingInspection(false);
+    }
+  };
+
+  // Step 4: Final confirmation
+  const [isConfirmingReturn, setIsConfirmingReturn] = useState<boolean>(false);
+  const [returnSuccessData, setReturnSuccessData] = useState<TripData | null>(null);
+  const [returnErrorMsg, setReturnErrorMsg] = useState<string | null>(null);
+
+  const canConfirmReturn =
+    isEndSocValid &&
+    isEndOdoValid &&
+    !isConfirmingReturn &&
+    Boolean(activeTrip && activeTrip.status === 'ACTIVE');
+
+  const handleConfirmReturn = async () => {
+    if (!activeTrip?.id || !canConfirmReturn) return;
+    setIsConfirmingReturn(true);
+    setReturnErrorMsg(null);
+    try {
+      let finalInspId = savedInspectionId;
+      if (!finalInspId) {
+        const inspectionRes = await startInspectionApi(vehicle.id, 'POST_TRIP');
+        finalInspId = inspectionRes.id;
+        for (const item of returnChecklist) {
+          const cond: InspectionItemCondition =
+            item.status === 'GOOD' ? 'GOOD' : item.status === 'SCRATCH' ? 'SCRATCH' : 'NORMAL';
+          await submitInspectionItemApi(finalInspId, {
+            vehiclePartCode: item.partCode,
+            conditionStatus: cond,
+            note: item.note || (item.status === 'GOOD' ? 'Đạt tiêu chuẩn' : 'Có vấn đề khi trả xe'),
+          });
+        }
+        const hasIssues = returnChecklist.some((i) => i.status === 'SCRATCH');
+        await completeInspectionApi(finalInspId, {
+          overallResult: hasIssues ? 'PASS_WITH_NOTES' : 'PASS',
+          summaryNote: hasIssues ? 'Kiểm tra trả xe có lưu ý.' : 'Kiểm tra trả xe đạt chuẩn.',
+        });
+        setSavedInspectionId(finalInspId);
+      }
+
+      const res = await confirmTripReturnApi(activeTrip.id, {
+        endBatteryLevel: numEndSoc,
+        endOdometer: numEndOdo,
+        conditionNote: returnConditionNote.trim() || 'Nhân viên đã xác nhận trả xe và hoàn tất kiểm tra kỹ thuật.',
+        damageObserved: returnChecklist.some((i) => i.status === 'SCRATCH') || returnDamageObserved,
+        inspectionId: finalInspId,
+      });
+
+      setReturnSuccessData(res);
+      queryClient.invalidateQueries({ queryKey: ['activeTrip', vehicle.id] });
+      queryClient.invalidateQueries({ queryKey: ['pendingReturns'] });
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+      queryClient.invalidateQueries({ queryKey: ['vehicleBookings', vehicle.id] });
+      queryClient.invalidateQueries({ queryKey: ['latestCompletedInspection', vehicle.id] });
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['expenseShares'] });
+      queryClient.invalidateQueries({ queryKey: ['costSharingSummary'] });
+      queryClient.invalidateQueries({ queryKey: ['handoverHistory'] });
+      queryClient.invalidateQueries({ queryKey: ['vehicleDamages', vehicle.id] });
+    } catch (err: any) {
+      setReturnErrorMsg(err.message || 'Không thể hoàn tất trả xe. Vui lòng thử lại.');
+    } finally {
+      setIsConfirmingReturn(false);
+    }
+  };
 
   const code = resolveVehicleCode(vehicle);
   const statusMeta = getStatusMeta(vehicle.status);
@@ -3053,11 +3252,11 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
             </div>
           </div>
 
-          {/* Segmented Tabs: TÌNH TRẠNG | BÀN GIAO | BẢO DƯỠNG */}
+          {/* Segmented Tabs: TÌNH TRẠNG | BÀN GIAO | TRẢ XE | BẢO DƯỠNG */}
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: '1fr 1fr 1fr',
+              gridTemplateColumns: 'repeat(4, 1fr)',
               gap: '4px',
               background: 'rgba(15, 23, 42, 0.85)',
               padding: '3px',
@@ -3066,13 +3265,16 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
               border: '1px solid rgba(56, 189, 248, 0.2)',
             }}
           >
-            {(['STATUS', 'HANDOVER', 'MAINTENANCE'] as DetailTab[]).map((tab) => {
+            {(['STATUS', 'HANDOVER', 'RETURN', 'MAINTENANCE'] as DetailTab[]).map((tab) => {
               const isActive = activeTab === tab;
+              const hasReturnReq = tab === 'RETURN' && !!activeTrip?.returnRequestedAt;
               const label =
                 tab === 'STATUS'
                   ? 'TÌNH TRẠNG'
                   : tab === 'HANDOVER'
                   ? 'BÀN GIAO'
+                  : tab === 'RETURN'
+                  ? (hasReturnReq ? 'TRẢ XE (!)' : 'TRẢ XE')
                   : 'BẢO DƯỠNG';
 
               return (
@@ -3081,14 +3283,22 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
                   type="button"
                   onClick={() => setActiveTab(tab)}
                   style={{
-                    background: isActive ? 'rgba(0, 242, 254, 0.22)' : 'transparent',
-                    border: isActive ? '1px solid #00f2fe' : '1px solid transparent',
-                    color: isActive ? '#00f2fe' : '#94a3b8',
+                    background: isActive
+                      ? 'rgba(0, 242, 254, 0.22)'
+                      : hasReturnReq
+                      ? 'rgba(245, 158, 11, 0.15)'
+                      : 'transparent',
+                    border: isActive
+                      ? '1px solid #00f2fe'
+                      : hasReturnReq
+                      ? '1px solid rgba(245, 158, 11, 0.4)'
+                      : '1px solid transparent',
+                    color: isActive ? '#00f2fe' : hasReturnReq ? '#fbbf24' : '#94a3b8',
                     borderRadius: '8px',
-                    padding: '6px 4px',
-                    fontSize: '10px',
+                    padding: '6px 2px',
+                    fontSize: '9.5px',
                     fontWeight: 800,
-                    letterSpacing: '0.04em',
+                    letterSpacing: '0.02em',
                     cursor: 'pointer',
                     transition: 'all 0.15s ease',
                   }}
@@ -3291,42 +3501,766 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
             </div>
           )}
 
-          {/* Primary Action Button: BÀN GIAO XE */}
-          <button
-            type="button"
-            onClick={() => enterVehicleHandoverMode()}
-            style={{
-              width: '100%',
-              background: 'linear-gradient(90deg, #00f2fe 0%, #38bdf8 100%)',
-              color: '#08101c',
-              border: 'none',
-              borderRadius: '12px',
-              padding: '12px 16px',
-              fontSize: '13px',
-              fontWeight: 800,
-              letterSpacing: '0.04em',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              boxShadow: '0 6px 20px rgba(0, 242, 254, 0.35)',
-              transition: 'all 0.18s ease',
-              marginBottom: '8px',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-1px)';
-              e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 242, 254, 0.5)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'none';
-              e.currentTarget.style.boxShadow = '0 6px 20px rgba(0, 242, 254, 0.35)';
-            }}
-          >
-            <Key size={16} />
-            <span>BÀN GIAO XE</span>
-            <ChevronRight size={16} style={{ marginLeft: 'auto' }} />
-          </button>
+          {/* ========================================================================= */}
+          {/* TAB: RETURN — TIẾP NHẬN XE TRẢ (STEPS 2, 3, 4, 5)                        */}
+          {/* ========================================================================= */}
+          {activeTab === 'RETURN' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '14px' }}>
+              {/* Return Workflow Header */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '8px 10px',
+                  background: 'rgba(0, 242, 254, 0.08)',
+                  border: '1px solid rgba(0, 242, 254, 0.3)',
+                  borderRadius: '10px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <ShieldCheck size={16} color="#00f2fe" />
+                  <span style={{ fontSize: '12px', fontWeight: 800, color: '#00f2fe', letterSpacing: '0.04em' }}>
+                    TIẾP NHẬN XE TRẢ
+                  </span>
+                </div>
+                {activeTrip?.returnRequestedAt && (
+                  <span
+                    style={{
+                      fontSize: '9.5px',
+                      fontWeight: 700,
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      background: 'rgba(245, 158, 11, 0.2)',
+                      border: '1px solid rgba(245, 158, 11, 0.4)',
+                      color: '#fbbf24',
+                    }}
+                  >
+                    CHỜ NHẬN XE
+                  </span>
+                )}
+              </div>
+
+              {!activeTrip && !returnSuccessData ? (
+                <div
+                  style={{
+                    padding: '20px',
+                    textAlign: 'center',
+                    background: 'rgba(15, 23, 42, 0.75)',
+                    border: '1px solid rgba(56, 189, 248, 0.2)',
+                    borderRadius: '10px',
+                    fontSize: '11px',
+                    color: '#94a3b8',
+                  }}
+                >
+                  Phương tiện hiện không có chuyến đi đang hoạt động hoặc yêu cầu trả xe.
+                </div>
+              ) : returnSuccessData || (activeTrip?.status === 'COMPLETED' && activeTrip?.returnVerifiedAt) ? (
+                /* =================================================================== */
+                /* STEP 4 & 5: RETURN SUCCESS VIEW                                     */
+                /* =================================================================== */
+                <div
+                  style={{
+                    background: 'rgba(15, 23, 42, 0.95)',
+                    border: '1px solid rgba(16, 185, 129, 0.45)',
+                    borderRadius: '12px',
+                    padding: '14px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px',
+                    boxShadow: '0 8px 24px rgba(16, 185, 129, 0.15)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <CheckCircle2 size={18} color="#34d399" />
+                    <div>
+                      <div style={{ fontSize: '13px', fontWeight: 800, color: '#34d399' }}>
+                        TRẢ XE THÀNH CÔNG
+                      </div>
+                      <div style={{ fontSize: '10px', color: '#94a3b8' }}>
+                        Nhân viên đã xác nhận xe được trả và hoàn tất kiểm tra.
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      borderRadius: '8px',
+                      padding: '10px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '5px',
+                      fontSize: '10.5px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Thời gian hoàn tất:</span>
+                      <span style={{ color: '#f8fafc', fontWeight: 700 }}>
+                        {formatDateTime(
+                          returnSuccessData?.returnVerifiedAt ||
+                          activeTrip?.returnVerifiedAt ||
+                          returnSuccessData?.endedAt ||
+                          activeTrip?.endedAt
+                        )}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Mức pin chốt:</span>
+                      <span style={{ color: '#00f2fe', fontWeight: 700 }}>
+                        {(returnSuccessData?.startBatteryLevel ?? activeTrip?.startBatteryLevel ?? startSoc)}% →{' '}
+                        {(returnSuccessData?.endBatteryLevel ?? activeTrip?.endBatteryLevel ?? numEndSoc)}%
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Đồng hồ Km chốt:</span>
+                      <span style={{ color: '#cbd5e1', fontWeight: 700 }}>
+                        {(returnSuccessData?.startOdometer ?? activeTrip?.startOdometer ?? startOdo).toLocaleString('vi-VN')} km →{' '}
+                        {(returnSuccessData?.endOdometer ?? activeTrip?.endOdometer ?? numEndOdo).toLocaleString('vi-VN')} km
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Quãng đường di chuyển:</span>
+                      <span style={{ color: '#34d399', fontWeight: 700 }}>
+                        {(returnSuccessData?.distanceTraveled ?? activeTrip?.distanceTraveled ?? distanceTraveled).toLocaleString('vi-VN')} km
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Biên bản kiểm tra:</span>
+                      <span style={{ color: '#38bdf8', fontWeight: 700 }}>
+                        {returnSuccessData?.returnInspectionResult || activeTrip?.returnInspectionResult || 'ĐẠT TIÊU CHUẨN'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Energy Expense Settlement Section */}
+                  <div
+                    style={{
+                      background: 'rgba(0, 242, 254, 0.08)',
+                      border: '1px solid rgba(0, 242, 254, 0.25)',
+                      borderRadius: '8px',
+                      padding: '10px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px',
+                      fontSize: '10.5px',
+                    }}
+                  >
+                    <div style={{ fontSize: '10px', fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase' }}>
+                      CHI PHÍ ĐIỆN CHUYẾN ĐI
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ color: '#94a3b8' }}>Số tiền:</span>
+                      <span style={{ fontSize: '14px', fontWeight: 800, color: '#00f2fe' }}>
+                        {returnSuccessData?.verifiedExpenseAmount != null
+                          ? Number(returnSuccessData.verifiedExpenseAmount).toLocaleString('vi-VN') + ' đ'
+                          : activeTrip?.verifiedExpenseAmount != null
+                          ? Number(activeTrip.verifiedExpenseAmount).toLocaleString('vi-VN') + ' đ'
+                          : 'CHỜ XÁC MINH CHI PHÍ ĐIỆN'}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Phân bổ:</span>
+                      <span style={{ color: '#cbd5e1', fontWeight: 600 }}>THEO NGƯỜI SỬ DỤNG (100%)</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Người chịu phí:</span>
+                      <span style={{ color: '#ffffff', fontWeight: 700 }}>
+                        {returnSuccessData?.userName || activeTrip?.userName}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Trạng thái thanh toán:</span>
+                      <span style={{ color: '#fbbf24', fontWeight: 700 }}>CHỜ THANH TOÁN</span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReturnSuccessData(null);
+                      setActiveTab('STATUS');
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      borderRadius: '8px',
+                      background: 'rgba(255, 255, 255, 0.08)',
+                      border: '1px solid rgba(255, 255, 255, 0.15)',
+                      color: '#cbd5e1',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    QUAY LẠI TỔNG QUAN XE
+                  </button>
+                </div>
+              ) : (
+                /* =================================================================== */
+                /* ACTIVE RETURN WORKFLOW: SECTIONS A, B, C, D, E                      */
+                /* =================================================================== */
+                <>
+                  {/* SECTION A: THÔNG TIN CHUYẾN ĐI */}
+                  <div
+                    style={{
+                      background: 'rgba(15, 23, 42, 0.85)',
+                      border: '1px solid rgba(56, 189, 248, 0.2)',
+                      borderRadius: '10px',
+                      padding: '10px 12px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '5px',
+                      fontSize: '10.5px',
+                    }}
+                  >
+                    <div style={{ fontSize: '10px', fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase', marginBottom: '2px' }}>
+                      A. THÔNG TIN CHUYẾN ĐI
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Xe:</span>
+                      <span style={{ color: '#ffffff', fontWeight: 700 }}>{code} — {vehicle.licensePlate}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Người sử dụng:</span>
+                      <span style={{ color: '#38bdf8', fontWeight: 700 }}>{activeTrip.userName}</span>
+                    </div>
+                    {activeTrip.userEmail && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#94a3b8' }}>Email:</span>
+                        <span style={{ color: '#cbd5e1' }}>{activeTrip.userEmail}</span>
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Lịch đặt:</span>
+                      <span style={{ color: '#cbd5e1' }}>
+                        {activeTrip.bookingId ? `#${activeTrip.bookingId.substring(0, 8).toUpperCase()}` : '--'}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Chuyến đi:</span>
+                      <span style={{ color: '#cbd5e1' }}>
+                        {activeTrip.id ? `#${activeTrip.id.substring(0, 8).toUpperCase()}` : '--'}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Bắt đầu:</span>
+                      <span style={{ color: '#f8fafc' }}>{formatDateTime(activeTrip.startedAt)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Yêu cầu trả:</span>
+                      <span style={{ color: activeTrip.returnRequestedAt ? '#00f2fe' : '#94a3b8', fontWeight: 600 }}>
+                        {activeTrip.returnRequestedAt ? formatDateTime(activeTrip.returnRequestedAt) : 'Nhân viên nhận trực tiếp'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* SECTION B: PIN VÀ QUÃNG ĐƯỜNG */}
+                  <div
+                    style={{
+                      background: 'rgba(15, 23, 42, 0.85)',
+                      border: '1px solid rgba(56, 189, 248, 0.2)',
+                      borderRadius: '10px',
+                      padding: '10px 12px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      fontSize: '10.5px',
+                    }}
+                  >
+                    <div style={{ fontSize: '10px', fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase' }}>
+                      B. PIN VÀ QUÃNG ĐƯỜNG
+                    </div>
+
+                    {/* Battery SOC */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <div
+                        style={{
+                          background: 'rgba(255, 255, 255, 0.03)',
+                          border: '1px solid rgba(255, 255, 255, 0.08)',
+                          borderRadius: '8px',
+                          padding: '6px 8px',
+                        }}
+                      >
+                        <div style={{ color: '#94a3b8', fontSize: '9.5px', marginBottom: '2px' }}>
+                          PIN KHI BÀN GIAO (Snapshot)
+                        </div>
+                        <div style={{ fontSize: '13px', fontWeight: 800, color: '#34d399' }}>
+                          {startSoc}%
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          background: 'rgba(255, 255, 255, 0.03)',
+                          border: isEndSocValid ? '1px solid rgba(0, 242, 254, 0.4)' : '1px solid #f87171',
+                          borderRadius: '8px',
+                          padding: '6px 8px',
+                        }}
+                      >
+                        <div style={{ color: '#94a3b8', fontSize: '9.5px', marginBottom: '2px' }}>
+                          PIN KHI TRẢ (%)
+                        </div>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={returnEndingSoc}
+                          onChange={(e) => setReturnEndingSoc(e.target.value)}
+                          style={{
+                            width: '100%',
+                            background: 'rgba(15, 23, 42, 0.8)',
+                            border: '1px solid rgba(56, 189, 248, 0.3)',
+                            borderRadius: '4px',
+                            padding: '3px 6px',
+                            color: '#00f2fe',
+                            fontSize: '13px',
+                            fontWeight: 800,
+                            outline: 'none',
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                      </div>
+                    </div>
+                    {!isEndSocValid && (
+                      <div style={{ color: '#f87171', fontSize: '9.5px' }}>
+                        * Mức pin kết thúc (SOC) phải nằm trong khoảng từ 0% đến 100%.
+                      </div>
+                    )}
+
+                    {/* Odometer & Distance */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <div
+                        style={{
+                          background: 'rgba(255, 255, 255, 0.03)',
+                          border: '1px solid rgba(255, 255, 255, 0.08)',
+                          borderRadius: '8px',
+                          padding: '6px 8px',
+                        }}
+                      >
+                        <div style={{ color: '#94a3b8', fontSize: '9.5px', marginBottom: '2px' }}>
+                          SỐ KM BÀN GIAO
+                        </div>
+                        <div style={{ fontSize: '13px', fontWeight: 800, color: '#f8fafc' }}>
+                          {startOdo.toLocaleString('vi-VN')} km
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          background: 'rgba(255, 255, 255, 0.03)',
+                          border: isEndOdoValid ? '1px solid rgba(0, 242, 254, 0.4)' : '1px solid #f87171',
+                          borderRadius: '8px',
+                          padding: '6px 8px',
+                        }}
+                      >
+                        <div style={{ color: '#94a3b8', fontSize: '9.5px', marginBottom: '2px' }}>
+                          SỐ KM KHI TRẢ (km)
+                        </div>
+                        <input
+                          type="number"
+                          min={startOdo}
+                          value={returnEndingOdo}
+                          onChange={(e) => setReturnEndingOdo(e.target.value)}
+                          style={{
+                            width: '100%',
+                            background: 'rgba(15, 23, 42, 0.8)',
+                            border: '1px solid rgba(56, 189, 248, 0.3)',
+                            borderRadius: '4px',
+                            padding: '3px 6px',
+                            color: '#ffffff',
+                            fontSize: '13px',
+                            fontWeight: 800,
+                            outline: 'none',
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                      </div>
+                    </div>
+                    {!isEndOdoValid && (
+                      <div style={{ color: '#f87171', fontSize: '9.5px' }}>
+                        * Số km kết thúc không thể nhỏ hơn số km bắt đầu ({startOdo.toLocaleString('vi-VN')} km).
+                      </div>
+                    )}
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        background: 'rgba(0, 242, 254, 0.06)',
+                        padding: '6px 8px',
+                        borderRadius: '6px',
+                      }}
+                    >
+                      <span style={{ color: '#94a3b8' }}>Quãng đường di chuyển tính toán:</span>
+                      <span style={{ fontSize: '12px', fontWeight: 800, color: '#34d399' }}>
+                        {distanceTraveled.toLocaleString('vi-VN')} km
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* SECTION C: KIỂM TRA TÌNH TRẠNG XE */}
+                  <div
+                    style={{
+                      background: 'rgba(15, 23, 42, 0.85)',
+                      border: '1px solid rgba(56, 189, 248, 0.2)',
+                      borderRadius: '10px',
+                      padding: '10px 12px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      fontSize: '10.5px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '10px', fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase' }}>
+                        C. KIỂM TRA TÌNH TRẠNG XE
+                      </span>
+                      {savedInspectionId && (
+                        <span
+                          style={{
+                            fontSize: '9px',
+                            fontWeight: 700,
+                            color: '#34d399',
+                            background: 'rgba(16, 185, 129, 0.15)',
+                            padding: '1px 6px',
+                            borderRadius: '4px',
+                          }}
+                        >
+                          ĐÃ LƯU BIÊN BẢN
+                        </span>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                      {returnChecklist.map((item) => (
+                        <div
+                          key={item.partCode}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            padding: '5px 8px',
+                            borderRadius: '6px',
+                          }}
+                        >
+                          <span style={{ color: '#e2e8f0', fontWeight: 600 }}>{item.nameVi}</span>
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateChecklistItem(item.partCode, 'GOOD')}
+                              style={{
+                                padding: '2px 8px',
+                                borderRadius: '4px',
+                                border: 'none',
+                                fontSize: '9.5px',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                background: item.status === 'GOOD' ? 'rgba(16, 185, 129, 0.8)' : 'rgba(255, 255, 255, 0.06)',
+                                color: item.status === 'GOOD' ? '#ffffff' : '#94a3b8',
+                              }}
+                            >
+                              ĐẠT
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateChecklistItem(item.partCode, 'SCRATCH')}
+                              style={{
+                                padding: '2px 8px',
+                                borderRadius: '4px',
+                                border: 'none',
+                                fontSize: '9.5px',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                background: item.status === 'SCRATCH' ? 'rgba(239, 68, 68, 0.8)' : 'rgba(255, 255, 255, 0.06)',
+                                color: item.status === 'SCRATCH' ? '#ffffff' : '#94a3b8',
+                              }}
+                            >
+                              CÓ VẤN ĐỀ
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Damage Mapping Action */}
+                    <div style={{ display: 'flex', gap: '6px', marginTop: '2px' }}>
+                      <button
+                        type="button"
+                        onClick={() => enterVehicleDamageMappingMode()}
+                        style={{
+                          flex: 1,
+                          padding: '6px',
+                          borderRadius: '6px',
+                          background: 'rgba(239, 68, 68, 0.15)',
+                          border: '1px solid rgba(239, 68, 68, 0.35)',
+                          color: '#f87171',
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '4px',
+                        }}
+                      >
+                        <AlertTriangle size={12} />
+                        <span>BẢN ĐỒ HƯ HỎNG 3D</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleSaveInspection}
+                        disabled={isSavingInspection}
+                        style={{
+                          flex: 1,
+                          padding: '6px',
+                          borderRadius: '6px',
+                          background: 'rgba(0, 242, 254, 0.15)',
+                          border: '1px solid #00f2fe',
+                          color: '#00f2fe',
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          cursor: isSavingInspection ? 'not-allowed' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '4px',
+                        }}
+                      >
+                        <Save size={12} />
+                        <span>{isSavingInspection ? 'ĐANG LƯU...' : 'LƯU KẾT QUẢ KIỂM TRA'}</span>
+                      </button>
+                    </div>
+
+                    {inspectionSaveMsg && (
+                      <div style={{ color: '#34d399', fontSize: '9.5px', textAlign: 'center' }}>
+                        ✓ {inspectionSaveMsg}
+                      </div>
+                    )}
+                    {inspectionSaveError && (
+                      <div style={{ color: '#f87171', fontSize: '9.5px', textAlign: 'center' }}>
+                        ✗ {inspectionSaveError}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* SECTION D: THÔNG TIN SẠC */}
+                  <div
+                    style={{
+                      background: 'rgba(15, 23, 42, 0.85)',
+                      border: '1px solid rgba(56, 189, 248, 0.2)',
+                      borderRadius: '10px',
+                      padding: '10px 12px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '6px',
+                      fontSize: '10.5px',
+                    }}
+                  >
+                    <div style={{ fontSize: '10px', fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase' }}>
+                      D. THÔNG TIN SẠC TRONG CHUYẾN ĐI
+                    </div>
+                    {tripChargingSessions.length === 0 ? (
+                      <div style={{ color: '#94a3b8', fontSize: '10px', fontStyle: 'italic', padding: '4px 0' }}>
+                        Không ghi nhận phiên sạc trung gian nào trong thời gian diễn ra chuyến đi.
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {tripChargingSessions.map((s) => (
+                          <div
+                            key={s.id}
+                            style={{
+                              background: 'rgba(255, 255, 255, 0.03)',
+                              padding: '5px 8px',
+                              borderRadius: '6px',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                            }}
+                          >
+                            <div>
+                              <div style={{ color: '#ffffff', fontWeight: 600 }}>
+                                Trụ sạc #{s.stationId ? s.stationId.substring(0, 6).toUpperCase() : 'TRẠM'}
+                              </div>
+                              <div style={{ color: '#94a3b8', fontSize: '9px' }}>
+                                {s.startedAt ? formatDateTime(s.startedAt) : '--'}
+                              </div>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{ color: '#00f2fe', fontWeight: 700 }}>
+                                +{s.energyDeliveredKwh != null ? Number(s.energyDeliveredKwh).toFixed(1) : '0'} kWh
+                              </div>
+                              <div style={{ color: '#34d399', fontSize: '9px' }}>
+                                {s.status === 'COMPLETED' ? 'Đã hoàn tất' : s.status}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* SECTION E: XÁC NHẬN TRẢ XE */}
+                  <div
+                    style={{
+                      background: 'rgba(15, 23, 42, 0.95)',
+                      border: '1px solid rgba(0, 242, 254, 0.35)',
+                      borderRadius: '10px',
+                      padding: '12px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      fontSize: '10.5px',
+                    }}
+                  >
+                    <div style={{ fontSize: '10.5px', fontWeight: 800, color: '#00f2fe', textTransform: 'uppercase' }}>
+                      E. XÁC NHẬN HOÀN TẤT TRẢ XE
+                    </div>
+
+                    <div
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.03)',
+                        borderRadius: '6px',
+                        padding: '8px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '4px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#94a3b8' }}>Xe:</span>
+                        <span style={{ color: '#ffffff', fontWeight: 700 }}>{code}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#94a3b8' }}>Người sử dụng:</span>
+                        <span style={{ color: '#38bdf8', fontWeight: 700 }}>{activeTrip.userName}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#94a3b8' }}>Pin khi nhận:</span>
+                        <span style={{ color: '#cbd5e1' }}>{startSoc}%</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#94a3b8' }}>Pin khi trả:</span>
+                        <span style={{ color: '#00f2fe', fontWeight: 700 }}>{numEndSoc}%</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#94a3b8' }}>Km ban đầu:</span>
+                        <span style={{ color: '#cbd5e1' }}>{startOdo.toLocaleString('vi-VN')} km</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#94a3b8' }}>Km cuối:</span>
+                        <span style={{ color: '#ffffff', fontWeight: 700 }}>{numEndOdo.toLocaleString('vi-VN')} km</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#94a3b8' }}>Quãng đường:</span>
+                        <span style={{ color: '#34d399', fontWeight: 700 }}>{distanceTraveled.toLocaleString('vi-VN')} km</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#94a3b8' }}>Tình trạng xe:</span>
+                        <span style={{ color: '#cbd5e1' }}>
+                          {returnChecklist.some((i) => i.status === 'SCRATCH')
+                            ? 'Có vấn đề / cần lưu ý'
+                            : 'Đạt tiêu chuẩn'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {returnErrorMsg && (
+                      <div
+                        style={{
+                          background: 'rgba(239, 68, 68, 0.15)',
+                          border: '1px solid rgba(239, 68, 68, 0.4)',
+                          borderRadius: '6px',
+                          padding: '6px 8px',
+                          color: '#f87171',
+                          fontSize: '10px',
+                        }}
+                      >
+                        {returnErrorMsg}
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handleConfirmReturn}
+                      disabled={!canConfirmReturn || isConfirmingReturn}
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        borderRadius: '8px',
+                        background: canConfirmReturn
+                          ? 'linear-gradient(135deg, #00f2fe 0%, #0284c7 100%)'
+                          : 'rgba(255, 255, 255, 0.08)',
+                        border: 'none',
+                        color: canConfirmReturn ? '#08101c' : '#64748b',
+                        fontSize: '12px',
+                        fontWeight: 800,
+                        letterSpacing: '0.04em',
+                        cursor: canConfirmReturn ? 'pointer' : 'not-allowed',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        boxShadow: canConfirmReturn ? '0 4px 16px rgba(0, 242, 254, 0.35)' : 'none',
+                      }}
+                    >
+                      <CheckCircle2 size={14} />
+                      <span>{isConfirmingReturn ? 'ĐANG HOÀN TẤT...' : 'HOÀN TẤT TRẢ XE'}</span>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {activeTab !== 'RETURN' && (
+            <>
+              {/* Primary Action Button: BÀN GIAO XE */}
+              <button
+                type="button"
+                onClick={() => enterVehicleHandoverMode()}
+                style={{
+                  width: '100%',
+                  background: 'linear-gradient(90deg, #00f2fe 0%, #38bdf8 100%)',
+                  color: '#08101c',
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '12px 16px',
+                  fontSize: '13px',
+                  fontWeight: 800,
+                  letterSpacing: '0.04em',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  boxShadow: '0 6px 20px rgba(0, 242, 254, 0.35)',
+                  transition: 'all 0.18s ease',
+                  marginBottom: '8px',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                  e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 242, 254, 0.5)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'none';
+                  e.currentTarget.style.boxShadow = '0 6px 20px rgba(0, 242, 254, 0.35)';
+                }}
+              >
+                <Key size={16} />
+                <span>BÀN GIAO XE</span>
+                <ChevronRight size={16} style={{ marginLeft: 'auto' }} />
+              </button>
+            </>
+          )}
 
           {/* Secondary Actions Grid */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
