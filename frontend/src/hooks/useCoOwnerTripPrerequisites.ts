@@ -3,53 +3,73 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../store/authStore';
 import { Booking } from '../types/booking';
 import { VehicleHandoverData } from '../types/handover';
-import { TripStartEligibilityData } from '../types/trip';
+import { TripData, TripStartEligibilityData } from '../types/trip';
 import { fetchVehicleBookings } from '../services/bookingApi';
 import { fetchBookingHandover } from '../services/handoverApi';
-import { fetchTripStartEligibility } from '../services/tripApi';
+import { fetchBookingTrip, fetchTripStartEligibility } from '../services/tripApi';
 
 /**
  * Resolves the relevant confirmed booking for an authenticated CO_OWNER on a vehicle.
- * Ensures stable identity matching without relying on unstable array indices.
+ * Strictly scopes to current/upcoming non-completed bookings.
+ * NEVER falls back to arbitrary array[0] or historical completed bookings.
  */
 export function findRelevantCoOwnerBooking(
   bookings: Booking[],
   user: { id?: string; email?: string } | null,
   vehicleId: string
 ): Booking | null {
-  if (!bookings || bookings.length === 0 || !user) return null;
+  if (!bookings || bookings.length === 0 || !user || !vehicleId) return null;
 
   const now = Date.now();
 
-  // Candidate must belong to authenticated CO_OWNER, selected vehicle, and not be CANCELLED/COMPLETED
-  const myConfirmed = bookings
+  // Candidate must belong to authenticated CO_OWNER, selected vehicle, and not be CANCELLED, COMPLETED, or EXPIRED
+  const myValidBookings = bookings
     .filter((b) => {
-      if (!b || b.status !== 'CONFIRMED') return false;
+      if (!b) return false;
+      if (b.status === 'CANCELLED' || b.status === 'COMPLETED' || b.status === 'EXPIRED') return false;
       if (b.vehicleId && b.vehicleId !== vehicleId) return false;
       const isMyBooking =
         (!!user.id && b.userId === user.id) ||
         (!!user.email && b.userEmail === user.email);
-      return isMyBooking;
+      if (!isMyBooking) return false;
+
+      // End time must not be in the past (overdue bookings cannot be used for trip start)
+      const end = new Date(b.endTime).getTime();
+      if (isNaN(end) || end <= now) return false;
+
+      return true;
     })
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 
-  if (myConfirmed.length === 0) return null;
+  if (myValidBookings.length === 0) return null;
 
-  // Prefer booking that is currently active or upcoming today (end time >= now - 4 hours overtime tolerance)
-  const currentOrUpcoming = myConfirmed.find((b) => {
+  // 1. Current active booking window: startTime <= now <= endTime
+  const ongoing = myValidBookings.find((b) => {
+    const start = new Date(b.startTime).getTime();
     const end = new Date(b.endTime).getTime();
-    return end >= now - 4 * 3600 * 1000;
+    return start <= now && end >= now;
   });
+  if (ongoing) return ongoing;
 
-  return currentOrUpcoming || myConfirmed[0];
+  // 2. Earliest upcoming booking (startTime > now)
+  const upcoming = myValidBookings.find((b) => {
+    const start = new Date(b.startTime).getTime();
+    return start > now;
+  });
+  if (upcoming) return upcoming;
+
+  return null;
 }
 
 export interface CoOwnerTripPrerequisitesResult {
   candidateBooking: Booking | null;
   bookingHandover: VehicleHandoverData | null;
   completedHandover: VehicleHandoverData | null;
+  bookingTrip: TripData | null;
   tripEligibility: TripStartEligibilityData | null;
   isEligibleToStart: boolean;
+  isInspectionOnlyCompleted: boolean;
+  isWaitingForStaff: boolean;
   isLoading: boolean;
   isEligibilityError: boolean;
   eligibilityErrorMessage: string | null;
@@ -58,7 +78,7 @@ export interface CoOwnerTripPrerequisitesResult {
 
 /**
  * Shared hook implementing the authoritative business identity chain:
- * Authenticated CO_OWNER -> own relevant Booking -> exact VehicleHandover -> handover.status === COMPLETED -> Trip start eligibility
+ * Authenticated CO_OWNER -> own relevant Booking -> exact VehicleHandover -> confirmed by STAFF -> Trip start eligibility
  *
  * Used consistently by both CoOwnerVehiclePanel and TripStartWorld to avoid state drift.
  */
@@ -71,9 +91,9 @@ export function useCoOwnerTripPrerequisites(
   const accessToken = useAuthStore((state) => state.accessToken);
   const authReady = isAuthenticated && !!accessToken && !!user;
 
-  // 1. Fetch vehicle bookings (stable key shared with schedule)
+  // 1. Fetch vehicle bookings scoped to vehicle and authenticated user
   const { data: allBookings = [], isLoading: isBookingsLoading } = useQuery<Booking[]>({
-    queryKey: ['vehicleBookings', vehicleId],
+    queryKey: ['vehicleBookings', vehicleId, user?.id],
     queryFn: () => fetchVehicleBookings(vehicleId),
     enabled: authReady && !!vehicleId,
     refetchInterval: 8000,
@@ -85,35 +105,86 @@ export function useCoOwnerTripPrerequisites(
   }, [allBookings, user, vehicleId]);
 
   // 3. Fetch exact booking-specific handover (GET /api/bookings/{bookingId}/handover)
-  // Replaces the unsafe dependency on /active-handovers
   const {
     data: bookingHandover = null,
     isLoading: isHandoverLoading,
   } = useQuery<VehicleHandoverData | null>({
-    queryKey: ['bookingHandover', candidateBooking?.id],
+    queryKey: ['bookingHandover', user?.id, candidateBooking?.id],
     queryFn: () =>
       candidateBooking?.id ? fetchBookingHandover(candidateBooking.id) : Promise.resolve(null),
     enabled: authReady && !!candidateBooking?.id,
     refetchInterval: 4000,
   });
 
-  // 4. Verify completed handover identity chain
+  // 4. Fetch trip for candidate booking to detect completed trips
+  const { data: bookingTrip = null, isLoading: isBookingTripLoading } = useQuery<TripData | null>({
+    queryKey: ['bookingTrip', user?.id, candidateBooking?.id],
+    queryFn: () =>
+      candidateBooking?.id ? fetchBookingTrip(candidateBooking.id) : Promise.resolve(null),
+    enabled: authReady && !!candidateBooking?.id,
+    refetchInterval: 4000,
+  });
+
+  // 5. Verify completed handover identity chain
   const completedHandover = useMemo(() => {
     if (!bookingHandover || !candidateBooking || !user) return null;
-    const isCompleted =
-      bookingHandover.status === 'COMPLETED' || bookingHandover.status === 'OWNER_CONFIRMED';
+    const isConfirmedStatus =
+      bookingHandover.status === 'HANDED_OVER' ||
+      bookingHandover.status === 'OWNER_CONFIRMED' ||
+      bookingHandover.status === 'COMPLETED';
     const matchesBooking = bookingHandover.bookingId === candidateBooking.id;
+    const matchesVehicle = !bookingHandover.vehicleId || bookingHandover.vehicleId === vehicleId;
     const matchesUser =
       (!user.id || bookingHandover.coOwnerId === user.id) ||
       (!user.email || bookingHandover.coOwnerEmail === user.email);
+    const notCancelled = bookingHandover.status !== 'CANCELLED';
 
-    if (isCompleted && matchesBooking && matchesUser) {
+    // Must have staff confirmation
+    const hasStaffHandover = !!(
+      bookingHandover.staffHandedOverAt ||
+      bookingHandover.staffId ||
+      bookingHandover.staffName ||
+      bookingHandover.status === 'HANDED_OVER' ||
+      bookingHandover.status === 'OWNER_CONFIRMED' ||
+      bookingHandover.status === 'COMPLETED'
+    );
+
+    // Historical completed trip cannot restart
+    const tripAlreadyCompleted = bookingTrip?.status === 'COMPLETED';
+
+    if (
+      isConfirmedStatus &&
+      matchesBooking &&
+      matchesVehicle &&
+      matchesUser &&
+      notCancelled &&
+      hasStaffHandover &&
+      !tripAlreadyCompleted
+    ) {
       return bookingHandover;
     }
     return null;
-  }, [bookingHandover, candidateBooking, user]);
+  }, [bookingHandover, candidateBooking, user, vehicleId, bookingTrip]);
 
-  // 5. Query trip start eligibility for stable bookingId (GET /api/bookings/{bookingId}/trip/start-eligibility)
+  // 6. Pre-handover inspection completed, but staff handover still pending
+  const isInspectionOnlyCompleted = useMemo(() => {
+    if (!bookingHandover || !candidateBooking) return false;
+    const isInspectionReady =
+      bookingHandover.status === 'READY_FOR_HANDOVER' ||
+      (bookingHandover.allCheckpointsInspected &&
+        bookingHandover.status !== 'HANDED_OVER' &&
+        bookingHandover.status !== 'OWNER_CONFIRMED' &&
+        bookingHandover.status !== 'COMPLETED');
+    return isInspectionReady;
+  }, [bookingHandover, candidateBooking]);
+
+  const isWaitingForStaff = useMemo(() => {
+    if (!candidateBooking) return false;
+    if (completedHandover || isInspectionOnlyCompleted) return false;
+    return true;
+  }, [candidateBooking, completedHandover, isInspectionOnlyCompleted]);
+
+  // 7. Query trip start eligibility for stable bookingId (GET /api/bookings/{bookingId}/trip/start-eligibility)
   const {
     data: tripEligibility = null,
     isLoading: isEligibilityLoading,
@@ -121,14 +192,18 @@ export function useCoOwnerTripPrerequisites(
     error: eligibilityErrorObj,
     refetch: refetchEligibility,
   } = useQuery<TripStartEligibilityData | null>({
-    queryKey: ['tripEligibility', candidateBooking?.id],
+    queryKey: ['tripEligibility', user?.id, candidateBooking?.id],
     queryFn: () =>
       candidateBooking?.id ? fetchTripStartEligibility(candidateBooking.id) : Promise.resolve(null),
     enabled: authReady && !!completedHandover && !!candidateBooking?.id && !isTripActive,
     refetchInterval: 4000,
   });
 
-  const isEligibleToStart = !isTripActive && !!completedHandover && !!tripEligibility?.eligible;
+  const isEligibleToStart =
+    !isTripActive &&
+    !!completedHandover &&
+    bookingTrip?.status !== 'COMPLETED' &&
+    !!tripEligibility?.eligible;
 
   const eligibilityErrorMessage = useMemo(() => {
     if (isEligibilityError) {
@@ -147,10 +222,16 @@ export function useCoOwnerTripPrerequisites(
     candidateBooking,
     bookingHandover,
     completedHandover,
+    bookingTrip,
     tripEligibility,
     isEligibleToStart,
+    isInspectionOnlyCompleted,
+    isWaitingForStaff,
     isLoading:
-      isBookingsLoading || isHandoverLoading || (isEligibilityLoading && !!completedHandover),
+      isBookingsLoading ||
+      (!!candidateBooking && isHandoverLoading) ||
+      (!!candidateBooking && isBookingTripLoading) ||
+      (isEligibilityLoading && !!completedHandover),
     isEligibilityError,
     eligibilityErrorMessage,
     refetchEligibility,

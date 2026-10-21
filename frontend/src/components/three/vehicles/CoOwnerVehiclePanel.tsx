@@ -39,6 +39,8 @@ import {
   ShieldCheck,
   ChevronRight,
   Flag,
+  Loader2,
+  RotateCcw,
 } from 'lucide-react';
 
 function formatDate(isoString?: string): string {
@@ -384,10 +386,17 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
 
   const {
     candidateBooking,
+    bookingHandover,
     completedHandover,
+    bookingTrip,
     tripEligibility,
+    isEligibleToStart,
+    isInspectionOnlyCompleted,
+    isWaitingForStaff,
+    isLoading: isPrereqLoading,
     isEligibilityError,
     eligibilityErrorMessage,
+    refetchEligibility,
   } = useCoOwnerTripPrerequisites(vehicle.id, isTripActive);
 
   const displayCode = resolveVehicleCode(vehicle) || 'EV01';
@@ -951,72 +960,8 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
             </>
           )}
         </div>
-      ) : !isTripActive && completedHandover ? (
-        /* CASE B: HANDOVER COMPLETED -> PROMINENT "BẮT ĐẦU CHUYẾN ĐI" (Section 3) */
-        <div
-          style={{
-            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.18) 0%, rgba(8, 20, 36, 0.95) 100%)',
-            border: '1.5px solid #10b981',
-            boxShadow: '0 0 20px rgba(16, 185, 129, 0.25)',
-            borderRadius: '16px',
-            padding: '14px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#34d399', letterSpacing: '0.03em' }}>
-                XE ĐÃ BÀN GIAO THÀNH CÔNG
-              </span>
-            </div>
-            <span
-              style={{
-                background: 'rgba(16, 185, 129, 0.25)',
-                color: '#34d399',
-                padding: '2px 8px',
-                borderRadius: '9999px',
-                fontSize: '9.5px',
-                fontWeight: 800,
-              }}
-            >
-              SẴN SÀNG
-            </span>
-          </div>
-
-          <p style={{ margin: 0, fontSize: '11px', color: '#cbd5e1', lineHeight: 1.45 }}>
-            Nhân viên đã hoàn tất bàn giao xe. Xe đã sẵn sàng để bạn khởi hành chuyến đi.
-          </p>
-
-          <button
-            type="button"
-            onClick={() => enterVehicleTripStartMode()}
-            style={{
-              width: '100%',
-              marginTop: '4px',
-              background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
-              border: 'none',
-              borderRadius: '10px',
-              padding: '10px',
-              color: '#ffffff',
-              fontSize: '12px',
-              fontWeight: 800,
-              letterSpacing: '0.04em',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '7px',
-              boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
-            }}
-          >
-            <Play size={14} fill="#ffffff" />
-            <span>BẮT ĐẦU CHUYẾN ĐI</span>
-          </button>
-        </div>
-      ) : (
-        /* CASE C: NORMAL UPCOMING SCHEDULE / BOOKING (Section 4) */
+      ) : !candidateBooking ? (
+        /* STATE A: NO CURRENT BOOKING */
         <div
           style={{
             background: 'rgba(255, 255, 255, 0.03)',
@@ -1050,50 +995,395 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
             </button>
           </div>
 
-          {candidateBooking || upcomingBooking ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              <div style={{ fontSize: '13px', fontWeight: 800, color: '#ffffff' }}>
-                {formatDate((candidateBooking || upcomingBooking)!.startTime)}
-              </div>
-              <div style={{ fontSize: '11.5px', color: '#00f2fe', fontWeight: 700 }}>
-                {formatTimeRange((candidateBooking || upcomingBooking)!.startTime, (candidateBooking || upcomingBooking)!.endTime)}
-              </div>
-              <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '2px' }}>
-                Trạng thái: <strong style={{ color: '#34d399' }}>Đã xác nhận</strong>
-              </div>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <span style={{ fontSize: '11.5px', color: '#94a3b8' }}>
-                Chưa có lịch sử dụng sắp tới.
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <span style={{ fontSize: '11.5px', color: '#94a3b8' }}>
+              Chưa có lịch sử dụng sắp tới.
+            </span>
+            <button
+              type="button"
+              disabled={vehicle.status === 'MAINTENANCE'}
+              onClick={() => {
+                if (vehicle.status !== 'MAINTENANCE') setVehicleFeatureMode('BOOKING');
+              }}
+              style={{
+                background: 'linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '7px 12px',
+                color: '#ffffff',
+                fontSize: '11px',
+                fontWeight: 800,
+                cursor: vehicle.status === 'MAINTENANCE' ? 'not-allowed' : 'pointer',
+                opacity: vehicle.status === 'MAINTENANCE' ? 0.5 : 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+              }}
+            >
+              <Calendar size={13} />
+              <span>ĐẶT LỊCH</span>
+            </button>
+          </div>
+        </div>
+      ) : isPrereqLoading ? (
+        /* LOADING STATE */
+        <div
+          style={{
+            background: 'rgba(2, 132, 199, 0.08)',
+            border: '1px solid rgba(0, 242, 254, 0.3)',
+            borderRadius: '16px',
+            padding: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '10px',
+            color: '#38bdf8',
+            fontSize: '11.5px',
+            fontWeight: 700,
+          }}
+        >
+          <Loader2 size={16} className="animate-spin" color="#00f2fe" />
+          <span>ĐANG KIỂM TRA TRẠNG THÁI BÀN GIAO...</span>
+        </div>
+      ) : isEligibilityError ? (
+        /* ERROR STATE (SAFE RETRY) */
+        <div
+          style={{
+            background: 'rgba(239, 68, 68, 0.12)',
+            border: '1px solid rgba(239, 68, 68, 0.4)',
+            borderRadius: '16px',
+            padding: '14px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#f87171', fontSize: '11px', fontWeight: 800 }}>
+            <AlertTriangle size={14} />
+            <span>KHÔNG THỂ KIỂM TRA TRẠNG THÁI BÀN GIAO</span>
+          </div>
+          <p style={{ margin: 0, fontSize: '10.5px', color: '#cbd5e1' }}>
+            {eligibilityErrorMessage || 'Đã xảy ra lỗi khi xác minh điều kiện bàn giao. Vui lòng thử lại.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => refetchEligibility()}
+            style={{
+              background: 'rgba(255, 255, 255, 0.08)',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '8px',
+              padding: '6px 10px',
+              color: '#ffffff',
+              fontSize: '10.5px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+            }}
+          >
+            <RotateCcw size={12} />
+            <span>THỬ LẠI</span>
+          </button>
+        </div>
+      ) : bookingTrip?.status === 'COMPLETED' ? (
+        /* STATE G: TRIP COMPLETED */
+        <div
+          style={{
+            background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.95) 100%)',
+            border: '1px solid rgba(16, 185, 129, 0.4)',
+            borderRadius: '16px',
+            padding: '14px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <CheckCircle2 size={14} color="#34d399" />
+              <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#34d399' }}>
+                CHUYẾN ĐI ĐÃ HOÀN TẤT
               </span>
-              <button
-                type="button"
-                disabled={vehicle.status === 'MAINTENANCE'}
-                onClick={() => {
-                  if (vehicle.status !== 'MAINTENANCE') setVehicleFeatureMode('BOOKING');
-                }}
-                style={{
-                  background: 'linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)',
-                  border: 'none',
-                  borderRadius: '8px',
-                  padding: '7px 12px',
-                  color: '#ffffff',
-                  fontSize: '11px',
-                  fontWeight: 800,
-                  cursor: vehicle.status === 'MAINTENANCE' ? 'not-allowed' : 'pointer',
-                  opacity: vehicle.status === 'MAINTENANCE' ? 0.5 : 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                }}
-              >
-                <Calendar size={13} />
-                <span>ĐẶT LỊCH NGAY</span>
-              </button>
+            </div>
+            <span
+              style={{
+                background: 'rgba(16, 185, 129, 0.2)',
+                color: '#34d399',
+                padding: '2px 8px',
+                borderRadius: '9999px',
+                fontSize: '9.5px',
+                fontWeight: 800,
+              }}
+            >
+              KẾT THÚC
+            </span>
+          </div>
+          <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+            Lịch: {formatDate(candidateBooking.startTime)} ({formatTimeRange(candidateBooking.startTime, candidateBooking.endTime)})
+          </div>
+          <button
+            type="button"
+            onClick={() => setVehicleFeatureMode('BOOKING')}
+            style={{
+              width: '100%',
+              marginTop: '4px',
+              background: 'linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)',
+              border: 'none',
+              borderRadius: '8px',
+              padding: '8px',
+              color: '#ffffff',
+              fontSize: '11px',
+              fontWeight: 800,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+            }}
+          >
+            <Calendar size={13} />
+            <span>ĐẶT LỊCH CHUYẾN ĐI MỚI</span>
+          </button>
+        </div>
+      ) : completedHandover ? (
+        /* STATE D: STAFF HANDOVER CONFIRMED */
+        <div
+          style={{
+            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.18) 0%, rgba(8, 20, 36, 0.95) 100%)',
+            border: '1.5px solid #10b981',
+            boxShadow: '0 0 20px rgba(16, 185, 129, 0.25)',
+            borderRadius: '16px',
+            padding: '14px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#34d399', letterSpacing: '0.03em' }}>
+                XE ĐÃ BÀN GIAO THÀNH CÔNG
+              </span>
+            </div>
+            <span
+              style={{
+                background: 'rgba(16, 185, 129, 0.25)',
+                color: '#34d399',
+                padding: '2px 8px',
+                borderRadius: '9999px',
+                fontSize: '9.5px',
+                fontWeight: 800,
+              }}
+            >
+              SẴN SÀNG
+            </span>
+          </div>
+
+          <div
+            style={{
+              background: 'rgba(0, 0, 0, 0.35)',
+              borderRadius: '8px',
+              padding: '8px 10px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px',
+              fontSize: '10.5px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8' }}>Lịch đặt:</span>
+              <span style={{ color: '#ffffff', fontWeight: 700 }}>
+                {formatDate(candidateBooking.startTime)} ({formatTimeRange(candidateBooking.startTime, candidateBooking.endTime)})
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8' }}>Bàn giao lúc:</span>
+              <span style={{ color: '#34d399', fontWeight: 700 }}>
+                {formatDateTime(completedHandover.staffHandedOverAt || completedHandover.updatedAt)}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8' }}>Phương tiện:</span>
+              <span style={{ color: '#00f2fe', fontWeight: 700 }}>
+                {vehicle.name} ({vehicle.licensePlate})
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8' }}>Người nhận xe:</span>
+              <span style={{ color: '#ffffff', fontWeight: 700 }}>
+                {completedHandover.coOwnerName || user?.fullName || 'Đồng sở hữu'}
+              </span>
+            </div>
+          </div>
+
+          {tripEligibility && !tripEligibility.eligible && (
+            <div
+              style={{
+                background: 'rgba(245, 158, 11, 0.15)',
+                border: '1px solid rgba(245, 158, 11, 0.4)',
+                borderRadius: '8px',
+                padding: '6px 8px',
+                color: '#fbbf24',
+                fontSize: '10px',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+              }}
+            >
+              <AlertTriangle size={12} />
+              <span>{eligibilityErrorMessage || tripEligibility.message || 'CHƯA ĐẾN THỜI GIAN SỬ DỤNG XE'}</span>
             </div>
           )}
+
+          <button
+            type="button"
+            disabled={tripEligibility ? !tripEligibility.eligible : false}
+            onClick={() => enterVehicleTripStartMode()}
+            style={{
+              width: '100%',
+              marginTop: '4px',
+              background:
+                tripEligibility && !tripEligibility.eligible
+                  ? 'rgba(75, 85, 99, 0.4)'
+                  : 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+              border: 'none',
+              borderRadius: '10px',
+              padding: '10px',
+              color: '#ffffff',
+              fontSize: '12px',
+              fontWeight: 800,
+              letterSpacing: '0.04em',
+              cursor: tripEligibility && !tripEligibility.eligible ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '7px',
+              boxShadow:
+                tripEligibility && !tripEligibility.eligible
+                  ? 'none'
+                  : '0 4px 14px rgba(16, 185, 129, 0.4)',
+              opacity: tripEligibility && !tripEligibility.eligible ? 0.6 : 1,
+            }}
+          >
+            <Play size={14} fill="#ffffff" />
+            <span>BẮT ĐẦU CHUYẾN ĐI</span>
+          </button>
+        </div>
+      ) : isInspectionOnlyCompleted ? (
+        /* STATE C: PRE_HANDOVER INSPECTION COMPLETED, HANDOVER STILL PENDING */
+        <div
+          style={{
+            background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(8, 20, 36, 0.95) 100%)',
+            border: '1.5px solid rgba(245, 158, 11, 0.55)',
+            boxShadow: '0 0 16px rgba(245, 158, 11, 0.2)',
+            borderRadius: '16px',
+            padding: '14px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#fbbf24', letterSpacing: '0.03em' }}>
+                XE ĐÃ KIỂM TRA — CHỜ BÀN GIAO
+              </span>
+            </div>
+            <span
+              style={{
+                background: 'rgba(245, 158, 11, 0.25)',
+                color: '#fbbf24',
+                padding: '2px 8px',
+                borderRadius: '9999px',
+                fontSize: '9.5px',
+                fontWeight: 800,
+              }}
+            >
+              ĐÃ KIỂM TRA 8/8
+            </span>
+          </div>
+
+          <p style={{ margin: 0, fontSize: '11px', color: '#cbd5e1', lineHeight: 1.45 }}>
+            Xe đã hoàn tất kiểm tra kỹ thuật đạt chuẩn. Đang chờ nhân viên kỹ thuật xác nhận bàn giao xe cho bạn.
+          </p>
+
+          <div
+            style={{
+              background: 'rgba(0, 0, 0, 0.3)',
+              borderRadius: '8px',
+              padding: '8px 10px',
+              fontSize: '10.5px',
+              color: '#94a3b8',
+            }}
+          >
+            Lịch đặt: <strong style={{ color: '#ffffff' }}>{formatDate(candidateBooking.startTime)} ({formatTimeRange(candidateBooking.startTime, candidateBooking.endTime)})</strong>
+          </div>
+        </div>
+      ) : (
+        /* STATE B: BOOKING CONFIRMED, HANDOVER NOT COMPLETED */
+        <div
+          style={{
+            background: 'linear-gradient(135deg, rgba(2, 132, 199, 0.12) 0%, rgba(8, 20, 36, 0.95) 100%)',
+            border: '1.5px solid rgba(2, 132, 199, 0.45)',
+            boxShadow: '0 0 16px rgba(2, 132, 199, 0.18)',
+            borderRadius: '16px',
+            padding: '14px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Clock size={14} color="#38bdf8" />
+              <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#38bdf8', letterSpacing: '0.03em' }}>
+                ĐANG CHỜ BÀN GIAO XE
+              </span>
+            </div>
+            <span
+              style={{
+                background: 'rgba(2, 132, 199, 0.25)',
+                color: '#38bdf8',
+                padding: '2px 8px',
+                borderRadius: '9999px',
+                fontSize: '9.5px',
+                fontWeight: 800,
+              }}
+            >
+              CHỜ BÀN GIAO
+            </span>
+          </div>
+
+          <p style={{ margin: 0, fontSize: '11px', color: '#cbd5e1', lineHeight: 1.45 }}>
+            Nhân viên chưa xác nhận hoàn tất bàn giao cho lịch đặt này.
+          </p>
+
+          <div
+            style={{
+              background: 'rgba(0, 0, 0, 0.3)',
+              borderRadius: '8px',
+              padding: '8px 10px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '3px',
+              fontSize: '10.5px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8' }}>Lịch đặt:</span>
+              <strong style={{ color: '#ffffff' }}>
+                {formatDate(candidateBooking.startTime)} ({formatTimeRange(candidateBooking.startTime, candidateBooking.endTime)})
+              </strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8' }}>Phương tiện:</span>
+              <strong style={{ color: '#00f2fe' }}>{vehicle.name}</strong>
+            </div>
+          </div>
         </div>
       )}
 

@@ -7,6 +7,7 @@ import {
   Wrench,
   AlertTriangle,
   Zap,
+  Vote,
 } from 'lucide-react';
 
 interface CoOwnerQuickActionDockProps {
@@ -19,6 +20,7 @@ export const CoOwnerQuickActionDock: React.FC<CoOwnerQuickActionDockProps> = ({ 
   const enterVehicleMaintenanceMode = useWorldStore((state) => state.enterVehicleMaintenanceMode);
   const enterVehicleDamageHistoryMode = useWorldStore((state) => state.enterVehicleDamageHistoryMode);
   const enterBatteryXrayMode = useWorldStore((state) => state.enterBatteryXrayMode);
+  const enterVehicleVotingMode = useWorldStore((state) => state.enterVehicleVotingMode);
 
   const isMaintenance = vehicle.status === 'MAINTENANCE';
 
@@ -110,6 +112,19 @@ export const CoOwnerQuickActionDock: React.FC<CoOwnerQuickActionDockProps> = ({ 
           <Zap size={18} color="#22e6ff" />
         </div>
         <span style={dockLabelStyle(false)}>X-RAY PIN</span>
+      </button>
+
+      {/* 6. BIỂU QUYẾT */}
+      <button
+        type="button"
+        onClick={() => enterVehicleVotingMode({ vehicleId: vehicle.id })}
+        title="Biểu quyết đề xuất nâng cấp, bảo dưỡng và chi phí chung"
+        style={dockItemButtonStyle(false)}
+      >
+        <div style={dockIconCircleStyle(false, false, '#38bdf8')}>
+          <Vote size={18} color="#38bdf8" />
+        </div>
+        <span style={dockLabelStyle(false)}>BIỂU QUYẾT</span>
       </button>
     </div>
   );

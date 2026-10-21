@@ -40,7 +40,8 @@ export type VehicleFeatureMode =
   | 'DAMAGE_HISTORY'
   | 'VEHICLE_MAINTENANCE'
   | 'BATTERY_XRAY'
-  | 'CHARGING';
+  | 'CHARGING'
+  | 'CO_OWNER_VOTING';
 
 export type VehicleStatus =
   | 'AVAILABLE'
@@ -310,6 +311,14 @@ interface WorldState {
   exitChargingMode: () => void;
   setSelectedChargingStation: (stationId: string | null) => void;
 
+  // Phase 21: Co-Ownership Voting System Mode
+  vehicleVotingMode: boolean;
+  selectedProposalId: string | null;
+  enterVehicleVotingMode: (options?: { vehicleId?: string | null; proposalId?: string | null }) => void;
+  exitVehicleVotingMode: () => void;
+  closeVotingPanel: () => void;
+  selectProposalRecord: (id: string | null) => void;
+
   resetExperienceState: () => void;
 
   // Explicit Vehicle Feature Mode (Single source of truth)
@@ -386,6 +395,9 @@ export const useWorldStore = create<WorldState>((set) => ({
   selectedMaintenanceId: null,
   maintenanceDraftPreselectedDamageId: null,
   maintenanceDraftPreselectedPartCode: null,
+
+  vehicleVotingMode: false,
+  selectedProposalId: null,
 
   vehicleYaw: -0.32,
   setVehicleYaw: (yaw) => set({ vehicleYaw: yaw }),
@@ -605,12 +617,19 @@ export const useWorldStore = create<WorldState>((set) => ({
       vehicleBatteryXrayMode: false,
       vehicleChargingMode: false,
       selectedChargingStationId: null,
+      vehicleVotingMode: false,
+      selectedProposalId: null,
       inspectionError: null,
       vehicleYaw: -0.32,
     }),
 
   clearActiveSpatialSelection: () =>
     set((state) => {
+      // In Vehicle Voting mode: preserve voting view
+      if (state.vehicleVotingMode) {
+        return {};
+      }
+
       // 0a-00000. In Charging mode: preserve charging view
       if (state.vehicleChargingMode) {
         return {};
@@ -1492,6 +1511,88 @@ export const useWorldStore = create<WorldState>((set) => ({
       isFinanceDetailModalOpen: false,
     })),
 
+  enterVehicleVotingMode: (options) =>
+    set((state) => {
+      const targetVehicleId = options?.vehicleId || state.selectedVehicleId || 'EV01';
+      return {
+        vehicleVotingMode: true,
+        selectedProposalId: options?.proposalId || null,
+        vehicleFeatureMode: 'CO_OWNER_VOTING',
+        vehicleMode: 'CO_OWNER_VOTING',
+        isVehicleSelected: true,
+        selectedVehicleId: targetVehicleId,
+        selectedZone: 'VEHICLE',
+        isVehicleDetailOpen: false,
+        vehicleMaintenanceMode: false,
+        selectedMaintenanceId: null,
+        vehicleBatteryXrayMode: false,
+        vehicleChargingMode: false,
+        selectedChargingStationId: null,
+        vehicleBookingMode: false,
+        vehicleCoOwnershipMode: false,
+        vehicleInspectionMode: false,
+        vehicleHandoverMode: false,
+        vehicleReceiptReviewMode: false,
+        vehicleTripStartMode: false,
+        vehicleTripVisualizationMode: false,
+        vehicleDamageMappingMode: false,
+        vehicleDamageHistoryMode: false,
+      };
+    }),
+
+  exitVehicleVotingMode: () =>
+    set((state) => {
+      let role: string | undefined;
+      try {
+        role = useAuthStore.getState().user?.role;
+      } catch {
+        role = 'CO_OWNER';
+      }
+      const targetMode: VehicleFeatureMode =
+        role === 'STAFF'
+          ? 'STAFF_VEHICLE_OVERVIEW'
+          : role === 'ADMIN'
+          ? 'ADMIN_VEHICLE_OVERVIEW'
+          : 'CO_OWNER_VEHICLE_OVERVIEW';
+      return {
+        vehicleVotingMode: false,
+        selectedProposalId: null,
+        vehicleFeatureMode: targetMode,
+        vehicleMode: targetMode,
+        isVehicleSelected: true,
+        isVehicleDetailOpen: true,
+      };
+    }),
+
+  closeVotingPanel: () =>
+    set((state) => {
+      let role: string | undefined;
+      try {
+        role = useAuthStore.getState().user?.role;
+      } catch {
+        role = 'CO_OWNER';
+      }
+      const targetMode: VehicleFeatureMode =
+        role === 'STAFF'
+          ? 'STAFF_VEHICLE_OVERVIEW'
+          : role === 'ADMIN'
+          ? 'ADMIN_VEHICLE_OVERVIEW'
+          : 'CO_OWNER_VEHICLE_OVERVIEW';
+      return {
+        vehicleVotingMode: false,
+        selectedProposalId: null,
+        vehicleFeatureMode: targetMode,
+        vehicleMode: targetMode,
+        isVehicleSelected: true,
+        isVehicleDetailOpen: true,
+      };
+    }),
+
+  selectProposalRecord: (id) =>
+    set({
+      selectedProposalId: id,
+    }),
+
   selectVehiclePartCode: (code) =>
     set({
       selectedVehiclePartCode: code,
@@ -1790,6 +1891,8 @@ export const useWorldStore = create<WorldState>((set) => ({
         hoveredHandoverCheckpoint: null,
         selectedZone: 'VEHICLE',
         selectedVehicleId: state.selectedVehicleId || 'EV01',
+        vehicleVotingMode: false,
+        selectedProposalId: null,
       };
     }),
 
@@ -1810,6 +1913,8 @@ export const useWorldStore = create<WorldState>((set) => ({
       vehicleBatteryXrayMode: false,
       vehicleChargingMode: false,
       selectedChargingStationId: null,
+      vehicleVotingMode: false,
+      selectedProposalId: null,
       vehicleInspectionMode: false,
       selectedVehiclePartId: null,
       hoveredVehiclePartId: null,

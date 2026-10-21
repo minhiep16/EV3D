@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, Component, ErrorInfo, ReactNode } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -27,6 +27,11 @@ import {
   ChevronDown,
   ChevronUp,
   CreditCard,
+  History,
+  Send,
+  Banknote,
+  Check,
+  RotateCcw,
 } from 'lucide-react';
 import { useQuery, QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '../../../services/queryClient';
@@ -35,12 +40,27 @@ import { useAuthStore } from '../../../store/authStore';
 import { fetchVehicles } from '../../../services/vehicleApi';
 import { fetchVehicleCoOwnership } from '../../../services/coOwnershipApi';
 import { useExpenses, useExpenseSummary, useCostSharingSummary, useCreateExpense } from '../../../hooks/useExpenses';
+import {
+  useFundSummary,
+  useFundContributions,
+  useFundTransactions,
+  useSubmitContribution,
+  useVerifyContribution,
+  useDisburseCommonExpense,
+} from '../../../hooks/useFund';
 import { ExpenseCategory, EXPENSE_CATEGORY_METADATA, EXPENSE_STATUS_METADATA } from '../../../types/expense';
 import { ExpenseItemShares } from '../../zones/ExpenseItemShares';
 import { ExpenseVerificationSection } from '../../zones/ExpenseVerificationSection';
 import { VehicleResponse } from '../../../types/vehicle';
 
-export type FinanceView = 'MAIN' | 'EXPENSE_HISTORY' | 'FUND_DETAIL' | 'COST_SHARING' | 'ADD_EXPENSE';
+export type FinanceView =
+  | 'MAIN'
+  | 'EXPENSE_HISTORY'
+  | 'FUND_DETAIL'
+  | 'COST_SHARING'
+  | 'ADD_EXPENSE'
+  | 'FUND_CONTRIBUTIONS'
+  | 'FUND_TRANSACTIONS';
 
 // Authoritative Finance Console Dimensions (Single-Slot Standardized Hierarchy)
 export const FINANCE_MAIN_WIDTH = 360;
@@ -69,7 +89,7 @@ interface FinanceControlHologram3DProps {
  * - Internal scroll container with strict mouse-wheel isolation
  * - Seamless drill-down and cross-navigation with smooth holographic fade-in
  */
-export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> = ({
+const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> = ({
   position = [6.5, 1.5, 2.80],
   rotation = [0, -0.1745, 0],
   onClose,
@@ -96,6 +116,7 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
   const historyListScrollRef = useRef<HTMLDivElement>(null);
   const addExpenseScrollRef = useRef<HTMLDivElement>(null);
   const costSharingScrollRef = useRef<HTMLDivElement>(null);
+  const mainScrollRef = useRef<HTMLDivElement>(null);
 
   // Authoritative vehicle resolution for CO_OWNER
   const { data: vehicles = [] } = useQuery<VehicleResponse[]>({
@@ -117,13 +138,19 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
     return vehicles[0] || null;
   }, [vehicles, selectedVehicleId]);
 
-  const activeVehicleId = activeVehicle?.id || (vehicles[0]?.id ?? undefined);
-  const targetVehicleId = activeVehicle?.id || (vehicles[0]?.id ?? '');
+  const activeVehicleId = useMemo(() => {
+    if (activeVehicle?.id) return activeVehicle.id;
+    if (selectedVehicleId && selectedVehicleId.length === 36) return selectedVehicleId;
+    if (selectedVehicleId?.toUpperCase() === 'EV01') return '11111111-1111-1111-1111-111111111111';
+    return vehicles[0]?.id || '11111111-1111-1111-1111-111111111111';
+  }, [activeVehicle, selectedVehicleId, vehicles]);
+
+  const targetVehicleId = activeVehicleId;
 
   // Authoritative co-ownership group members for payer selection
   const { data: coOwnership } = useQuery({
     queryKey: ['co-ownership', activeVehicleId],
-    queryFn: () => fetchVehicleCoOwnership(activeVehicleId!),
+    queryFn: () => fetchVehicleCoOwnership(activeVehicleId),
     enabled: !!activeVehicleId,
   });
   const coOwners = coOwnership?.members || [];
@@ -131,6 +158,31 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
   // Authoritative expense summary & history
   const { data: summary, isLoading: isSummaryLoading } = useExpenseSummary(activeVehicleId);
   const { data: expenses = [], isLoading: isExpensesLoading } = useExpenses(activeVehicleId);
+
+  // Authoritative Shared Fund queries & mutations (Phase 20)
+  const {
+    data: fundSummary,
+    isLoading: isFundSummaryLoading,
+    isError: isFundSummaryError,
+    error: fundSummaryError,
+    refetch: refetchFundSummary,
+  } = useFundSummary(activeVehicleId);
+  const fundId = fundSummary?.fundId || (fundSummary as any)?.id;
+  const { data: contributions = [], refetch: refetchContributions } = useFundContributions(fundId);
+  const { data: fundTransactions = [], refetch: refetchTransactions } = useFundTransactions(fundId);
+  const submitContributionMutation = useSubmitContribution(fundId, activeVehicleId);
+  const verifyContributionMutation = useVerifyContribution(fundId, activeVehicleId);
+  const disburseCommonExpenseMutation = useDisburseCommonExpense(fundId, activeVehicleId);
+
+  // Phase 20 local state for contributions & transactions
+  const [contribAmount, setContribAmount] = useState<number | string>(500000);
+  const [contribMethod, setContribMethod] = useState<string>('BANK_TRANSFER');
+  const [contribRef, setContribRef] = useState<string>('');
+  const [contribNote, setContribNote] = useState<string>('');
+  const [contribFeedback, setContribFeedback] = useState<{ text: string; isError: boolean } | null>(null);
+  const [txFilter, setTxFilter] = useState<string>('ALL');
+  const [disburseFeedback, setDisburseFeedback] = useState<{ text: string; isError: boolean } | null>(null);
+  const [disbursingExpenseId, setDisbursingExpenseId] = useState<string | null>(null);
 
   // Source of truth for Finance month: prioritize backend summary month (e.g. '2026-10')
   const financeMonthStr = useMemo(() => {
@@ -309,7 +361,71 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
       e.stopPropagation();
     }
     setExpandedExpenseId(null);
+    setContribFeedback(null);
+    setDisburseFeedback(null);
     setFinanceView('MAIN');
+  };
+
+  const handleOpenFundContributions = (e?: React.MouseEvent | React.PointerEvent) => {
+    if (e && typeof e.stopPropagation === 'function') {
+      e.stopPropagation();
+    }
+    setExpandedExpenseId(null);
+    setContribFeedback(null);
+    setFinanceView('FUND_CONTRIBUTIONS');
+  };
+
+  const handleOpenFundTransactions = (e?: React.MouseEvent | React.PointerEvent) => {
+    if (e && typeof e.stopPropagation === 'function') {
+      e.stopPropagation();
+    }
+    setExpandedExpenseId(null);
+    setFinanceView('FUND_TRANSACTIONS');
+  };
+
+  const handleBackToFundDetail = (e?: React.MouseEvent | React.PointerEvent) => {
+    if (e && typeof e.stopPropagation === 'function') {
+      e.stopPropagation();
+    }
+    setExpandedExpenseId(null);
+    setContribFeedback(null);
+    setFinanceView('FUND_DETAIL');
+  };
+
+  const handleDisburseCommonExpense = async (expense: ExpenseResponse) => {
+    if (!fundId) {
+      setDisburseFeedback({ text: 'Chưa có thông tin Quỹ chung của nhóm.', isError: true });
+      return;
+    }
+    if (expense.status !== 'APPROVED') {
+      setDisburseFeedback({ text: 'Khoản chi đang chờ biểu quyết.', isError: true });
+      return;
+    }
+    const currentFundBalance = Number(fundSummary?.availableBalance ?? 0);
+    const expAmt = Number(expense.amount);
+    if (currentFundBalance < expAmt) {
+      setDisburseFeedback({
+        text: `Số dư quỹ không đủ (${currentFundBalance.toLocaleString('vi-VN')}đ < ${expAmt.toLocaleString('vi-VN')}đ).`,
+        isError: true,
+      });
+      return;
+    }
+
+    try {
+      setDisbursingExpenseId(expense.id);
+      setDisburseFeedback(null);
+      await disburseCommonExpenseMutation.mutateAsync({
+        expenseId: expense.id,
+        notes: `Giải ngân chi phí chung từ quỹ: ${expense.description}`,
+      });
+      setDisburseFeedback({ text: 'Đã giải ngân khoản chi thành công từ Quỹ chung!', isError: false });
+      setTimeout(() => setDisburseFeedback(null), 3500);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Không thể giải ngân từ Quỹ chung.';
+      setDisburseFeedback({ text: msg, isError: true });
+    } finally {
+      setDisbursingExpenseId(null);
+    }
   };
 
   const handleSubmitAddExpense = async () => {
@@ -432,6 +548,7 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
 
   // Strict native wheel isolation for the internal expense history, add expense & cost sharing scroll containers
   useEffect(() => {
+    const mainEl = mainScrollRef.current;
     const historyEl = historyListScrollRef.current;
     const addExpenseEl = addExpenseScrollRef.current;
     const costSharingEl = costSharingScrollRef.current;
@@ -440,6 +557,9 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
       e.stopPropagation();
     };
 
+    if (mainEl) {
+      mainEl.addEventListener('wheel', handleWheel, { passive: false });
+    }
     if (historyEl) {
       historyEl.addEventListener('wheel', handleWheel, { passive: false });
     }
@@ -451,6 +571,7 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
     }
 
     return () => {
+      if (mainEl) mainEl.removeEventListener('wheel', handleWheel);
       if (historyEl) historyEl.removeEventListener('wheel', handleWheel);
       if (addExpenseEl) addExpenseEl.removeEventListener('wheel', handleWheel);
       if (costSharingEl) costSharingEl.removeEventListener('wheel', handleWheel);
@@ -901,7 +1022,7 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                     display: 'flex',
                     flexDirection: 'column',
                     height: '100%',
-                    justifyContent: 'space-between',
+                    overflow: 'hidden',
                   }}
                 >
                   {/* Header with Icon, Title, and Close Button */}
@@ -936,9 +1057,25 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                         >
                           Tài chính
                         </h2>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                          <span
+                            style={{
+                              background: 'rgba(0, 242, 254, 0.15)',
+                              border: '1px solid rgba(0, 242, 254, 0.45)',
+                              color: '#00f2fe',
+                              fontSize: '9.5px',
+                              fontWeight: 800,
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              letterSpacing: '0.03em',
+                            }}
+                          >
+                            CHẾ ĐỘ TÀI CHÍNH DEMO
+                          </span>
+                        </div>
                         <p
                           style={{
-                            fontSize: '12.5px',
+                            fontSize: '12px',
                             color: '#94a3b8',
                             margin: '2px 0 0 0',
                             fontWeight: 500,
@@ -982,6 +1119,24 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                       <X size={17} />
                     </button>
                   </div>
+
+                  {/* Scrollable Navigation / Content Body with strict mouse-wheel isolation */}
+                  <div
+                    ref={mainScrollRef}
+                    className="finance-detail-scroll"
+                    onWheel={(e) => e.stopPropagation()}
+                    style={{
+                      flex: 1,
+                      minHeight: 0,
+                      overflowY: 'auto',
+                      overflowX: 'hidden',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      paddingRight: '4px',
+                      paddingBottom: '2px',
+                    }}
+                  >
 
                   {/* Item 1: Chi tháng này */}
                   <div
@@ -1148,64 +1303,74 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                     </div>
                   </div>
 
-                  {/* Item 3: Trạng thái */}
+                  {/* Item 3: Quỹ chung (Authoritative Backend Shared Fund) */}
                   <div
+                    onClick={handleOpenFundDetail}
+                    onPointerDown={(e) => e.stopPropagation()}
                     style={{
                       background: 'rgba(10, 30, 56, 0.78)',
                       border: '1.4px solid rgba(0, 242, 254, 0.35)',
                       borderRadius: '18px',
                       padding: '12px 18px',
                       display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      cursor: 'pointer',
                       boxShadow: '0 4px 18px rgba(0, 0, 0, 0.28)',
+                      transition: 'all 0.2s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = '#00f2fe';
+                      e.currentTarget.style.boxShadow = '0 6px 24px rgba(0, 242, 254, 0.32)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.35)';
+                      e.currentTarget.style.boxShadow = '0 4px 18px rgba(0, 0, 0, 0.28)';
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div
-                        style={{
-                          width: '38px',
-                          height: '38px',
-                          borderRadius: '50%',
-                          background: 'rgba(16, 185, 129, 0.18)',
-                          border: '1.4px solid rgba(16, 185, 129, 0.55)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0,
-                        }}
-                      >
-                        <Zap size={18} color="#10b981" />
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 500 }}>
-                          Trạng thái quỹ
-                        </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <div
                           style={{
+                            width: '38px',
+                            height: '38px',
+                            borderRadius: '50%',
+                            background: 'rgba(0, 242, 254, 0.18)',
+                            border: '1.4px solid rgba(0, 242, 254, 0.55)',
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '6px',
-                            fontSize: '15px',
-                            fontWeight: 700,
-                            color: '#10b981',
-                            marginTop: '1px',
+                            justifyContent: 'center',
+                            flexShrink: 0,
                           }}
                         >
-                          <div
-                            style={{
-                              width: '7px',
-                              height: '7px',
-                              borderRadius: '50%',
-                              background: '#10b981',
-                              boxShadow: '0 0 10px #10b981',
-                            }}
-                          />
-                          <span>{fundStatus}</span>
+                          <Wallet size={18} color="#00f2fe" />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            QUỸ CHUNG
+                          </div>
+                          <div style={{ fontSize: '16px', fontWeight: 850, color: '#00f2fe', marginTop: '1px' }}>
+                            {fundSummary ? `${Number(fundSummary.availableBalance).toLocaleString('vi-VN')}đ` : '25.000.000đ'}
+                          </div>
+                        </div>
+                      </div>
+                      <ChevronRight size={18} color="#38bdf8" />
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                      <div style={{ background: 'rgba(4, 16, 36, 0.60)', padding: '5px 8px', borderRadius: '8px', border: '1px solid rgba(0, 242, 254, 0.12)' }}>
+                        <div style={{ fontSize: '9.5px', color: '#94a3b8' }}>Đang chờ xác nhận</div>
+                        <div style={{ fontSize: '12px', fontWeight: 750, color: '#fbbf24', marginTop: '1px' }}>
+                          {fundSummary ? `${Number(fundSummary.pendingContributionTotal).toLocaleString('vi-VN')}đ` : '0đ'}
+                        </div>
+                      </div>
+                      <div style={{ background: 'rgba(4, 16, 36, 0.60)', padding: '5px 8px', borderRadius: '8px', border: '1px solid rgba(0, 242, 254, 0.12)' }}>
+                        <div style={{ fontSize: '9.5px', color: '#94a3b8' }}>Đã giải ngân</div>
+                        <div style={{ fontSize: '12px', fontWeight: 750, color: '#f87171', marginTop: '1px' }}>
+                          {fundSummary ? `${Number(fundSummary.totalDisbursementsConfirmed).toLocaleString('vi-VN')}đ` : '0đ'}
                         </div>
                       </div>
                     </div>
-                    <ChevronRight size={18} color="#38bdf8" />
                   </div>
 
                   {/* Primary Action Button: Mở bảng quỹ */}
@@ -1217,9 +1382,9 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                       background: 'linear-gradient(135deg, #00f2fe 0%, #00c6ff 100%)',
                       border: 'none',
                       borderRadius: '16px',
-                      padding: '13px 20px',
+                      padding: '12px 20px',
                       color: '#041628',
-                      fontSize: '15px',
+                      fontSize: '14.5px',
                       fontWeight: 800,
                       letterSpacing: '0.01em',
                       display: 'flex',
@@ -1240,11 +1405,74 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
-                      <ExternalLink size={18} color="#041628" />
-                      <span>Mở bảng quỹ</span>
+                      <ExternalLink size={17} color="#041628" />
+                      <span>Chi tiết quỹ chung</span>
                     </div>
-                    <ChevronRight size={18} color="#041628" />
+                    <ChevronRight size={17} color="#041628" />
                   </button>
+
+                  {/* Fund Quick Action Buttons: Đóng góp quỹ & Lịch sử giao dịch */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <button
+                      type="button"
+                      onClick={handleOpenFundContributions}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      style={{
+                        background: 'rgba(16, 185, 129, 0.15)',
+                        border: '1.2px solid rgba(16, 185, 129, 0.45)',
+                        borderRadius: '14px',
+                        padding: '10px 12px',
+                        color: '#34d399',
+                        fontSize: '12.5px',
+                        fontWeight: 750,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(16, 185, 129, 0.25)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'rgba(16, 185, 129, 0.15)';
+                      }}
+                    >
+                      <PlusCircle size={15} color="#34d399" />
+                      <span>Đóng góp quỹ</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleOpenFundTransactions}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      style={{
+                        background: 'rgba(56, 189, 248, 0.12)',
+                        border: '1.2px solid rgba(56, 189, 248, 0.40)',
+                        borderRadius: '14px',
+                        padding: '10px 12px',
+                        color: '#38bdf8',
+                        fontSize: '12.5px',
+                        fontWeight: 750,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(56, 189, 248, 0.22)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'rgba(56, 189, 248, 0.12)';
+                      }}
+                    >
+                      <History size={15} color="#38bdf8" />
+                      <span>Lịch sử giao dịch</span>
+                    </button>
+                  </div>
 
                   {/* Secondary Action Button: Phân bổ chi phí */}
                   <button
@@ -1255,75 +1483,73 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                       background: 'rgba(10, 30, 56, 0.85)',
                       border: '1.4px solid rgba(0, 242, 254, 0.45)',
                       borderRadius: '16px',
-                      padding: '12px 20px',
+                      padding: '11px 18px',
                       color: '#00f2fe',
-                      fontSize: '14.5px',
-                      fontWeight: 700,
+                      fontSize: '14px',
+                      fontWeight: 750,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       cursor: 'pointer',
                       transition: 'all 0.2s ease',
-                      pointerEvents: 'auto',
                     }}
                     onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'rgba(0, 242, 254, 0.15)';
                       e.currentTarget.style.borderColor = '#00f2fe';
-                      e.currentTarget.style.background = 'rgba(14, 38, 70, 0.95)';
-                      e.currentTarget.style.transform = 'translateX(-2px)';
-                      e.currentTarget.style.boxShadow = '0 6px 24px rgba(0, 242, 254, 0.30)';
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.45)';
                       e.currentTarget.style.background = 'rgba(10, 30, 56, 0.85)';
-                      e.currentTarget.style.transform = 'translateX(0)';
-                      e.currentTarget.style.boxShadow = 'none';
+                      e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.45)';
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
-                      <Users size={18} color="#00f2fe" />
-                      <span>Phân bổ chi phí</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Users size={17} color="#00f2fe" />
+                      <span>Phân bổ chi phí (Chi tiết)</span>
                     </div>
-                    <ChevronRight size={18} color="#00f2fe" />
+                    <ChevronRight size={17} color="#00f2fe" />
                   </button>
 
-                  {/* Tertiary Action Button: Lịch sử chi phí */}
-                  <button
-                    type="button"
-                    onClick={handleOpenExpenseHistory}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    style={{
-                      background: 'rgba(10, 30, 56, 0.75)',
-                      border: '1.2px solid rgba(0, 242, 254, 0.30)',
-                      borderRadius: '16px',
-                      padding: '12px 20px',
-                      color: '#ffffff',
-                      fontSize: '14px',
-                      fontWeight: 650,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = '#00f2fe';
-                      e.currentTarget.style.background = 'rgba(14, 38, 70, 0.90)';
-                      e.currentTarget.style.transform = 'translateX(-2px)';
-                      e.currentTarget.style.boxShadow = '0 6px 24px rgba(0, 242, 254, 0.20)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.30)';
-                      e.currentTarget.style.background = 'rgba(10, 30, 56, 0.75)';
-                      e.currentTarget.style.transform = 'translateX(0)';
-                      e.currentTarget.style.boxShadow = 'none';
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
-                      <FileText size={18} color="#00f2fe" />
-                      <span>Lịch sử chi phí</span>
-                    </div>
-                    <ChevronRight size={18} color="#00f2fe" />
-                  </button>
+                    {/* Tertiary Action Button: Lịch sử chi phí */}
+                    <button
+                      type="button"
+                      data-testid="finance-expense-history-nav-btn"
+                      onClick={handleOpenExpenseHistory}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      style={{
+                        background: 'rgba(0, 242, 254, 0.12)',
+                        border: '1.4px solid rgba(0, 242, 254, 0.40)',
+                        borderRadius: '15px',
+                        padding: '11px 18px',
+                        color: '#ffffff',
+                        fontSize: '13.5px',
+                        fontWeight: 700,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        boxShadow: '0 2px 10px rgba(0, 242, 254, 0.15)',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = '#00f2fe';
+                        e.currentTarget.style.background = 'rgba(0, 242, 254, 0.22)';
+                        e.currentTarget.style.transform = 'translateX(-2px)';
+                        e.currentTarget.style.boxShadow = '0 6px 20px rgba(0, 242, 254, 0.35)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.40)';
+                        e.currentTarget.style.background = 'rgba(0, 242, 254, 0.12)';
+                        e.currentTarget.style.transform = 'translateX(0)';
+                        e.currentTarget.style.boxShadow = '0 2px 10px rgba(0, 242, 254, 0.15)';
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                        <FileText size={17} color="#00f2fe" />
+                        <span>Lịch sử chi phí</span>
+                      </div>
+                      <ChevronRight size={17} color="#00f2fe" />
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -1584,6 +1810,23 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                     })}
                   </div>
 
+                  {disburseFeedback && (
+                    <div
+                      style={{
+                        padding: '7px 12px',
+                        borderRadius: '10px',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        background: disburseFeedback.isError ? 'rgba(239, 68, 68, 0.18)' : 'rgba(16, 185, 129, 0.18)',
+                        border: `1px solid ${disburseFeedback.isError ? 'rgba(239, 68, 68, 0.45)' : 'rgba(16, 185, 129, 0.45)'}`,
+                        color: disburseFeedback.isError ? '#f87171' : '#34d399',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {disburseFeedback.text}
+                    </div>
+                  )}
+
                   {/* D. Scrollable expense list with native wheel isolation */}
                   <div
                     ref={historyListScrollRef}
@@ -1686,6 +1929,9 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                           }
 
                           const isExpanded = expandedExpenseId === exp.id;
+                          const isPersonalCharging =
+                            (exp.category === 'CHARGING' || exp.allocationPolicy === 'USER_RESPONSIBILITY') &&
+                            exp.status === 'APPROVED';
                           return (
                             <div
                               key={exp.id}
@@ -1756,9 +2002,6 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                                         {exp.categoryLabel || meta.label}
                                       </span>
                                       {(() => {
-                                        const isPersonalCharging =
-                                          (exp.category === 'CHARGING' || exp.allocationPolicy === 'USER_RESPONSIBILITY') &&
-                                          exp.status === 'APPROVED';
                                         const statusMeta = EXPENSE_STATUS_METADATA[exp.status || 'APPROVED'] || EXPENSE_STATUS_METADATA.APPROVED;
                                         return (
                                           <>
@@ -1793,6 +2036,46 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                                                 CHỜ THANH TOÁN
                                               </span>
                                             )}
+                                            {!isPersonalCharging && (() => {
+                                              const isDisbursed = fundTransactions.some(
+                                                (tx) => tx.referenceType === 'EXPENSE' && tx.referenceId === exp.id && tx.status === 'CONFIRMED'
+                                              );
+                                              if (isDisbursed) {
+                                                return (
+                                                  <span
+                                                    data-testid={`fund-disbursed-badge-${exp.id}`}
+                                                    style={{
+                                                      background: 'rgba(16, 185, 129, 0.15)',
+                                                      border: '1px solid rgba(16, 185, 129, 0.40)',
+                                                      color: '#34d399',
+                                                      fontSize: '9.5px',
+                                                      fontWeight: 750,
+                                                      padding: '2px 6px',
+                                                      borderRadius: '9999px',
+                                                      whiteSpace: 'nowrap',
+                                                    }}
+                                                  >
+                                                    ĐÃ GIẢI NGÂN QUỸ
+                                                  </span>
+                                                );
+                                              }
+                                              if (exp.status === 'PENDING_VERIFICATION' || exp.status === 'PENDING_VOTE') {
+                                                return (
+                                                  <span
+                                                    data-testid={`pending-vote-badge-${exp.id}`}
+                                                    style={{
+                                                      color: '#fbbf24',
+                                                      fontSize: '9.5px',
+                                                      fontStyle: 'italic',
+                                                      whiteSpace: 'nowrap',
+                                                    }}
+                                                  >
+                                                    Khoản chi đang chờ biểu quyết.
+                                                  </span>
+                                                );
+                                              }
+                                              return null;
+                                            })()}
                                           </>
                                         );
                                       })()}
@@ -1825,7 +2108,7 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                                     -{Number(exp.amount).toLocaleString('vi-VN')}đ
                                   </div>
                                   <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
-                                    {((exp.category === 'CHARGING' || exp.allocationPolicy === 'USER_RESPONSIBILITY') && exp.status === 'APPROVED') && (
+                                    {isPersonalCharging && (
                                       <button
                                         type="button"
                                         data-testid={`pay-action-btn-${exp.id}`}
@@ -1854,6 +2137,64 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                                         <span>THANH TOÁN</span>
                                       </button>
                                     )}
+                                    {!isPersonalCharging && exp.status === 'APPROVED' && (() => {
+                                      const isDisbursed = fundTransactions.some(
+                                        (tx) => tx.referenceType === 'EXPENSE' && tx.referenceId === exp.id && tx.status === 'CONFIRMED'
+                                      );
+                                      if (isDisbursed) return null;
+                                      const isStaffOrAdmin = user?.role === 'STAFF' || user?.role === 'ADMIN';
+                                      const currentFundBalance = Number(fundSummary?.availableBalance ?? 0);
+                                      const expAmt = Number(exp.amount);
+                                      const canDisburse = currentFundBalance >= expAmt;
+                                      if (!isStaffOrAdmin) {
+                                        return (
+                                          <span
+                                            style={{
+                                              fontSize: '10px',
+                                              color: '#38bdf8',
+                                              fontWeight: 700,
+                                              padding: '2px 6px',
+                                              borderRadius: '6px',
+                                              background: 'rgba(0, 242, 254, 0.10)',
+                                              border: '1px solid rgba(0, 242, 254, 0.25)',
+                                            }}
+                                          >
+                                            CHỜ GIẢI NGÂN QUỸ
+                                          </span>
+                                        );
+                                      }
+                                      return (
+                                        <button
+                                          type="button"
+                                          data-testid={`disburse-btn-${exp.id}`}
+                                          disabled={!canDisburse || disbursingExpenseId === exp.id}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDisburseCommonExpense(exp);
+                                          }}
+                                          onPointerDown={(e) => e.stopPropagation()}
+                                          title={!canDisburse ? `Số dư quỹ không đủ (khả dụng: ${currentFundBalance.toLocaleString('vi-VN')}đ)` : 'Giải ngân từ Quỹ chung'}
+                                          style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '3px',
+                                            fontSize: '10.5px',
+                                            fontWeight: 750,
+                                            color: canDisburse ? '#00f2fe' : '#94a3b8',
+                                            background: canDisburse ? 'rgba(0, 242, 254, 0.16)' : 'rgba(255, 255, 255, 0.05)',
+                                            padding: '2px 7px',
+                                            borderRadius: '6px',
+                                            border: `1px solid ${canDisburse ? 'rgba(0, 242, 254, 0.45)' : 'rgba(255, 255, 255, 0.15)'}`,
+                                            cursor: canDisburse ? 'pointer' : 'not-allowed',
+                                            pointerEvents: 'auto',
+                                            transition: 'all 0.15s ease',
+                                          }}
+                                        >
+                                          <Wallet size={11} />
+                                          <span>{disbursingExpenseId === exp.id ? 'Đang giải ngân...' : 'GIẢI NGÂN QUỸ'}</span>
+                                        </button>
+                                      );
+                                    })()}
                                     <button
                                       type="button"
                                       data-testid={`expense-share-btn-${exp.id}`}
@@ -2082,9 +2423,25 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                         >
                           Quỹ chung
                         </h2>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                          <span
+                            style={{
+                              background: 'rgba(0, 242, 254, 0.15)',
+                              border: '1px solid rgba(0, 242, 254, 0.45)',
+                              color: '#00f2fe',
+                              fontSize: '9.5px',
+                              fontWeight: 800,
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              letterSpacing: '0.03em',
+                            }}
+                          >
+                            CHẾ ĐỘ TÀI CHÍNH DEMO
+                          </span>
+                        </div>
                         <p
                           style={{
-                            fontSize: '13px',
+                            fontSize: '12px',
                             color: '#94a3b8',
                             margin: '2px 0 0 0',
                             fontWeight: 500,
@@ -2130,7 +2487,7 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                     </button>
                   </div>
 
-                  {/* B. Hero summary block */}
+                  {/* B. Hero summary block (Authoritative Dynamic Ledger Balance) */}
                   <div
                     style={{
                       background: 'rgba(10, 30, 56, 0.78)',
@@ -2145,30 +2502,139 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                     }}
                   >
                     <div>
-                      <div style={{ fontSize: '11.5px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 650, letterSpacing: '0.04em' }}>
-                        Tổng quỹ hiện tại
+                      <div style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 650, letterSpacing: '0.04em' }}>
+                        Số dư khả dụng
                       </div>
                       <div style={{ fontSize: '24px', fontWeight: 850, color: '#00f2fe', marginTop: '2px', letterSpacing: '-0.01em' }}>
-                        25.000.000đ
+                        {fundSummary ? `${Number(fundSummary.availableBalance).toLocaleString('vi-VN')}đ` : '25.000.000đ'}
                       </div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '11.5px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 650, letterSpacing: '0.04em' }}>
+                      <div style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 650, letterSpacing: '0.04em' }}>
                         Phần của bạn ({currentUserOwnershipPercentage}%)
                       </div>
                       <div style={{ fontSize: '19px', fontWeight: 800, color: '#10b981', marginTop: '2px' }}>
-                        {((25000000 * currentUserOwnershipPercentage) / 100).toLocaleString('vi-VN')}đ
+                        {fundSummary
+                          ? `${Math.round((Number(fundSummary.availableBalance) * currentUserOwnershipPercentage) / 100).toLocaleString('vi-VN')}đ`
+                          : `${((25000000 * currentUserOwnershipPercentage) / 100).toLocaleString('vi-VN')}đ`}
                       </div>
                     </div>
                   </div>
 
-                  {/* C. Recurring cost blocks */}
+                  {/* C. Quick Action Buttons */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      onClick={handleOpenFundContributions}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      style={{
+                        background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.25) 0%, rgba(5, 150, 105, 0.35) 100%)',
+                        border: '1.4px solid #10b981',
+                        borderRadius: '14px',
+                        padding: '12px 14px',
+                        color: '#34d399',
+                        fontSize: '13px',
+                        fontWeight: 800,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '7px',
+                        cursor: 'pointer',
+                        boxShadow: '0 4px 14px rgba(16, 185, 129, 0.20)',
+                        transition: 'all 0.2s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'linear-gradient(135deg, rgba(16, 185, 129, 0.40) 0%, rgba(5, 150, 105, 0.50) 100%)';
+                        e.currentTarget.style.transform = 'translateY(-1px)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'linear-gradient(135deg, rgba(16, 185, 129, 0.25) 0%, rgba(5, 150, 105, 0.35) 100%)';
+                        e.currentTarget.style.transform = 'translateY(0)';
+                      }}
+                    >
+                      <PlusCircle size={16} color="#34d399" />
+                      <span>Đóng góp quỹ</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleOpenFundTransactions}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      style={{
+                        background: 'rgba(56, 189, 248, 0.15)',
+                        border: '1.4px solid rgba(56, 189, 248, 0.45)',
+                        borderRadius: '14px',
+                        padding: '12px 14px',
+                        color: '#38bdf8',
+                        fontSize: '13px',
+                        fontWeight: 800,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '7px',
+                        cursor: 'pointer',
+                        boxShadow: '0 4px 14px rgba(56, 189, 248, 0.15)',
+                        transition: 'all 0.2s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(56, 189, 248, 0.25)';
+                        e.currentTarget.style.transform = 'translateY(-1px)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'rgba(56, 189, 248, 0.15)';
+                        e.currentTarget.style.transform = 'translateY(0)';
+                      }}
+                    >
+                      <History size={16} color="#38bdf8" />
+                      <span>Lịch sử giao dịch</span>
+                    </button>
+                  </div>
+
+                  {/* D. Ledger statistics breakdown */}
+                  <div
+                    style={{
+                      background: 'rgba(6, 18, 36, 0.65)',
+                      border: '1.2px solid rgba(0, 242, 254, 0.18)',
+                      borderRadius: '16px',
+                      padding: '12px 16px',
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(3, 1fr)',
+                      gap: '8px',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 650 }}>
+                        Đang chờ xác nhận
+                      </div>
+                      <div style={{ fontSize: '14px', fontWeight: 800, color: '#fbbf24', marginTop: '3px' }}>
+                        {fundSummary ? `${Number(fundSummary.pendingContributionTotal).toLocaleString('vi-VN')}đ` : '0đ'}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 650 }}>
+                        Tổng đóng góp
+                      </div>
+                      <div style={{ fontSize: '14px', fontWeight: 800, color: '#10b981', marginTop: '3px' }}>
+                        {fundSummary ? `${Number(fundSummary.totalContributionsConfirmed).toLocaleString('vi-VN')}đ` : '25.000.000đ'}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 650 }}>
+                        Tổng chi đã duyệt
+                      </div>
+                      <div style={{ fontSize: '14px', fontWeight: 800, color: '#f87171', marginTop: '3px' }}>
+                        {fundSummary ? `${Number(fundSummary.totalDisbursementsConfirmed).toLocaleString('vi-VN')}đ` : '0đ'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* E. Recurring cost blocks */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 }}>
                     <div style={{ fontSize: '12px', fontWeight: 750, color: '#a5f3fc', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      Khoản chi định kỳ
+                      Khoản chi định kỳ ước tính
                     </div>
                     {[
-                      { label: 'Sạc điện công cộng', cost: '1.250.000đ', rawCost: 1250000, icon: Zap },
                       { label: 'Bảo dưỡng định kỳ', cost: '1.800.000đ', rawCost: 1800000, icon: CheckCircle2 },
                       { label: 'Vệ sinh & bãi đỗ', cost: '400.000đ', rawCost: 400000, icon: Calendar },
                     ].map((item, idx) => {
@@ -2179,39 +2645,37 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                           style={{
                             background: 'rgba(10, 30, 56, 0.65)',
                             borderRadius: '15px',
-                            padding: '11px 16px',
+                            padding: '10px 14px',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'space-between',
                             border: '1.2px solid rgba(0, 242, 254, 0.16)',
-                            transition: 'all 0.2s ease',
                           }}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '11px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                             <div
                               style={{
-                                width: '32px',
-                                height: '32px',
-                                borderRadius: '10px',
+                                width: '30px',
+                                height: '30px',
+                                borderRadius: '9px',
                                 background: 'rgba(0, 242, 254, 0.12)',
                                 border: '1.2px solid rgba(0, 242, 254, 0.25)',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                flexShrink: 0,
                               }}
                             >
-                              <item.icon size={16} color="#00f2fe" />
+                              <item.icon size={15} color="#00f2fe" />
                             </div>
-                            <span style={{ fontSize: '13.5px', fontWeight: 700, color: '#f8fafc' }}>
+                            <span style={{ fontSize: '13px', fontWeight: 700, color: '#f8fafc' }}>
                               {item.label}
                             </span>
                           </div>
                           <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: '14px', fontWeight: 800, color: '#ffffff' }}>
+                            <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#ffffff' }}>
                               {item.cost}
                             </div>
-                            <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 500, marginTop: '1px' }}>
+                            <div style={{ fontSize: '10.5px', color: '#94a3b8', fontWeight: 500 }}>
                               Bạn: <span style={{ color: '#38bdf8', fontWeight: 650 }}>{shareVal.toLocaleString('vi-VN')}đ</span>
                             </div>
                           </div>
@@ -2220,52 +2684,13 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                     })}
                   </div>
 
-                  {/* D. Mini insight section */}
-                  <div
-                    style={{
-                      background: 'rgba(6, 18, 36, 0.60)',
-                      border: '1.2px solid rgba(0, 242, 254, 0.16)',
-                      borderRadius: '16px',
-                      padding: '12px 16px',
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(3, 1fr)',
-                      gap: '8px',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontSize: '10.5px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 650 }}>
-                        Tỷ lệ sở hữu
-                      </div>
-                      <div style={{ fontSize: '14px', fontWeight: 800, color: '#38bdf8', marginTop: '3px' }}>
-                        {currentUserOwnershipPercentage}% (Bạn)
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '10.5px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 650 }}>
-                        Chi tháng này
-                      </div>
-                      <div style={{ fontSize: '14px', fontWeight: 800, color: '#00f2fe', marginTop: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {formattedMonthlyExpense}
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '10.5px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 650 }}>
-                        Khoản gần nhất
-                      </div>
-                      <div style={{ fontSize: '14px', fontWeight: 800, color: '#10b981', marginTop: '3px' }}>
-                        1.250.000đ
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* E. Footer actions */}
+                  {/* F. Footer actions */}
                   <div
                     style={{
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
-                      paddingTop: '12px',
+                      paddingTop: '10px',
                       borderTop: '1px solid rgba(255, 255, 255, 0.10)',
                       flexShrink: 0,
                     }}
@@ -2278,7 +2703,7 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                         background: 'rgba(0, 242, 254, 0.10)',
                         border: '1.2px solid rgba(0, 242, 254, 0.35)',
                         borderRadius: '14px',
-                        padding: '9px 18px',
+                        padding: '9px 16px',
                         color: '#00f2fe',
                         fontSize: '12.5px',
                         fontWeight: 700,
@@ -2314,6 +2739,737 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
                     >
                       Đóng
                     </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ========================================================
+                  VIEW: FUND CONTRIBUTIONS SUB-VIEW (SAME 3D SLOT)
+                  ======================================================== */}
+              {financeView === 'FUND_CONTRIBUTIONS' && (
+                <div
+                  key="finance-fund-contributions-view"
+                  className="finance-view-fade-in finance-detail-scroll"
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    width: '100%',
+                    height: '100%',
+                    minWidth: 0,
+                    minHeight: 0,
+                    gap: '12px',
+                    overflowY: 'auto',
+                    boxSizing: 'border-box',
+                    paddingRight: '4px',
+                    color: '#ffffff',
+                    pointerEvents: 'auto',
+                  }}
+                  onWheel={(e) => e.stopPropagation()}
+                >
+                  {/* Header */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <button
+                        type="button"
+                        onClick={handleBackToFundDetail}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        style={{
+                          width: '34px',
+                          height: '34px',
+                          borderRadius: '50%',
+                          background: 'rgba(255, 255, 255, 0.08)',
+                          border: '1px solid rgba(255, 255, 255, 0.20)',
+                          color: '#00f2fe',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <ArrowLeft size={16} />
+                      </button>
+                      <div>
+                        <h2 style={{ fontSize: '19px', fontWeight: 850, margin: 0, color: '#ffffff', textTransform: 'uppercase' }}>
+                          Đóng góp quỹ chung
+                        </h2>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                          <span
+                            style={{
+                              background: 'rgba(0, 242, 254, 0.15)',
+                              border: '1px solid rgba(0, 242, 254, 0.45)',
+                              color: '#00f2fe',
+                              fontSize: '9.5px',
+                              fontWeight: 800,
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              letterSpacing: '0.03em',
+                            }}
+                          >
+                            CHẾ ĐỘ TÀI CHÍNH DEMO
+                          </span>
+                        </div>
+                        <p style={{ fontSize: '11.5px', color: '#94a3b8', margin: '2px 0 0 0' }}>
+                          {isFundSummaryLoading
+                            ? 'Đang tải thông tin quỹ...'
+                            : fundSummary?.groupName || 'Nhóm đồng sở hữu EV01'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleBackToMain}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      style={{
+                        width: '34px',
+                        height: '34px',
+                        borderRadius: '50%',
+                        background: 'rgba(255, 255, 255, 0.08)',
+                        border: '1px solid rgba(255, 255, 255, 0.20)',
+                        color: '#94a3b8',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+
+                  {/* Fund summary loading state indicator */}
+                  {isFundSummaryLoading && (
+                    <div
+                      style={{
+                        padding: '14px 18px',
+                        borderRadius: '12px',
+                        background: 'rgba(0, 242, 254, 0.08)',
+                        border: '1.2px solid rgba(0, 242, 254, 0.3)',
+                        color: '#00f2fe',
+                        fontSize: '13px',
+                        fontWeight: 650,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                      }}
+                    >
+                      <Loader2 size={16} className="animate-spin" color="#00f2fe" />
+                      <span>Đang tải thông tin quỹ...</span>
+                    </div>
+                  )}
+
+                  {/* Fund summary error state with retry */}
+                  {isFundSummaryError && (
+                    <div
+                      style={{
+                        padding: '14px 16px',
+                        borderRadius: '12px',
+                        background: 'rgba(239, 68, 68, 0.15)',
+                        border: '1.2px solid rgba(239, 68, 68, 0.4)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                        alignItems: 'center',
+                        textAlign: 'center',
+                      }}
+                    >
+                      <div style={{ color: '#f87171', fontSize: '12.5px', fontWeight: 650, maxWidth: '380px', lineHeight: 1.45 }}>
+                        {(() => {
+                          const errText = fundSummaryError instanceof Error ? fundSummaryError.message : '';
+                          if (
+                            errText.includes('No static resource') ||
+                            errText.includes('API Quỹ chung') ||
+                            errText.includes('404')
+                          ) {
+                            return 'Không tìm thấy API Quỹ chung. Vui lòng kiểm tra kết nối backend.';
+                          }
+                          if (errText.includes('Chưa tìm thấy') || errText.includes('quỹ chung')) {
+                            return 'Chưa tìm thấy quỹ chung của nhóm.';
+                          }
+                          return errText || 'Không thể tải thông tin Quỹ chung của nhóm.';
+                        })()}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => refetchFundSummary()}
+                        style={{
+                          background: 'rgba(239, 68, 68, 0.25)',
+                          border: '1px solid #ef4444',
+                          borderRadius: '8px',
+                          color: '#ffffff',
+                          padding: '5px 14px',
+                          fontSize: '11.5px',
+                          fontWeight: 750,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Thử lại
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Feedback Notification */}
+                  {contribFeedback && (
+                    <div
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: '10px',
+                        background: contribFeedback.isError ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                        border: `1px solid ${contribFeedback.isError ? 'rgba(239, 68, 68, 0.35)' : 'rgba(16, 185, 129, 0.35)'}`,
+                        color: contribFeedback.isError ? '#f87171' : '#34d399',
+                        fontSize: '11.5px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                      }}
+                    >
+                      {contribFeedback.isError ? <AlertTriangle size={15} /> : <Check size={15} />}
+                      <span>{contribFeedback.text}</span>
+                    </div>
+                  )}
+
+                  {/* Contribution Form Card */}
+                  <div
+                    style={{
+                      background: 'rgba(10, 30, 56, 0.78)',
+                      border: '1.4px solid rgba(0, 242, 254, 0.35)',
+                      borderRadius: '16px',
+                      padding: '14px 16px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px',
+                      boxShadow: '0 4px 18px rgba(0, 0, 0, 0.28)',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <div style={{ fontSize: '11.5px', color: '#94a3b8', fontWeight: 650, textTransform: 'uppercase' }}>
+                      Số tiền đóng góp (VND)
+                    </div>
+
+                    {/* Quick amount presets */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
+                      {[500000, 1000000, 2000000, 5000000].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setContribAmount(preset)}
+                          style={{
+                            background: Number(contribAmount) === preset ? 'rgba(0, 242, 254, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+                            border: Number(contribAmount) === preset ? '1.2px solid #00f2fe' : '1px solid rgba(255, 255, 255, 0.12)',
+                            borderRadius: '8px',
+                            color: Number(contribAmount) === preset ? '#00f2fe' : '#e2e8f0',
+                            padding: '6px 4px',
+                            fontSize: '10.5px',
+                            fontWeight: 750,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {preset >= 1000000 ? `${preset / 1000000}tr` : `${preset / 1000}k`}
+                        </button>
+                      ))}
+                    </div>
+
+                    <input
+                      type="number"
+                      value={contribAmount}
+                      onChange={(e) => setContribAmount(e.target.value)}
+                      placeholder="Nhập số tiền..."
+                      style={{
+                        background: 'rgba(4, 16, 36, 0.85)',
+                        border: '1.2px solid rgba(0, 242, 254, 0.35)',
+                        borderRadius: '10px',
+                        color: '#00f2fe',
+                        padding: '9px 12px',
+                        fontSize: '15px',
+                        fontWeight: 800,
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                        width: '100%',
+                      }}
+                    />
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <div>
+                        <div style={{ fontSize: '10px', color: '#94a3b8', marginBottom: '3px' }}>Phương thức</div>
+                        <div
+                          style={{
+                            width: '100%',
+                            background: 'rgba(4, 16, 36, 0.85)',
+                            border: '1px solid rgba(0, 242, 254, 0.25)',
+                            color: '#38bdf8',
+                            borderRadius: '8px',
+                            padding: '6px 8px',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            boxSizing: 'border-box',
+                          }}
+                        >
+                          Đóng góp mô phỏng
+                        </div>
+                      </div>
+
+                      <div>
+                        <div style={{ fontSize: '10px', color: '#94a3b8', marginBottom: '3px' }}>Mã tham chiếu demo</div>
+                        <input
+                          type="text"
+                          value={contribRef}
+                          onChange={(e) => setContribRef(e.target.value)}
+                          placeholder="Mã demo tự sinh..."
+                          style={{
+                            width: '100%',
+                            background: 'rgba(4, 16, 36, 0.85)',
+                            border: '1px solid rgba(0, 242, 254, 0.25)',
+                            color: '#ffffff',
+                            borderRadius: '8px',
+                            padding: '6px 8px',
+                            fontSize: '11px',
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Demo financial mode instructions banner */}
+                    <div
+                      style={{
+                        background: 'rgba(0, 242, 254, 0.08)',
+                        border: '1px dashed rgba(0, 242, 254, 0.35)',
+                        borderRadius: '10px',
+                        padding: '10px 12px',
+                        fontSize: '11px',
+                        color: '#38bdf8',
+                        lineHeight: 1.45,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                      }}
+                    >
+                      <ShieldCheck size={16} color="#00f2fe" style={{ flexShrink: 0 }} />
+                      <div>
+                        <div style={{ fontWeight: 750, color: '#00f2fe', marginBottom: '2px' }}>
+                          CHẾ ĐỘ TÀI CHÍNH DEMO
+                        </div>
+                        <div style={{ color: '#e2e8f0' }}>
+                          Đây là giao dịch mô phỏng phục vụ kiểm thử EVShare 3D. Không cần chuyển tiền thật.
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={isFundSummaryLoading || !fundId || submitContributionMutation.isPending}
+                      onClick={async () => {
+                        const activeFundId = fundId || fundSummary?.fundId || (fundSummary as any)?.id;
+                        if (!activeFundId) {
+                          setContribFeedback({ text: 'Đang tải thông tin quỹ, vui lòng chờ trong giây lát...', isError: true });
+                          return;
+                        }
+                        const num = Number(contribAmount);
+                        if (!num || num < 1000) {
+                          setContribFeedback({ text: 'Số tiền đóng góp tối thiểu là 1.000 VND.', isError: true });
+                          return;
+                        }
+                        try {
+                          const refCode = contribRef.trim() || `DEMO-CONTRIB-${Date.now().toString().slice(-6)}`;
+                          await submitContributionMutation.mutateAsync({
+                            amount: num,
+                            paymentMethod: 'DEMO_TRANSFER',
+                            paymentReference: refCode,
+                            note: contribNote.trim() || `Đóng góp mô phỏng quỹ từ ${user?.fullName || 'thành viên'}`,
+                            overrideFundId: activeFundId,
+                          });
+                          setContribFeedback({
+                            text: 'ĐÃ GỬI YÊU CẦU ĐÓNG GÓP DEMO — ĐANG CHỜ NHÂN VIÊN XÁC NHẬN. Số dư khả dụng giữ nguyên cho đến khi Nhân viên đối soát demo.',
+                            isError: false,
+                          });
+                          setContribRef('');
+                          refetchContributions();
+                          refetchFundSummary();
+                        } catch (err: any) {
+                          setContribFeedback({ text: err.message || 'Lỗi khi gửi yêu cầu đóng góp demo.', isError: true });
+                        }
+                      }}
+                      style={{
+                        background: (isFundSummaryLoading || !fundId)
+                          ? 'rgba(255, 255, 255, 0.10)'
+                          : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                        border: 'none',
+                        borderRadius: '12px',
+                        padding: '11px 16px',
+                        color: (isFundSummaryLoading || !fundId) ? '#94a3b8' : '#ffffff',
+                        fontSize: '13.5px',
+                        fontWeight: 800,
+                        cursor: (isFundSummaryLoading || !fundId) ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        boxShadow: (isFundSummaryLoading || !fundId) ? 'none' : '0 4px 16px rgba(16, 185, 129, 0.35)',
+                        marginTop: '2px',
+                      }}
+                    >
+                      {isFundSummaryLoading ? (
+                        <>
+                          <Loader2 size={15} className="animate-spin" />
+                          <span>Đang tải thông tin quỹ...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send size={15} />
+                          <span>{submitContributionMutation.isPending ? 'Đang gửi...' : 'GỬI YÊU CẦU ĐÓNG GÓP DEMO'}</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* History of Contributions */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ fontSize: '11.5px', fontWeight: 750, color: '#a5f3fc', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      Lịch sử đóng góp gần đây
+                    </div>
+
+                    {contributions.length === 0 ? (
+                      <div style={{ padding: '16px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', background: 'rgba(10, 30, 56, 0.4)', borderRadius: '12px' }}>
+                        Chưa có yêu cầu đóng góp nào.
+                      </div>
+                    ) : (
+                      contributions.map((c) => {
+                        const isPending = c.status === 'PENDING';
+                        const isConfirmed = c.status === 'CONFIRMED';
+                        const isStaffOrAdmin = user?.role === 'STAFF' || user?.role === 'ADMIN';
+
+                        return (
+                          <div
+                            key={c.id}
+                            style={{
+                              background: 'rgba(10, 30, 56, 0.65)',
+                              border: `1.2px solid ${isConfirmed ? 'rgba(16, 185, 129, 0.3)' : isPending ? 'rgba(245, 158, 11, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                              borderRadius: '14px',
+                              padding: '10px 14px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '6px',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <span style={{ fontSize: '13px', fontWeight: 750, color: '#f8fafc' }}>
+                                {c.contributorName}
+                              </span>
+                              <span style={{ fontSize: '14px', fontWeight: 800, color: '#10b981' }}>
+                                +{Number(c.amount).toLocaleString('vi-VN')}đ
+                              </span>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '10.5px', color: '#94a3b8' }}>
+                              <span>{c.paymentReference || 'Mã GD: DEMO'} · {new Date(c.createdAt).toLocaleDateString('vi-VN')}</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <span
+                                  style={{
+                                    background: isConfirmed ? 'rgba(16, 185, 129, 0.15)' : isPending ? 'rgba(245, 158, 11, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                    color: isConfirmed ? '#34d399' : isPending ? '#fbbf24' : '#f87171',
+                                    padding: '1px 6px',
+                                    borderRadius: '4px',
+                                    fontWeight: 750,
+                                  }}
+                                >
+                                  {isPending ? 'CHỜ XÁC NHẬN' : c.statusLabel}
+                                </span>
+                                <span
+                                  style={{
+                                    background: 'rgba(0, 242, 254, 0.12)',
+                                    color: '#00f2fe',
+                                    padding: '1px 5px',
+                                    borderRadius: '4px',
+                                    fontWeight: 750,
+                                    fontSize: '9.5px',
+                                  }}
+                                >
+                                  GIAO DỊCH DEMO
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Staff verification action */}
+                            {isPending && isStaffOrAdmin && (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    await verifyContributionMutation.mutateAsync({
+                                      contributionId: c.id,
+                                      payload: { confirmed: true, note: 'Xác nhận giao dịch demo đối soát đóng góp quỹ.' },
+                                    });
+                                    setContribFeedback({ text: `Đã xác nhận đóng góp demo ${Number(c.amount).toLocaleString('vi-VN')}đ thành công! Số dư quỹ đã tăng lên.`, isError: false });
+                                    refetchContributions();
+                                    refetchFundSummary();
+                                    refetchTransactions();
+                                  } catch (err: any) {
+                                    setContribFeedback({ text: err.message || 'Lỗi khi xác minh.', isError: true });
+                                  }
+                                }}
+                                disabled={verifyContributionMutation.isPending}
+                                style={{
+                                  marginTop: '4px',
+                                  background: '#10b981',
+                                  border: 'none',
+                                  borderRadius: '8px',
+                                  color: '#041628',
+                                  padding: '7px 12px',
+                                  fontSize: '11.5px',
+                                  fontWeight: 800,
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '6px',
+                                }}
+                              >
+                                <ShieldCheck size={14} />
+                                <span>{verifyContributionMutation.isPending ? 'Đang xác nhận...' : 'XÁC NHẬN ĐÓNG GÓP DEMO'}</span>
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ========================================================
+                  VIEW: FUND TRANSACTIONS SUB-VIEW (AUDITED LEDGER)
+                  ======================================================== */}
+              {financeView === 'FUND_TRANSACTIONS' && (
+                <div
+                  key="finance-fund-transactions-view"
+                  className="finance-view-fade-in finance-detail-scroll"
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    width: '100%',
+                    height: '100%',
+                    minWidth: 0,
+                    minHeight: 0,
+                    gap: '12px',
+                    overflowY: 'auto',
+                    boxSizing: 'border-box',
+                    paddingRight: '4px',
+                    color: '#ffffff',
+                    pointerEvents: 'auto',
+                  }}
+                  onWheel={(e) => e.stopPropagation()}
+                >
+                  {/* Header */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <button
+                        type="button"
+                        onClick={handleBackToFundDetail}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        style={{
+                          width: '34px',
+                          height: '34px',
+                          borderRadius: '50%',
+                          background: 'rgba(255, 255, 255, 0.08)',
+                          border: '1px solid rgba(255, 255, 255, 0.20)',
+                          color: '#00f2fe',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <ArrowLeft size={16} />
+                      </button>
+                      <div>
+                        <h2 style={{ fontSize: '19px', fontWeight: 850, margin: 0, color: '#ffffff', textTransform: 'uppercase' }}>
+                          Lịch sử giao dịch quỹ
+                        </h2>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                          <span
+                            style={{
+                              background: 'rgba(0, 242, 254, 0.15)',
+                              border: '1px solid rgba(0, 242, 254, 0.45)',
+                              color: '#00f2fe',
+                              fontSize: '9.5px',
+                              fontWeight: 800,
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              letterSpacing: '0.03em',
+                            }}
+                          >
+                            CHẾ ĐỘ TÀI CHÍNH DEMO
+                          </span>
+                        </div>
+                        <p style={{ fontSize: '11.5px', color: '#94a3b8', margin: '2px 0 0 0' }}>
+                          Sổ cái kiểm toán mô phỏng nhóm EV01
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleBackToMain}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      style={{
+                        width: '34px',
+                        height: '34px',
+                        borderRadius: '50%',
+                        background: 'rgba(255, 255, 255, 0.08)',
+                        border: '1px solid rgba(255, 255, 255, 0.20)',
+                        color: '#94a3b8',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+
+                  {/* Summary row */}
+                  <div
+                    style={{
+                      background: 'rgba(10, 30, 56, 0.78)',
+                      border: '1.4px solid rgba(0, 242, 254, 0.35)',
+                      borderRadius: '16px',
+                      padding: '12px 16px',
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(3, 1fr)',
+                      gap: '8px',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: '9.5px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 650 }}>
+                        Số dư hiện có
+                      </div>
+                      <div style={{ fontSize: '14px', fontWeight: 850, color: '#00f2fe', marginTop: '2px' }}>
+                        {fundSummary ? `${Number(fundSummary.availableBalance).toLocaleString('vi-VN')}đ` : '25.000.000đ'}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '9.5px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 650 }}>
+                        Tổng thu vào
+                      </div>
+                      <div style={{ fontSize: '14px', fontWeight: 800, color: '#10b981', marginTop: '2px' }}>
+                        +{fundSummary ? `${Number(fundSummary.totalContributionsConfirmed).toLocaleString('vi-VN')}đ` : '25.000.000đ'}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '9.5px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 650 }}>
+                        Tổng chi ra
+                      </div>
+                      <div style={{ fontSize: '14px', fontWeight: 800, color: '#f87171', marginTop: '2px' }}>
+                        -{fundSummary ? `${Number(fundSummary.totalDisbursementsConfirmed).toLocaleString('vi-VN')}đ` : '0đ'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Filter Pills */}
+                  <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                    {[
+                      { id: 'ALL', label: 'Tất cả' },
+                      { id: 'INFLOW', label: 'Thu vào (+)' },
+                      { id: 'OUTFLOW', label: 'Chi ra (-)' },
+                    ].map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => setTxFilter(f.id)}
+                        style={{
+                          background: txFilter === f.id ? 'rgba(0, 242, 254, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+                          border: txFilter === f.id ? '1.2px solid #00f2fe' : '1px solid rgba(255, 255, 255, 0.12)',
+                          borderRadius: '8px',
+                          color: txFilter === f.id ? '#00f2fe' : '#94a3b8',
+                          padding: '4px 10px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Ledger transaction items */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {fundTransactions.length === 0 ? (
+                      <div style={{ padding: '16px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', background: 'rgba(10, 30, 56, 0.4)', borderRadius: '12px' }}>
+                        Chưa có giao dịch sổ cái nào.
+                      </div>
+                    ) : (
+                      fundTransactions
+                        .filter((tx) => {
+                          if (txFilter === 'INFLOW') return tx.direction === 'INFLOW';
+                          if (txFilter === 'OUTFLOW') return tx.direction === 'OUTFLOW';
+                          return true;
+                        })
+                        .map((tx) => {
+                          const isInflow = tx.direction === 'INFLOW';
+                          return (
+                            <div
+                              key={tx.id}
+                              style={{
+                                background: 'rgba(10, 30, 56, 0.65)',
+                                border: '1.2px solid rgba(0, 242, 254, 0.16)',
+                                borderRadius: '14px',
+                                padding: '10px 14px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '4px',
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <span style={{ fontSize: '12.5px', fontWeight: 750, color: '#f8fafc' }}>
+                                  {tx.description}
+                                </span>
+                                <span
+                                  style={{
+                                    fontSize: '14px',
+                                    fontWeight: 850,
+                                    color: isInflow ? '#10b981' : '#f87171',
+                                  }}
+                                >
+                                  {isInflow ? '+' : '-'}{Number(tx.amount).toLocaleString('vi-VN')}đ
+                                </span>
+                              </div>
+
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '10.5px', color: '#94a3b8' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span>{new Date(tx.createdAt).toLocaleDateString('vi-VN')} · {tx.transactionTypeLabel}</span>
+                                  <span
+                                    style={{
+                                      background: 'rgba(0, 242, 254, 0.12)',
+                                      color: '#00f2fe',
+                                      padding: '1px 5px',
+                                      borderRadius: '4px',
+                                      fontWeight: 750,
+                                      fontSize: '9px',
+                                    }}
+                                  >
+                                    GIAO DỊCH DEMO
+                                  </span>
+                                </div>
+                                {tx.balanceAfter != null && (
+                                  <span style={{ color: '#38bdf8', fontWeight: 650 }}>
+                                    Số dư sau GD: {Number(tx.balanceAfter).toLocaleString('vi-VN')}đ
+                                  </span>
+                                )}
+                              </div>
+
+                              {tx.confirmedByName && (
+                                <div style={{ fontSize: '9.5px', color: '#6ee7b7' }}>
+                                  Xác nhận bởi: {tx.confirmedByName}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
+                    )}
                   </div>
                 </div>
               )}
@@ -3527,3 +4683,181 @@ export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> =
     </>
   );
 };
+
+interface FinanceHologramErrorBoundaryProps {
+  children: ReactNode;
+  position?: [number, number, number];
+  rotation?: [number, number, number];
+  onClose?: () => void;
+}
+
+interface FinanceHologramErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+/**
+ * Defensive 3D World-Space Error Boundary for Finance Hologram Console.
+ * Catches any render or runtime exceptions within the 3D Finance subsystem,
+ * preserving the outer R3F WebGL Canvas (EV01, EV02, cameras, showroom lighting)
+ * and presenting a localized Vietnamese holographic retry/error card.
+ */
+class FinanceHologramErrorBoundary extends Component<
+  FinanceHologramErrorBoundaryProps,
+  FinanceHologramErrorBoundaryState
+> {
+  public state: FinanceHologramErrorBoundaryState = {
+    hasError: false,
+    error: null,
+  };
+
+  public static getDerivedStateFromError(error: Error): FinanceHologramErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('[FinanceControlHologram3D] Intercepted runtime exception:', error, errorInfo);
+  }
+
+  public handleReset = () => {
+    this.setState({ hasError: false, error: null });
+  };
+
+  public render() {
+    if (this.state.hasError) {
+      const position = this.props.position || [6.5, 1.5, 2.80];
+      const rotation = this.props.rotation || [0, -0.1745, 0];
+      return (
+        <group position={position} rotation={rotation}>
+          <Html
+            transform
+            distanceFactor={3.25}
+            position={[0, 0, 0.015]}
+            style={{
+              pointerEvents: 'auto',
+              userSelect: 'none',
+              transformStyle: 'preserve-3d',
+            }}
+          >
+            <div
+              data-testid="finance-3d-error-boundary-fallback"
+              style={{
+                width: '380px',
+                padding: '24px 26px',
+                background: 'linear-gradient(180deg, rgba(8, 22, 42, 0.95) 0%, rgba(4, 12, 26, 0.98) 100%)',
+                backdropFilter: 'blur(26px)',
+                WebkitBackdropFilter: 'blur(26px)',
+                border: '2px solid rgba(239, 68, 68, 0.6)',
+                borderRadius: '24px',
+                color: '#ffffff',
+                fontFamily: "var(--font-family, 'Outfit', sans-serif)",
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                textAlign: 'center',
+                boxShadow: '0 28px 70px rgba(0, 0, 0, 0.88), 0 0 35px rgba(239, 68, 68, 0.3)',
+              }}
+            >
+              <div
+                style={{
+                  width: '46px',
+                  height: '46px',
+                  borderRadius: '50%',
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1.2px solid rgba(239, 68, 68, 0.45)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#ef4444',
+                  marginBottom: '14px',
+                }}
+              >
+                <AlertTriangle size={24} />
+              </div>
+
+              <h3
+                style={{
+                  color: '#f87171',
+                  fontSize: '15px',
+                  fontWeight: 800,
+                  marginBottom: '8px',
+                  letterSpacing: '0.01em',
+                }}
+              >
+                Lỗi hiển thị bảng điều khiển tài chính
+              </h3>
+
+              <p
+                style={{
+                  color: '#94a3b8',
+                  fontSize: '11.5px',
+                  lineHeight: '1.5',
+                  marginBottom: '18px',
+                  maxWidth: '320px',
+                }}
+              >
+                {this.state.error?.message || 'Đã xảy ra sự cố trong quá trình kết xuất dữ liệu tài chính 3D.'}
+              </p>
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  type="button"
+                  data-testid="finance-3d-retry-btn"
+                  onClick={this.handleReset}
+                  style={{
+                    background: 'linear-gradient(135deg, #00f2fe 0%, #00c6ff 100%)',
+                    border: 'none',
+                    borderRadius: '10px',
+                    padding: '8px 18px',
+                    color: '#041628',
+                    fontSize: '11.5px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: '0 4px 14px rgba(0, 242, 254, 0.35)',
+                  }}
+                >
+                  <RotateCcw size={13} />
+                  <span>THỬ LẠI</span>
+                </button>
+
+                {this.props.onClose && (
+                  <button
+                    type="button"
+                    onClick={this.props.onClose}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.08)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '10px',
+                      padding: '8px 14px',
+                      color: '#94a3b8',
+                      fontSize: '11.5px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <span>ĐÓNG</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </Html>
+        </group>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+export const FinanceControlHologram3D: React.FC<FinanceControlHologram3DProps> = (props) => (
+  <FinanceHologramErrorBoundary
+    position={props.position}
+    rotation={props.rotation}
+    onClose={props.onClose}
+  >
+    <FinanceControlHologram3DContent {...props} />
+  </FinanceHologramErrorBoundary>
+);

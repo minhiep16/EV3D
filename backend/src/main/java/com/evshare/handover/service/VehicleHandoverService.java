@@ -684,6 +684,11 @@ public class VehicleHandoverService {
             throw new IllegalStateException("Dữ liệu người nhận hoặc xe không đồng nhất với lịch đặt");
         }
 
+        // Do not allow CO_OWNER to confirm their own STAFF handover
+        if (booking.getUser() != null && booking.getUser().getId().equals(staffId)) {
+            throw new AccessDeniedException("Chủ xe không được tự xác nhận bàn giao cho lịch đặt của chính mình");
+        }
+
         if (booking.getStatus() == BookingStatus.CANCELLED) {
             throw new IllegalStateException("Lịch đặt đã bị hủy, không thể bàn giao xe");
         }

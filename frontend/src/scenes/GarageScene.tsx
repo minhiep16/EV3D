@@ -31,6 +31,7 @@ import { StaffMaintenancePanel } from '../components/three/maintenance/StaffMain
 import { CoOwnerMaintenancePanel } from '../components/three/maintenance/CoOwnerMaintenancePanel';
 import { BatteryHealthPanel } from '../components/three/battery/BatteryHealthPanel';
 import { ChargingPanel } from '../components/three/charging/ChargingPanel';
+import { CoOwnerVotingPanel } from '../components/three/voting/CoOwnerVotingPanel';
 import { CoOwnerVehiclePanel } from '../components/three/vehicles/CoOwnerVehiclePanel';
 import { CoOwnerQuickActionDock } from '../components/three/vehicles/CoOwnerQuickActionDock';
 import { CoOwnerVehicleInfoPanel } from '../components/three/vehicles/CoOwnerVehicleInfoPanel';
@@ -78,6 +79,9 @@ export const GarageScene: React.FC = () => {
   const vehicleInspectionMode = useWorldStore((state) => state.vehicleInspectionMode);
   const vehicleBatteryXrayMode = useWorldStore((state) => state.vehicleBatteryXrayMode);
   const vehicleChargingMode = useWorldStore((state) => state.vehicleChargingMode);
+  const vehicleVotingMode = useWorldStore((state) => state.vehicleVotingMode);
+  const exitVehicleVotingMode = useWorldStore((state) => state.exitVehicleVotingMode);
+  const closeVotingPanel = useWorldStore((state) => state.closeVotingPanel);
   const selectedVehiclePartId = useWorldStore((state) => state.selectedVehiclePartId);
   const selectedVehiclePartCode = useWorldStore((state) => state.selectedVehiclePartCode);
   const clearVehiclePartSelection = useWorldStore((state) => state.clearVehiclePartSelection);
@@ -924,6 +928,19 @@ export const GarageScene: React.FC = () => {
               <ChargingPanel
                 vehicle={currentCoOwnerVehicle || vehicles[0]}
                 onClose={returnToVehicleOverview}
+              />
+            </PanelErrorBoundary>
+          )}
+
+          {/* Dedicated Phase 21 Screen-Space Voting Panel for CO_OWNER */}
+          {vehicleVotingMode && (currentCoOwnerVehicle || vehicles[0]) && (
+            <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0])?.id || 'ev'}-voting`}>
+              <CoOwnerVotingPanel
+                vehicle={currentCoOwnerVehicle || vehicles[0]}
+                onClose={() => {
+                  closeVotingPanel();
+                  returnToVehicleOverview();
+                }}
               />
             </PanelErrorBoundary>
           )}

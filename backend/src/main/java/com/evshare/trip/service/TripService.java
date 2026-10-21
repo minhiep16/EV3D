@@ -198,7 +198,9 @@ public class TripService {
         VehicleHandover handover = handoverOpt.get();
         String handoverStatusStr = handover.getStatus() != null ? handover.getStatus().name() : null;
 
-        if (handover.getStatus() != HandoverStatus.COMPLETED) {
+        if (handover.getStatus() != HandoverStatus.COMPLETED &&
+            handover.getStatus() != HandoverStatus.HANDED_OVER &&
+            handover.getStatus() != HandoverStatus.OWNER_CONFIRMED) {
             return TripStartEligibilityResponse.notEligible(
                     REASON_HANDOVER_NOT_COMPLETED,
                     MSG_HANDOVER_NOT_COMPLETED,
@@ -215,6 +217,17 @@ public class TripService {
             return TripStartEligibilityResponse.notEligible(
                     REASON_HANDOVER_DATA_INCONSISTENT,
                     MSG_HANDOVER_DATA_INCONSISTENT,
+                    bookingId,
+                    vehicleId,
+                    handoverStatusStr
+            );
+        }
+
+        // Prevent CO_OWNER from confirming their own STAFF handover
+        if (handover.getStaff() != null && handover.getStaff().getId().equals(currentUserId)) {
+            return TripStartEligibilityResponse.notEligible(
+                    REASON_HANDOVER_DATA_INCONSISTENT,
+                    "Chủ xe không thể tự xác nhận bàn giao của nhân viên",
                     bookingId,
                     vehicleId,
                     handoverStatusStr
@@ -275,7 +288,7 @@ public class TripService {
         return TripStartEligibilityResponse.eligible(
                 booking.getId(),
                 vehicle.getId(),
-                HandoverStatus.COMPLETED.name(),
+                handover.getStatus() != null ? handover.getStatus().name() : HandoverStatus.COMPLETED.name(),
                 vehicle.getCurrentBatteryLevel(),
                 vehicle.getOdometer()
         );
@@ -310,7 +323,9 @@ public class TripService {
         VehicleHandover handover = handoverRepository.findByBookingId(bookingId)
                 .orElseThrow(() -> new IllegalStateException(MSG_HANDOVER_NOT_COMPLETED));
 
-        if (handover.getStatus() != HandoverStatus.COMPLETED) {
+        if (handover.getStatus() != HandoverStatus.COMPLETED &&
+            handover.getStatus() != HandoverStatus.HANDED_OVER &&
+            handover.getStatus() != HandoverStatus.OWNER_CONFIRMED) {
             throw new IllegalStateException(MSG_HANDOVER_NOT_COMPLETED);
         }
 
@@ -319,6 +334,11 @@ public class TripService {
             handover.getVehicle() == null || !handover.getVehicle().getId().equals(booking.getVehicle().getId()) ||
             handover.getCoOwner() == null || !handover.getCoOwner().getId().equals(booking.getUser().getId())) {
             throw new IllegalStateException(MSG_HANDOVER_DATA_INCONSISTENT);
+        }
+
+        // Prevent CO_OWNER from confirming their own STAFF handover
+        if (handover.getStaff() != null && handover.getStaff().getId().equals(currentUserId)) {
+            throw new AccessDeniedException("Chủ xe không thể tự xác nhận bàn giao của nhân viên");
         }
 
         // 7. Time window validation (Section 14)

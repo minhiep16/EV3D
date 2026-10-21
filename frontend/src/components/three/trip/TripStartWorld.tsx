@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { queryClient } from '../../../services/queryClient';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { VehicleResponse } from '../../../types/vehicle';
 import {
   fetchActiveTripForVehicle,
@@ -42,9 +41,11 @@ export const TripStartWorld: React.FC<TripStartWorldProps> = ({ vehicle }) => {
   // 3. Resolve stable bookingId for Trip Start
   const bookingId = completedHandover?.bookingId || candidateBooking?.id || activeTrip?.bookingId;
 
-  // 4. Start Trip Mutation
   const startTripMutation = useMutation({
     mutationFn: async () => {
+      if (!isTripActive && !completedHandover) {
+        throw new Error('Chưa hoàn tất bàn giao xe từ nhân viên. Không thể bắt đầu chuyến đi.');
+      }
       if (!bookingId) {
         throw new Error('Không tìm thấy lịch đặt xe hợp lệ.');
       }
@@ -122,18 +123,16 @@ export const TripStartWorld: React.FC<TripStartWorldProps> = ({ vehicle }) => {
       />
 
       {/* 2. Holographic 3D Panel */}
-      <QueryClientProvider client={queryClient}>
-        <TripStartPanel3D
-          vehicle={vehicle}
-          handover={completedHandover}
-          activeTrip={activeTrip}
-          eligibility={tripEligibility}
-          isStarting={startTripMutation.isPending}
-          onStartTrip={handleStartTrip}
-          onBack={returnToVehicleOverview}
-          panelPosition={panelPosition}
-        />
-      </QueryClientProvider>
+      <TripStartPanel3D
+        vehicle={vehicle}
+        handover={completedHandover}
+        activeTrip={activeTrip}
+        eligibility={tripEligibility}
+        isStarting={startTripMutation.isPending}
+        onStartTrip={handleStartTrip}
+        onBack={returnToVehicleOverview}
+        panelPosition={panelPosition}
+      />
     </group>
   );
 };

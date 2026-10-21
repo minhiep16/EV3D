@@ -1,0 +1,63 @@
+package com.evshare.voting.dto;
+
+import com.evshare.voting.entity.*;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+
+public record VoteProposalResponse(
+        UUID id,
+        UUID groupId,
+        String groupName,
+        UUID vehicleId,
+        String vehicleName,
+        String vehicleLicensePlate,
+        UUID createdByUserId,
+        String creatorName,
+        VoteProposalType proposalType,
+        String proposalTypeVietnamese,
+        String title,
+        String description,
+        BigDecimal estimatedAmount,
+        BigDecimal approvedBudget,
+        String currency,
+        VoteProposalStatus status,
+        String statusVietnamese,
+        VoteDecisionRule decisionRule,
+        String decisionRuleVietnamese,
+        BigDecimal requiredQuorumPercentage,
+        BigDecimal requiredThresholdPercentage,
+        String agreementVersion,
+        Instant votingStartsAt,
+        Instant votingEndsAt,
+        Instant finalizedAt,
+        ProposalExecutionStatus executionStatus,
+        String executionStatusVietnamese,
+        Instant executionStartedAt,
+        Instant executionCompletedAt,
+        String executedByStaffName,
+        BigDecimal actualCost,
+        UUID relatedMaintenanceRequestId,
+        UUID relatedExpenseId,
+        BigDecimal totalEligibleWeight,
+        int eligibleVoterCount,
+        BigDecimal participatingWeight,
+        int participatingVoterCount,
+        BigDecimal approveWeight,
+        BigDecimal rejectWeight,
+        BigDecimal abstainWeight,
+        int approveCount,
+        int rejectCount,
+        int abstainCount,
+        boolean quorumSatisfied,
+        boolean thresholdSatisfied,
+        ProposalVoteChoice currentUserVote,
+        BigDecimal currentUserWeight,
+        boolean isEligibleToVote,
+        List<ProposalEligibilityDto> eligibleVoters,
+        List<ProposalVoteResponse> votes,
+        Instant createdAt,
+        Instant updatedAt
+) {}

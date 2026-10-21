@@ -17,6 +17,7 @@ import {
   User,
   AlertCircle,
   Layers,
+  Briefcase,
 } from 'lucide-react';
 import { VehicleResponse } from '../../../types/vehicle';
 import {
@@ -43,6 +44,8 @@ import { fetchVehicleDamages } from '../../../services/damageApi';
 import { DamageRecordResponse } from '../../../types/damage';
 import { useWorldStore } from '../../../store/worldStore';
 import { getPartById } from '../../../data/vehicleParts';
+import { StaffApprovedWorkSection } from '../../fleet/StaffApprovedWorkSection';
+import { useStaffApprovedWork } from '../../../hooks/useVoting';
 
 interface StaffMaintenanceItemCardProps {
   item: MaintenanceResponse;
@@ -951,6 +954,7 @@ export const StaffMaintenancePanel: React.FC<StaffMaintenancePanelProps> = ({
   );
 
   // Local state for UI forms & dialogs
+  const [activeTab, setActiveTab] = useState<'MAINTENANCE' | 'APPROVED_WORK'>('MAINTENANCE');
   const [showCreateForm, setShowCreateForm] = useState(!!preselectedDamageId);
   const [schedulingId, setSchedulingId] = useState<string | null>(null);
   const [scheduleDateTime, setScheduleDateTime] = useState('');
@@ -958,6 +962,14 @@ export const StaffMaintenancePanel: React.FC<StaffMaintenancePanelProps> = ({
   const [completionNote, setCompletionNote] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Authoritative approved proposal works for this vehicle (Phase 21)
+  const { data: approvedWorks = [] } = useStaffApprovedWork(vehicle.id);
+  const pendingExecutionCount = useMemo(() => {
+    return approvedWorks.filter(
+      (w) => w.status === 'APPROVED' || w.executionStatus === 'IN_PROGRESS'
+    ).length;
+  }, [approvedWorks]);
 
   // Form input state for Create Maintenance
   const [formTitle, setFormTitle] = useState(
@@ -1313,7 +1325,7 @@ export const StaffMaintenancePanel: React.FC<StaffMaintenancePanelProps> = ({
         </div>
 
         {/* Primary Action Button: [ + TẠO YÊU CẦU BẢO DƯỠNG ] */}
-        {!showCreateForm && (
+        {activeTab === 'MAINTENANCE' && !showCreateForm && (
           <button
             type="button"
             onClick={() => {
@@ -1342,6 +1354,76 @@ export const StaffMaintenancePanel: React.FC<StaffMaintenancePanelProps> = ({
             <span>TẠO YÊU CẦU BẢO DƯỠNG</span>
           </button>
         )}
+      </div>
+
+      {/* Phase 21: Tab Switcher (Bảo dưỡng thường quy vs Công việc biểu quyết đã duyệt) */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: '8px',
+          padding: '10px 18px 0',
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setActiveTab('MAINTENANCE')}
+          style={{
+            background: activeTab === 'MAINTENANCE' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255, 255, 255, 0.04)',
+            border: activeTab === 'MAINTENANCE' ? '1px solid #f59e0b' : '1px solid rgba(255, 255, 255, 0.08)',
+            borderRadius: '8px',
+            padding: '8px 10px',
+            color: activeTab === 'MAINTENANCE' ? '#fbbf24' : '#94a3b8',
+            fontSize: '11px',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+            transition: 'all 0.15s',
+          }}
+        >
+          <Wrench size={13} />
+          <span>BẢO DƯỠNG ({activeRequests.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('APPROVED_WORK')}
+          style={{
+            background: activeTab === 'APPROVED_WORK' ? 'rgba(0, 242, 254, 0.2)' : 'rgba(255, 255, 255, 0.04)',
+            border: activeTab === 'APPROVED_WORK' ? '1px solid #00f2fe' : '1px solid rgba(255, 255, 255, 0.08)',
+            borderRadius: '8px',
+            padding: '8px 10px',
+            color: activeTab === 'APPROVED_WORK' ? '#00f2fe' : '#94a3b8',
+            fontSize: '11px',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+            transition: 'all 0.15s',
+          }}
+        >
+          <Briefcase size={13} />
+          <span>ĐÃ DUYỆT</span>
+          {pendingExecutionCount > 0 && (
+            <span
+              style={{
+                background: '#00f2fe',
+                color: '#070b14',
+                fontSize: '9.5px',
+                fontWeight: 900,
+                padding: '1px 6px',
+                borderRadius: '10px',
+              }}
+            >
+              {pendingExecutionCount}
+            </span>
+          )}
+        </button>
       </div>
 
       {/* Notifications / Error Banner */}
@@ -1403,7 +1485,14 @@ export const StaffMaintenancePanel: React.FC<StaffMaintenancePanelProps> = ({
           gap: '14px',
         }}
       >
-        {/* 3. Inline Create Maintenance Form (Requirement 13) */}
+        {activeTab === 'APPROVED_WORK' ? (
+          <StaffApprovedWorkSection
+            vehicle={vehicle}
+            onRefreshParent={handleQueryInvalidation}
+          />
+        ) : (
+          <>
+            {/* 3. Inline Create Maintenance Form (Requirement 13) */}
         {showCreateForm && (
           <form
             onSubmit={handleCreateSubmit}
@@ -1908,6 +1997,8 @@ export const StaffMaintenancePanel: React.FC<StaffMaintenancePanelProps> = ({
             </div>
           )}
         </div>
+          </>
+        )}
       </div>
 
       {/* 4. Footer Actions */}

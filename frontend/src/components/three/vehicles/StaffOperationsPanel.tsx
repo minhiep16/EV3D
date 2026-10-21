@@ -31,7 +31,13 @@ import {
   ClipboardList,
   AlertCircle,
   Gauge,
+  ChevronRight,
+  Briefcase,
 } from 'lucide-react';
+import { StaffFinancialVerificationPanel } from '../../fleet/StaffFinancialVerificationPanel';
+import { StaffApprovedWorkSection } from '../../fleet/StaffApprovedWorkSection';
+import { useFundSummary, useFundContributions, usePendingPersonalPayments } from '../../../hooks/useFund';
+import { useStaffApprovedWork } from '../../../hooks/useVoting';
 
 function formatDate(isoString?: string): string {
   if (!isoString) return '--/--/----';
@@ -104,6 +110,23 @@ export const StaffOperationsPanel: React.FC<StaffOperationsPanelProps> = ({
   const enterVehicleDamageMappingMode = useWorldStore((state) => state.enterVehicleDamageMappingMode);
   const enterVehicleDamageHistoryMode = useWorldStore((state) => state.enterVehicleDamageHistoryMode);
   const queryClient = useQueryClient();
+
+  const [showFinanceVerification, setShowFinanceVerification] = React.useState(false);
+  const [showApprovedWork, setShowApprovedWork] = React.useState(false);
+  const { data: approvedWorks = [] } = useStaffApprovedWork(vehicle.id);
+  const pendingExecutionCount = React.useMemo(() => {
+    return approvedWorks.filter(
+      (w) => w.status === 'APPROVED' || w.executionStatus === 'IN_PROGRESS'
+    ).length;
+  }, [approvedWorks]);
+  const { data: fundSummary } = useFundSummary(vehicle.id);
+  const resolvedFundId = fundSummary?.fundId || fundSummary?.id;
+  const { data: contributions = [] } = useFundContributions(resolvedFundId);
+  const { data: pendingPersonalPayments = [] } = usePendingPersonalPayments(vehicle.id);
+  const pendingContributionsCount = React.useMemo(() => {
+    return contributions.filter((c) => c.status === 'PENDING').length;
+  }, [contributions]);
+  const totalPendingFinances = pendingContributionsCount + pendingPersonalPayments.length;
 
   const [isConfirmingReturn, setIsConfirmingReturn] = React.useState(false);
   const [returnSuccessMsg, setReturnSuccessMsg] = React.useState<string | null>(null);
@@ -423,11 +446,144 @@ export const StaffOperationsPanel: React.FC<StaffOperationsPanelProps> = ({
         <span>EV01 &bull; {vehicle.name || 'VinFast VF e34'}</span>
       </div>
 
-      {/* ======================================================== */}
-      {/* CASE 1: AUTHORITATIVE ACTIVE TRIP OPERATIONAL CARD      */}
-      {/* ======================================================== */}
-      {isTripActive && activeTrip ? (
+      {/* Phase 20 Financial Verification Entry Point */}
+      <button
+        type="button"
+        onClick={() => setShowFinanceVerification(!showFinanceVerification)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: showFinanceVerification ? 'rgba(0, 242, 254, 0.22)' : 'rgba(0, 242, 254, 0.08)',
+          border: showFinanceVerification ? '1px solid #00f2fe' : '1px solid rgba(0, 242, 254, 0.3)',
+          borderRadius: '10px',
+          padding: '8px 12px',
+          marginBottom: '14px',
+          cursor: 'pointer',
+          transition: 'all 0.15s ease',
+          color: '#ffffff',
+          width: '100%',
+          boxSizing: 'border-box',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <ShieldCheck size={16} color="#00f2fe" />
+          <span style={{ fontSize: '11.5px', fontWeight: 800, letterSpacing: '0.03em' }}>
+            DUYỆT GIAO DỊCH
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {totalPendingFinances > 0 ? (
+            <span
+              style={{
+                background: '#ef4444',
+                color: '#ffffff',
+                fontSize: '10px',
+                fontWeight: 800,
+                padding: '2px 8px',
+                borderRadius: '999px',
+              }}
+            >
+              {totalPendingFinances} chờ duyệt
+            </span>
+          ) : (
+            <span style={{ fontSize: '10.5px', color: '#94a3b8' }}>
+              0 chờ duyệt
+            </span>
+          )}
+          <ChevronRight size={14} color="#00f2fe" />
+        </div>
+      </button>
+
+      {/* Phase 21 Staff Approved Work Entry Point */}
+      <button
+        type="button"
+        onClick={() => {
+          setShowApprovedWork(!showApprovedWork);
+          if (!showApprovedWork) setShowFinanceVerification(false);
+        }}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: showApprovedWork ? 'rgba(245, 158, 11, 0.22)' : 'rgba(245, 158, 11, 0.08)',
+          border: showApprovedWork ? '1px solid #f59e0b' : '1px solid rgba(245, 158, 11, 0.3)',
+          borderRadius: '10px',
+          padding: '8px 12px',
+          marginBottom: '14px',
+          cursor: 'pointer',
+          transition: 'all 0.15s ease',
+          color: '#ffffff',
+          width: '100%',
+          boxSizing: 'border-box',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Briefcase size={16} color="#fbbf24" />
+          <span style={{ fontSize: '11.5px', fontWeight: 800, letterSpacing: '0.03em' }}>
+            CÔNG VIỆC ĐÃ DUYỆT (BIỂU QUYẾT)
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {pendingExecutionCount > 0 ? (
+            <span
+              style={{
+                background: '#f59e0b',
+                color: '#070b14',
+                fontSize: '10px',
+                fontWeight: 800,
+                padding: '2px 8px',
+                borderRadius: '999px',
+              }}
+            >
+              {pendingExecutionCount} việc
+            </span>
+          ) : (
+            <span style={{ fontSize: '10.5px', color: '#94a3b8' }}>
+              0 việc
+            </span>
+          )}
+          <ChevronRight size={14} color="#fbbf24" />
+        </div>
+      </button>
+
+      {showApprovedWork ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <button
+            type="button"
+            onClick={() => setShowApprovedWork(false)}
+            style={{
+              background: 'rgba(255, 255, 255, 0.06)',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              borderRadius: '8px',
+              padding: '6px 10px',
+              color: '#94a3b8',
+              fontSize: '11px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              width: 'fit-content',
+            }}
+          >
+            &larr; Quay lại vận hành
+          </button>
+          <StaffApprovedWorkSection vehicle={vehicle} />
+        </div>
+      ) : showFinanceVerification ? (
+        <StaffFinancialVerificationPanel
+          vehicle={vehicle}
+          onBack={() => setShowFinanceVerification(false)}
+          onClose={onClose}
+        />
+      ) : (
         <>
+          {/* ======================================================== */}
+          {/* CASE 1: AUTHORITATIVE ACTIVE TRIP OPERATIONAL CARD      */}
+          {/* ======================================================== */}
+          {isTripActive && activeTrip ? (
+            <>
           <div
             style={{
               background: 'rgba(2, 132, 199, 0.14)',
@@ -1149,6 +1305,8 @@ export const StaffOperationsPanel: React.FC<StaffOperationsPanelProps> = ({
             </button>
           </div>
         </>
+      )}
+      </>
       )}
     </div>
   );

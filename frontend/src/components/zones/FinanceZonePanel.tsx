@@ -32,6 +32,7 @@ import { useAuthStore } from '../../store/authStore';
 import { fetchVehicles } from '../../services/vehicleApi';
 import { fetchVehicleCoOwnership } from '../../services/coOwnershipApi';
 import { useExpenses, useExpenseSummary, useCostSharingSummary } from '../../hooks/useExpenses';
+import { useFundSummary } from '../../hooks/useFund';
 import { ExpenseCategory, EXPENSE_CATEGORY_METADATA, EXPENSE_STATUS_METADATA } from '../../types/expense';
 import { AddExpenseModal } from './AddExpenseModal';
 import { ExpenseItemShares } from './ExpenseItemShares';
@@ -81,12 +82,17 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
     return vehicles[0] || null;
   }, [vehicles, selectedVehicleId]);
 
-  const activeVehicleId = activeVehicle?.id || (vehicles[0]?.id ?? undefined);
+  const activeVehicleId = useMemo(() => {
+    if (activeVehicle?.id) return activeVehicle.id;
+    if (selectedVehicleId && selectedVehicleId.length === 36) return selectedVehicleId;
+    if (selectedVehicleId?.toUpperCase() === 'EV01') return '11111111-1111-1111-1111-111111111111';
+    return vehicles[0]?.id || '11111111-1111-1111-1111-111111111111';
+  }, [activeVehicle, selectedVehicleId, vehicles]);
 
   // Authoritative co-ownership group members for payer selection
   const { data: coOwnership } = useQuery({
     queryKey: ['co-ownership', activeVehicleId],
-    queryFn: () => fetchVehicleCoOwnership(activeVehicleId!),
+    queryFn: () => fetchVehicleCoOwnership(activeVehicleId),
     enabled: !!activeVehicleId,
   });
   const coOwners = coOwnership?.members || [];
@@ -112,6 +118,8 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
     financeMonthStr,
     { enabled: !!activeVehicleId && !!financeMonthStr }
   );
+
+  const { data: fundSummary } = useFundSummary(activeVehicleId);
 
   // Authoritative current user group member matching: currentUser.id === groupMember.userId
   const currentUserMember = useMemo(() => {
@@ -188,13 +196,16 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
           top: '50%',
           transform: 'translateY(-50%)',
           width: '364px',
+          maxHeight: 'calc(100vh - 64px)',
+          overflowY: 'auto',
+          overflowX: 'hidden',
           background: 'linear-gradient(180deg, rgba(8, 24, 46, 0.90) 0%, rgba(4, 14, 28, 0.96) 100%)',
           backdropFilter: 'blur(30px)',
           WebkitBackdropFilter: 'blur(30px)',
           border: '2px solid #00f2fe',
           borderRadius: '28px',
           boxShadow: '0 24px 60px rgba(0, 0, 0, 0.75), 0 0 35px rgba(0, 242, 254, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 0 20px rgba(0, 242, 254, 0.1)',
-          padding: '26px',
+          padding: '24px 22px',
           color: '#ffffff',
           fontFamily: "var(--font-family, 'Outfit', sans-serif)",
           zIndex: 30,
@@ -205,7 +216,7 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
           animation: 'panelSlideInRight 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards',
           display: 'flex',
           flexDirection: 'column',
-          gap: '16px',
+          gap: '14px',
         }}
       >
         {/* Header with Icon, Title, and Close Button */}
@@ -228,18 +239,34 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
               <Wallet size={24} color="#00f2fe" />
             </div>
             <div>
-              <h2
-                style={{
-                  fontSize: '22px',
-                  fontWeight: 800,
-                  letterSpacing: '-0.01em',
-                  color: '#ffffff',
-                  margin: 0,
-                  lineHeight: 1.2,
-                }}
-              >
-                Tài chính
-              </h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h2
+                  style={{
+                    fontSize: '22px',
+                    fontWeight: 800,
+                    letterSpacing: '-0.01em',
+                    color: '#ffffff',
+                    margin: 0,
+                    lineHeight: 1.2,
+                  }}
+                >
+                  Tài chính
+                </h2>
+                <span
+                  style={{
+                    fontSize: '9px',
+                    fontWeight: 800,
+                    color: '#38bdf8',
+                    background: 'rgba(56, 189, 248, 0.15)',
+                    border: '1px solid rgba(56, 189, 248, 0.45)',
+                    padding: '2px 6px',
+                    borderRadius: '6px',
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  CHẾ ĐỘ TÀI CHÍNH DEMO
+                </span>
+              </div>
               <p
                 style={{
                   fontSize: '12px',
@@ -432,64 +459,75 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
           </div>
         </div>
 
-        {/* Item 3: Trạng thái */}
+        {/* Item 3: Quỹ chung */}
         <div
+          onClick={() => setShowLedgerModal(true)}
           style={{
-            background: 'rgba(10, 30, 56, 0.75)',
-            border: '1.2px solid rgba(0, 242, 254, 0.3)',
+            background: 'rgba(10, 30, 56, 0.78)',
+            border: '1.2px solid rgba(0, 242, 254, 0.35)',
             borderRadius: '20px',
-            padding: '16px 20px',
+            padding: '14px 18px',
             display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
+            flexDirection: 'column',
+            gap: '8px',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
             boxShadow: '0 4px 16px rgba(0, 0, 0, 0.25)',
           }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = '#00f2fe';
+            e.currentTarget.style.background = 'rgba(14, 40, 76, 0.90)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.35)';
+            e.currentTarget.style.background = 'rgba(10, 30, 56, 0.78)';
+          }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            <div
-              style={{
-                width: '40px',
-                height: '40px',
-                borderRadius: '50%',
-                background: 'rgba(16, 185, 129, 0.16)',
-                border: '1.2px solid rgba(16, 185, 129, 0.5)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-              }}
-            >
-              <Zap size={18} color="#10b981" />
-            </div>
-            <div>
-              <div style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 500 }}>
-                Trạng thái
-              </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <div
                 style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  background: 'rgba(0, 242, 254, 0.16)',
+                  border: '1.2px solid rgba(0, 242, 254, 0.45)',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '6px',
-                  fontSize: '15px',
-                  fontWeight: 700,
-                  color: '#10b981',
-                  marginTop: '2px',
+                  justifyContent: 'center',
+                  flexShrink: 0,
                 }}
               >
-                <div
-                  style={{
-                    width: '8px',
-                    height: '8px',
-                    borderRadius: '50%',
-                    background: '#10b981',
-                    boxShadow: '0 0 10px #10b981',
-                  }}
-                />
-                <span>{fundStatus}</span>
+                <Wallet size={18} color="#00f2fe" />
+              </div>
+              <div>
+                <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  QUỸ CHUNG
+                </div>
+                <div style={{ fontSize: '15.5px', fontWeight: 800, color: '#00f2fe', marginTop: '1px' }}>
+                  {fundSummary ? `${Number(fundSummary.availableBalance).toLocaleString('vi-VN')}đ` : '25.000.000đ'}
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '11.5px', color: '#10b981', fontWeight: 600 }}>{fundStatus}</span>
+              <ChevronRight size={17} color="#38bdf8" />
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+            <div style={{ background: 'rgba(4, 16, 36, 0.60)', padding: '5px 8px', borderRadius: '8px', border: '1px solid rgba(0, 242, 254, 0.12)' }}>
+              <div style={{ fontSize: '9.5px', color: '#94a3b8' }}>Đang chờ xác nhận</div>
+              <div style={{ fontSize: '12px', fontWeight: 750, color: '#fbbf24', marginTop: '1px' }}>
+                {fundSummary ? `${Number(fundSummary.pendingContributionTotal).toLocaleString('vi-VN')}đ` : '0đ'}
+              </div>
+            </div>
+            <div style={{ background: 'rgba(4, 16, 36, 0.60)', padding: '5px 8px', borderRadius: '8px', border: '1px solid rgba(0, 242, 254, 0.12)' }}>
+              <div style={{ fontSize: '9.5px', color: '#94a3b8' }}>Đã giải ngân</div>
+              <div style={{ fontSize: '12px', fontWeight: 750, color: '#f87171', marginTop: '1px' }}>
+                {fundSummary ? `${Number(fundSummary.totalDisbursementsConfirmed).toLocaleString('vi-VN')}đ` : '0đ'}
               </div>
             </div>
           </div>
-          <ChevronRight size={18} color="#38bdf8" />
         </div>
 
         {/* Primary Action Button: Mở bảng quỹ */}
@@ -678,9 +716,25 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                   <Wallet size={20} color="#00f2fe" />
                 </div>
                 <div>
-                  <h3 style={{ fontSize: '18px', fontWeight: 850, margin: 0, letterSpacing: '-0.01em', textTransform: 'uppercase' }}>
-                    Bảng chi tiết quỹ chung
-                  </h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <h3 style={{ fontSize: '18px', fontWeight: 850, margin: 0, letterSpacing: '-0.01em', textTransform: 'uppercase' }}>
+                      Bảng chi tiết quỹ chung
+                    </h3>
+                    <span
+                      style={{
+                        fontSize: '9px',
+                        fontWeight: 800,
+                        color: '#38bdf8',
+                        background: 'rgba(56, 189, 248, 0.15)',
+                        border: '1px solid rgba(56, 189, 248, 0.45)',
+                        padding: '2px 6px',
+                        borderRadius: '6px',
+                        letterSpacing: '0.04em',
+                      }}
+                    >
+                      CHẾ ĐỘ TÀI CHÍNH DEMO
+                    </span>
+                  </div>
                   <p style={{ fontSize: '12px', color: '#94a3b8', margin: '2px 0 0 0', fontWeight: 500 }}>
                     EV01 · Nhóm đồng sở hữu xe
                   </p>
@@ -725,7 +779,7 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                 border: '1.2px solid rgba(0, 242, 254, 0.25)',
                 borderRadius: '16px',
                 padding: '16px 20px',
-                marginBottom: '16px',
+                marginBottom: '12px',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
@@ -734,10 +788,10 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
             >
               <div>
                 <div style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.04em' }}>
-                  Tổng quỹ hiện tại
+                  Số dư khả dụng
                 </div>
                 <div style={{ fontSize: '22px', fontWeight: 850, color: '#00f2fe', marginTop: '2px', letterSpacing: '-0.01em' }}>
-                  25.000.000đ
+                  {fundSummary ? `${Number(fundSummary.availableBalance).toLocaleString('vi-VN')}đ` : '25.000.000đ'}
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
@@ -745,7 +799,25 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                   Phần của bạn ({currentUserOwnershipPercentage}%)
                 </div>
                 <div style={{ fontSize: '16px', fontWeight: 750, color: '#ffffff', marginTop: '2px' }}>
-                  {((25000000 * currentUserOwnershipPercentage) / 100).toLocaleString('vi-VN')}đ
+                  {fundSummary
+                    ? `${((Number(fundSummary.availableBalance) * currentUserOwnershipPercentage) / 100).toLocaleString('vi-VN')}đ`
+                    : `${((25000000 * currentUserOwnershipPercentage) / 100).toLocaleString('vi-VN')}đ`}
+                </div>
+              </div>
+            </div>
+
+            {/* Chi tiết thống kê dòng tiền Quỹ chung */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '16px' }}>
+              <div style={{ background: 'rgba(10, 30, 56, 0.65)', border: '1px solid rgba(251, 191, 36, 0.3)', borderRadius: '12px', padding: '10px 14px' }}>
+                <div style={{ fontSize: '10.5px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>Đang chờ xác nhận</div>
+                <div style={{ fontSize: '15px', fontWeight: 800, color: '#fbbf24', marginTop: '2px' }}>
+                  {fundSummary ? `${Number(fundSummary.pendingContributionTotal).toLocaleString('vi-VN')}đ` : '0đ'}
+                </div>
+              </div>
+              <div style={{ background: 'rgba(10, 30, 56, 0.65)', border: '1px solid rgba(248, 113, 113, 0.3)', borderRadius: '12px', padding: '10px 14px' }}>
+                <div style={{ fontSize: '10.5px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>Tổng chi đã duyệt</div>
+                <div style={{ fontSize: '15px', fontWeight: 800, color: '#f87171', marginTop: '2px' }}>
+                  {fundSummary ? `${Number(fundSummary.totalDisbursementsConfirmed).toLocaleString('vi-VN')}đ` : '0đ'}
                 </div>
               </div>
             </div>
@@ -1322,6 +1394,9 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                     }
 
                     const isExpanded = expandedExpenseId === exp.id;
+                    const isPersonalCharging =
+                      (exp.category === 'CHARGING' || exp.allocationPolicy === 'USER_RESPONSIBILITY') &&
+                      exp.status === 'APPROVED';
                     return (
                       <div
                         key={exp.id}
@@ -1384,9 +1459,6 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                                   {exp.categoryLabel || meta.label}
                                 </span>
                                 {(() => {
-                                  const isPersonalCharging =
-                                    (exp.category === 'CHARGING' || exp.allocationPolicy === 'USER_RESPONSIBILITY') &&
-                                    exp.status === 'APPROVED';
                                   const statusMeta = EXPENSE_STATUS_METADATA[exp.status || 'APPROVED'] || EXPENSE_STATUS_METADATA.APPROVED;
                                   return (
                                     <>
@@ -1443,7 +1515,7 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                               -{Number(exp.amount).toLocaleString('vi-VN')}đ
                             </div>
                             <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
-                              {((exp.category === 'CHARGING' || exp.allocationPolicy === 'USER_RESPONSIBILITY') && exp.status === 'APPROVED') && (
+                              {isPersonalCharging && (
                                 <button
                                   type="button"
                                   data-testid={`pay-action-btn-${exp.id}`}
@@ -1467,7 +1539,7 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                                   }}
                                 >
                                   <CreditCard size={11} />
-                                  <span>THANH TOÁN</span>
+                                  <span>THANH TOÁN DEMO</span>
                                 </button>
                               )}
                               <button

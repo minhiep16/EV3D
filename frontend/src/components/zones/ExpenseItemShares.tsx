@@ -3,8 +3,9 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '../../services/queryClient';
 import { ExpenseStatus, ExpenseAllocationPolicy, ExpenseCategory } from '../../types/expense';
 import { useExpenseShares } from '../../hooks/useExpenses';
+import { usePersonalPayments, useSubmitPersonalPayment, useVerifyPersonalPayment } from '../../hooks/useFund';
 import { useAuthStore } from '../../store/authStore';
-import { Users, Loader2, AlertTriangle, Clock, Zap, CreditCard, Info, ShieldCheck } from 'lucide-react';
+import { Users, Loader2, AlertTriangle, Clock, Zap, CreditCard, Info, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { ExpenseShareResponse, ExpenseShareStatus } from '../../types/expenseShare';
 import { ExpenseVerificationSection } from './ExpenseVerificationSection';
 
@@ -167,6 +168,14 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
   const allocationPolicy = propAllocationPolicy || expense?.allocationPolicy;
   const responsibleUserId = propResponsibleUserId || expense?.responsibleUserId;
   const [showPaymentDetail, setShowPaymentDetail] = useState(false);
+  const [personalPaymentRef, setPersonalPaymentRef] = useState('');
+  const [personalPaymentMethod, setPersonalPaymentMethod] = useState('BANK_TRANSFER');
+  const [personalPaymentNote, setPersonalPaymentNote] = useState('');
+  const [paymentFeedback, setPaymentFeedback] = useState<{ text: string; isError: boolean } | null>(null);
+
+  const { data: personalPayments = [], refetch: refetchPayments } = usePersonalPayments(expenseId);
+  const submitPersonalPaymentMutation = useSubmitPersonalPayment(expenseId);
+  const verifyPersonalPaymentMutation = useVerifyPersonalPayment(expenseId);
 
   // Invariant 1: Unapproved expenses do not fetch or have shares
   const isUnapproved =
@@ -682,35 +691,196 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
                   <strong style={{ color: '#f8fafc' }}>{responsiblePersonName}</strong>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ color: '#94a3b8' }}>Trạng thái thanh toán:</span>
-                  <span style={{ color: '#fbbf24', background: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.4)', borderRadius: '4px', padding: '1px 5px', fontWeight: 700, fontSize: '9.5px' }}>
-                    CHỜ THANH TOÁN (UNPAID)
-                  </span>
-                </div>
+                {(() => {
+                  const isSettled = safeShares.some((s) => s.status === 'SETTLED') || personalPayments.some((p) => p.status === 'PAYMENT_VERIFIED');
+                  const pendingPayment = personalPayments.find((p) => p.status === 'PAYMENT_SUBMITTED');
+                  const verifiedPayment = personalPayments.find((p) => p.status === 'PAYMENT_VERIFIED');
+                  const isStaffOrAdmin = currentUser?.role === 'STAFF' || currentUser?.role === 'ADMIN';
 
-                <div
-                  style={{
-                    marginTop: '4px',
-                    padding: '6px 8px',
-                    borderRadius: '6px',
-                    background: 'rgba(0, 242, 254, 0.06)',
-                    border: '1px dashed rgba(0, 242, 254, 0.25)',
-                    color: '#94a3b8',
-                    fontSize: '9.5px',
-                    lineHeight: 1.4,
-                  }}
-                >
-                  <div style={{ color: '#38bdf8', fontWeight: 700, marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <Info size={11} color="#38bdf8" />
-                    <span>Phương thức hỗ trợ (Phase 20):</span>
-                  </div>
-                  <div>• Cổng thanh toán trực tuyến (VNPay / VietQR) đang được tích hợp cho Phase 20.</div>
-                  <div>• Thanh toán trực tiếp / đối soát với nhân viên vận hành (STAFF) tại trạm khi giao nhận xe.</div>
-                  <div style={{ marginTop: '2px', color: '#fbbf24', fontStyle: 'italic' }}>
-                    * Lưu ý: Khoản chi đã được duyệt nhưng chưa thanh toán. Trạng thái chỉ chuyển sang ĐÃ THANH TOÁN sau khi nhân viên STAFF xác nhận đối soát thực tế.
-                  </div>
-                </div>
+                  return (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: '#94a3b8' }}>Trạng thái thanh toán:</span>
+                        {isSettled ? (
+                          <span style={{ color: '#10b981', background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.4)', borderRadius: '4px', padding: '1px 6px', fontWeight: 800, fontSize: '9.5px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                            <CheckCircle2 size={10} color="#10b981" />
+                            ĐÃ THANH TOÁN (DEMO)
+                          </span>
+                        ) : pendingPayment ? (
+                          <span style={{ color: '#38bdf8', background: 'rgba(56, 189, 248, 0.15)', border: '1px solid rgba(56, 189, 248, 0.4)', borderRadius: '4px', padding: '1px 6px', fontWeight: 800, fontSize: '9.5px' }}>
+                            CHỜ NHÂN VIÊN XÁC NHẬN
+                          </span>
+                        ) : (
+                          <span style={{ color: '#fbbf24', background: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.4)', borderRadius: '4px', padding: '1px 6px', fontWeight: 700, fontSize: '9.5px' }}>
+                            CHỜ THANH TOÁN (DEMO)
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Settlement feedback */}
+                      {paymentFeedback && (
+                        <div
+                          style={{
+                            padding: '4px 6px',
+                            borderRadius: '4px',
+                            background: paymentFeedback.isError ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                            color: paymentFeedback.isError ? '#f87171' : '#34d399',
+                            fontSize: '9.5px',
+                          }}
+                        >
+                          {paymentFeedback.text}
+                        </div>
+                      )}
+
+                      {/* Verified details notice */}
+                      {isSettled && verifiedPayment && (
+                        <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: '6px', padding: '5px 8px', fontSize: '9.5px', color: '#6ee7b7' }}>
+                          <div>• Đã xác nhận: {Number(verifiedPayment.amount).toLocaleString('vi-VN')}đ (GIAO DỊCH DEMO)</div>
+                          <div>• Mã giao dịch: {verifiedPayment.paymentReference || 'N/A'}</div>
+                          {verifiedPayment.verifiedByName && <div>• Xác nhận bởi nhân viên: {verifiedPayment.verifiedByName}</div>}
+                        </div>
+                      )}
+
+                      {/* Staff demo verification action */}
+                      {pendingPayment && isStaffOrAdmin && (
+                        <div style={{ background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '6px', padding: '6px 8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <span style={{ color: '#38bdf8', fontWeight: 750, fontSize: '9.5px' }}>
+                              Nguyen Van A — {Number(pendingPayment.amount).toLocaleString('vi-VN')}đ
+                            </span>
+                            <span style={{ color: '#fbbf24', background: 'rgba(245, 158, 11, 0.2)', border: '1px solid rgba(245, 158, 11, 0.4)', borderRadius: '3px', padding: '0 4px', fontSize: '8.5px', fontWeight: 800 }}>
+                              GIAO DỊCH DEMO
+                            </span>
+                          </div>
+                          <div style={{ color: '#94a3b8', fontSize: '9px' }}>
+                            Trạng thái: CHỜ NHÂN VIÊN XÁC NHẬN · Mã GD: {pendingPayment.paymentReference || 'N/A'}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                await verifyPersonalPaymentMutation.mutateAsync({
+                                  paymentId: pendingPayment.id,
+                                  payload: { confirmed: true, note: 'Xác nhận giao dịch thanh toán demo chi phí sạc điện.' },
+                                });
+                                setPaymentFeedback({ text: 'Xác nhận thanh toán demo thành công! Khoản chi đã hoàn tất quyết toán.', isError: false });
+                                refetchPayments();
+                              } catch (err: any) {
+                                setPaymentFeedback({ text: err.message || 'Lỗi khi xác minh.', isError: true });
+                              }
+                            }}
+                            disabled={verifyPersonalPaymentMutation.isPending}
+                            style={{
+                              background: '#10b981',
+                              border: 'none',
+                              borderRadius: '4px',
+                              color: '#041628',
+                              padding: '5px 8px',
+                              fontSize: '10px',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '4px',
+                              marginTop: '2px',
+                            }}
+                          >
+                            <ShieldCheck size={11} />
+                            <span>{verifyPersonalPaymentMutation.isPending ? 'Đang xác nhận...' : 'XÁC NHẬN THANH TOÁN DEMO'}</span>
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Demo payment submission form for un-settled expense */}
+                      {!isSettled && !pendingPayment && (
+                        <div style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(0, 242, 254, 0.25)', borderRadius: '6px', padding: '6px 8px', display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '2px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <span style={{ fontSize: '9.5px', color: '#00f2fe', fontWeight: 750 }}>
+                              CHẾ ĐỘ TÀI CHÍNH DEMO
+                            </span>
+                            <span style={{ fontSize: '8.5px', color: '#94a3b8' }}>
+                              Thanh toán mô phỏng
+                            </span>
+                          </div>
+
+                          {/* Demo disclaimer banner */}
+                          <div
+                            style={{
+                              background: 'rgba(0, 242, 254, 0.08)',
+                              border: '1px dashed rgba(0, 242, 254, 0.3)',
+                              borderRadius: '4px',
+                              padding: '4px 6px',
+                              fontSize: '9px',
+                              color: '#cbd5e1',
+                              lineHeight: 1.3,
+                            }}
+                          >
+                            Đây là giao dịch mô phỏng phục vụ kiểm thử EVShare 3D. Không cần chuyển tiền thật.
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const refCode = personalPaymentRef.trim() || `DEMO-PAY-ELEC-${Date.now().toString().slice(-6)}`;
+                                await submitPersonalPaymentMutation.mutateAsync({
+                                  amount: normalizedExpenseAmount,
+                                  paymentMethod: 'DEMO_PAYMENT',
+                                  paymentReference: refCode,
+                                  note: personalPaymentNote.trim() || 'Thanh toán mô phỏng chi phí điện cá nhân sau chuyến đi',
+                                });
+                                setPaymentFeedback({ text: 'Đã gửi yêu cầu thanh toán demo! CHỜ NHÂN VIÊN XÁC NHẬN.', isError: false });
+                                refetchPayments();
+                              } catch (err: any) {
+                                setPaymentFeedback({ text: err.message || 'Lỗi khi gửi yêu cầu thanh toán demo.', isError: true });
+                              }
+                            }}
+                            disabled={submitPersonalPaymentMutation.isPending}
+                            style={{
+                              background: 'linear-gradient(135deg, #00f2fe 0%, #00c6ff 100%)',
+                              border: 'none',
+                              borderRadius: '4px',
+                              color: '#041628',
+                              padding: '6px 10px',
+                              fontSize: '11px',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '4px',
+                              marginTop: '2px',
+                            }}
+                          >
+                            <CreditCard size={12} />
+                            <span>{submitPersonalPaymentMutation.isPending ? 'Đang gửi...' : 'THANH TOÁN DEMO'}</span>
+                          </button>
+                        </div>
+                      )}
+
+                      <div
+                        style={{
+                          marginTop: '4px',
+                          padding: '4px 6px',
+                          borderRadius: '4px',
+                          background: 'rgba(0, 242, 254, 0.05)',
+                          border: '1px dashed rgba(0, 242, 254, 0.2)',
+                          color: '#94a3b8',
+                          fontSize: '9px',
+                          lineHeight: 1.35,
+                        }}
+                      >
+                        <div style={{ color: '#38bdf8', fontWeight: 650, marginBottom: '1px' }}>
+                          * Nguyên tắc tách bạch tài chính (Phase 20):
+                        </div>
+                        <div>
+                          Chi phí điện thuộc trách nhiệm cá nhân của người lái (100%), không trích từ Quỹ chung và giao dịch demo thanh toán không làm thay đổi số dư Quỹ chung.
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             )}
           </div>

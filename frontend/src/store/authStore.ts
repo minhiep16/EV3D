@@ -76,11 +76,7 @@ export const useAuthStore = create<AuthState>((set) => {
         console.error('Failed to persist auth session to sessionStorage', e);
       }
       try {
-        queryClient.removeQueries({ queryKey: ['cost-sharing-summary'] });
-        queryClient.removeQueries({ queryKey: ['expense-shares'] });
-        queryClient.removeQueries({ queryKey: ['expense-approvals'] });
-        queryClient.invalidateQueries({ queryKey: ['expenses'] });
-        queryClient.invalidateQueries({ queryKey: ['expense-summary'] });
+        queryClient.clear();
       } catch (e) {
         // Safe query cache isolation
       }
@@ -130,11 +126,7 @@ export const useAuthStore = create<AuthState>((set) => {
         console.error('Failed to remove auth session', e);
       }
       try {
-        queryClient.removeQueries({ queryKey: ['cost-sharing-summary'] });
-        queryClient.removeQueries({ queryKey: ['expense-shares'] });
-        queryClient.removeQueries({ queryKey: ['expense-approvals'] });
-        queryClient.invalidateQueries({ queryKey: ['expenses'] });
-        queryClient.invalidateQueries({ queryKey: ['expense-summary'] });
+        queryClient.clear();
       } catch (e) {
         // Safe query cache isolation
       }

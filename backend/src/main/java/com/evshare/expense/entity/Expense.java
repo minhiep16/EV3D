@@ -67,6 +67,10 @@ public class Expense {
     @Column(name = "related_booking_id", length = 36)
     private UUID relatedBookingId;
 
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "related_proposal_id", length = 36)
+    private UUID relatedProposalId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "source_type", length = 50)
     private ExpenseSourceType sourceType = ExpenseSourceType.MANUAL;
@@ -371,5 +375,13 @@ public class Expense {
 
     public void setRelatedBookingId(UUID relatedBookingId) {
         this.relatedBookingId = relatedBookingId;
+    }
+
+    public UUID getRelatedProposalId() {
+        return relatedProposalId;
+    }
+
+    public void setRelatedProposalId(UUID relatedProposalId) {
+        this.relatedProposalId = relatedProposalId;
     }
 }

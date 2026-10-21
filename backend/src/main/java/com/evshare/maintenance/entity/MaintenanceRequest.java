@@ -60,6 +60,10 @@ public class MaintenanceRequest {
     @Column(name = "approved_weight", precision = 5, scale = 2)
     private java.math.BigDecimal approvedWeight;
 
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "related_proposal_id", length = 36)
+    private UUID relatedProposalId;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by_user_id", nullable = false)
     private User createdBy;
@@ -240,6 +244,14 @@ public class MaintenanceRequest {
 
     public void setApprovedWeight(java.math.BigDecimal approvedWeight) {
         this.approvedWeight = approvedWeight;
+    }
+
+    public UUID getRelatedProposalId() {
+        return relatedProposalId;
+    }
+
+    public void setRelatedProposalId(UUID relatedProposalId) {
+        this.relatedProposalId = relatedProposalId;
     }
 
     public Instant getCreatedAt() {

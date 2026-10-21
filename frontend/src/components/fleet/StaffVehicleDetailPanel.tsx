@@ -75,13 +75,15 @@ import {
   AlertCircle,
   FileText,
 } from 'lucide-react';
+import { StaffFinancialVerificationPanel } from './StaffFinancialVerificationPanel';
+import { useFundSummary, useFundContributions, usePendingPersonalPayments } from '../../hooks/useFund';
 
 interface StaffVehicleDetailPanelProps {
   vehicle: VehicleResponse;
   onClose?: () => void;
 }
 
-type DetailTab = 'STATUS' | 'HANDOVER' | 'RETURN' | 'MAINTENANCE';
+type DetailTab = 'STATUS' | 'HANDOVER' | 'RETURN' | 'MAINTENANCE' | 'FINANCE';
 
 type PartOption = {
   id: VehiclePartId;
@@ -214,6 +216,16 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
       return sMs >= tripStartMs && sMs <= tripEndMs;
     });
   }, [chargingSessions, activeTrip]);
+
+  // TanStack Query: Fetch Shared Fund summary and pending financial records for Phase 20 Financial Verification
+  const { data: fundSummary } = useFundSummary(vehicle.id);
+  const resolvedFundId = fundSummary?.fundId || fundSummary?.id;
+  const { data: contributions = [] } = useFundContributions(resolvedFundId);
+  const { data: pendingPersonalPayments = [] } = usePendingPersonalPayments(vehicle.id);
+  const pendingContributionsCount = useMemo(() => {
+    return contributions.filter((c) => c.status === 'PENDING').length;
+  }, [contributions]);
+  const totalPendingFinances = pendingContributionsCount + pendingPersonalPayments.length;
 
   // Auto switch to RETURN tab if pending return requested
   useEffect(() => {
@@ -3252,8 +3264,65 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
             </div>
           </div>
 
-          {/* Segmented Tabs: TÌNH TRẠNG | BÀN GIAO | TRẢ XE | BẢO DƯỠNG */}
-          <div
+          {/* Phase 20 Financial Verification Entry Point for STAFF */}
+          <button
+            type="button"
+            onClick={() => setActiveTab(activeTab === 'FINANCE' ? 'STATUS' : 'FINANCE')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: activeTab === 'FINANCE' ? 'rgba(0, 242, 254, 0.22)' : 'rgba(0, 242, 254, 0.08)',
+              border: activeTab === 'FINANCE' ? '1px solid #00f2fe' : '1px solid rgba(0, 242, 254, 0.3)',
+              borderRadius: '10px',
+              padding: '8px 12px',
+              marginBottom: '12px',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+              color: '#ffffff',
+              width: '100%',
+              boxSizing: 'border-box',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <ShieldCheck size={16} color="#00f2fe" />
+              <span style={{ fontSize: '11.5px', fontWeight: 800, letterSpacing: '0.03em' }}>
+                DUYỆT GIAO DỊCH
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {totalPendingFinances > 0 ? (
+                <span
+                  style={{
+                    background: '#ef4444',
+                    color: '#ffffff',
+                    fontSize: '10px',
+                    fontWeight: 800,
+                    padding: '2px 8px',
+                    borderRadius: '999px',
+                  }}
+                >
+                  {totalPendingFinances} chờ duyệt
+                </span>
+              ) : (
+                <span style={{ fontSize: '10.5px', color: '#94a3b8' }}>
+                  0 chờ duyệt
+                </span>
+              )}
+              <ChevronRight size={14} color="#00f2fe" />
+            </div>
+          </button>
+
+          {activeTab === 'FINANCE' ? (
+            <StaffFinancialVerificationPanel
+              vehicle={vehicle}
+              onBack={() => setActiveTab('STATUS')}
+              onClose={onClose}
+            />
+          ) : (
+            <>
+              {/* Segmented Tabs: TÌNH TRẠNG | BÀN GIAO | TRẢ XE | BẢO DƯỠNG */}
+              <div
             style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(4, 1fr)',
@@ -4394,6 +4463,8 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
               <span>KIỂM TRA BỘ PHẬN</span>
             </button>
           </div>
+            </>
+          )}
         </>
       )}
     </div>

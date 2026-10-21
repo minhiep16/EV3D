@@ -6,6 +6,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -34,6 +35,15 @@ public class CoOwnershipGroup {
     @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "created_by", length = 36, columnDefinition = "CHAR(36)")
     private UUID createdBy;
+
+    @Column(name = "voting_rule", length = 40, nullable = false)
+    private String votingRule = "OWNERSHIP_WEIGHTED";
+
+    @Column(name = "quorum_percentage", precision = 5, scale = 2, nullable = false)
+    private BigDecimal quorumPercentage = new BigDecimal("50.00");
+
+    @Column(name = "approval_threshold_percentage", precision = 5, scale = 2, nullable = false)
+    private BigDecimal approvalThresholdPercentage = new BigDecimal("50.00");
 
     @OneToMany(mappedBy = "group", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<GroupMember> members = new ArrayList<>();
@@ -154,6 +164,30 @@ public class CoOwnershipGroup {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public String getVotingRule() {
+        return votingRule;
+    }
+
+    public void setVotingRule(String votingRule) {
+        this.votingRule = votingRule;
+    }
+
+    public BigDecimal getQuorumPercentage() {
+        return quorumPercentage;
+    }
+
+    public void setQuorumPercentage(BigDecimal quorumPercentage) {
+        this.quorumPercentage = quorumPercentage;
+    }
+
+    public BigDecimal getApprovalThresholdPercentage() {
+        return approvalThresholdPercentage;
+    }
+
+    public void setApprovalThresholdPercentage(BigDecimal approvalThresholdPercentage) {
+        this.approvalThresholdPercentage = approvalThresholdPercentage;
     }
 
     /**
