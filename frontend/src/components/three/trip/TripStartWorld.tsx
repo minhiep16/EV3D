@@ -61,8 +61,17 @@ export const TripStartWorld: React.FC<TripStartWorldProps> = ({ vehicle }) => {
       qc.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] });
       if (bookingId) {
         qc.invalidateQueries({ queryKey: ['tripEligibility', bookingId] });
+        qc.invalidateQueries({ queryKey: ['trip-start-eligibility', bookingId] });
         qc.invalidateQueries({ queryKey: ['bookingHandover', bookingId] });
+        qc.invalidateQueries({ queryKey: ['booking-handover', bookingId] });
       }
+      qc.invalidateQueries({ queryKey: ['bookingHandover'] });
+      qc.invalidateQueries({ queryKey: ['booking-handover'] });
+      qc.invalidateQueries({ queryKey: ['tripEligibility'] });
+      qc.invalidateQueries({ queryKey: ['trip-start-eligibility'] });
+      qc.invalidateQueries({ queryKey: ['bookingTrip'] });
+      qc.invalidateQueries({ queryKey: ['booking-trip'] });
+      qc.invalidateQueries({ queryKey: ['vehicle-handover-history', vehicle.id] });
     },
     onError: (err: any) => {
       setErrorMessage(err.message || 'Không thể bắt đầu chuyến đi lúc này.');

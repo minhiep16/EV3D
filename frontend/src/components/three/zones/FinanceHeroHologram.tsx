@@ -4,6 +4,7 @@ import { Html, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
 import { useWorldStore } from '../../../store/worldStore';
 import { useAuthStore } from '../../../store/authStore';
+import { useFundSummary } from '../../../hooks/useFund';
 import { HologramCore3D } from './widgets/HologramCore3D';
 import { HologramDonutWidget } from './widgets/HologramDonutWidget';
 import { HologramMetricsWidget } from './widgets/HologramMetricsWidget';
@@ -15,6 +16,7 @@ interface FinanceHeroHologramProps {
   userPercentage?: number;
   monthlyExpense?: string;
   visible?: boolean;
+  vehicleId?: string;
 }
 
 /**
@@ -22,7 +24,7 @@ interface FinanceHeroHologramProps {
  * Perfectly staged above the vehicle roof and showroom podium to match reference design.
  * 
  * 2-Tier Cockpit Composition:
- * - Upper Center: Dominant curved "QUỸ CHUNG 25.000.000đ" visor banner (Apex)
+ * - Upper Center: Dominant curved "QUỸ CHUNG" visor banner (Apex)
  * - Lower Left: "của bạn" Donut chart panel (Wing 1, tilted inward)
  * - Lower Right: "Phân bổ chi phí" Telemetry bar chart panel (Wing 2, tilted inward)
  * - Central Nexus: Dedicated open window housing the 3D glowing crystal core & concentric rings
@@ -30,14 +32,29 @@ interface FinanceHeroHologramProps {
  */
 export const FinanceHeroHologram: React.FC<FinanceHeroHologramProps> = ({
   position = [0.0, 2.70, 1.8],
-  fundTotal = '25.000.000đ',
+  fundTotal,
   userPercentage,
   visible = true,
+  vehicleId,
 }) => {
   const isFinanceDetailModalOpen = useWorldStore((state) => state.isFinanceDetailModalOpen);
+  const selectedVehicleId = useWorldStore((state) => state.selectedVehicleId);
   const user = useAuthStore((state) => state.user);
   const groupRef = useRef<THREE.Group>(null);
   const floatRef = useRef<THREE.Group>(null);
+
+  const targetVehicleId = vehicleId || selectedVehicleId || '11111111-1111-1111-1111-111111111111';
+  const { data: fundSummary, isLoading: isFundLoading, isError: isFundError } = useFundSummary(
+    fundTotal ? null : targetVehicleId
+  );
+
+  const displayFundTotal = React.useMemo(() => {
+    if (fundTotal) return fundTotal;
+    if (isFundLoading) return 'ĐANG TẢI SỐ DƯ QUỸ...';
+    if (isFundError) return 'KHÔNG THỂ TẢI SỐ DƯ QUỸ';
+    if (!fundSummary) return 'CHƯA CÓ QUỸ CHUNG';
+    return `${Number(fundSummary.availableBalance).toLocaleString('vi-VN')}đ`;
+  }, [fundTotal, fundSummary, isFundLoading, isFundError]);
 
   // Authoritative fallback percentage based on authenticated user identity
   const effectivePercentage = userPercentage !== undefined
@@ -218,7 +235,7 @@ export const FinanceHeroHologram: React.FC<FinanceHeroHologramProps> = ({
               >
                 <HologramMetricsWidget
                   title="QUỸ CHUNG"
-                  amount={fundTotal}
+                  amount={displayFundTotal}
                   subtitle="Tổng quỹ sở hữu & chi phí vận hành"
                   accentColor="#00f2fe"
                 />

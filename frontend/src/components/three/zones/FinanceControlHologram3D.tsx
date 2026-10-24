@@ -63,11 +63,11 @@ export type FinanceView =
   | 'FUND_TRANSACTIONS';
 
 // Authoritative Finance Console Dimensions (Single-Slot Standardized Hierarchy)
-export const FINANCE_MAIN_WIDTH = 360;
-export const FINANCE_MAIN_HEIGHT = 520;
+export const FINANCE_MAIN_WIDTH = 460;
+export const FINANCE_MAIN_HEIGHT = 600;
 
-export const FINANCE_DETAIL_WIDTH = 450;
-export const FINANCE_DETAIL_HEIGHT = 650;
+export const FINANCE_DETAIL_WIDTH = 480;
+export const FINANCE_DETAIL_HEIGHT = 660;
 
 interface FinanceControlHologram3DProps {
   position?: [number, number, number];
@@ -237,6 +237,25 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
     if (!summary || summary.totalExpense == null) return initialMonthlyExpense || '0đ';
     return `${Number(summary.totalExpense).toLocaleString('vi-VN')}đ`;
   }, [summary, isSummaryLoading, initialMonthlyExpense]);
+
+  const fundBalanceDisplay = useMemo(() => {
+    if (isFundSummaryLoading) return 'ĐANG TẢI SỐ DƯ QUỸ...';
+    if (isFundSummaryError) return 'KHÔNG THỂ TẢI SỐ DƯ QUỸ';
+    if (!fundSummary) return 'CHƯA CÓ QUỸ CHUNG';
+    return `${Number(fundSummary.availableBalance).toLocaleString('vi-VN')}đ`;
+  }, [fundSummary, isFundSummaryLoading, isFundSummaryError]);
+
+  const userFundShareDisplay = useMemo(() => {
+    if (isFundSummaryLoading) return '...';
+    if (isFundSummaryError || !fundSummary) return '0đ';
+    return `${Math.round((Number(fundSummary.availableBalance) * currentUserOwnershipPercentage) / 100).toLocaleString('vi-VN')}đ`;
+  }, [fundSummary, isFundSummaryLoading, isFundSummaryError, currentUserOwnershipPercentage]);
+
+  const totalContributionsDisplay = useMemo(() => {
+    if (isFundSummaryLoading) return '...';
+    if (isFundSummaryError || !fundSummary) return '0đ';
+    return `${Number(fundSummary.totalContributionsConfirmed).toLocaleString('vi-VN')}đ`;
+  }, [fundSummary, isFundSummaryLoading, isFundSummaryError]);
 
   // Robust, crash-proof payer resolution from coOwners, costSharingSummary, or active user
   const payerOptions = useMemo(() => {
@@ -610,8 +629,8 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
   const panelHeightPx = isDetailView ? FINANCE_DETAIL_HEIGHT : FINANCE_MAIN_HEIGHT;
 
   // Proportional 3D world backing dimensions
-  const panelW = isDetailView ? 3.85 : 3.10;
-  const panelH = isDetailView ? 5.85 : 4.80;
+  const panelW = isDetailView ? 4.10 : 3.95;
+  const panelH = isDetailView ? 6.10 : 5.50;
   const hw = panelW / 2;
   const hh = panelH / 2;
   const bracketLen = isDetailView ? 0.38 : 0.34;
@@ -1001,7 +1020,7 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
                 borderRadius: '28px',
                 boxShadow:
                   '0 28px 70px rgba(0, 0, 0, 0.88), 0 0 40px rgba(0, 242, 254, 0.40), inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 0 24px rgba(0, 242, 254, 0.14)',
-                padding: isDetailView ? '24px 26px' : '22px 24px',
+                padding: isDetailView ? '24px 26px' : '16px 18px',
                 color: '#ffffff',
                 fontFamily: "var(--font-family, 'Outfit', sans-serif)",
                 display: 'flex',
@@ -1012,7 +1031,7 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
               }}
             >
               {/* ========================================================
-                  VIEW 1: MAIN FINANCE OVERVIEW
+                  VIEW 1: MAIN FINANCE OVERVIEW (COMPACT DASHBOARD)
                   ======================================================== */}
               {financeView === 'MAIN' && (
                 <div
@@ -1025,64 +1044,74 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
                     overflow: 'hidden',
                   }}
                 >
-                  {/* Header with Icon, Title, and Close Button */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                  {/* Header: Title, DEMO mode, and Close button */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      height: '60px',
+                      marginBottom: '10px',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
                       <div
                         style={{
-                          width: '50px',
-                          height: '50px',
-                          borderRadius: '16px',
+                          width: '42px',
+                          height: '42px',
+                          borderRadius: '14px',
                           background: 'rgba(0, 242, 254, 0.16)',
-                          border: '2px solid #00f2fe',
+                          border: '1.6px solid #00f2fe',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          boxShadow: '0 0 20px rgba(0, 242, 254, 0.45)',
+                          boxShadow: '0 0 16px rgba(0, 242, 254, 0.40)',
                           flexShrink: 0,
                         }}
                       >
-                        <Wallet size={26} color="#00f2fe" />
+                        <Wallet size={22} color="#00f2fe" />
                       </div>
-                      <div>
-                        <h2
-                          style={{
-                            fontSize: '24px',
-                            fontWeight: 800,
-                            letterSpacing: '-0.01em',
-                            color: '#ffffff',
-                            margin: 0,
-                            lineHeight: 1.2,
-                          }}
-                        >
-                          Tài chính
-                        </h2>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-                          <span
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <h2
                             style={{
-                              background: 'rgba(0, 242, 254, 0.15)',
-                              border: '1px solid rgba(0, 242, 254, 0.45)',
-                              color: '#00f2fe',
-                              fontSize: '9.5px',
+                              fontSize: '20px',
                               fontWeight: 800,
-                              padding: '1px 6px',
-                              borderRadius: '4px',
-                              letterSpacing: '0.03em',
+                              letterSpacing: '-0.01em',
+                              color: '#ffffff',
+                              margin: 0,
+                              lineHeight: 1.1,
+                              textTransform: 'uppercase',
                             }}
                           >
-                            CHẾ ĐỘ TÀI CHÍNH DEMO
-                          </span>
+                            TÀI CHÍNH
+                          </h2>
                         </div>
-                        <p
+                        <div
                           style={{
-                            fontSize: '12px',
-                            color: '#94a3b8',
-                            margin: '2px 0 0 0',
-                            fontWeight: 500,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            marginTop: '3px',
                           }}
                         >
-                          Quản lý quỹ chung & chi phí
-                        </p>
+                          <span
+                            style={{
+                              background: 'rgba(0, 242, 254, 0.14)',
+                              border: '1px solid rgba(0, 242, 254, 0.45)',
+                              color: '#00f2fe',
+                              fontSize: '10.5px',
+                              fontWeight: 800,
+                              padding: '2px 8px',
+                              borderRadius: '5px',
+                              letterSpacing: '0.04em',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {activeVehicle?.name || 'EV01'} — CHẾ ĐỘ TÀI CHÍNH DEMO
+                          </span>
+                        </div>
                       </div>
                     </div>
 
@@ -1092,8 +1121,8 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
                       onClick={handleClose}
                       title="Đóng bảng tài chính"
                       style={{
-                        width: '36px',
-                        height: '36px',
+                        width: '34px',
+                        height: '34px',
                         borderRadius: '50%',
                         background: 'rgba(255, 255, 255, 0.08)',
                         border: '1px solid rgba(255, 255, 255, 0.20)',
@@ -1116,7 +1145,7 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
                         e.currentTarget.style.color = '#94a3b8';
                       }}
                     >
-                      <X size={17} />
+                      <X size={16} />
                     </button>
                   </div>
 
@@ -1132,77 +1161,110 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
                       overflowX: 'hidden',
                       display: 'flex',
                       flexDirection: 'column',
-                      gap: '8px',
-                      paddingRight: '4px',
-                      paddingBottom: '2px',
-                    }}
-                  >
-
-                  {/* Item 1: Chi tháng này */}
-                  <div
-                    onClick={handleOpenExpenseHistory}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    style={{
-                      background: 'rgba(10, 30, 56, 0.78)',
-                      border: '1.4px solid rgba(0, 242, 254, 0.35)',
-                      borderRadius: '18px',
-                      padding: '13px 18px',
-                      display: 'flex',
-                      alignItems: 'center',
                       justifyContent: 'space-between',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
-                      boxShadow: '0 4px 18px rgba(0, 0, 0, 0.28)',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = '#00f2fe';
-                      e.currentTarget.style.background = 'rgba(14, 38, 70, 0.90)';
-                      e.currentTarget.style.transform = 'translateX(-2px)';
-                      e.currentTarget.style.boxShadow = '0 6px 24px rgba(0, 242, 254, 0.32)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.35)';
-                      e.currentTarget.style.background = 'rgba(10, 30, 56, 0.78)';
-                      e.currentTarget.style.transform = 'translateX(0)';
-                      e.currentTarget.style.boxShadow = '0 4px 18px rgba(0, 0, 0, 0.28)';
+                      gap: '12px',
+                      paddingRight: '2px',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    {/* 2. SUMMARY HERO METRICS (2-COLUMN COMPACT HERO) */}
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 1fr',
+                        gap: '10px',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {/* Left: Quỹ chung (Available Balance) */}
                       <div
+                        onClick={handleOpenFundDetail}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        title="Bấm để xem chi tiết Quỹ chung"
                         style={{
-                          width: '40px',
-                          height: '40px',
-                          borderRadius: '50%',
-                          background: 'rgba(0, 242, 254, 0.16)',
-                          border: '1.4px solid rgba(0, 242, 254, 0.50)',
+                          background: 'rgba(10, 30, 56, 0.82)',
+                          border: '1.2px solid rgba(0, 242, 254, 0.38)',
+                          borderRadius: '16px',
+                          padding: '13px 15px',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease',
+                          boxShadow: '0 4px 14px rgba(0, 0, 0, 0.25)',
                           display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0,
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = '#00f2fe';
+                          e.currentTarget.style.background = 'rgba(14, 40, 76, 0.95)';
+                          e.currentTarget.style.boxShadow = '0 6px 18px rgba(0, 242, 254, 0.30)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.38)';
+                          e.currentTarget.style.background = 'rgba(10, 30, 56, 0.82)';
+                          e.currentTarget.style.boxShadow = '0 4px 14px rgba(0, 0, 0, 0.25)';
                         }}
                       >
-                        <BarChart3 size={19} color="#00f2fe" />
-                      </div>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 500 }}>
-                            Chi tháng này
-                          </span>
-                          {summary?.pendingCount != null && summary.pendingCount > 0 && (
-                            <span
-                              style={{
-                                fontSize: '10px',
-                                fontWeight: 700,
-                                background: 'rgba(245, 158, 11, 0.16)',
-                                border: '1px solid rgba(245, 158, 11, 0.45)',
-                                color: '#f59e0b',
-                                padding: '1px 6px',
-                                borderRadius: '9999px',
-                              }}
-                            >
-                              ⏳ {summary.pendingCount} chờ xác minh
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <Wallet size={15} color="#00f2fe" />
+                            <span style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                              QUỸ CHUNG
                             </span>
-                          )}
+                          </div>
+                          <ChevronRight size={15} color="#38bdf8" />
+                        </div>
+                        <div
+                          style={{
+                            fontSize: isFundSummaryLoading || isFundSummaryError || !fundSummary ? '13px' : '20px',
+                            fontWeight: 800,
+                            color: '#00f2fe',
+                            letterSpacing: '-0.01em',
+                            marginTop: '6px',
+                            lineHeight: 1.2,
+                          }}
+                        >
+                          {fundBalanceDisplay}
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '3px', fontWeight: 500 }}>
+                          {fundSummary ? 'Số dư khả dụng' : 'Chưa kết nối quỹ'}
+                        </div>
+                      </div>
+
+                      {/* Right: Chi tháng này (Current Month Expenses) */}
+                      <div
+                        onClick={handleOpenExpenseHistory}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        title="Bấm để xem lịch sử chi phí"
+                        style={{
+                          background: 'rgba(10, 30, 56, 0.82)',
+                          border: '1.2px solid rgba(0, 242, 254, 0.38)',
+                          borderRadius: '16px',
+                          padding: '13px 15px',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease',
+                          boxShadow: '0 4px 14px rgba(0, 0, 0, 0.25)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = '#00f2fe';
+                          e.currentTarget.style.background = 'rgba(14, 40, 76, 0.95)';
+                          e.currentTarget.style.boxShadow = '0 6px 18px rgba(0, 242, 254, 0.30)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.38)';
+                          e.currentTarget.style.background = 'rgba(10, 30, 56, 0.82)';
+                          e.currentTarget.style.boxShadow = '0 4px 14px rgba(0, 0, 0, 0.25)';
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <BarChart3 size={15} color="#38bdf8" />
+                            <span style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                              CHI THÁNG NÀY
+                            </span>
+                          </div>
+                          <ChevronRight size={15} color="#38bdf8" />
                         </div>
                         <div
                           style={{
@@ -1210,345 +1272,293 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
                             fontWeight: 800,
                             color: '#ffffff',
                             letterSpacing: '-0.01em',
-                            marginTop: '1px',
+                            marginTop: '6px',
+                            lineHeight: 1.2,
                           }}
                         >
                           {formattedMonthlyExpense}
                         </div>
-                      </div>
-                    </div>
-                    <ChevronRight size={18} color="#38bdf8" />
-                  </div>
-
-                  {/* Item 2: Phần chi phí của bạn (Cost Sharing Summary Card) */}
-                  <div
-                    onClick={handleOpenCostSharing}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    style={{
-                      background: 'rgba(10, 30, 56, 0.85)',
-                      border: '1.4px solid rgba(0, 242, 254, 0.40)',
-                      borderRadius: '18px',
-                      padding: '12px 16px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '8px',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
-                      boxShadow: '0 4px 18px rgba(0, 0, 0, 0.32)',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = '#00f2fe';
-                      e.currentTarget.style.background = 'rgba(14, 40, 76, 0.95)';
-                      e.currentTarget.style.transform = 'translateX(-2px)';
-                      e.currentTarget.style.boxShadow = '0 6px 24px rgba(0, 242, 254, 0.35)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.40)';
-                      e.currentTarget.style.background = 'rgba(10, 30, 56, 0.85)';
-                      e.currentTarget.style.transform = 'translateX(0)';
-                      e.currentTarget.style.boxShadow = '0 4px 18px rgba(0, 0, 0, 0.32)';
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
-                        <div
-                          style={{
-                            width: '32px',
-                            height: '32px',
-                            borderRadius: '50%',
-                            background: 'rgba(0, 242, 254, 0.16)',
-                            border: '1.4px solid rgba(0, 242, 254, 0.50)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            flexShrink: 0,
-                          }}
-                        >
-                          <Users size={16} color="#00f2fe" />
-                        </div>
-                        <div>
-                          <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                            Phần chi phí của bạn
-                          </div>
-                          <div style={{ fontSize: '12px', color: '#38bdf8', fontWeight: 700 }}>
-                            Tỷ lệ: {costSharingSummary?.userOwnershipPercentage != null ? `${costSharingSummary.userOwnershipPercentage}%` : `${currentUserOwnershipPercentage}%`}
-                          </div>
-                        </div>
-                      </div>
-                      <ChevronRight size={17} color="#38bdf8" />
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', paddingTop: '2px' }}>
-                      <div style={{ background: 'rgba(4, 16, 36, 0.60)', padding: '6px 10px', borderRadius: '10px', border: '1px solid rgba(0, 242, 254, 0.15)' }}>
-                        <div style={{ fontSize: '10px', color: '#94a3b8' }}>Phải chịu</div>
-                        <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#f8fafc', marginTop: '1px' }}>
-                          {costSharingSummary?.userRequiredShare != null ? `${Number(costSharingSummary.userRequiredShare).toLocaleString('vi-VN')}đ` : '...'}
-                        </div>
-                      </div>
-                      <div style={{ background: 'rgba(4, 16, 36, 0.60)', padding: '6px 10px', borderRadius: '10px', border: '1px solid rgba(0, 242, 254, 0.15)' }}>
-                        <div style={{ fontSize: '10px', color: '#94a3b8' }}>Chênh lệch</div>
-                        <div
-                          style={{
-                            fontSize: '13.5px',
-                            fontWeight: 800,
-                            marginTop: '1px',
-                            color: (costSharingSummary?.userNetPosition ?? 0) > 0 ? '#10b981' : (costSharingSummary?.userNetPosition ?? 0) < 0 ? '#fb7185' : '#38bdf8',
-                          }}
-                        >
-                          {costSharingSummary?.userNetPosition != null
-                            ? `${(costSharingSummary.userNetPosition > 0 ? '+' : '')}${Number(costSharingSummary.userNetPosition).toLocaleString('vi-VN')}đ`
-                            : '...'}
+                        <div style={{ fontSize: '11px', color: summary?.pendingCount ? '#f59e0b' : '#64748b', marginTop: '3px', fontWeight: 500 }}>
+                          {summary?.pendingCount ? `⏳ ${summary.pendingCount} chờ xác minh` : 'Đã đối soát'}
                         </div>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Item 3: Quỹ chung (Authoritative Backend Shared Fund) */}
-                  <div
-                    onClick={handleOpenFundDetail}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    style={{
-                      background: 'rgba(10, 30, 56, 0.78)',
-                      border: '1.4px solid rgba(0, 242, 254, 0.35)',
-                      borderRadius: '18px',
-                      padding: '12px 18px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '8px',
-                      cursor: 'pointer',
-                      boxShadow: '0 4px 18px rgba(0, 0, 0, 0.28)',
-                      transition: 'all 0.2s ease',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = '#00f2fe';
-                      e.currentTarget.style.boxShadow = '0 6px 24px rgba(0, 242, 254, 0.32)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.35)';
-                      e.currentTarget.style.boxShadow = '0 4px 18px rgba(0, 0, 0, 0.28)';
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div
-                          style={{
-                            width: '38px',
-                            height: '38px',
-                            borderRadius: '50%',
-                            background: 'rgba(0, 242, 254, 0.18)',
-                            border: '1.4px solid rgba(0, 242, 254, 0.55)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            flexShrink: 0,
-                          }}
-                        >
-                          <Wallet size={18} color="#00f2fe" />
-                        </div>
-                        <div>
-                          <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                            QUỸ CHUNG
-                          </div>
-                          <div style={{ fontSize: '16px', fontWeight: 850, color: '#00f2fe', marginTop: '1px' }}>
-                            {fundSummary ? `${Number(fundSummary.availableBalance).toLocaleString('vi-VN')}đ` : '25.000.000đ'}
-                          </div>
-                        </div>
-                      </div>
-                      <ChevronRight size={18} color="#38bdf8" />
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                      <div style={{ background: 'rgba(4, 16, 36, 0.60)', padding: '5px 8px', borderRadius: '8px', border: '1px solid rgba(0, 242, 254, 0.12)' }}>
-                        <div style={{ fontSize: '9.5px', color: '#94a3b8' }}>Đang chờ xác nhận</div>
-                        <div style={{ fontSize: '12px', fontWeight: 750, color: '#fbbf24', marginTop: '1px' }}>
-                          {fundSummary ? `${Number(fundSummary.pendingContributionTotal).toLocaleString('vi-VN')}đ` : '0đ'}
-                        </div>
-                      </div>
-                      <div style={{ background: 'rgba(4, 16, 36, 0.60)', padding: '5px 8px', borderRadius: '8px', border: '1px solid rgba(0, 242, 254, 0.12)' }}>
-                        <div style={{ fontSize: '9.5px', color: '#94a3b8' }}>Đã giải ngân</div>
-                        <div style={{ fontSize: '12px', fontWeight: 750, color: '#f87171', marginTop: '1px' }}>
-                          {fundSummary ? `${Number(fundSummary.totalDisbursementsConfirmed).toLocaleString('vi-VN')}đ` : '0đ'}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Primary Action Button: Mở bảng quỹ */}
-                  <button
-                    type="button"
-                    onClick={handleOpenFundDetail}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    style={{
-                      background: 'linear-gradient(135deg, #00f2fe 0%, #00c6ff 100%)',
-                      border: 'none',
-                      borderRadius: '16px',
-                      padding: '12px 20px',
-                      color: '#041628',
-                      fontSize: '14.5px',
-                      fontWeight: 800,
-                      letterSpacing: '0.01em',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      cursor: 'pointer',
-                      boxShadow: '0 6px 22px rgba(0, 242, 254, 0.45)',
-                      transition: 'all 0.2s ease',
-                      pointerEvents: 'auto',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'translateY(-2px)';
-                      e.currentTarget.style.boxShadow = '0 10px 30px rgba(0, 242, 254, 0.70)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'translateY(0)';
-                      e.currentTarget.style.boxShadow = '0 6px 22px rgba(0, 242, 254, 0.45)';
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
-                      <ExternalLink size={17} color="#041628" />
-                      <span>Chi tiết quỹ chung</span>
-                    </div>
-                    <ChevronRight size={17} color="#041628" />
-                  </button>
-
-                  {/* Fund Quick Action Buttons: Đóng góp quỹ & Lịch sử giao dịch */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                    <button
-                      type="button"
-                      onClick={handleOpenFundContributions}
+                    {/* 3. PERSONAL COST SUMMARY CARD */}
+                    <div
+                      onClick={handleOpenCostSharing}
                       onPointerDown={(e) => e.stopPropagation()}
+                      title="Bấm để xem chi tiết phân bổ chi phí"
                       style={{
-                        background: 'rgba(16, 185, 129, 0.15)',
-                        border: '1.2px solid rgba(16, 185, 129, 0.45)',
-                        borderRadius: '14px',
-                        padding: '10px 12px',
-                        color: '#34d399',
-                        fontSize: '12.5px',
-                        fontWeight: 750,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
+                        background: 'rgba(10, 30, 56, 0.85)',
+                        border: '1.2px solid rgba(0, 242, 254, 0.40)',
+                        borderRadius: '16px',
+                        padding: '13px 15px',
                         cursor: 'pointer',
                         transition: 'all 0.2s ease',
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'rgba(16, 185, 129, 0.25)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'rgba(16, 185, 129, 0.15)';
-                      }}
-                    >
-                      <PlusCircle size={15} color="#34d399" />
-                      <span>Đóng góp quỹ</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleOpenFundTransactions}
-                      onPointerDown={(e) => e.stopPropagation()}
-                      style={{
-                        background: 'rgba(56, 189, 248, 0.12)',
-                        border: '1.2px solid rgba(56, 189, 248, 0.40)',
-                        borderRadius: '14px',
-                        padding: '10px 12px',
-                        color: '#38bdf8',
-                        fontSize: '12.5px',
-                        fontWeight: 750,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s ease',
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'rgba(56, 189, 248, 0.22)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'rgba(56, 189, 248, 0.12)';
-                      }}
-                    >
-                      <History size={15} color="#38bdf8" />
-                      <span>Lịch sử giao dịch</span>
-                    </button>
-                  </div>
-
-                  {/* Secondary Action Button: Phân bổ chi phí */}
-                  <button
-                    type="button"
-                    onClick={handleOpenCostSharing}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    style={{
-                      background: 'rgba(10, 30, 56, 0.85)',
-                      border: '1.4px solid rgba(0, 242, 254, 0.45)',
-                      borderRadius: '16px',
-                      padding: '11px 18px',
-                      color: '#00f2fe',
-                      fontSize: '14px',
-                      fontWeight: 750,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = 'rgba(0, 242, 254, 0.15)';
-                      e.currentTarget.style.borderColor = '#00f2fe';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'rgba(10, 30, 56, 0.85)';
-                      e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.45)';
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <Users size={17} color="#00f2fe" />
-                      <span>Phân bổ chi phí (Chi tiết)</span>
-                    </div>
-                    <ChevronRight size={17} color="#00f2fe" />
-                  </button>
-
-                    {/* Tertiary Action Button: Lịch sử chi phí */}
-                    <button
-                      type="button"
-                      data-testid="finance-expense-history-nav-btn"
-                      onClick={handleOpenExpenseHistory}
-                      onPointerDown={(e) => e.stopPropagation()}
-                      style={{
-                        background: 'rgba(0, 242, 254, 0.12)',
-                        border: '1.4px solid rgba(0, 242, 254, 0.40)',
-                        borderRadius: '15px',
-                        padding: '11px 18px',
-                        color: '#ffffff',
-                        fontSize: '13.5px',
-                        fontWeight: 700,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s ease',
-                        boxShadow: '0 2px 10px rgba(0, 242, 254, 0.15)',
+                        boxShadow: '0 4px 14px rgba(0, 0, 0, 0.28)',
+                        flexShrink: 0,
                       }}
                       onMouseEnter={(e) => {
                         e.currentTarget.style.borderColor = '#00f2fe';
-                        e.currentTarget.style.background = 'rgba(0, 242, 254, 0.22)';
-                        e.currentTarget.style.transform = 'translateX(-2px)';
-                        e.currentTarget.style.boxShadow = '0 6px 20px rgba(0, 242, 254, 0.35)';
+                        e.currentTarget.style.background = 'rgba(14, 40, 76, 0.95)';
+                        e.currentTarget.style.boxShadow = '0 6px 18px rgba(0, 242, 254, 0.32)';
                       }}
                       onMouseLeave={(e) => {
                         e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.40)';
-                        e.currentTarget.style.background = 'rgba(0, 242, 254, 0.12)';
-                        e.currentTarget.style.transform = 'translateX(0)';
-                        e.currentTarget.style.boxShadow = '0 2px 10px rgba(0, 242, 254, 0.15)';
+                        e.currentTarget.style.background = 'rgba(10, 30, 56, 0.85)';
+                        e.currentTarget.style.boxShadow = '0 4px 14px rgba(0, 0, 0, 0.28)';
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
-                        <FileText size={17} color="#00f2fe" />
-                        <span>Lịch sử chi phí</span>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                          <Users size={15} color="#00f2fe" />
+                          <span style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            PHẦN CHI PHÍ CỦA BẠN
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span style={{ fontSize: '12.5px', color: '#38bdf8', fontWeight: 800 }}>
+                            Tỷ lệ: {costSharingSummary?.userOwnershipPercentage != null ? `${costSharingSummary.userOwnershipPercentage}%` : `${currentUserOwnershipPercentage}%`}
+                          </span>
+                          <ChevronRight size={14} color="#38bdf8" />
+                        </div>
                       </div>
-                      <ChevronRight size={17} color="#00f2fe" />
-                    </button>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                        <div style={{ background: 'rgba(4, 16, 36, 0.65)', padding: '7px 10px', borderRadius: '10px', border: '1px solid rgba(0, 242, 254, 0.12)' }}>
+                          <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase' }}>Phải chịu</div>
+                          <div style={{ fontSize: '14.5px', fontWeight: 800, color: '#f8fafc', marginTop: '2px' }}>
+                            {costSharingSummary?.userRequiredShare != null ? `${Number(costSharingSummary.userRequiredShare).toLocaleString('vi-VN')}đ` : '...'}
+                          </div>
+                        </div>
+                        <div style={{ background: 'rgba(4, 16, 36, 0.65)', padding: '7px 10px', borderRadius: '10px', border: '1px solid rgba(0, 242, 254, 0.12)' }}>
+                          <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase' }}>Chênh lệch (Net)</div>
+                          <div
+                            style={{
+                              fontSize: '14.5px',
+                              fontWeight: 800,
+                              marginTop: '2px',
+                              color: (costSharingSummary?.userNetPosition ?? 0) > 0 ? '#10b981' : (costSharingSummary?.userNetPosition ?? 0) < 0 ? '#fb7185' : '#38bdf8',
+                            }}
+                          >
+                            {costSharingSummary?.userNetPosition != null
+                              ? `${(costSharingSummary.userNetPosition > 0 ? '+' : '')}${Number(costSharingSummary.userNetPosition).toLocaleString('vi-VN')}đ`
+                              : '...'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 4. COMPACT TWO-COLUMN QUICK ACTION GRID */}
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 1fr',
+                        gap: '10px',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {/* Action 1: Chi tiết quỹ */}
+                      <button
+                        type="button"
+                        onClick={handleOpenFundDetail}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        style={{
+                          height: '44px',
+                          background: 'linear-gradient(135deg, rgba(0, 242, 254, 0.20) 0%, rgba(0, 198, 255, 0.12) 100%)',
+                          border: '1.2px solid rgba(0, 242, 254, 0.50)',
+                          borderRadius: '12px',
+                          padding: '0 12px',
+                          color: '#00f2fe',
+                          fontSize: '13px',
+                          fontWeight: 750,
+                          letterSpacing: '0.01em',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '7px',
+                          cursor: 'pointer',
+                          boxShadow: '0 2px 8px rgba(0, 242, 254, 0.15)',
+                          transition: 'all 0.2s ease',
+                          whiteSpace: 'nowrap',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 242, 254, 0.35) 0%, rgba(0, 198, 255, 0.22) 100%)';
+                          e.currentTarget.style.borderColor = '#00f2fe';
+                          e.currentTarget.style.transform = 'translateY(-1px)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 242, 254, 0.20) 0%, rgba(0, 198, 255, 0.12) 100%)';
+                          e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.50)';
+                          e.currentTarget.style.transform = 'translateY(0)';
+                        }}
+                      >
+                        <ExternalLink size={15} color="#00f2fe" />
+                        <span>CHI TIẾT QUỸ</span>
+                      </button>
+
+                      {/* Action 2: Đóng góp quỹ */}
+                      <button
+                        type="button"
+                        onClick={handleOpenFundContributions}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        style={{
+                          height: '44px',
+                          background: 'rgba(16, 185, 129, 0.15)',
+                          border: '1.2px solid rgba(16, 185, 129, 0.45)',
+                          borderRadius: '12px',
+                          padding: '0 12px',
+                          color: '#34d399',
+                          fontSize: '13px',
+                          fontWeight: 750,
+                          letterSpacing: '0.01em',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '7px',
+                          cursor: 'pointer',
+                          boxShadow: '0 2px 8px rgba(16, 185, 129, 0.15)',
+                          transition: 'all 0.2s ease',
+                          whiteSpace: 'nowrap',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'rgba(16, 185, 129, 0.28)';
+                          e.currentTarget.style.borderColor = '#10b981';
+                          e.currentTarget.style.transform = 'translateY(-1px)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'rgba(16, 185, 129, 0.15)';
+                          e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.45)';
+                          e.currentTarget.style.transform = 'translateY(0)';
+                        }}
+                      >
+                        <PlusCircle size={15} color="#34d399" />
+                        <span>ĐÓNG GÓP QUỸ</span>
+                      </button>
+
+                      {/* Action 3: Lịch sử giao dịch */}
+                      <button
+                        type="button"
+                        onClick={handleOpenFundTransactions}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        style={{
+                          height: '44px',
+                          background: 'rgba(56, 189, 248, 0.12)',
+                          border: '1.2px solid rgba(56, 189, 248, 0.40)',
+                          borderRadius: '12px',
+                          padding: '0 12px',
+                          color: '#38bdf8',
+                          fontSize: '13px',
+                          fontWeight: 750,
+                          letterSpacing: '0.01em',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '7px',
+                          cursor: 'pointer',
+                          boxShadow: '0 2px 8px rgba(56, 189, 248, 0.15)',
+                          transition: 'all 0.2s ease',
+                          whiteSpace: 'nowrap',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'rgba(56, 189, 248, 0.24)';
+                          e.currentTarget.style.borderColor = '#38bdf8';
+                          e.currentTarget.style.transform = 'translateY(-1px)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'rgba(56, 189, 248, 0.12)';
+                          e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.40)';
+                          e.currentTarget.style.transform = 'translateY(0)';
+                        }}
+                      >
+                        <History size={15} color="#38bdf8" />
+                        <span>LỊCH SỬ GIAO DỊCH</span>
+                      </button>
+
+                      {/* Action 4: Phân bổ chi phí */}
+                      <button
+                        type="button"
+                        onClick={handleOpenCostSharing}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        style={{
+                          height: '44px',
+                          background: 'rgba(10, 30, 56, 0.85)',
+                          border: '1.2px solid rgba(0, 242, 254, 0.40)',
+                          borderRadius: '12px',
+                          padding: '0 12px',
+                          color: '#00f2fe',
+                          fontSize: '13px',
+                          fontWeight: 750,
+                          letterSpacing: '0.01em',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '7px',
+                          cursor: 'pointer',
+                          boxShadow: '0 2px 8px rgba(0, 242, 254, 0.15)',
+                          transition: 'all 0.2s ease',
+                          whiteSpace: 'nowrap',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'rgba(0, 242, 254, 0.16)';
+                          e.currentTarget.style.borderColor = '#00f2fe';
+                          e.currentTarget.style.transform = 'translateY(-1px)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'rgba(10, 30, 56, 0.85)';
+                          e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.40)';
+                          e.currentTarget.style.transform = 'translateY(0)';
+                        }}
+                      >
+                        <Users size={15} color="#00f2fe" />
+                        <span>PHÂN BỔ CHI PHÍ</span>
+                      </button>
+
+                      {/* Action 5: Lịch sử chi phí (Spanning both columns) */}
+                      <button
+                        type="button"
+                        data-testid="finance-expense-history-nav-btn"
+                        onClick={handleOpenExpenseHistory}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        style={{
+                          gridColumn: '1 / -1',
+                          height: '44px',
+                          background: 'linear-gradient(135deg, rgba(0, 242, 254, 0.14) 0%, rgba(3, 105, 161, 0.18) 100%)',
+                          border: '1.2px solid rgba(0, 242, 254, 0.45)',
+                          borderRadius: '12px',
+                          padding: '0 16px',
+                          color: '#ffffff',
+                          fontSize: '13px',
+                          fontWeight: 750,
+                          letterSpacing: '0.01em',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease',
+                          boxShadow: '0 2px 10px rgba(0, 242, 254, 0.16)',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = '#00f2fe';
+                          e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 242, 254, 0.25) 0%, rgba(3, 105, 161, 0.30) 100%)';
+                          e.currentTarget.style.transform = 'translateY(-1px)';
+                          e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 242, 254, 0.30)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.45)';
+                          e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 242, 254, 0.14) 0%, rgba(3, 105, 161, 0.18) 100%)';
+                          e.currentTarget.style.transform = 'translateY(0)';
+                          e.currentTarget.style.boxShadow = '0 2px 10px rgba(0, 242, 254, 0.16)';
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <FileText size={15} color="#00f2fe" />
+                          <span>LỊCH SỬ CHI PHÍ</span>
+                        </div>
+                        <ChevronRight size={15} color="#00f2fe" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -2506,7 +2516,7 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
                         Số dư khả dụng
                       </div>
                       <div style={{ fontSize: '24px', fontWeight: 850, color: '#00f2fe', marginTop: '2px', letterSpacing: '-0.01em' }}>
-                        {fundSummary ? `${Number(fundSummary.availableBalance).toLocaleString('vi-VN')}đ` : '25.000.000đ'}
+                        {fundBalanceDisplay}
                       </div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
@@ -2514,9 +2524,7 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
                         Phần của bạn ({currentUserOwnershipPercentage}%)
                       </div>
                       <div style={{ fontSize: '19px', fontWeight: 800, color: '#10b981', marginTop: '2px' }}>
-                        {fundSummary
-                          ? `${Math.round((Number(fundSummary.availableBalance) * currentUserOwnershipPercentage) / 100).toLocaleString('vi-VN')}đ`
-                          : `${((25000000 * currentUserOwnershipPercentage) / 100).toLocaleString('vi-VN')}đ`}
+                        {userFundShareDisplay}
                       </div>
                     </div>
                   </div>
@@ -2616,7 +2624,7 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
                         Tổng đóng góp
                       </div>
                       <div style={{ fontSize: '14px', fontWeight: 800, color: '#10b981', marginTop: '3px' }}>
-                        {fundSummary ? `${Number(fundSummary.totalContributionsConfirmed).toLocaleString('vi-VN')}đ` : '25.000.000đ'}
+                        {fundSummary ? `${Number(fundSummary.totalContributionsConfirmed).toLocaleString('vi-VN')}đ` : totalContributionsDisplay}
                       </div>
                     </div>
                     <div>
@@ -3347,7 +3355,7 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
                         Số dư hiện có
                       </div>
                       <div style={{ fontSize: '14px', fontWeight: 850, color: '#00f2fe', marginTop: '2px' }}>
-                        {fundSummary ? `${Number(fundSummary.availableBalance).toLocaleString('vi-VN')}đ` : '25.000.000đ'}
+                        {fundBalanceDisplay}
                       </div>
                     </div>
                     <div>
@@ -3355,7 +3363,7 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
                         Tổng thu vào
                       </div>
                       <div style={{ fontSize: '14px', fontWeight: 800, color: '#10b981', marginTop: '2px' }}>
-                        +{fundSummary ? `${Number(fundSummary.totalContributionsConfirmed).toLocaleString('vi-VN')}đ` : '25.000.000đ'}
+                        +{fundSummary ? `${Number(fundSummary.totalContributionsConfirmed).toLocaleString('vi-VN')}đ` : totalContributionsDisplay}
                       </div>
                     </div>
                     <div>

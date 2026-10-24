@@ -109,74 +109,89 @@ export function useCoOwnerTripPrerequisites(
     data: bookingHandover = null,
     isLoading: isHandoverLoading,
   } = useQuery<VehicleHandoverData | null>({
-    queryKey: ['bookingHandover', user?.id, candidateBooking?.id],
+    queryKey: ['booking-handover', candidateBooking?.id],
     queryFn: () =>
       candidateBooking?.id ? fetchBookingHandover(candidateBooking.id) : Promise.resolve(null),
     enabled: authReady && !!candidateBooking?.id,
-    refetchInterval: 4000,
+    staleTime: 0,
+    refetchInterval: 3000,
   });
 
   // 4. Fetch trip for candidate booking to detect completed trips
   const { data: bookingTrip = null, isLoading: isBookingTripLoading } = useQuery<TripData | null>({
-    queryKey: ['bookingTrip', user?.id, candidateBooking?.id],
+    queryKey: ['booking-trip', candidateBooking?.id],
     queryFn: () =>
       candidateBooking?.id ? fetchBookingTrip(candidateBooking.id) : Promise.resolve(null),
     enabled: authReady && !!candidateBooking?.id,
-    refetchInterval: 4000,
+    staleTime: 0,
+    refetchInterval: 3000,
   });
 
-  // 5. Verify completed handover identity chain
+  // 5. Verify completed handover identity chain (Section 2 & 3)
   const completedHandover = useMemo(() => {
     if (!bookingHandover || !candidateBooking || !user) return null;
-    const isConfirmedStatus =
-      bookingHandover.status === 'HANDED_OVER' ||
-      bookingHandover.status === 'OWNER_CONFIRMED' ||
-      bookingHandover.status === 'COMPLETED';
+
+    // Strict booking and vehicle identity matching
     const matchesBooking = bookingHandover.bookingId === candidateBooking.id;
     const matchesVehicle = !bookingHandover.vehicleId || bookingHandover.vehicleId === vehicleId;
     const matchesUser =
       (!user.id || bookingHandover.coOwnerId === user.id) ||
       (!user.email || bookingHandover.coOwnerEmail === user.email);
-    const notCancelled = bookingHandover.status !== 'CANCELLED';
+    if (!matchesBooking || !matchesVehicle || !matchesUser) {
+      return null;
+    }
 
-    // Must have staff confirmation
-    const hasStaffHandover = !!(
-      bookingHandover.staffHandedOverAt ||
-      bookingHandover.staffId ||
-      bookingHandover.staffName ||
-      bookingHandover.status === 'HANDED_OVER' ||
-      bookingHandover.status === 'OWNER_CONFIRMED' ||
-      bookingHandover.status === 'COMPLETED'
-    );
+    // Historical completed or cancelled handovers never authorize Start Trip or show active success
+    if (bookingHandover.status === 'CANCELLED' || bookingHandover.status === 'COMPLETED') {
+      return null;
+    }
 
     // Historical completed trip cannot restart
-    const tripAlreadyCompleted = bookingTrip?.status === 'COMPLETED';
+    if (bookingTrip?.status === 'COMPLETED') {
+      return null;
+    }
 
-    if (
-      isConfirmedStatus &&
-      matchesBooking &&
-      matchesVehicle &&
-      matchesUser &&
-      notCancelled &&
-      hasStaffHandover &&
-      !tripAlreadyCompleted
-    ) {
+    // Inspection check: if inspection is linked, it must not be FAIL
+    if (bookingHandover.inspection?.overallResult === 'FAIL') {
+      return null;
+    }
+
+    // Handover must have authoritative staff confirmation timestamp and handed over status
+    const isHandedOverStatus =
+      bookingHandover.status === 'HANDED_OVER' ||
+      bookingHandover.status === 'OWNER_CONFIRMED';
+
+    const hasAuthoritativeStaffConfirmation = Boolean(
+      bookingHandover.staffHandedOverAt || bookingHandover.confirmedAt
+    );
+
+    if (isHandedOverStatus && hasAuthoritativeStaffConfirmation) {
       return bookingHandover;
     }
+
     return null;
   }, [bookingHandover, candidateBooking, user, vehicleId, bookingTrip]);
 
-  // 6. Pre-handover inspection completed, but staff handover still pending
+  // 6. Pre-handover inspection completed, but staff handover still pending (Case B)
   const isInspectionOnlyCompleted = useMemo(() => {
     if (!bookingHandover || !candidateBooking) return false;
+    if (bookingHandover.bookingId !== candidateBooking.id) return false;
+
+    // If already fully handed over by staff, it's not inspection-only
+    if (completedHandover) return false;
+
+    // Cancelled or completed handovers are not active inspection-only
+    if (bookingHandover.status === 'CANCELLED' || bookingHandover.status === 'COMPLETED') return false;
+
     const isInspectionReady =
       bookingHandover.status === 'READY_FOR_HANDOVER' ||
       (bookingHandover.allCheckpointsInspected &&
+        !bookingHandover.staffHandedOverAt &&
         bookingHandover.status !== 'HANDED_OVER' &&
-        bookingHandover.status !== 'OWNER_CONFIRMED' &&
-        bookingHandover.status !== 'COMPLETED');
-    return isInspectionReady;
-  }, [bookingHandover, candidateBooking]);
+        bookingHandover.status !== 'OWNER_CONFIRMED');
+
+    return Boolean(isInspectionReady);
+  }, [bookingHandover, candidateBooking, completedHandover]);
 
   const isWaitingForStaff = useMemo(() => {
     if (!candidateBooking) return false;
@@ -192,7 +207,7 @@ export function useCoOwnerTripPrerequisites(
     error: eligibilityErrorObj,
     refetch: refetchEligibility,
   } = useQuery<TripStartEligibilityData | null>({
-    queryKey: ['tripEligibility', user?.id, candidateBooking?.id],
+    queryKey: ['trip-start-eligibility', candidateBooking?.id],
     queryFn: () =>
       candidateBooking?.id ? fetchTripStartEligibility(candidateBooking.id) : Promise.resolve(null),
     enabled: authReady && !!completedHandover && !!candidateBooking?.id && !isTripActive,

@@ -56,7 +56,7 @@ export const OPERATIONS_ZONE_CONFIGS: Record<GarageZone, ZoneConfig> = {
     name: 'KHU VỰC TÀI CHÍNH',
     subtitle: 'Quỹ đồng sở hữu & Phân bổ chi phí',
     description: 'Quản lý quỹ chung minh bạch, theo dõi chi phí vận hành và phân bổ doanh thu/chi phí cho các chủ xe.',
-    compactSummary: 'Quỹ chung | 25.000.000 ₫',
+    compactSummary: 'Quỹ chung & Chi phí vận hành',
     position: [-7.5, 0, -4.5],
     color: '#059669',
     accentColor: '#34d399',

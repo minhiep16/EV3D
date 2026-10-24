@@ -97,6 +97,17 @@ body {
   }
 }
 
+@keyframes panelSlideInFromRight {
+  0% {
+    opacity: 0;
+    transform: translateX(45px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 @keyframes fadeIn {
   0% {
     opacity: 0;
@@ -104,4 +115,43 @@ body {
   100% {
     opacity: 1;
   }
+}
+
+@keyframes contractPanelFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.evshare-contract-panel {
+  position: fixed;
+  top: 90px;
+  right: 24px;
+  bottom: 20px;
+  width: min(500px, calc(100vw - 32px));
+  height: calc(100vh - 110px);
+  max-height: calc(100vh - 110px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 1000;
+  animation: contractPanelFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.evshare-ownership-panel {
+  position: fixed;
+  top: 90px;
+  right: 24px;
+  bottom: 20px;
+  width: min(500px, calc(100vw - 32px));
+  height: calc(100vh - 110px);
+  max-height: calc(100vh - 110px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 1000;
+  animation: contractPanelFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }

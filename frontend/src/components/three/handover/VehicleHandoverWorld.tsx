@@ -348,6 +348,11 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandovers', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandover', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['handoverHistory', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['vehicle-handover-history', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['bookingHandover'] }),
+        queryClient.invalidateQueries({ queryKey: ['booking-handover'] }),
+        queryClient.invalidateQueries({ queryKey: ['trip-start-eligibility'] }),
+        queryClient.invalidateQueries({ queryKey: ['booking-trip'] }),
         queryClient.invalidateQueries({ queryKey: ['vehicleRelevantBooking', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
       ]);

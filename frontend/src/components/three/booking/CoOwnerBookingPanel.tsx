@@ -126,6 +126,10 @@ export const CoOwnerBookingPanel: React.FC<CoOwnerBookingPanelProps> = ({
         queryClient.invalidateQueries({ queryKey: ['vehicles'] }),
         queryClient.invalidateQueries({ queryKey: ['fleetVehicles'] }),
         queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['bookingHandover'] }),
+        queryClient.invalidateQueries({ queryKey: ['activeVehicleHandovers'] }),
+        queryClient.invalidateQueries({ queryKey: ['tripEligibility'] }),
+        queryClient.invalidateQueries({ queryKey: ['bookingTrip'] }),
       ]);
     } catch (err: any) {
       setPanelState('ERROR');

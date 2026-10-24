@@ -273,7 +273,7 @@ export const StaffFinancialVerificationPanel: React.FC<StaffFinancialVerificatio
           <span>CHẾ ĐỘ TÀI CHÍNH DEMO</span>
         </div>
         <div style={{ fontSize: '10.5px', color: '#94a3b8' }}>
-          Số dư quỹ: <strong style={{ color: '#34d399' }}>{formatVnd(fundSummary?.availableBalance ?? 25000000)}</strong>
+          Số dư quỹ: <strong style={{ color: '#34d399' }}>{formatVnd(fundSummary?.availableBalance ?? 0)}</strong>
         </div>
       </div>
 

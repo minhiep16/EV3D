@@ -241,23 +241,27 @@ export const AddMemberModal3D: React.FC<AddMemberModal3DProps> = ({
                 paddingRight: '2px',
               }}
             >
-              {users.length === 0 && !isSearching ? (
-                <div
-                  style={{
-                    fontSize: '11px',
-                    color: '#64748b',
-                    textAlign: 'center',
-                    padding: '16px 8px',
-                    background: 'rgba(255, 255, 255, 0.02)',
-                    borderRadius: '8px',
-                  }}
-                >
-                  {searchTerm.trim()
-                    ? 'Không tìm thấy người dùng phù hợp'
-                    : 'Không còn người dùng khả dụng'}
-                </div>
-              ) : (
-                users.map((u) => {
+              {(() => {
+                const safeUsers = Array.isArray(users) ? users : [];
+                if (safeUsers.length === 0 && !isSearching) {
+                  return (
+                    <div
+                      style={{
+                        fontSize: '11px',
+                        color: '#64748b',
+                        textAlign: 'center',
+                        padding: '16px 8px',
+                        background: 'rgba(255, 255, 255, 0.02)',
+                        borderRadius: '8px',
+                      }}
+                    >
+                      {searchTerm.trim()
+                        ? 'Không tìm thấy người dùng phù hợp'
+                        : 'Không còn người dùng khả dụng'}
+                    </div>
+                  );
+                }
+                return safeUsers.map((u) => {
                   const isSelected = selectedUser?.id === u.id;
                   return (
                     <div

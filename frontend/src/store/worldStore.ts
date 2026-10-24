@@ -41,7 +41,22 @@ export type VehicleFeatureMode =
   | 'VEHICLE_MAINTENANCE'
   | 'BATTERY_XRAY'
   | 'CHARGING'
-  | 'CO_OWNER_VOTING';
+  | 'CO_OWNER_VOTING'
+  | 'CO_OWNER_CONTRACT';
+
+export type PrimaryGaragePanel =
+  | 'NONE'
+  | 'VEHICLE_DETAIL'
+  | 'VOTING'
+  | 'BOOKING'
+  | 'MAINTENANCE'
+  | 'DAMAGE'
+  | 'BATTERY_XRAY'
+  | 'CHARGING'
+  | 'CO_OWNERSHIP'
+  | 'VEHICLE_INFO'
+  | 'MY_BOOKINGS'
+  | 'CONTRACT';
 
 export type VehicleStatus =
   | 'AVAILABLE'
@@ -205,6 +220,22 @@ interface WorldState {
   closeVehicleDetail: () => void;
   setVehicleDetailOpen: (open: boolean) => void;
 
+  // Authoritative Single Active Primary Panel State (Section 9 & 12)
+  activePrimaryPanel: PrimaryGaragePanel;
+  openGaragePanel: (
+    panel: PrimaryGaragePanel,
+    options?: {
+      vehicleId?: string | null;
+      proposalId?: string | null;
+      stationId?: string | null;
+      maintenanceId?: string | null;
+      initialPartCode?: string | null;
+    }
+  ) => void;
+  closeGaragePanel: (panel?: PrimaryGaragePanel) => void;
+  openContractPanel: (vehicleId?: string | null) => void;
+  closeContractPanel: () => void;
+
   // Phase 18: Finance detail modal state (Chi tháng này, Lịch sử chi phí, Bảng quỹ chung)
   isFinanceDetailModalOpen: boolean;
   setFinanceDetailModalOpen: (open: boolean) => void;
@@ -349,6 +380,7 @@ export const useWorldStore = create<WorldState>((set) => ({
   vehicleMode: 'NONE',
   activeExperience: null,
   isVehicleSelected: false,
+  activePrimaryPanel: 'NONE',
   isVehicleDetailOpen: false,
 
   vehicleBatteryXrayMode: false,
@@ -403,9 +435,59 @@ export const useWorldStore = create<WorldState>((set) => ({
   setVehicleYaw: (yaw) => set({ vehicleYaw: yaw }),
   resetVehicleYaw: () => set({ vehicleYaw: -0.32 }),
 
-  openVehicleDetail: () => set({ isVehicleDetailOpen: true }),
-  closeVehicleDetail: () => set({ isVehicleDetailOpen: false }),
-  setVehicleDetailOpen: (open) => set({ isVehicleDetailOpen: open }),
+  openVehicleDetail: () =>
+    set((state) => {
+      let role: string | undefined;
+      try {
+        role = useAuthStore.getState().user?.role;
+      } catch {
+        role = 'CO_OWNER';
+      }
+      const targetMode: VehicleFeatureMode =
+        role === 'STAFF'
+          ? 'STAFF_VEHICLE_OVERVIEW'
+          : role === 'ADMIN'
+          ? 'ADMIN_VEHICLE_OVERVIEW'
+          : 'CO_OWNER_VEHICLE_OVERVIEW';
+      return {
+        activePrimaryPanel: 'VEHICLE_DETAIL',
+        isVehicleDetailOpen: true,
+        vehicleVotingMode: false,
+        selectedProposalId: null,
+        vehicleBookingMode: false,
+        vehicleMaintenanceMode: false,
+        selectedMaintenanceId: null,
+        vehicleBatteryXrayMode: false,
+        vehicleChargingMode: false,
+        selectedChargingStationId: null,
+        vehicleDamageHistoryMode: false,
+        selectedDamageId: null,
+        vehicleCoOwnershipMode: false,
+        vehicleInspectionMode: false,
+        vehicleFeatureMode: targetMode,
+        vehicleMode: targetMode,
+      };
+    }),
+  closeVehicleDetail: () =>
+    set((state) => ({
+      activePrimaryPanel: state.activePrimaryPanel === 'VEHICLE_DETAIL' ? 'NONE' : state.activePrimaryPanel,
+      isVehicleDetailOpen: false,
+    })),
+  setVehicleDetailOpen: (open) =>
+    set((state) => {
+      if (open) {
+        return {
+          activePrimaryPanel: 'VEHICLE_DETAIL',
+          isVehicleDetailOpen: true,
+          vehicleVotingMode: false,
+          selectedProposalId: null,
+        };
+      }
+      return {
+        activePrimaryPanel: state.activePrimaryPanel === 'VEHICLE_DETAIL' ? 'NONE' : state.activePrimaryPanel,
+        isVehicleDetailOpen: false,
+      };
+    }),
 
   isFinanceDetailModalOpen: false,
   setFinanceDetailModalOpen: (open) => set({ isFinanceDetailModalOpen: open }),
@@ -500,7 +582,10 @@ export const useWorldStore = create<WorldState>((set) => ({
           vehicleFeatureMode: 'NONE',
           vehicleMode: 'NONE',
           isVehicleSelected: false,
+          activePrimaryPanel: 'NONE',
           isVehicleDetailOpen: false,
+          vehicleVotingMode: false,
+          selectedProposalId: null,
         };
       }
 
@@ -527,6 +612,8 @@ export const useWorldStore = create<WorldState>((set) => ({
         activeExp = 'CO_OWNER';
       }
 
+      const shouldOpenDetail = openDetail ?? false;
+
       return {
         selectedVehicleId: id,
         selectedZone: 'VEHICLE',
@@ -536,7 +623,10 @@ export const useWorldStore = create<WorldState>((set) => ({
         vehicleMode: targetMode,
         activeExperience: activeExp,
         isVehicleSelected: true,
-        isVehicleDetailOpen: openDetail ?? false,
+        activePrimaryPanel: shouldOpenDetail ? 'VEHICLE_DETAIL' : (state.activePrimaryPanel === 'VEHICLE_DETAIL' ? 'NONE' : state.activePrimaryPanel),
+        isVehicleDetailOpen: shouldOpenDetail,
+        vehicleVotingMode: false,
+        selectedProposalId: null,
         vehicleInspectionMode: false,
         selectedVehiclePartId: null,
         selectedVehiclePartCode: null,
@@ -556,6 +646,9 @@ export const useWorldStore = create<WorldState>((set) => ({
         selectedMaintenanceId: null,
         maintenanceDraftPreselectedDamageId: null,
         maintenanceDraftPreselectedPartCode: null,
+        vehicleBatteryXrayMode: false,
+        vehicleChargingMode: false,
+        selectedChargingStationId: null,
       };
     }),
 
@@ -587,6 +680,7 @@ export const useWorldStore = create<WorldState>((set) => ({
       vehicleFeatureMode: 'NONE',
       vehicleMode: 'NONE',
       isVehicleSelected: false,
+      activePrimaryPanel: 'NONE',
       isVehicleDetailOpen: false,
       isFinanceDetailModalOpen: false,
       vehicleInspectionMode: false,
@@ -1515,6 +1609,7 @@ export const useWorldStore = create<WorldState>((set) => ({
     set((state) => {
       const targetVehicleId = options?.vehicleId || state.selectedVehicleId || 'EV01';
       return {
+        activePrimaryPanel: 'VOTING',
         vehicleVotingMode: true,
         selectedProposalId: options?.proposalId || null,
         vehicleFeatureMode: 'CO_OWNER_VOTING',
@@ -1555,12 +1650,13 @@ export const useWorldStore = create<WorldState>((set) => ({
           ? 'ADMIN_VEHICLE_OVERVIEW'
           : 'CO_OWNER_VEHICLE_OVERVIEW';
       return {
+        activePrimaryPanel: 'NONE',
         vehicleVotingMode: false,
         selectedProposalId: null,
         vehicleFeatureMode: targetMode,
         vehicleMode: targetMode,
         isVehicleSelected: true,
-        isVehicleDetailOpen: true,
+        isVehicleDetailOpen: false,
       };
     }),
 
@@ -1579,12 +1675,351 @@ export const useWorldStore = create<WorldState>((set) => ({
           ? 'ADMIN_VEHICLE_OVERVIEW'
           : 'CO_OWNER_VEHICLE_OVERVIEW';
       return {
+        activePrimaryPanel: 'NONE',
         vehicleVotingMode: false,
         selectedProposalId: null,
         vehicleFeatureMode: targetMode,
         vehicleMode: targetMode,
         isVehicleSelected: true,
-        isVehicleDetailOpen: true,
+        isVehicleDetailOpen: false,
+      };
+    }),
+
+  openContractPanel: (vehicleId) =>
+    get().openGaragePanel('CONTRACT', { vehicleId }),
+
+  closeContractPanel: () =>
+    get().closeGaragePanel('CONTRACT'),
+
+  openGaragePanel: (targetPanel, options) =>
+    set((state) => {
+      let role: string | undefined;
+      try {
+        role = useAuthStore.getState().user?.role;
+      } catch {
+        role = 'CO_OWNER';
+      }
+      const targetVehicleId = options?.vehicleId || state.selectedVehicleId || 'EV01';
+      const defaultOverviewMode: VehicleFeatureMode =
+        role === 'STAFF'
+          ? 'STAFF_VEHICLE_OVERVIEW'
+          : role === 'ADMIN'
+          ? 'ADMIN_VEHICLE_OVERVIEW'
+          : 'CO_OWNER_VEHICLE_OVERVIEW';
+
+      if (targetPanel === 'NONE') {
+        return {
+          activePrimaryPanel: 'NONE',
+          isVehicleDetailOpen: false,
+          vehicleVotingMode: false,
+          selectedProposalId: null,
+          vehicleBookingMode: false,
+          vehicleMaintenanceMode: false,
+          selectedMaintenanceId: null,
+          vehicleBatteryXrayMode: false,
+          vehicleChargingMode: false,
+          selectedChargingStationId: null,
+          vehicleDamageHistoryMode: false,
+          selectedDamageId: null,
+          vehicleCoOwnershipMode: false,
+          vehicleInspectionMode: false,
+          vehicleFeatureMode: 'NONE',
+          vehicleMode: 'NONE',
+        };
+      }
+
+      if (targetPanel === 'VEHICLE_DETAIL') {
+        return {
+          activePrimaryPanel: 'VEHICLE_DETAIL',
+          isVehicleDetailOpen: true,
+          isVehicleSelected: true,
+          selectedZone: 'VEHICLE',
+          selectedVehicleId: targetVehicleId,
+          vehicleFeatureMode: defaultOverviewMode,
+          vehicleMode: defaultOverviewMode,
+          vehicleVotingMode: false,
+          selectedProposalId: null,
+          vehicleBookingMode: false,
+          vehicleMaintenanceMode: false,
+          selectedMaintenanceId: null,
+          vehicleBatteryXrayMode: false,
+          vehicleChargingMode: false,
+          selectedChargingStationId: null,
+          vehicleDamageHistoryMode: false,
+          selectedDamageId: null,
+          vehicleCoOwnershipMode: false,
+          vehicleInspectionMode: false,
+          selectedVehiclePartId: null,
+          selectedVehiclePartCode: null,
+        };
+      }
+
+      if (targetPanel === 'VOTING') {
+        return {
+          activePrimaryPanel: 'VOTING',
+          isVehicleDetailOpen: false,
+          isVehicleSelected: true,
+          selectedZone: 'VEHICLE',
+          selectedVehicleId: targetVehicleId,
+          vehicleVotingMode: true,
+          selectedProposalId: options?.proposalId || null,
+          vehicleFeatureMode: 'CO_OWNER_VOTING',
+          vehicleMode: 'CO_OWNER_VOTING',
+          vehicleBookingMode: false,
+          vehicleMaintenanceMode: false,
+          selectedMaintenanceId: null,
+          vehicleBatteryXrayMode: false,
+          vehicleChargingMode: false,
+          selectedChargingStationId: null,
+          vehicleDamageHistoryMode: false,
+          selectedDamageId: null,
+          vehicleCoOwnershipMode: false,
+          vehicleInspectionMode: false,
+          selectedVehiclePartId: null,
+          selectedVehiclePartCode: null,
+        };
+      }
+
+      if (targetPanel === 'BOOKING') {
+        return {
+          activePrimaryPanel: 'BOOKING',
+          isVehicleDetailOpen: false,
+          isVehicleSelected: true,
+          selectedZone: 'VEHICLE',
+          selectedVehicleId: targetVehicleId,
+          vehicleBookingMode: true,
+          vehicleFeatureMode: 'BOOKING',
+          vehicleMode: 'BOOKING',
+          vehicleVotingMode: false,
+          selectedProposalId: null,
+          vehicleMaintenanceMode: false,
+          selectedMaintenanceId: null,
+          vehicleBatteryXrayMode: false,
+          vehicleChargingMode: false,
+          selectedChargingStationId: null,
+          vehicleDamageHistoryMode: false,
+          selectedDamageId: null,
+          vehicleCoOwnershipMode: false,
+          vehicleInspectionMode: false,
+        };
+      }
+
+      if (targetPanel === 'MAINTENANCE') {
+        return {
+          activePrimaryPanel: 'MAINTENANCE',
+          isVehicleDetailOpen: false,
+          isVehicleSelected: true,
+          selectedZone: 'VEHICLE',
+          selectedVehicleId: targetVehicleId,
+          vehicleMaintenanceMode: true,
+          selectedMaintenanceId: options?.maintenanceId || null,
+          vehicleFeatureMode: 'VEHICLE_MAINTENANCE',
+          vehicleMode: 'VEHICLE_MAINTENANCE',
+          vehicleVotingMode: false,
+          selectedProposalId: null,
+          vehicleBookingMode: false,
+          vehicleBatteryXrayMode: false,
+          vehicleChargingMode: false,
+          selectedChargingStationId: null,
+          vehicleDamageHistoryMode: false,
+          selectedDamageId: null,
+          vehicleCoOwnershipMode: false,
+          vehicleInspectionMode: false,
+        };
+      }
+
+      if (targetPanel === 'DAMAGE') {
+        return {
+          activePrimaryPanel: 'DAMAGE',
+          isVehicleDetailOpen: false,
+          isVehicleSelected: true,
+          selectedZone: 'VEHICLE',
+          selectedVehicleId: targetVehicleId,
+          vehicleDamageHistoryMode: true,
+          vehicleFeatureMode: 'DAMAGE_HISTORY',
+          vehicleMode: 'DAMAGE_HISTORY',
+          vehicleVotingMode: false,
+          selectedProposalId: null,
+          vehicleBookingMode: false,
+          vehicleMaintenanceMode: false,
+          selectedMaintenanceId: null,
+          vehicleBatteryXrayMode: false,
+          vehicleChargingMode: false,
+          selectedChargingStationId: null,
+          vehicleCoOwnershipMode: false,
+          vehicleInspectionMode: false,
+        };
+      }
+
+      if (targetPanel === 'BATTERY_XRAY') {
+        return {
+          activePrimaryPanel: 'BATTERY_XRAY',
+          isVehicleDetailOpen: false,
+          isVehicleSelected: true,
+          selectedZone: 'VEHICLE',
+          selectedVehicleId: targetVehicleId,
+          vehicleBatteryXrayMode: true,
+          vehicleFeatureMode: 'BATTERY_XRAY',
+          vehicleMode: 'BATTERY_XRAY',
+          vehicleVotingMode: false,
+          selectedProposalId: null,
+          vehicleBookingMode: false,
+          vehicleMaintenanceMode: false,
+          selectedMaintenanceId: null,
+          vehicleChargingMode: false,
+          selectedChargingStationId: null,
+          vehicleDamageHistoryMode: false,
+          selectedDamageId: null,
+          vehicleCoOwnershipMode: false,
+          vehicleInspectionMode: false,
+        };
+      }
+
+      if (targetPanel === 'CHARGING') {
+        return {
+          activePrimaryPanel: 'CHARGING',
+          isVehicleDetailOpen: false,
+          isVehicleSelected: true,
+          selectedZone: 'VEHICLE',
+          selectedVehicleId: targetVehicleId,
+          vehicleChargingMode: true,
+          selectedChargingStationId: options?.stationId || 'CS01',
+          vehicleFeatureMode: 'CHARGING',
+          vehicleMode: 'CHARGING',
+          vehicleVotingMode: false,
+          selectedProposalId: null,
+          vehicleBookingMode: false,
+          vehicleMaintenanceMode: false,
+          selectedMaintenanceId: null,
+          vehicleBatteryXrayMode: false,
+          vehicleDamageHistoryMode: false,
+          selectedDamageId: null,
+          vehicleCoOwnershipMode: false,
+          vehicleInspectionMode: false,
+        };
+      }
+
+      if (targetPanel === 'CO_OWNERSHIP') {
+        return {
+          activePrimaryPanel: 'CO_OWNERSHIP',
+          isVehicleDetailOpen: false,
+          isVehicleSelected: true,
+          selectedZone: 'VEHICLE',
+          selectedVehicleId: targetVehicleId,
+          vehicleCoOwnershipMode: true,
+          vehicleFeatureMode: 'CO_OWNERSHIP',
+          vehicleMode: 'CO_OWNERSHIP',
+          vehicleVotingMode: false,
+          selectedProposalId: null,
+          vehicleBookingMode: false,
+          vehicleMaintenanceMode: false,
+          selectedMaintenanceId: null,
+          vehicleBatteryXrayMode: false,
+          vehicleChargingMode: false,
+          selectedChargingStationId: null,
+          vehicleDamageHistoryMode: false,
+          selectedDamageId: null,
+          vehicleInspectionMode: false,
+        };
+      }
+
+      if (targetPanel === 'VEHICLE_INFO') {
+        return {
+          activePrimaryPanel: 'VEHICLE_INFO',
+          isVehicleDetailOpen: false,
+          isVehicleSelected: true,
+          selectedZone: 'VEHICLE',
+          selectedVehicleId: targetVehicleId,
+          vehicleFeatureMode: 'CO_OWNER_VEHICLE_INFO',
+          vehicleMode: 'CO_OWNER_VEHICLE_INFO',
+          vehicleVotingMode: false,
+          selectedProposalId: null,
+          vehicleBookingMode: false,
+          vehicleMaintenanceMode: false,
+          selectedMaintenanceId: null,
+          vehicleBatteryXrayMode: false,
+          vehicleChargingMode: false,
+          selectedChargingStationId: null,
+          vehicleDamageHistoryMode: false,
+          selectedDamageId: null,
+          vehicleCoOwnershipMode: false,
+          vehicleInspectionMode: false,
+        };
+      }
+
+      if (targetPanel === 'MY_BOOKINGS') {
+        return {
+          activePrimaryPanel: 'MY_BOOKINGS',
+          isVehicleDetailOpen: false,
+          isVehicleSelected: true,
+          selectedZone: 'VEHICLE',
+          selectedVehicleId: targetVehicleId,
+          vehicleFeatureMode: 'CO_OWNER_MY_BOOKINGS',
+          vehicleMode: 'CO_OWNER_MY_BOOKINGS',
+          vehicleVotingMode: false,
+          selectedProposalId: null,
+          vehicleBookingMode: false,
+          vehicleMaintenanceMode: false,
+          selectedMaintenanceId: null,
+          vehicleBatteryXrayMode: false,
+          vehicleChargingMode: false,
+          selectedChargingStationId: null,
+          vehicleDamageHistoryMode: false,
+          selectedDamageId: null,
+          vehicleCoOwnershipMode: false,
+          vehicleInspectionMode: false,
+        };
+      }
+
+      if (targetPanel === 'CONTRACT') {
+        return {
+          activePrimaryPanel: 'CONTRACT',
+          isVehicleDetailOpen: false,
+          isVehicleSelected: true,
+          selectedZone: 'VEHICLE',
+          selectedVehicleId: targetVehicleId,
+          vehicleFeatureMode: 'CO_OWNER_CONTRACT',
+          vehicleMode: 'CO_OWNER_CONTRACT',
+          vehicleVotingMode: false,
+          selectedProposalId: null,
+          vehicleBookingMode: false,
+          vehicleMaintenanceMode: false,
+          selectedMaintenanceId: null,
+          vehicleBatteryXrayMode: false,
+          vehicleChargingMode: false,
+          selectedChargingStationId: null,
+          vehicleDamageHistoryMode: false,
+          selectedDamageId: null,
+          vehicleCoOwnershipMode: false,
+          vehicleInspectionMode: false,
+        };
+      }
+
+      return {};
+    }),
+
+  closeGaragePanel: (panel) =>
+    set((state) => {
+      if (panel && state.activePrimaryPanel !== panel) {
+        return {};
+      }
+      return {
+        activePrimaryPanel: 'NONE',
+        isVehicleDetailOpen: false,
+        vehicleVotingMode: false,
+        selectedProposalId: null,
+        vehicleBookingMode: false,
+        vehicleMaintenanceMode: false,
+        selectedMaintenanceId: null,
+        vehicleBatteryXrayMode: false,
+        vehicleChargingMode: false,
+        selectedChargingStationId: null,
+        vehicleDamageHistoryMode: false,
+        selectedDamageId: null,
+        vehicleCoOwnershipMode: false,
+        vehicleInspectionMode: false,
+        selectedVehiclePartId: null,
+        selectedVehiclePartCode: null,
       };
     }),
 
@@ -1667,7 +2102,10 @@ export const useWorldStore = create<WorldState>((set) => ({
       vehicleMode: 'NONE',
       activeExperience: null,
       isVehicleSelected: false,
+      activePrimaryPanel: 'NONE',
       isVehicleDetailOpen: false,
+      vehicleVotingMode: false,
+      selectedProposalId: null,
       vehicleBatteryXrayMode: false,
       vehicleChargingMode: false,
       selectedChargingStationId: null,
@@ -1728,9 +2166,26 @@ export const useWorldStore = create<WorldState>((set) => ({
       if (today.getHours() >= 20) {
         today.setDate(today.getDate() + 1);
       }
+      let resolvedPanel: PrimaryGaragePanel = 'NONE';
+      if (mode === 'BOOKING') resolvedPanel = 'BOOKING';
+      else if (mode === 'CO_OWNER_MY_BOOKINGS') resolvedPanel = 'MY_BOOKINGS';
+      else if (mode === 'CO_OWNER_VEHICLE_INFO') resolvedPanel = 'VEHICLE_INFO';
+      else if (mode === 'CO_OWNERSHIP') resolvedPanel = 'CO_OWNERSHIP';
+      else if (mode === 'CO_OWNER_CONTRACT') resolvedPanel = 'CONTRACT';
+      else if (mode === 'CO_OWNER_VOTING') resolvedPanel = 'VOTING';
+      else if (mode === 'DAMAGE_HISTORY') resolvedPanel = 'DAMAGE';
+      else if (mode === 'VEHICLE_MAINTENANCE') resolvedPanel = 'MAINTENANCE';
+      else if (mode === 'BATTERY_XRAY') resolvedPanel = 'BATTERY_XRAY';
+      else if (mode === 'CHARGING') resolvedPanel = 'CHARGING';
+      else if (mode === 'CO_OWNER_VEHICLE_OVERVIEW' || mode === 'STAFF_VEHICLE_OVERVIEW' || mode === 'ADMIN_VEHICLE_OVERVIEW') resolvedPanel = 'VEHICLE_DETAIL';
+
       return {
         vehicleFeatureMode: mode,
         vehicleMode: mode,
+        activePrimaryPanel: resolvedPanel,
+        isVehicleDetailOpen: resolvedPanel === 'VEHICLE_DETAIL',
+        vehicleVotingMode: resolvedPanel === 'VOTING',
+        selectedProposalId: resolvedPanel === 'VOTING' ? state.selectedProposalId : null,
         vehicleBatteryXrayMode: isBatteryXray,
         vehicleChargingMode: isCharging,
         selectedChargingStationId: isCharging ? (state.selectedChargingStationId || 'CS01') : null,
@@ -1793,9 +2248,27 @@ export const useWorldStore = create<WorldState>((set) => ({
       if (today.getHours() >= 20) {
         today.setDate(today.getDate() + 1);
       }
+
+      let resolvedPanel: PrimaryGaragePanel = 'NONE';
+      if (mode === 'BOOKING') resolvedPanel = 'BOOKING';
+      else if (mode === 'CO_OWNER_MY_BOOKINGS') resolvedPanel = 'MY_BOOKINGS';
+      else if (mode === 'CO_OWNER_VEHICLE_INFO') resolvedPanel = 'VEHICLE_INFO';
+      else if (mode === 'CO_OWNERSHIP') resolvedPanel = 'CO_OWNERSHIP';
+      else if (mode === 'CO_OWNER_CONTRACT') resolvedPanel = 'CONTRACT';
+      else if (mode === 'CO_OWNER_VOTING') resolvedPanel = 'VOTING';
+      else if (mode === 'DAMAGE_HISTORY') resolvedPanel = 'DAMAGE';
+      else if (mode === 'VEHICLE_MAINTENANCE') resolvedPanel = 'MAINTENANCE';
+      else if (mode === 'BATTERY_XRAY') resolvedPanel = 'BATTERY_XRAY';
+      else if (mode === 'CHARGING') resolvedPanel = 'CHARGING';
+      else if (mode === 'CO_OWNER_VEHICLE_OVERVIEW' || mode === 'STAFF_VEHICLE_OVERVIEW' || mode === 'ADMIN_VEHICLE_OVERVIEW') resolvedPanel = 'VEHICLE_DETAIL';
+
       return {
         vehicleFeatureMode: mode,
         vehicleMode: mode,
+        activePrimaryPanel: resolvedPanel,
+        isVehicleDetailOpen: resolvedPanel === 'VEHICLE_DETAIL',
+        vehicleVotingMode: resolvedPanel === 'VOTING',
+        selectedProposalId: resolvedPanel === 'VOTING' ? state.selectedProposalId : null,
         vehicleBatteryXrayMode: isBatteryXray,
         vehicleChargingMode: isCharging,
         selectedChargingStationId: isCharging ? (state.selectedChargingStationId || 'CS01') : null,
@@ -1858,6 +2331,7 @@ export const useWorldStore = create<WorldState>((set) => ({
         vehicleMode: targetMode,
         activeExperience: activeExp,
         isVehicleSelected: true,
+        activePrimaryPanel: 'VEHICLE_DETAIL',
         isVehicleDetailOpen: true,
         vehicleBatteryXrayMode: false,
         vehicleChargingMode: false,
@@ -1908,6 +2382,7 @@ export const useWorldStore = create<WorldState>((set) => ({
       vehicleMode: 'NONE',
       activeExperience: null,
       isVehicleSelected: false,
+      activePrimaryPanel: 'NONE',
       isVehicleDetailOpen: false,
       isFinanceDetailModalOpen: false,
       vehicleBatteryXrayMode: false,

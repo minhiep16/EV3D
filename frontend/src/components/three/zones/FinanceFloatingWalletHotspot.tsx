@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { Wallet, Sparkles, ArrowRight } from 'lucide-react';
 import { ZoneConfig } from '../../../config/garageZoneConfigs';
 import { useWorldStore } from '../../../store/worldStore';
+import { useFundSummary } from '../../../hooks/useFund';
 
 interface FinanceFloatingWalletHotspotProps {
   zone: ZoneConfig;
@@ -38,6 +39,8 @@ export const FinanceFloatingWalletHotspot: React.FC<FinanceFloatingWalletHotspot
 }) => {
   const activeFeature = useWorldStore((state) => state.activeFeature);
   const selectedVehicleId = useWorldStore((state) => state.selectedVehicleId);
+  const targetVehicleId = selectedVehicleId || '11111111-1111-1111-1111-111111111111';
+  const { data: fundSummary } = useFundSummary(targetVehicleId);
   const isVehicleSelected = useWorldStore((state) => state.isVehicleSelected);
   const selectedZone = useWorldStore((state) => state.selectedZone);
 
@@ -335,7 +338,7 @@ export const FinanceFloatingWalletHotspot: React.FC<FinanceFloatingWalletHotspot
                     Quỹ chung nhóm EV01
                   </span>
                   <span style={{ fontSize: '13.5px', fontWeight: 800, color: '#38bdf8', letterSpacing: '-0.02em' }}>
-                    25.000.000 ₫
+                    {fundSummary ? `${Number(fundSummary.availableBalance).toLocaleString('vi-VN')} ₫` : '...'}
                   </span>
                 </div>
               ) : (

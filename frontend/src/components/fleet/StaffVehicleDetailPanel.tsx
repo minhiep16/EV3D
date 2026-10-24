@@ -383,6 +383,10 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
       queryClient.invalidateQueries({ queryKey: ['expenseShares'] });
       queryClient.invalidateQueries({ queryKey: ['costSharingSummary'] });
       queryClient.invalidateQueries({ queryKey: ['handoverHistory'] });
+      queryClient.invalidateQueries({ queryKey: ['vehicle-handover-history'] });
+      queryClient.invalidateQueries({ queryKey: ['booking-handover'] });
+      queryClient.invalidateQueries({ queryKey: ['booking-trip'] });
+      queryClient.invalidateQueries({ queryKey: ['trip-start-eligibility'] });
       queryClient.invalidateQueries({ queryKey: ['vehicleDamages', vehicle.id] });
     } catch (err: any) {
       setReturnErrorMsg(err.message || 'Không thể hoàn tất trả xe. Vui lòng thử lại.');
@@ -838,6 +842,8 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
         queryClient.invalidateQueries({ queryKey: ['vehicle', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['booking', bId] }),
         queryClient.invalidateQueries({ queryKey: ['fleetVehicles'] }),
+        queryClient.invalidateQueries({ queryKey: ['bookingHandover'] }),
+        queryClient.invalidateQueries({ queryKey: ['tripEligibility'] }),
       ]);
       await Promise.all([refetchBookingHandover(), refetchActiveHandovers(), refetchEligibility(), refetchHandoverHistory()]);
     } catch (err: any) {
@@ -858,10 +864,15 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandovers', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandover', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['handoverHistory', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['vehicle-handover-history', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['vehicleRelevantBooking', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['vehicle', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['fleetVehicles'] }),
+        queryClient.invalidateQueries({ queryKey: ['bookingHandover'] }),
+        queryClient.invalidateQueries({ queryKey: ['booking-handover'] }),
+        queryClient.invalidateQueries({ queryKey: ['tripEligibility'] }),
+        queryClient.invalidateQueries({ queryKey: ['trip-start-eligibility'] }),
       ]);
       await Promise.all([refetchBookingHandover(), refetchActiveHandovers(), refetchEligibility(), refetchHandoverHistory()]);
     } catch (err: any) {

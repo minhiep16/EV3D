@@ -20,6 +20,7 @@ import com.evshare.user.entity.User;
 import com.evshare.user.repository.UserRepository;
 import com.evshare.charging.repository.ChargingSessionRepository;
 import com.evshare.expense.service.ExpenseService;
+import com.evshare.inspection.entity.InspectionOverallResult;
 import com.evshare.inspection.entity.InspectionStatus;
 import com.evshare.inspection.entity.InspectionType;
 import com.evshare.inspection.entity.VehicleInspection;
@@ -52,7 +53,7 @@ public class TripService {
 
     // Standardized business error reason codes (Section 21)
     public static final String REASON_HANDOVER_NOT_COMPLETED = "HANDOVER_NOT_COMPLETED";
-    public static final String MSG_HANDOVER_NOT_COMPLETED = "CHƯA HOÀN TẤT BÀN GIAO XE";
+    public static final String MSG_HANDOVER_NOT_COMPLETED = "Nhân viên chưa xác nhận bàn giao xe cho lịch đặt hiện tại.";
 
     public static final String REASON_TOO_EARLY = "TOO_EARLY";
     public static final String MSG_TOO_EARLY = "CHƯA ĐẾN THỜI GIAN SỬ DỤNG XE";
@@ -210,6 +211,28 @@ public class TripService {
             );
         }
 
+        // Must have explicit STAFF handover confirmation
+        if (handover.getStaff() == null || handover.getStaffHandedOverAt() == null) {
+            return TripStartEligibilityResponse.notEligible(
+                    REASON_HANDOVER_NOT_COMPLETED,
+                    MSG_HANDOVER_NOT_COMPLETED,
+                    bookingId,
+                    vehicleId,
+                    handoverStatusStr
+            );
+        }
+
+        // Pre-handover inspection validation: if inspection is present, cannot be FAIL
+        if (handover.getInspection() != null && handover.getInspection().getOverallResult() == InspectionOverallResult.FAIL) {
+            return TripStartEligibilityResponse.notEligible(
+                    "INSPECTION_FAILED",
+                    "Xe không đạt kiểm tra kỹ thuật (FAIL). Không thể bắt đầu chuyến đi.",
+                    bookingId,
+                    vehicleId,
+                    handoverStatusStr
+            );
+        }
+
         // 5. Handover identity chain integrity check (Section 1 & 4)
         if (handover.getBooking() == null || !handover.getBooking().getId().equals(booking.getId()) ||
             handover.getVehicle() == null || !handover.getVehicle().getId().equals(booking.getVehicle().getId()) ||
@@ -327,6 +350,16 @@ public class TripService {
             handover.getStatus() != HandoverStatus.HANDED_OVER &&
             handover.getStatus() != HandoverStatus.OWNER_CONFIRMED) {
             throw new IllegalStateException(MSG_HANDOVER_NOT_COMPLETED);
+        }
+
+        // Must have explicit STAFF handover confirmation
+        if (handover.getStaff() == null || handover.getStaffHandedOverAt() == null) {
+            throw new IllegalStateException(MSG_HANDOVER_NOT_COMPLETED);
+        }
+
+        // Pre-handover inspection validation: if inspection is present, cannot be FAIL
+        if (handover.getInspection() != null && handover.getInspection().getOverallResult() == InspectionOverallResult.FAIL) {
+            throw new IllegalStateException("Xe không đạt kiểm tra kỹ thuật (FAIL). Không thể bắt đầu chuyến đi.");
         }
 
         // 6. Handover data consistency validation
@@ -685,13 +718,22 @@ public class TripService {
         managedVehicle.setStatus(VehicleStatus.AVAILABLE);
         vehicleRepository.save(managedVehicle);
 
-        // 4. Complete linked booking if needed
+        // 4. Complete linked booking & archive handover if needed
         Booking booking = trip.getBooking();
         if (booking != null) {
             Booking managedBooking = bookingRepository.findById(booking.getId()).orElse(booking);
             if (managedBooking.getStatus() == BookingStatus.CONFIRMED || managedBooking.getStatus() == BookingStatus.PENDING) {
                 managedBooking.setStatus(BookingStatus.COMPLETED);
                 bookingRepository.save(managedBooking);
+            }
+
+            if (handoverRepository != null) {
+                handoverRepository.findByBookingId(booking.getId()).ifPresent(h -> {
+                    if (h.getStatus() != HandoverStatus.COMPLETED) {
+                        h.setStatus(HandoverStatus.COMPLETED);
+                        handoverRepository.save(h);
+                    }
+                });
             }
         }
 

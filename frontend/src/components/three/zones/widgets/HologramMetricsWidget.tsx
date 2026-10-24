@@ -10,7 +10,7 @@ interface HologramMetricsWidgetProps {
 
 export const HologramMetricsWidget: React.FC<HologramMetricsWidgetProps> = ({
   title = 'QUỸ CHUNG',
-  amount = '25.000.000đ',
+  amount = '0đ',
   subtitle = 'Tổng quỹ sở hữu & chi phí vận hành',
   accentColor = '#00f2fe',
 }) => {
@@ -194,12 +194,12 @@ export const HologramMetricsWidget: React.FC<HologramMetricsWidgetProps> = ({
         {/* Luminous White-Cyan Amount */}
         <div
           style={{
-            fontSize: '26px',
+            fontSize: amount && amount.length > 14 ? '14px' : '24px',
             fontWeight: 800,
             letterSpacing: '-0.02em',
             color: '#ffffff',
             textShadow: '0 0 16px rgba(0, 242, 254, 0.6), 0 2px 8px rgba(0, 0, 0, 0.9)',
-            lineHeight: 1,
+            lineHeight: 1.1,
           }}
         >
           {amount}

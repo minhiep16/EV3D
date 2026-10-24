@@ -253,9 +253,13 @@ export async function fetchHandoverHistory(
   vehicleId: string
 ): Promise<VehicleHandoverData[]> {
   try {
-    const res = await authenticatedFetch(`/api/vehicles/${vehicleId}/handover-history`);
+    const res = await authenticatedFetch(`/api/vehicles/${vehicleId}/handovers/history`);
     if (res.status === 404 || res.status === 204) {
-      return [];
+      const fallbackRes = await authenticatedFetch(`/api/vehicles/${vehicleId}/handover-history`);
+      if (fallbackRes.status === 404 || fallbackRes.status === 204) {
+        return [];
+      }
+      return await safeParseResponse<VehicleHandoverData[]>(fallbackRes);
     }
     return await safeParseResponse<VehicleHandoverData[]>(res);
   } catch (err: any) {

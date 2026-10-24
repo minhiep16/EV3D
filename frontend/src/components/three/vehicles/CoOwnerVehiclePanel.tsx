@@ -12,7 +12,7 @@ import {
   MAINTENANCE_PRIORITY_CONFIG,
 } from '../../../types/maintenance';
 import { resolveVehicleCode } from './vehicleModelConfig';
-import { fetchActiveVehicleHandovers } from '../../../services/handoverApi';
+import { fetchActiveVehicleHandovers, fetchHandoverHistory } from '../../../services/handoverApi';
 import { fetchVehicleBookings } from '../../../services/bookingApi';
 import { fetchActiveTripForVehicle, requestTripReturnApi } from '../../../services/tripApi';
 import { fetchVehicleMaintenance, fetchMaintenanceApproval } from '../../../services/maintenanceApi';
@@ -41,6 +41,9 @@ import {
   Flag,
   Loader2,
   RotateCcw,
+  History,
+  ArrowLeft,
+  FileText,
 } from 'lucide-react';
 
 function formatDate(isoString?: string): string {
@@ -247,6 +250,396 @@ const PendingApprovalMaintenanceNotice: React.FC<PendingApprovalMaintenanceNotic
   );
 };
 
+interface CoOwnerHandoverHistoryViewProps {
+  vehicle: VehicleResponse;
+  displayCode: string;
+  handoverHistory: VehicleHandoverData[];
+  isLoading: boolean;
+  selectedHandover: VehicleHandoverData | null;
+  onSelectHandover: (h: VehicleHandoverData | null) => void;
+  onBack: () => void;
+}
+
+const CoOwnerHandoverHistoryView: React.FC<CoOwnerHandoverHistoryViewProps> = ({
+  vehicle,
+  displayCode,
+  handoverHistory,
+  isLoading,
+  selectedHandover,
+  onSelectHandover,
+  onBack,
+}) => {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      {/* Navigation Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '32px' }}>
+        <button
+          type="button"
+          onClick={onBack}
+          style={{
+            background: 'rgba(255, 255, 255, 0.08)',
+            border: '1px solid rgba(255, 255, 255, 0.15)',
+            borderRadius: '8px',
+            padding: '5px 10px',
+            color: '#38bdf8',
+            fontSize: '11px',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <ArrowLeft size={13} />
+          <span>QUAY LẠI</span>
+        </button>
+
+        <span
+          style={{
+            background: 'rgba(0, 242, 254, 0.15)',
+            border: '1px solid rgba(0, 242, 254, 0.4)',
+            borderRadius: '999px',
+            padding: '2px 8px',
+            fontSize: '9.5px',
+            fontWeight: 800,
+            color: '#00f2fe',
+          }}
+        >
+          LỊCH SỬ BÀN GIAO & TRẢ XE
+        </span>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+        <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#ffffff' }}>
+          LỊCH SỬ BÀN GIAO & TRẢ XE
+        </h4>
+        <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+          Phương tiện: <strong style={{ color: '#00f2fe' }}>{displayCode}</strong> ({vehicle.licensePlate})
+        </div>
+      </div>
+
+      {selectedHandover ? (
+        /* DETAIL VIEW OF SINGLE HISTORICAL RECORD */
+        <div
+          style={{
+            background: 'rgba(15, 23, 42, 0.85)',
+            border: '1.5px solid rgba(56, 189, 248, 0.35)',
+            borderRadius: '16px',
+            padding: '14px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <button
+              type="button"
+              onClick={() => onSelectHandover(null)}
+              style={{
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                borderRadius: '6px',
+                padding: '4px 8px',
+                color: '#94a3b8',
+                fontSize: '10px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
+            >
+              <ArrowLeft size={11} />
+              <span>DANH SÁCH LỊCH SỬ</span>
+            </button>
+            <span
+              style={{
+                background: 'rgba(16, 185, 129, 0.2)',
+                border: '1px solid rgba(16, 185, 129, 0.4)',
+                color: '#34d399',
+                padding: '2px 8px',
+                borderRadius: '999px',
+                fontSize: '9.5px',
+                fontWeight: 800,
+              }}
+            >
+              {selectedHandover.status === 'HANDED_OVER'
+                ? 'ĐÃ BÀN GIAO'
+                : selectedHandover.status === 'COMPLETED'
+                ? 'HOÀN THÀNH'
+                : selectedHandover.status}
+            </span>
+          </div>
+
+          <div
+            style={{
+              background: 'rgba(0, 0, 0, 0.35)',
+              borderRadius: '10px',
+              padding: '10px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
+              fontSize: '11px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8' }}>Thời gian bàn giao:</span>
+              <strong style={{ color: '#34d399' }}>
+                {formatDateTime(selectedHandover.staffHandedOverAt || selectedHandover.createdAt)}
+              </strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8' }}>Nhân viên kỹ thuật:</span>
+              <strong style={{ color: '#38bdf8' }}>
+                {selectedHandover.staffName || 'EVShare Staff'}
+              </strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8' }}>Người nhận xe:</span>
+              <strong style={{ color: '#ffffff' }}>
+                {selectedHandover.coOwnerName || 'Đồng sở hữu'}
+              </strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8' }}>Mã lịch đặt:</span>
+              <span style={{ color: '#ffffff', fontFamily: 'monospace' }}>
+                {selectedHandover.bookingId ? selectedHandover.bookingId.slice(0, 8) + '...' : '--'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8' }}>Lịch đặt:</span>
+              <span style={{ color: '#cbd5e1' }}>
+                {formatDate(selectedHandover.bookingStartTime)} ({formatTimeRange(selectedHandover.bookingStartTime, selectedHandover.bookingEndTime)})
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8' }}>Kiểm tra kỹ thuật:</span>
+              <span style={{ color: selectedHandover.allCheckpointsInspected ? '#34d399' : '#fbbf24', fontWeight: 700 }}>
+                {selectedHandover.allCheckpointsInspected
+                  ? '8/8 ĐIỂM ĐẠT'
+                  : `${selectedHandover.totalInspectedCount || 0}/8 điểm kiểm tra`}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8' }}>Trạng thái chuyến đi:</span>
+              <span style={{ color: selectedHandover.tripStatus === 'COMPLETED' ? '#34d399' : '#38bdf8', fontWeight: 700 }}>
+                {selectedHandover.tripStatus === 'COMPLETED'
+                  ? 'ĐÃ HOÀN TẤT'
+                  : (selectedHandover.tripStatus || 'CHƯA BẮT ĐẦU')}
+              </span>
+            </div>
+            {selectedHandover.tripId && (
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#94a3b8' }}>Mã chuyến đi:</span>
+                <span style={{ color: '#ffffff', fontFamily: 'monospace' }}>
+                  {selectedHandover.tripId.slice(0, 8)}...
+                </span>
+              </div>
+            )}
+            {(selectedHandover.returnVerifiedAt || selectedHandover.tripEndedAt) && (
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#94a3b8' }}>Thời gian trả xe:</span>
+                <strong style={{ color: '#34d399' }}>
+                  {formatDateTime(selectedHandover.returnVerifiedAt || selectedHandover.tripEndedAt)}
+                </strong>
+              </div>
+            )}
+            {selectedHandover.returnVerifiedByStaffName && (
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#94a3b8' }}>Nhân viên tiếp nhận xe:</span>
+                <strong style={{ color: '#38bdf8' }}>
+                  {selectedHandover.returnVerifiedByStaffName}
+                </strong>
+              </div>
+            )}
+            {selectedHandover.returnInspectionResult && (
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#94a3b8' }}>Kiểm tra khi trả xe:</span>
+                <span style={{ color: selectedHandover.returnInspectionResult === 'PASSED' || selectedHandover.returnInspectionResult === 'PASS' ? '#34d399' : '#fbbf24', fontWeight: 700 }}>
+                  {selectedHandover.returnInspectionResult === 'PASSED' || selectedHandover.returnInspectionResult === 'PASS' ? 'ĐẠT TIÊU CHUẨN' : selectedHandover.returnInspectionResult}
+                </span>
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8' }}>Mã hồ sơ bàn giao:</span>
+              <span style={{ color: '#94a3b8', fontFamily: 'monospace', fontSize: '9.5px' }}>
+                {selectedHandover.id ? selectedHandover.id.slice(0, 13) + '...' : '--'}
+              </span>
+            </div>
+          </div>
+
+          <div
+            style={{
+              padding: '8px 10px',
+              background: 'rgba(2, 132, 199, 0.08)',
+              border: '1px solid rgba(2, 132, 199, 0.25)',
+              borderRadius: '8px',
+              color: '#94a3b8',
+              fontSize: '10px',
+              lineHeight: 1.4,
+            }}
+          >
+            Hồ sơ bàn giao này là bản ghi lịch sử chỉ đọc (Read-only), gắn liền với lượt đặt xe trước đây và được lưu trữ cho mục đích kiểm toán.
+          </div>
+        </div>
+      ) : (
+        /* LIST VIEW OF ALL HISTORICAL RECORDS */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {isLoading ? (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                padding: '24px',
+                color: '#38bdf8',
+                fontSize: '11px',
+              }}
+            >
+              <Loader2 size={16} className="animate-spin" />
+              <span>Đang tải lịch sử bàn giao...</span>
+            </div>
+          ) : handoverHistory.length === 0 ? (
+            <div
+              style={{
+                background: 'rgba(255, 255, 255, 0.03)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '12px',
+                padding: '20px',
+                textAlign: 'center',
+                color: '#94a3b8',
+                fontSize: '11px',
+              }}
+            >
+              Chưa có bản ghi bàn giao lịch sử nào cho xe này.
+            </div>
+          ) : (
+            <>
+              <div style={{ fontSize: '10.5px', color: '#94a3b8' }}>
+                Tổng cộng <strong style={{ color: '#00f2fe' }}>{handoverHistory.length}</strong> bản ghi lịch sử bàn giao:
+              </div>
+
+              {handoverHistory.map((h) => {
+                const handoverTimeStr = formatDateTime(h.staffHandedOverAt || h.createdAt);
+                const isHandedOver = h.status === 'HANDED_OVER' || h.status === 'COMPLETED' || h.status === 'OWNER_CONFIRMED';
+                return (
+                  <div
+                    key={h.id}
+                    style={{
+                      background: 'rgba(15, 23, 42, 0.75)',
+                      border: '1px solid rgba(56, 189, 248, 0.2)',
+                      borderRadius: '12px',
+                      padding: '12px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '6px',
+                      transition: 'border-color 0.15s ease',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Clock size={12} color="#00f2fe" />
+                        <span style={{ fontSize: '11px', fontWeight: 800, color: '#38bdf8' }}>
+                          {handoverTimeStr}
+                        </span>
+                      </div>
+                      <span
+                        style={{
+                          background: isHandedOver ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                          color: isHandedOver ? '#34d399' : '#fbbf24',
+                          padding: '1px 6px',
+                          borderRadius: '999px',
+                          fontSize: '9.5px',
+                          fontWeight: 800,
+                        }}
+                      >
+                        {h.status === 'HANDED_OVER'
+                          ? 'ĐÃ BÀN GIAO'
+                          : h.status === 'COMPLETED'
+                          ? 'HOÀN THÀNH'
+                          : h.status === 'READY_FOR_HANDOVER'
+                          ? 'SẴN SÀNG'
+                          : h.status}
+                      </span>
+                    </div>
+
+                    <div style={{ fontSize: '10.5px', color: '#cbd5e1', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#94a3b8' }}>Phương tiện:</span>
+                        <strong style={{ color: '#00f2fe' }}>{displayCode} ({vehicle.licensePlate})</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#94a3b8' }}>Nhân viên:</span>
+                        <strong style={{ color: '#ffffff' }}>{h.staffName || 'EVShare Staff'}</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#94a3b8' }}>Người nhận:</span>
+                        <strong style={{ color: '#ffffff' }}>{h.coOwnerName || 'Đồng sở hữu'}</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#94a3b8' }}>Lịch đặt:</span>
+                        <span style={{ color: '#94a3b8' }}>
+                          {formatDate(h.bookingStartTime)} ({formatTimeRange(h.bookingStartTime, h.bookingEndTime)})
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#94a3b8' }}>Chuyến đi:</span>
+                        <span style={{ color: h.tripStatus === 'COMPLETED' ? '#34d399' : '#38bdf8', fontWeight: 600 }}>
+                          {h.tripStatus === 'COMPLETED' ? 'Đã hoàn tất' : (h.tripStatus || 'Chưa bắt đầu')}
+                        </span>
+                      </div>
+                      {(h.returnVerifiedAt || h.tripEndedAt) && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: '#94a3b8' }}>Thời gian trả xe:</span>
+                          <span style={{ color: '#34d399', fontWeight: 600 }}>
+                            {formatDateTime(h.returnVerifiedAt || h.tripEndedAt)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => onSelectHandover(h)}
+                      style={{
+                        marginTop: '4px',
+                        background: 'rgba(56, 189, 248, 0.1)',
+                        border: '1px solid rgba(56, 189, 248, 0.25)',
+                        borderRadius: '6px',
+                        padding: '6px 10px',
+                        color: '#38bdf8',
+                        fontSize: '10.5px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '5px',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(56, 189, 248, 0.2)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'rgba(56, 189, 248, 0.1)';
+                      }}
+                    >
+                      <FileText size={11} />
+                      <span>XEM CHI TIẾT</span>
+                    </button>
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export interface CoOwnerVehiclePanelProps {
   vehicle: VehicleResponse;
   onClose: () => void;
@@ -274,6 +667,18 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
   const [showReturnConfirm, setShowReturnConfirm] = useState(false);
   const [isSubmittingReturn, setIsSubmittingReturn] = useState(false);
   const [returnError, setReturnError] = useState<string | null>(null);
+  const [showHandoverHistory, setShowHandoverHistory] = useState(false);
+  const [selectedHistoryHandover, setSelectedHistoryHandover] = useState<VehicleHandoverData | null>(null);
+
+  const {
+    data: handoverHistory = [],
+    isLoading: isHistoryLoading,
+  } = useQuery<VehicleHandoverData[]>({
+    queryKey: ['vehicle-handover-history', vehicle.id],
+    queryFn: () => fetchHandoverHistory(vehicle.id),
+    enabled: authReady && !!vehicle.id,
+    staleTime: 5000,
+  });
 
   const handleRequestReturn = async () => {
     if (!activeTrip?.id || isSubmittingReturn) return;
@@ -286,7 +691,10 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
       queryClient.invalidateQueries({ queryKey: ['vehicleBookings', vehicle.id] });
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['activeVehicleHandovers', vehicle.id] });
-      queryClient.invalidateQueries({ queryKey: ['bookingHandover'] });
+      queryClient.invalidateQueries({ queryKey: ['booking-handover'] });
+      queryClient.invalidateQueries({ queryKey: ['booking-trip'] });
+      queryClient.invalidateQueries({ queryKey: ['trip-start-eligibility'] });
+      queryClient.invalidateQueries({ queryKey: ['vehicle-handover-history', vehicle.id] });
     } catch (err: any) {
       setReturnError(err.message || 'Không thể gửi yêu cầu trả xe. Vui lòng thử lại.');
     } finally {
@@ -296,14 +704,14 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
 
   // TanStack Queries (authoritative server state)
   const { data: activeHandovers = [] } = useQuery<VehicleHandoverData[]>({
-    queryKey: ['activeVehicleHandovers', vehicle.id],
+    queryKey: ['activeVehicleHandovers', vehicle.id, user?.id],
     queryFn: () => fetchActiveVehicleHandovers(vehicle.id),
     enabled: authReady && !!vehicle.id,
     refetchInterval: 4000,
   });
 
   const { data: allBookings = [] } = useQuery<Booking[]>({
-    queryKey: ['vehicleBookings', vehicle.id],
+    queryKey: ['vehicleBookings', vehicle.id, user?.id],
     queryFn: () => fetchVehicleBookings(vehicle.id),
     enabled: authReady && !!vehicle.id,
     refetchInterval: 8000,
@@ -344,45 +752,19 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
   const isOtherUserActiveTrip = isTripActive && !isMyActiveTrip;
   const isOverdue = isTripActive && isTripOverdue(activeTrip.bookingEndTime);
 
-  // Resolve upcoming booking
+  // Resolve upcoming booking (strictly future/current, never historical fallback)
   const upcomingBooking = useMemo(() => {
     const list = Array.isArray(allBookings) ? allBookings : [];
     if (list.length === 0) return null;
     const now = new Date();
     const myBookings = list.filter(
-      (b) => b && b.status !== 'CANCELLED' && (!user?.id || b.userId === user?.id)
+      (b) => b && b.status !== 'CANCELLED' && b.status !== 'COMPLETED' && b.status !== 'EXPIRED' && (!user?.id || b.userId === user?.id)
     );
     if (myBookings.length > 0) {
-      return myBookings.find((b) => b.endTime && new Date(b.endTime) >= now) || myBookings[0];
+      return myBookings.find((b) => b.endTime && new Date(b.endTime) >= now) || null;
     }
-    const active = list.filter((b) => b && b.status === 'CONFIRMED');
-    return active.find((b) => b.endTime && new Date(b.endTime) >= now) || active[0] || null;
+    return null;
   }, [allBookings, user?.id]);
-
-  // Handover check-in eligibility
-  const isEligibleForCheckIn = useMemo(() => {
-    if (isTripActive || isVehicleInUse) return false;
-    const list = Array.isArray(activeHandovers) ? activeHandovers : [];
-    if (list.length === 0) return false;
-    return list.some(
-      (h) =>
-        h &&
-        h.status === 'HANDED_OVER' &&
-        (!user?.id || h.coOwnerId === user?.id || h.coOwnerEmail === user?.email)
-    );
-  }, [activeHandovers, user, isTripActive, isVehicleInUse]);
-
-  const isWaitingForStaffHandover = useMemo(() => {
-    if (isTripActive || isVehicleInUse) return false;
-    const list = Array.isArray(activeHandovers) ? activeHandovers : [];
-    if (list.length === 0) return false;
-    return list.some(
-      (h) =>
-        h &&
-        h.status === 'READY_FOR_HANDOVER' &&
-        (!user?.id || h.coOwnerId === user?.id || h.coOwnerEmail === user?.email)
-    );
-  }, [activeHandovers, user, isTripActive, isVehicleInUse]);
 
   const {
     candidateBooking,
@@ -398,6 +780,29 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
     eligibilityErrorMessage,
     refetchEligibility,
   } = useCoOwnerTripPrerequisites(vehicle.id, isTripActive);
+
+  // Handover check-in eligibility strictly bound to candidate booking & authoritative staff confirmation
+  const isEligibleForCheckIn = useMemo(() => {
+    if (isTripActive || isVehicleInUse || !candidateBooking) return false;
+    if (!bookingHandover) return false;
+    return (
+      bookingHandover.bookingId === candidateBooking.id &&
+      bookingHandover.status === 'HANDED_OVER' &&
+      Boolean(bookingHandover.staffHandedOverAt) &&
+      (!user?.id || bookingHandover.coOwnerId === user.id || bookingHandover.coOwnerEmail === user.email)
+    );
+  }, [bookingHandover, candidateBooking, user, isTripActive, isVehicleInUse]);
+
+  const isWaitingForStaffHandover = useMemo(() => {
+    if (isTripActive || isVehicleInUse || !candidateBooking) return false;
+    if (!bookingHandover) return false;
+    return (
+      bookingHandover.bookingId === candidateBooking.id &&
+      bookingHandover.status === 'READY_FOR_HANDOVER' &&
+      !bookingHandover.staffHandedOverAt &&
+      (!user?.id || bookingHandover.coOwnerId === user.id || bookingHandover.coOwnerEmail === user.email)
+    );
+  }, [bookingHandover, candidateBooking, user, isTripActive, isVehicleInUse]);
 
   const displayCode = resolveVehicleCode(vehicle) || 'EV01';
   const statusConfig = isTripActive
@@ -471,9 +876,24 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
         <X size={15} />
       </button>
 
-      {/* =================================================== */}
-      {/* SECTION 1: THÔNG TIN XE                             */}
-      {/* =================================================== */}
+      {showHandoverHistory ? (
+        <CoOwnerHandoverHistoryView
+          vehicle={vehicle}
+          displayCode={displayCode}
+          handoverHistory={handoverHistory}
+          isLoading={isHistoryLoading}
+          selectedHandover={selectedHistoryHandover}
+          onSelectHandover={setSelectedHistoryHandover}
+          onBack={() => {
+            setShowHandoverHistory(false);
+            setSelectedHistoryHandover(null);
+          }}
+        />
+      ) : (
+        <>
+          {/* =================================================== */}
+          {/* SECTION 1: THÔNG TIN XE                             */}
+          {/* =================================================== */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {/* Cyan Badge */}
@@ -701,7 +1121,7 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ fontSize: '12px', fontWeight: 900, color: '#ffffff', letterSpacing: '0.02em' }}>
-                CHUYẾN ĐI CỦA TÔI
+                {activeTrip.returnRequestedAt ? 'ĐANG CHỜ NHÂN VIÊN TIẾP NHẬN XE' : 'CHUYẾN ĐI ĐANG DIỄN RA'}
               </span>
               <span
                 style={{
@@ -714,7 +1134,7 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
                   color: activeTrip.returnRequestedAt ? '#fbbf24' : '#00f2fe',
                 }}
               >
-                {activeTrip.returnRequestedAt ? 'CHỜ TRẢ XE' : 'ĐANG SỬ DỤNG'}
+                {activeTrip.returnRequestedAt ? 'CHỜ TIẾP NHẬN' : 'ĐANG SỬ DỤNG'}
               </span>
             </div>
             <span style={{ fontSize: '10px', color: '#94a3b8' }}>
@@ -1061,7 +1481,7 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#f87171', fontSize: '11px', fontWeight: 800 }}>
             <AlertTriangle size={14} />
-            <span>KHÔNG THỂ KIỂM TRA TRẠNG THÁI BÀN GIAO</span>
+            <span>KHÔNG THỂ XÁC MINH TRẠNG THÁI BÀN GIAO</span>
           </div>
           <p style={{ margin: 0, fontSize: '10.5px', color: '#cbd5e1' }}>
             {eligibilityErrorMessage || 'Đã xảy ra lỗi khi xác minh điều kiện bàn giao. Vui lòng thử lại.'}
@@ -1194,6 +1614,12 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8' }}>Mã lịch đặt:</span>
+              <span style={{ color: '#ffffff', fontWeight: 700, fontFamily: 'monospace' }}>
+                {candidateBooking.id.slice(0, 8)}...
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ color: '#94a3b8' }}>Lịch đặt:</span>
               <span style={{ color: '#ffffff', fontWeight: 700 }}>
                 {formatDate(candidateBooking.startTime)} ({formatTimeRange(candidateBooking.startTime, candidateBooking.endTime)})
@@ -1203,6 +1629,12 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
               <span style={{ color: '#94a3b8' }}>Bàn giao lúc:</span>
               <span style={{ color: '#34d399', fontWeight: 700 }}>
                 {formatDateTime(completedHandover.staffHandedOverAt || completedHandover.updatedAt)}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8' }}>Nhân viên bàn giao:</span>
+              <span style={{ color: '#38bdf8', fontWeight: 700 }}>
+                {completedHandover.staffName || 'Nhân viên kỹ thuật'}
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -1216,6 +1648,28 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
               <span style={{ color: '#ffffff', fontWeight: 700 }}>
                 {completedHandover.coOwnerName || user?.fullName || 'Đồng sở hữu'}
               </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '2px' }}>
+              <button
+                type="button"
+                onClick={() => setShowHandoverHistory(true)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#38bdf8',
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  padding: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  textDecoration: 'underline',
+                }}
+              >
+                <History size={11} />
+                <span>Xem lịch sử bàn giao & trả xe ({handoverHistory.length})</span>
+              </button>
             </div>
           </div>
 
@@ -1274,7 +1728,7 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
           </button>
         </div>
       ) : isInspectionOnlyCompleted ? (
-        /* STATE C: PRE_HANDOVER INSPECTION COMPLETED, HANDOVER STILL PENDING */
+        /* STATE C: STAFF INSPECTION COMPLETED, HANDOVER STILL PENDING */
         <div
           style={{
             background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(8, 20, 36, 0.95) 100%)',
@@ -1303,7 +1757,7 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
                 fontWeight: 800,
               }}
             >
-              ĐÃ KIỂM TRA 8/8
+              CHỜ XÁC NHẬN BÀN GIAO
             </span>
           </div>
 
@@ -1318,13 +1772,18 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
               padding: '8px 10px',
               fontSize: '10.5px',
               color: '#94a3b8',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '3px',
             }}
           >
-            Lịch đặt: <strong style={{ color: '#ffffff' }}>{formatDate(candidateBooking.startTime)} ({formatTimeRange(candidateBooking.startTime, candidateBooking.endTime)})</strong>
+            <div>Mã lịch đặt: <strong style={{ color: '#ffffff', fontFamily: 'monospace' }}>{candidateBooking.id.slice(0, 8)}...</strong></div>
+            <div>Lịch đặt: <strong style={{ color: '#ffffff' }}>{formatDate(candidateBooking.startTime)} ({formatTimeRange(candidateBooking.startTime, candidateBooking.endTime)})</strong></div>
+            <div>Phương tiện: <strong style={{ color: '#00f2fe' }}>{vehicle.name} ({vehicle.licensePlate})</strong></div>
           </div>
         </div>
       ) : (
-        /* STATE B: BOOKING CONFIRMED, HANDOVER NOT COMPLETED */
+        /* STATE B: BOOKING CONFIRMED, WAITING FOR STAFF HANDOVER */
         <div
           style={{
             background: 'linear-gradient(135deg, rgba(2, 132, 199, 0.12) 0%, rgba(8, 20, 36, 0.95) 100%)',
@@ -1341,7 +1800,7 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <Clock size={14} color="#38bdf8" />
               <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#38bdf8', letterSpacing: '0.03em' }}>
-                ĐANG CHỜ BÀN GIAO XE
+                CHỜ NHÂN VIÊN BÀN GIAO XE
               </span>
             </div>
             <span
@@ -1359,7 +1818,7 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
           </div>
 
           <p style={{ margin: 0, fontSize: '11px', color: '#cbd5e1', lineHeight: 1.45 }}>
-            Nhân viên chưa xác nhận hoàn tất bàn giao cho lịch đặt này.
+            Lịch đặt xe của bạn đã được xác nhận. Vui lòng chờ nhân viên kỹ thuật kiểm tra và xác nhận bàn giao xe.
           </p>
 
           <div
@@ -1369,10 +1828,14 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
               padding: '8px 10px',
               display: 'flex',
               flexDirection: 'column',
-              gap: '3px',
+              gap: '4px',
               fontSize: '10.5px',
             }}
           >
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8' }}>Mã lịch đặt:</span>
+              <strong style={{ color: '#ffffff', fontFamily: 'monospace' }}>{candidateBooking.id.slice(0, 8)}...</strong>
+            </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ color: '#94a3b8' }}>Lịch đặt:</span>
               <strong style={{ color: '#ffffff' }}>
@@ -1381,7 +1844,11 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ color: '#94a3b8' }}>Phương tiện:</span>
-              <strong style={{ color: '#00f2fe' }}>{vehicle.name}</strong>
+              <strong style={{ color: '#00f2fe' }}>{vehicle.name} ({vehicle.licensePlate})</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8' }}>Người đặt xe:</span>
+              <strong style={{ color: '#ffffff' }}>{candidateBooking.userName || user?.fullName || 'Đồng sở hữu'}</strong>
             </div>
           </div>
         </div>
@@ -1490,6 +1957,14 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
           </button>
           <button
             type="button"
+            onClick={() => setVehicleFeatureMode('CO_OWNER_CONTRACT')}
+            style={secondaryChipButtonStyle()}
+          >
+            <FileText size={13} color="#00f2fe" />
+            <span>Hợp đồng</span>
+          </button>
+          <button
+            type="button"
             onClick={() => enterChargingMode(vehicle.id)}
             style={secondaryChipButtonStyle()}
           >
@@ -1507,13 +1982,54 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
           <button
             type="button"
             onClick={() => enterVehicleMaintenanceMode()}
-            style={secondaryChipButtonStyle()}
+            style={{
+              ...secondaryChipButtonStyle(),
+              gridColumn: '1 / -1',
+            }}
           >
             <Wrench size={13} color="#fbbf24" />
             <span>Lịch sử bảo dưỡng</span>
           </button>
         </div>
       </div>
+
+      {/* =================================================== */}
+      {/* SECTION 7: XEM LỊCH SỬ BÀN GIAO                     */}
+      {/* =================================================== */}
+      <button
+        type="button"
+        onClick={() => setShowHandoverHistory(true)}
+        style={{
+          width: '100%',
+          background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.12) 0%, rgba(8, 20, 36, 0.9) 100%)',
+          border: '1px solid rgba(56, 189, 248, 0.35)',
+          borderRadius: '12px',
+          padding: '10px 14px',
+          color: '#38bdf8',
+          fontSize: '11px',
+          fontWeight: 800,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '7px',
+          boxShadow: '0 0 14px rgba(56, 189, 248, 0.15)',
+          transition: 'all 0.15s ease',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.borderColor = '#00f2fe';
+          e.currentTarget.style.color = '#00f2fe';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.35)';
+          e.currentTarget.style.color = '#38bdf8';
+        }}
+      >
+        <History size={14} color="#00f2fe" />
+        <span>LỊCH SỬ BÀN GIAO & TRẢ XE ({handoverHistory.length})</span>
+      </button>
+        </>
+      )}
     </div>
   );
 };

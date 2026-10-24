@@ -19,6 +19,9 @@ public interface OwnershipShareRepository extends JpaRepository<OwnershipShare, 
     Optional<OwnershipShare> findByMemberIdAndVehicleId(UUID memberId, UUID vehicleId);
     List<OwnershipShare> findByMemberId(UUID memberId);
 
+    @Query("SELECT s FROM OwnershipShare s WHERE s.group.id = :groupId AND s.vehicle.id = :vehicleId AND s.member.user.id = :userId")
+    Optional<OwnershipShare> findByGroupIdAndVehicleIdAndUserId(@Param("groupId") UUID groupId, @Param("vehicleId") UUID vehicleId, @Param("userId") UUID userId);
+
     @Query("SELECT COALESCE(SUM(s.percentage), 0) FROM OwnershipShare s WHERE s.group.id = :groupId AND s.vehicle.id = :vehicleId")
     BigDecimal sumPercentageByGroupIdAndVehicleId(@Param("groupId") UUID groupId, @Param("vehicleId") UUID vehicleId);
 

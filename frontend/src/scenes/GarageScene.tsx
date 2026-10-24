@@ -38,6 +38,7 @@ import { CoOwnerVehicleInfoPanel } from '../components/three/vehicles/CoOwnerVeh
 import { MyBookingsPanel } from '../components/three/vehicles/MyBookingsPanel';
 import { LobbyOwnershipSummaryBoard } from '../components/three/ownership/LobbyOwnershipSummaryBoard';
 import { CoOwnerOwnershipPanel } from '../components/three/ownership/CoOwnerOwnershipPanel';
+import { CoOwnerContractPanel } from '../components/three/contracts/CoOwnerContractPanel';
 import { ZoneInfoPanel } from '../components/zones/ZoneInfoPanel';
 
 export const GarageScene: React.FC = () => {
@@ -77,6 +78,8 @@ export const GarageScene: React.FC = () => {
   const vehicleDamageHistoryMode = useWorldStore((state) => state.vehicleDamageHistoryMode);
   const vehicleMaintenanceMode = useWorldStore((state) => state.vehicleMaintenanceMode);
   const vehicleInspectionMode = useWorldStore((state) => state.vehicleInspectionMode);
+  const activePrimaryPanel = useWorldStore((state) => state.activePrimaryPanel);
+  const closeGaragePanel = useWorldStore((state) => state.closeGaragePanel);
   const vehicleBatteryXrayMode = useWorldStore((state) => state.vehicleBatteryXrayMode);
   const vehicleChargingMode = useWorldStore((state) => state.vehicleChargingMode);
   const vehicleVotingMode = useWorldStore((state) => state.vehicleVotingMode);
@@ -883,63 +886,63 @@ export const GarageScene: React.FC = () => {
           )}
 
           {/* Dedicated Phase 14 Screen-Space Damage History Panel for CO_OWNER */}
-          {vehicleDamageHistoryMode && (currentCoOwnerVehicle || vehicles[0]) && (
+          {activePrimaryPanel === 'DAMAGE' && (currentCoOwnerVehicle || vehicles[0]) && (
             <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0])?.id || 'ev'}-damage-history`}>
               <DamageHistoryPanel
                 vehicle={currentCoOwnerVehicle || vehicles[0]}
-                onClose={returnToVehicleOverview}
+                onClose={() => closeGaragePanel('DAMAGE')}
               />
             </PanelErrorBoundary>
           )}
 
           {/* Dedicated Phase 15 Screen-Space Maintenance History Panel for CO_OWNER */}
-          {vehicleMaintenanceMode && (currentCoOwnerVehicle || vehicles[0]) && (
+          {activePrimaryPanel === 'MAINTENANCE' && (currentCoOwnerVehicle || vehicles[0]) && (
             <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0])?.id || 'ev'}-maintenance`}>
               <CoOwnerMaintenancePanel
                 vehicle={currentCoOwnerVehicle || vehicles[0]}
-                onClose={returnToVehicleOverview}
+                onClose={() => closeGaragePanel('MAINTENANCE')}
               />
             </PanelErrorBoundary>
           )}
 
           {/* Dedicated Screen-Space Fixed CO_OWNER Booking Detail Panel */}
-          {vehicleBookingMode && (currentCoOwnerVehicle || vehicles[0]) && (
+          {activePrimaryPanel === 'BOOKING' && (currentCoOwnerVehicle || vehicles[0]) && (
             <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0])?.id || 'ev'}-booking`}>
               <CoOwnerBookingPanel
                 vehicle={currentCoOwnerVehicle || vehicles[0]}
-                onClose={returnToVehicleOverview}
+                onClose={() => closeGaragePanel('BOOKING')}
               />
             </PanelErrorBoundary>
           )}
 
           {/* Dedicated Phase 16 Screen-Space Battery Health / X-Ray Panel for CO_OWNER */}
-          {vehicleBatteryXrayMode && (currentCoOwnerVehicle || vehicles[0]) && (
+          {activePrimaryPanel === 'BATTERY_XRAY' && (currentCoOwnerVehicle || vehicles[0]) && (
             <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0])?.id || 'ev'}-battery-xray`}>
               <BatteryHealthPanel
                 vehicle={currentCoOwnerVehicle || vehicles[0]}
-                onClose={returnToVehicleOverview}
+                onClose={() => closeGaragePanel('BATTERY_XRAY')}
               />
             </PanelErrorBoundary>
           )}
 
           {/* Dedicated Phase 17 Screen-Space Charging Panel for CO_OWNER (only during vehicle-focused charging, never during showroom zone modes) */}
-          {!selectedZone && activeFeature === 'NONE' && vehicleChargingMode && (currentCoOwnerVehicle || vehicles[0]) && (
+          {!selectedZone && activeFeature === 'NONE' && activePrimaryPanel === 'CHARGING' && (currentCoOwnerVehicle || vehicles[0]) && (
             <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0])?.id || 'ev'}-charging`}>
               <ChargingPanel
                 vehicle={currentCoOwnerVehicle || vehicles[0]}
-                onClose={returnToVehicleOverview}
+                onClose={() => closeGaragePanel('CHARGING')}
               />
             </PanelErrorBoundary>
           )}
 
           {/* Dedicated Phase 21 Screen-Space Voting Panel for CO_OWNER */}
-          {vehicleVotingMode && (currentCoOwnerVehicle || vehicles[0]) && (
+          {activePrimaryPanel === 'VOTING' && (currentCoOwnerVehicle || vehicles[0]) && (
             <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0])?.id || 'ev'}-voting`}>
               <CoOwnerVotingPanel
                 vehicle={currentCoOwnerVehicle || vehicles[0]}
                 onClose={() => {
                   closeVotingPanel();
-                  returnToVehicleOverview();
+                  closeGaragePanel('VOTING');
                 }}
               />
             </PanelErrorBoundary>
@@ -953,17 +956,44 @@ export const GarageScene: React.FC = () => {
           )}
 
           {/* Dedicated Unified Screen-Space Co-Ownership Panel for CO_OWNER */}
-          {vehicleCoOwnershipMode && (currentCoOwnerVehicle || vehicles[0]) && (
-            <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0]).id}-co-ownership-detail`}>
+          {activePrimaryPanel === 'CO_OWNERSHIP' && (currentCoOwnerVehicle || vehicles[0]) && (
+            <PanelErrorBoundary
+              key={`${(currentCoOwnerVehicle || vehicles[0]).id}-co-ownership-detail`}
+              onReset={() => {
+                queryClient.invalidateQueries({ queryKey: ['coOwnership'] });
+                queryClient.invalidateQueries({ queryKey: ['groupTransfers'] });
+                queryClient.invalidateQueries({ queryKey: ['incomingTransfers'] });
+                queryClient.invalidateQueries({ queryKey: ['ownershipHistory'] });
+                queryClient.invalidateQueries({ queryKey: ['transferPreview'] });
+              }}
+            >
               <CoOwnerOwnershipPanel
                 vehicle={currentCoOwnerVehicle || vehicles[0]}
-                onClose={returnToVehicleOverview}
+                onClose={() => closeGaragePanel('CO_OWNERSHIP')}
+              />
+            </PanelErrorBoundary>
+          )}
+
+          {/* Dedicated Phase 22 Screen-Space Co-Ownership Contract Panel */}
+          {activePrimaryPanel === 'CONTRACT' && (currentCoOwnerVehicle || vehicles[0]) && (
+            <PanelErrorBoundary
+              key={`${(currentCoOwnerVehicle || vehicles[0]).id}-contract-detail`}
+              onReset={() => {
+                queryClient.invalidateQueries({ queryKey: ['co-ownership-contract'] });
+                queryClient.invalidateQueries({ queryKey: ['co-ownership-contract-versions'] });
+                queryClient.invalidateQueries({ queryKey: ['coOwnershipContract'] });
+                queryClient.invalidateQueries({ queryKey: ['contractSummary'] });
+              }}
+            >
+              <CoOwnerContractPanel
+                vehicle={currentCoOwnerVehicle || vehicles[0]}
+                onClose={() => closeGaragePanel('CONTRACT')}
               />
             </PanelErrorBoundary>
           )}
 
           {/* Dedicated Screen-Space Fixed CO_OWNER Technical Specs Modal */}
-          {currentCoOwnerVehicle && vehicleFeatureMode === 'CO_OWNER_VEHICLE_INFO' && (
+          {currentCoOwnerVehicle && activePrimaryPanel === 'VEHICLE_INFO' && (
             <PanelErrorBoundary key={`${currentCoOwnerVehicle.id}-tech-info`}>
               <div
                 style={{
@@ -976,14 +1006,14 @@ export const GarageScene: React.FC = () => {
               >
                 <CoOwnerVehicleInfoPanel
                   vehicle={currentCoOwnerVehicle}
-                  onClose={returnToVehicleOverview}
+                  onClose={() => closeGaragePanel('VEHICLE_INFO')}
                 />
               </div>
             </PanelErrorBoundary>
           )}
 
           {/* Dedicated Screen-Space Fixed CO_OWNER My Bookings Panel */}
-          {currentCoOwnerVehicle && vehicleFeatureMode === 'CO_OWNER_MY_BOOKINGS' && (
+          {currentCoOwnerVehicle && activePrimaryPanel === 'MY_BOOKINGS' && (
             <PanelErrorBoundary key={`${currentCoOwnerVehicle.id}-my-bookings`}>
               <div
                 style={{
@@ -996,24 +1026,28 @@ export const GarageScene: React.FC = () => {
               >
                 <MyBookingsPanel
                   vehicle={currentCoOwnerVehicle}
-                  onClose={returnToVehicleOverview}
+                  onClose={() => closeGaragePanel('MY_BOOKINGS')}
                 />
               </div>
             </PanelErrorBoundary>
           )}
 
           {/* Authoritative Screen-Space CO_OWNER Right Vehicle Information Panel */}
-          {currentCoOwnerVehicle && isVehicleDetailOpen && !showBackToVehicle && (!selectedZone || selectedZone === 'VEHICLE') && (
+          {currentCoOwnerVehicle && activePrimaryPanel === 'VEHICLE_DETAIL' && isVehicleDetailOpen && !showBackToVehicle && (!selectedZone || selectedZone === 'VEHICLE') && (
             <PanelErrorBoundary key={`${currentCoOwnerVehicle.id}-co-owner-overview`}>
               <CoOwnerVehiclePanel
                 vehicle={currentCoOwnerVehicle}
-                onClose={() => returnToGarageOverview()}
+                onClose={() => {
+                  closeVehicleDetail();
+                  closeGaragePanel('VEHICLE_DETAIL');
+                  returnToGarageOverview();
+                }}
               />
             </PanelErrorBoundary>
           )}
 
           {/* Authoritative Screen-Space CO_OWNER Bottom Quick Action Dock */}
-          {currentCoOwnerVehicle && isVehicleDetailOpen && !showBackToVehicle && (!selectedZone || selectedZone === 'VEHICLE') && (
+          {currentCoOwnerVehicle && activePrimaryPanel === 'VEHICLE_DETAIL' && isVehicleDetailOpen && !showBackToVehicle && (!selectedZone || selectedZone === 'VEHICLE') && (
             <CoOwnerQuickActionDock
               vehicle={currentCoOwnerVehicle}
             />

@@ -45,6 +45,15 @@ public class VehicleHandoverResponse {
     private boolean isExpired;
     private HandoverEligibilityReason eligibilityReason;
     private String eligibilityMessage;
+    private UUID tripId;
+    private String tripStatus;
+    private String inspectionStatus;
+    private UUID confirmedByStaffId;
+    private Instant confirmedAt;
+    private Instant returnVerifiedAt;
+    private String returnVerifiedByStaffName;
+    private String returnInspectionResult;
+    private Instant tripEndedAt;
 
     public VehicleHandoverResponse() {
     }
@@ -77,6 +86,10 @@ public class VehicleHandoverResponse {
         if (entity.getStaff() != null) {
             resp.setStaffId(entity.getStaff().getId());
             resp.setStaffName(entity.getStaff().getFullName());
+            if (entity.getStaffHandedOverAt() != null) {
+                resp.setConfirmedByStaffId(entity.getStaff().getId());
+                resp.setConfirmedAt(entity.getStaffHandedOverAt());
+            }
         }
         if (entity.getCoOwner() != null) {
             resp.setCoOwnerId(entity.getCoOwner().getId());
@@ -97,6 +110,7 @@ public class VehicleHandoverResponse {
 
         if (entity.getInspection() != null) {
             resp.setInspectionId(entity.getInspection().getId());
+            resp.setInspectionStatus(entity.getInspection().getStatus() != null ? entity.getInspection().getStatus().name() : "PENDING");
             if (entity.getInspection().getItems() != null) {
                 Instant inspTime = entity.getInspection().getCompletedAt() != null
                         ? entity.getInspection().getCompletedAt()
@@ -389,6 +403,78 @@ public class VehicleHandoverResponse {
 
     public void setInspectionId(UUID inspectionId) {
         this.inspectionId = inspectionId;
+    }
+
+    public UUID getTripId() {
+        return tripId;
+    }
+
+    public void setTripId(UUID tripId) {
+        this.tripId = tripId;
+    }
+
+    public String getTripStatus() {
+        return tripStatus;
+    }
+
+    public void setTripStatus(String tripStatus) {
+        this.tripStatus = tripStatus;
+    }
+
+    public String getInspectionStatus() {
+        return inspectionStatus;
+    }
+
+    public void setInspectionStatus(String inspectionStatus) {
+        this.inspectionStatus = inspectionStatus;
+    }
+
+    public UUID getConfirmedByStaffId() {
+        return confirmedByStaffId;
+    }
+
+    public void setConfirmedByStaffId(UUID confirmedByStaffId) {
+        this.confirmedByStaffId = confirmedByStaffId;
+    }
+
+    public Instant getConfirmedAt() {
+        return confirmedAt;
+    }
+
+    public void setConfirmedAt(Instant confirmedAt) {
+        this.confirmedAt = confirmedAt;
+    }
+
+    public Instant getReturnVerifiedAt() {
+        return returnVerifiedAt;
+    }
+
+    public void setReturnVerifiedAt(Instant returnVerifiedAt) {
+        this.returnVerifiedAt = returnVerifiedAt;
+    }
+
+    public String getReturnVerifiedByStaffName() {
+        return returnVerifiedByStaffName;
+    }
+
+    public void setReturnVerifiedByStaffName(String returnVerifiedByStaffName) {
+        this.returnVerifiedByStaffName = returnVerifiedByStaffName;
+    }
+
+    public String getReturnInspectionResult() {
+        return returnInspectionResult;
+    }
+
+    public void setReturnInspectionResult(String returnInspectionResult) {
+        this.returnInspectionResult = returnInspectionResult;
+    }
+
+    public Instant getTripEndedAt() {
+        return tripEndedAt;
+    }
+
+    public void setTripEndedAt(Instant tripEndedAt) {
+        this.tripEndedAt = tripEndedAt;
     }
 }
 

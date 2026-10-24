@@ -16,7 +16,7 @@ interface FinanceZoneHologramProps {
 
 export const FinanceZoneHologram: React.FC<FinanceZoneHologramProps> = ({
   position = [0.0, 2.70, 1.8],
-  fundTotal = '25.000.000đ',
+  fundTotal = '0đ',
   userPercentage = 40,
 }) => {
   const groupRef = useRef<THREE.Group>(null);

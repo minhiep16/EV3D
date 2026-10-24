@@ -14,7 +14,7 @@ interface HologramMetricCardProps {
  */
 export const HologramMetricCard: React.FC<HologramMetricCardProps> = ({
   title = 'QUỸ CHUNG',
-  value = '25.000.000đ',
+  value = '0đ',
   subtitle = 'Tổng quỹ sở hữu & chi phí vận hành',
   accentCyan = '#00f2fe',
 }) => {

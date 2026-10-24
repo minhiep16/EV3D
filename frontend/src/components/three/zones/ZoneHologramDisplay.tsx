@@ -5,6 +5,7 @@ import { useAuthStore } from '../../../store/authStore';
 import { fetchVehicles } from '../../../services/vehicleApi';
 import { fetchVehicleCoOwnership } from '../../../services/coOwnershipApi';
 import { useCostSharingSummary } from '../../../hooks/useExpenses';
+import { useFundSummary } from '../../../hooks/useFund';
 import { VehicleResponse } from '../../../types/vehicle';
 import { FinanceHeroHologram } from './FinanceHeroHologram';
 import { FinanceControlHologram3D } from './FinanceControlHologram3D';
@@ -63,6 +64,20 @@ export const ZoneHologramDisplay: React.FC<ZoneHologramDisplayProps> = ({ overri
     { enabled: !!activeVehicleId }
   );
 
+  // Authoritative Shared Fund query (shared TanStack Query cache)
+  const {
+    data: fundSummary,
+    isLoading: isFundLoading,
+    isError: isFundError,
+  } = useFundSummary(activeVehicleId);
+
+  const fundDisplay = useMemo(() => {
+    if (isFundLoading) return 'ĐANG TẢI SỐ DƯ QUỸ...';
+    if (isFundError) return 'KHÔNG THỂ TẢI SỐ DƯ QUỸ';
+    if (!fundSummary) return 'CHƯA CÓ QUỸ CHUNG';
+    return `${Number(fundSummary.availableBalance).toLocaleString('vi-VN')}đ`;
+  }, [fundSummary, isFundLoading, isFundError]);
+
   // Authoritative current user ownership resolution
   const userPercentage = useMemo(() => {
     // 1. Authoritative backend CostSharingSummary for authenticated user
@@ -115,8 +130,9 @@ export const ZoneHologramDisplay: React.FC<ZoneHologramDisplayProps> = ({ overri
           {/* Top Holographic Visor Canopy above Vehicle: ONLY RENDERS IN FINANCE MODE */}
           <FinanceHeroHologram
             position={[0.0, 2.70, 1.8]}
-            fundTotal="25.000.000đ"
+            fundTotal={fundDisplay}
             userPercentage={userPercentage}
+            vehicleId={activeVehicleId}
           />
 
           {/* Right-Side 3D World-Space Holographic Control Console */}

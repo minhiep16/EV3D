@@ -682,6 +682,7 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
   const hoverVehicle = useWorldStore((state) => state.hoverVehicle);
   const clearSelection = useWorldStore((state) => state.clearSelection);
   const isVehicleSelected = useWorldStore((state) => state.isVehicleSelected);
+  const vehicleVotingMode = useWorldStore((state) => state.vehicleVotingMode);
 
   // TanStack Query: Fetch vehicles from Spring Boot API / MySQL (scoped per role and user)
   const { data: vehicles = [], isLoading, isError, error, refetch } = useQuery<VehicleResponse[]>({
@@ -756,7 +757,8 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
     vehicleDamageHistoryMode ||
     vehicleMaintenanceMode ||
     vehicleBatteryXrayMode ||
-    vehicleChargingMode;
+    vehicleChargingMode ||
+    vehicleVotingMode;
 
   const handleVehicleSelect = (selectedVehicle: VehicleResponse) => {
     selectVehicle(selectedVehicle.id, role, true);

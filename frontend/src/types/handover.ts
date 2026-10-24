@@ -45,6 +45,15 @@ export interface VehicleHandoverData {
   conditionAcknowledged?: boolean;
   createdAt: string;
   updatedAt: string;
+  tripId?: string;
+  tripStatus?: string;
+  confirmedByStaffId?: string;
+  confirmedAt?: string;
+  returnVerifiedAt?: string;
+  returnVerifiedByStaffName?: string;
+  returnInspectionResult?: string;
+  tripEndedAt?: string;
+  inspectionStatus?: string;
   totalInspectedCount: number;
   requiredCheckpointsCount: number;
   allCheckpointsInspected: boolean;

@@ -75,17 +75,16 @@ export const CoOwnerReceiptWorld: React.FC<CoOwnerReceiptWorldProps> = ({ vehicl
 
   // Resolve target booking ID authoritatively
   const targetBookingId = useMemo(() => {
-    if (eligibility?.bookingId) return eligibility.bookingId;
     const now = new Date();
     const myBookings = allBookings.filter(
-      (b) => b && b.status !== 'CANCELLED' && (!user?.id || b.userId === user?.id)
+      (b) => b && b.status !== 'CANCELLED' && b.status !== 'COMPLETED' && b.status !== 'EXPIRED' && (!user?.id || b.userId === user?.id)
     );
     if (myBookings.length > 0) {
       const activeOrUpcoming = myBookings.find((b) => b.endTime && new Date(b.endTime) >= now);
-      return activeOrUpcoming ? activeOrUpcoming.id : myBookings[0].id;
+      if (activeOrUpcoming) return activeOrUpcoming.id;
     }
-    const confirmed = allBookings.find((b) => b && (b.status === 'CONFIRMED' || b.status === 'IN_PROGRESS'));
-    return confirmed ? confirmed.id : null;
+    if (eligibility?.bookingId) return eligibility.bookingId;
+    return null;
   }, [eligibility?.bookingId, allBookings, user?.id]);
 
   // TanStack Query: Handover by booking (authoritative source of truth)
@@ -96,18 +95,17 @@ export const CoOwnerReceiptWorld: React.FC<CoOwnerReceiptWorldProps> = ({ vehicl
     queryKey: ['handoverByBooking', targetBookingId],
     queryFn: () => (targetBookingId ? fetchBookingHandover(targetBookingId) : null),
     enabled: !!targetBookingId,
-    staleTime: 5000,
+    staleTime: 0,
   });
 
   // TanStack Query: Fetch active vehicle handovers with stable query key
-  // staleTime: 30000 prevents unnecessary aggressive refetching during review
   const {
     data: activeHandovers = [],
     isLoading: isHandoversLoading,
   } = useQuery<VehicleHandoverData[]>({
-    queryKey: ['activeVehicleHandovers', vehicle.id],
+    queryKey: ['activeVehicleHandovers', vehicle.id, user?.id],
     queryFn: () => fetchActiveVehicleHandovers(vehicle.id),
-    staleTime: 30000,
+    staleTime: 0,
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data || data.length === 0) return 8000;
@@ -123,21 +121,25 @@ export const CoOwnerReceiptWorld: React.FC<CoOwnerReceiptWorldProps> = ({ vehicl
     },
   });
 
-  // Resolve current CO_OWNER handover strictly from server state + fallback cache to prevent rollback
+  // Resolve current CO_OWNER handover strictly from server state matching current booking
   const handover = useMemo(() => {
-    if (bookingHandover) return bookingHandover;
+    if (!targetBookingId) return null;
+    if (bookingHandover && bookingHandover.bookingId === targetBookingId) {
+      return bookingHandover;
+    }
     const list = Array.isArray(activeHandovers) ? activeHandovers : [];
     if (list.length > 0) {
       const myHandover = list.find(
         (h) =>
-          h && (!user?.id || h.coOwnerId === user.id || h.coOwnerEmail === user.email)
+          h && h.bookingId === targetBookingId && (!user?.id || h.coOwnerId === user.id || h.coOwnerEmail === user.email)
       );
       if (myHandover) return myHandover;
     }
-    if (eligibility?.handover) return eligibility.handover;
-    if (lastConfirmedHandover) return lastConfirmedHandover;
-    return list[0] || null;
-  }, [bookingHandover, activeHandovers, eligibility?.handover, lastConfirmedHandover, user?.id, user?.email]);
+    if (eligibility?.handover && eligibility.bookingId === targetBookingId) {
+      return eligibility.handover;
+    }
+    return null;
+  }, [bookingHandover, activeHandovers, eligibility, targetBookingId, user?.id, user?.email]);
 
   // Selected checkpoint object
   const currentCheckpointObj = useMemo(() => {

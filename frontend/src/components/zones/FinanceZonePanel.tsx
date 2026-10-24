@@ -119,7 +119,30 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
     { enabled: !!activeVehicleId && !!financeMonthStr }
   );
 
-  const { data: fundSummary } = useFundSummary(activeVehicleId);
+  const {
+    data: fundSummary,
+    isLoading: isFundSummaryLoading,
+    isError: isFundSummaryError,
+  } = useFundSummary(activeVehicleId);
+
+  const fundBalanceDisplay = useMemo(() => {
+    if (isFundSummaryLoading) return 'ĐANG TẢI SỐ DƯ QUỸ...';
+    if (isFundSummaryError) return 'KHÔNG THỂ TẢI SỐ DƯ QUỸ';
+    if (!fundSummary) return 'CHƯA CÓ QUỸ CHUNG';
+    return `${Number(fundSummary.availableBalance).toLocaleString('vi-VN')}đ`;
+  }, [fundSummary, isFundSummaryLoading, isFundSummaryError]);
+
+  const userFundShareDisplay = useMemo(() => {
+    if (isFundSummaryLoading) return '...';
+    if (isFundSummaryError || !fundSummary) return '0đ';
+    return `${Math.round((Number(fundSummary.availableBalance) * currentUserOwnershipPercentage) / 100).toLocaleString('vi-VN')}đ`;
+  }, [fundSummary, isFundSummaryLoading, isFundSummaryError, currentUserOwnershipPercentage]);
+
+  const totalContributionsDisplay = useMemo(() => {
+    if (isFundSummaryLoading) return '...';
+    if (isFundSummaryError || !fundSummary) return '0đ';
+    return `${Number(fundSummary.totalContributionsConfirmed).toLocaleString('vi-VN')}đ`;
+  }, [fundSummary, isFundSummaryLoading, isFundSummaryError]);
 
   // Authoritative current user group member matching: currentUser.id === groupMember.userId
   const currentUserMember = useMemo(() => {
@@ -195,7 +218,7 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
           right: '32px',
           top: '50%',
           transform: 'translateY(-50%)',
-          width: '364px',
+          width: '460px',
           maxHeight: 'calc(100vh - 64px)',
           overflowY: 'auto',
           overflowX: 'hidden',
@@ -205,78 +228,70 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
           border: '2px solid #00f2fe',
           borderRadius: '28px',
           boxShadow: '0 24px 60px rgba(0, 0, 0, 0.75), 0 0 35px rgba(0, 242, 254, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 0 20px rgba(0, 242, 254, 0.1)',
-          padding: '24px 22px',
+          padding: '18px 20px',
           color: '#ffffff',
           fontFamily: "var(--font-family, 'Outfit', sans-serif)",
           zIndex: 30,
           pointerEvents: isFinanceDetailModalOpen ? 'none' : 'auto',
           opacity: isFinanceDetailModalOpen ? 0 : 1,
           visibility: isFinanceDetailModalOpen ? 'hidden' : 'visible',
-          transition: 'opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-          animation: 'panelSlideInRight 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards',
           display: 'flex',
           flexDirection: 'column',
-          gap: '14px',
+          gap: '12px',
         }}
       >
-        {/* Header with Icon, Title, and Close Button */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+        {/* 1. Header: Title, DEMO mode, and Close button */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: '60px', marginBottom: '4px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
             <div
               style={{
-                width: '48px',
-                height: '48px',
-                borderRadius: '16px',
-                background: 'rgba(0, 242, 254, 0.14)',
-                border: '1.8px solid #00f2fe',
+                width: '42px',
+                height: '42px',
+                borderRadius: '14px',
+                background: 'rgba(0, 242, 254, 0.16)',
+                border: '1.6px solid #00f2fe',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: '0 0 18px rgba(0, 242, 254, 0.35)',
+                boxShadow: '0 0 16px rgba(0, 242, 254, 0.40)',
                 flexShrink: 0,
               }}
             >
-              <Wallet size={24} color="#00f2fe" />
+              <Wallet size={22} color="#00f2fe" />
             </div>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <h2
                   style={{
-                    fontSize: '22px',
+                    fontSize: '20px',
                     fontWeight: 800,
                     letterSpacing: '-0.01em',
                     color: '#ffffff',
                     margin: 0,
-                    lineHeight: 1.2,
+                    lineHeight: 1.1,
+                    textTransform: 'uppercase',
                   }}
                 >
-                  Tài chính
+                  TÀI CHÍNH
                 </h2>
+              </div>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
                 <span
                   style={{
-                    fontSize: '9px',
+                    background: 'rgba(0, 242, 254, 0.14)',
+                    border: '1px solid rgba(0, 242, 254, 0.45)',
+                    color: '#00f2fe',
+                    fontSize: '10.5px',
                     fontWeight: 800,
-                    color: '#38bdf8',
-                    background: 'rgba(56, 189, 248, 0.15)',
-                    border: '1px solid rgba(56, 189, 248, 0.45)',
-                    padding: '2px 6px',
-                    borderRadius: '6px',
+                    padding: '2px 8px',
+                    borderRadius: '5px',
                     letterSpacing: '0.04em',
+                    whiteSpace: 'nowrap',
                   }}
                 >
-                  CHẾ ĐỘ TÀI CHÍNH DEMO
+                  {activeVehicle?.name || 'EV01'} — CHẾ ĐỘ TÀI CHÍNH DEMO
                 </span>
               </div>
-              <p
-                style={{
-                  fontSize: '12px',
-                  color: '#94a3b8',
-                  margin: '3px 0 0 0',
-                  fontWeight: 500,
-                }}
-              >
-                Quản lý quỹ chung & chi phí
-              </p>
             </div>
           </div>
 
@@ -290,13 +305,14 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
               height: '34px',
               borderRadius: '50%',
               background: 'rgba(255, 255, 255, 0.08)',
-              border: '1px solid rgba(255, 255, 255, 0.18)',
+              border: '1px solid rgba(255, 255, 255, 0.20)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               color: '#94a3b8',
               cursor: 'pointer',
               transition: 'all 0.2s',
+              flexShrink: 0,
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.background = 'rgba(239, 68, 68, 0.25)';
@@ -305,7 +321,7 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.18)';
+              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.20)';
               e.currentTarget.style.color = '#94a3b8';
             }}
           >
@@ -313,141 +329,169 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
           </button>
         </div>
 
-        {/* Item 1: Chi tháng này */}
-        <div
-          onClick={() => setShowHistoryModal(true)}
-          style={{
-            background: 'rgba(10, 30, 56, 0.75)',
-            border: '1.2px solid rgba(0, 242, 254, 0.3)',
-            borderRadius: '20px',
-            padding: '16px 20px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.25)',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = '#00f2fe';
-            e.currentTarget.style.background = 'rgba(14, 38, 70, 0.88)';
-            e.currentTarget.style.transform = 'translateX(-2px)';
-            e.currentTarget.style.boxShadow = '0 6px 20px rgba(0, 242, 254, 0.2)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.3)';
-            e.currentTarget.style.background = 'rgba(10, 30, 56, 0.75)';
-            e.currentTarget.style.transform = 'translateX(0)';
-            e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.25)';
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+        {/* 2. SUMMARY HERO METRICS (2-COLUMN COMPACT HERO) */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', flexShrink: 0 }}>
+          {/* Left: Quỹ chung */}
+          <div
+            onClick={() => setShowLedgerModal(true)}
+            title="Bấm để xem chi tiết Quỹ chung"
+            style={{
+              background: 'rgba(10, 30, 56, 0.82)',
+              border: '1.2px solid rgba(0, 242, 254, 0.38)',
+              borderRadius: '14px',
+              padding: '13px 15px',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              boxShadow: '0 4px 14px rgba(0, 0, 0, 0.25)',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = '#00f2fe';
+              e.currentTarget.style.background = 'rgba(14, 40, 76, 0.95)';
+              e.currentTarget.style.boxShadow = '0 6px 18px rgba(0, 242, 254, 0.30)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.38)';
+              e.currentTarget.style.background = 'rgba(10, 30, 56, 0.82)';
+              e.currentTarget.style.boxShadow = '0 4px 14px rgba(0, 0, 0, 0.25)';
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Wallet size={15} color="#00f2fe" />
+                <span style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  QUỸ CHUNG
+                </span>
+              </div>
+              <ChevronRight size={15} color="#38bdf8" />
+            </div>
             <div
               style={{
-                width: '40px',
-                height: '40px',
-                borderRadius: '50%',
-                background: 'rgba(0, 242, 254, 0.14)',
-                border: '1.2px solid rgba(0, 242, 254, 0.45)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
+                fontSize: isFundSummaryLoading || isFundSummaryError || !fundSummary ? '13px' : '20px',
+                fontWeight: 800,
+                color: '#00f2fe',
+                letterSpacing: '-0.01em',
+                marginTop: '6px',
+                lineHeight: 1.2,
               }}
             >
-              <BarChart3 size={18} color="#00f2fe" />
+              {fundBalanceDisplay}
             </div>
-            <div>
-              <div style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 500 }}>
-                Chi tháng này
-              </div>
-              <div
-                style={{
-                  fontSize: '20px',
-                  fontWeight: 800,
-                  color: '#ffffff',
-                  letterSpacing: '-0.01em',
-                  marginTop: '1px',
-                }}
-              >
-                {formattedMonthlyExpense}
-              </div>
+            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '3px', fontWeight: 500 }}>
+              {fundSummary ? 'Số dư khả dụng' : 'Chưa kết nối quỹ'}
             </div>
           </div>
-          <ChevronRight size={18} color="#38bdf8" />
+
+          {/* Right: Chi tháng này */}
+          <div
+            onClick={() => setShowHistoryModal(true)}
+            title="Bấm để xem lịch sử chi phí"
+            style={{
+              background: 'rgba(10, 30, 56, 0.82)',
+              border: '1.2px solid rgba(0, 242, 254, 0.38)',
+              borderRadius: '14px',
+              padding: '13px 15px',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              boxShadow: '0 4px 14px rgba(0, 0, 0, 0.25)',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = '#00f2fe';
+              e.currentTarget.style.background = 'rgba(14, 40, 76, 0.95)';
+              e.currentTarget.style.boxShadow = '0 6px 18px rgba(0, 242, 254, 0.30)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.38)';
+              e.currentTarget.style.background = 'rgba(10, 30, 56, 0.82)';
+              e.currentTarget.style.boxShadow = '0 4px 14px rgba(0, 0, 0, 0.25)';
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <BarChart3 size={15} color="#38bdf8" />
+                <span style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  CHI THÁNG NÀY
+                </span>
+              </div>
+              <ChevronRight size={15} color="#38bdf8" />
+            </div>
+            <div
+              style={{
+                fontSize: '20px',
+                fontWeight: 800,
+                color: '#ffffff',
+                letterSpacing: '-0.01em',
+                marginTop: '6px',
+                lineHeight: 1.2,
+              }}
+            >
+              {formattedMonthlyExpense}
+            </div>
+            <div style={{ fontSize: '11px', color: summary?.pendingCount ? '#f59e0b' : '#64748b', marginTop: '3px', fontWeight: 500 }}>
+              {summary?.pendingCount ? `⏳ ${summary.pendingCount} chờ xác minh` : 'Đã đối soát'}
+            </div>
+          </div>
         </div>
 
-        {/* Item 2: Phần chi phí của bạn */}
+        {/* 3. PERSONAL COST SUMMARY CARD */}
         <div
           onClick={() => setShowCostSharingModal(true)}
+          title="Bấm để xem chi tiết phân bổ chi phí"
           style={{
-            background: 'rgba(10, 30, 56, 0.82)',
-            border: '1.2px solid rgba(0, 242, 254, 0.4)',
-            borderRadius: '20px',
-            padding: '14px 18px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
+            background: 'rgba(10, 30, 56, 0.85)',
+            border: '1.2px solid rgba(0, 242, 254, 0.40)',
+            borderRadius: '14px',
+            padding: '13px 15px',
             cursor: 'pointer',
             transition: 'all 0.2s ease',
-            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.28)',
+            boxShadow: '0 4px 14px rgba(0, 0, 0, 0.28)',
+            flexShrink: 0,
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.borderColor = '#00f2fe';
-            e.currentTarget.style.background = 'rgba(14, 40, 76, 0.92)';
-            e.currentTarget.style.transform = 'translateX(-2px)';
-            e.currentTarget.style.boxShadow = '0 6px 20px rgba(0, 242, 254, 0.3)';
+            e.currentTarget.style.background = 'rgba(14, 40, 76, 0.95)';
+            e.currentTarget.style.boxShadow = '0 6px 18px rgba(0, 242, 254, 0.32)';
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.4)';
-            e.currentTarget.style.background = 'rgba(10, 30, 56, 0.82)';
-            e.currentTarget.style.transform = 'translateX(0)';
-            e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.28)';
+            e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.40)';
+            e.currentTarget.style.background = 'rgba(10, 30, 56, 0.85)';
+            e.currentTarget.style.boxShadow = '0 4px 14px rgba(0, 0, 0, 0.28)';
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div
-                style={{
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: '50%',
-                  background: 'rgba(0, 242, 254, 0.16)',
-                  border: '1.2px solid rgba(0, 242, 254, 0.45)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                }}
-              >
-                <Users size={18} color="#00f2fe" />
-              </div>
-              <div>
-                <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Phần chi phí của bạn
-                </div>
-                <div style={{ fontSize: '12px', color: '#38bdf8', fontWeight: 700 }}>
-                  Tỷ lệ: {costSharingSummary?.userOwnershipPercentage != null ? `${costSharingSummary.userOwnershipPercentage}%` : `${currentUserOwnershipPercentage}%`}
-                </div>
-              </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Users size={16} color="#00f2fe" />
+              <span style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                PHẦN CHI PHÍ CỦA BẠN
+              </span>
             </div>
-            <ChevronRight size={17} color="#38bdf8" />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ fontSize: '12px', color: '#38bdf8', fontWeight: 800 }}>
+                Tỷ lệ: {costSharingSummary?.userOwnershipPercentage != null ? `${costSharingSummary.userOwnershipPercentage}%` : `${currentUserOwnershipPercentage}%`}
+              </span>
+              <ChevronRight size={15} color="#38bdf8" />
+            </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', paddingTop: '2px' }}>
-            <div style={{ background: 'rgba(4, 16, 36, 0.60)', padding: '6px 10px', borderRadius: '10px', border: '1px solid rgba(0, 242, 254, 0.15)' }}>
-              <div style={{ fontSize: '10px', color: '#94a3b8' }}>Phải chịu</div>
-              <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#f8fafc', marginTop: '1px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            <div style={{ background: 'rgba(4, 16, 36, 0.65)', padding: '8px 12px', borderRadius: '10px', border: '1px solid rgba(0, 242, 254, 0.12)' }}>
+              <div style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>Phải chịu</div>
+              <div style={{ fontSize: '14.5px', fontWeight: 800, color: '#f8fafc', marginTop: '2px' }}>
                 {costSharingSummary?.userRequiredShare != null ? `${Number(costSharingSummary.userRequiredShare).toLocaleString('vi-VN')}đ` : '...'}
               </div>
             </div>
-            <div style={{ background: 'rgba(4, 16, 36, 0.60)', padding: '6px 10px', borderRadius: '10px', border: '1px solid rgba(0, 242, 254, 0.15)' }}>
-              <div style={{ fontSize: '10px', color: '#94a3b8' }}>Chênh lệch</div>
+            <div style={{ background: 'rgba(4, 16, 36, 0.65)', padding: '8px 12px', borderRadius: '10px', border: '1px solid rgba(0, 242, 254, 0.12)' }}>
+              <div style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>Chênh lệch (Net)</div>
               <div
                 style={{
-                  fontSize: '13.5px',
+                  fontSize: '14.5px',
                   fontWeight: 800,
-                  marginTop: '1px',
+                  marginTop: '2px',
                   color: (costSharingSummary?.userNetPosition ?? 0) > 0 ? '#10b981' : (costSharingSummary?.userNetPosition ?? 0) < 0 ? '#fb7185' : '#38bdf8',
                 }}
               >
@@ -459,189 +503,203 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
           </div>
         </div>
 
-        {/* Item 3: Quỹ chung */}
-        <div
-          onClick={() => setShowLedgerModal(true)}
-          style={{
-            background: 'rgba(10, 30, 56, 0.78)',
-            border: '1.2px solid rgba(0, 242, 254, 0.35)',
-            borderRadius: '20px',
-            padding: '14px 18px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.25)',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = '#00f2fe';
-            e.currentTarget.style.background = 'rgba(14, 40, 76, 0.90)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.35)';
-            e.currentTarget.style.background = 'rgba(10, 30, 56, 0.78)';
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div
-                style={{
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: '50%',
-                  background: 'rgba(0, 242, 254, 0.16)',
-                  border: '1.2px solid rgba(0, 242, 254, 0.45)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                }}
-              >
-                <Wallet size={18} color="#00f2fe" />
-              </div>
-              <div>
-                <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  QUỸ CHUNG
-                </div>
-                <div style={{ fontSize: '15.5px', fontWeight: 800, color: '#00f2fe', marginTop: '1px' }}>
-                  {fundSummary ? `${Number(fundSummary.availableBalance).toLocaleString('vi-VN')}đ` : '25.000.000đ'}
-                </div>
-              </div>
+        {/* 4. COMPACT TWO-COLUMN QUICK ACTION GRID */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', flexShrink: 0 }}>
+          {/* Action 1: Chi tiết quỹ */}
+          <button
+            type="button"
+            onClick={() => setShowLedgerModal(true)}
+            style={{
+              height: '44px',
+              background: 'linear-gradient(135deg, rgba(0, 242, 254, 0.20) 0%, rgba(0, 198, 255, 0.12) 100%)',
+              border: '1.2px solid rgba(0, 242, 254, 0.50)',
+              borderRadius: '12px',
+              padding: '0 12px',
+              color: '#00f2fe',
+              fontSize: '13px',
+              fontWeight: 750,
+              letterSpacing: '0.01em',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '7px',
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(0, 242, 254, 0.15)',
+              transition: 'all 0.2s ease',
+              whiteSpace: 'nowrap',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 242, 254, 0.35) 0%, rgba(0, 198, 255, 0.22) 100%)';
+              e.currentTarget.style.borderColor = '#00f2fe';
+              e.currentTarget.style.transform = 'translateY(-1px)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 242, 254, 0.20) 0%, rgba(0, 198, 255, 0.12) 100%)';
+              e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.50)';
+              e.currentTarget.style.transform = 'translateY(0)';
+            }}
+          >
+            <ExternalLink size={15} color="#00f2fe" />
+            <span>CHI TIẾT QUỸ</span>
+          </button>
+
+          {/* Action 2: Đóng góp quỹ */}
+          <button
+            type="button"
+            onClick={() => setShowLedgerModal(true)}
+            style={{
+              height: '44px',
+              background: 'rgba(16, 185, 129, 0.15)',
+              border: '1.2px solid rgba(16, 185, 129, 0.45)',
+              borderRadius: '12px',
+              padding: '0 12px',
+              color: '#34d399',
+              fontSize: '13px',
+              fontWeight: 750,
+              letterSpacing: '0.01em',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '7px',
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(16, 185, 129, 0.15)',
+              transition: 'all 0.2s ease',
+              whiteSpace: 'nowrap',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(16, 185, 129, 0.28)';
+              e.currentTarget.style.borderColor = '#10b981';
+              e.currentTarget.style.transform = 'translateY(-1px)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(16, 185, 129, 0.15)';
+              e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.45)';
+              e.currentTarget.style.transform = 'translateY(0)';
+            }}
+          >
+            <PlusCircle size={15} color="#34d399" />
+            <span>ĐÓNG GÓP QUỸ</span>
+          </button>
+
+          {/* Action 3: Lịch sử giao dịch */}
+          <button
+            type="button"
+            onClick={() => setShowLedgerModal(true)}
+            style={{
+              height: '44px',
+              background: 'rgba(56, 189, 248, 0.12)',
+              border: '1.2px solid rgba(56, 189, 248, 0.40)',
+              borderRadius: '12px',
+              padding: '0 12px',
+              color: '#38bdf8',
+              fontSize: '13px',
+              fontWeight: 750,
+              letterSpacing: '0.01em',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '7px',
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(56, 189, 248, 0.15)',
+              transition: 'all 0.2s ease',
+              whiteSpace: 'nowrap',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(56, 189, 248, 0.24)';
+              e.currentTarget.style.borderColor = '#38bdf8';
+              e.currentTarget.style.transform = 'translateY(-1px)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(56, 189, 248, 0.12)';
+              e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.40)';
+              e.currentTarget.style.transform = 'translateY(0)';
+            }}
+          >
+            <Calendar size={15} color="#38bdf8" />
+            <span>LỊCH SỬ GIAO DỊCH</span>
+          </button>
+
+          {/* Action 4: Phân bổ chi phí */}
+          <button
+            type="button"
+            onClick={() => setShowCostSharingModal(true)}
+            style={{
+              height: '44px',
+              background: 'rgba(10, 30, 56, 0.85)',
+              border: '1.2px solid rgba(0, 242, 254, 0.40)',
+              borderRadius: '12px',
+              padding: '0 12px',
+              color: '#00f2fe',
+              fontSize: '13px',
+              fontWeight: 750,
+              letterSpacing: '0.01em',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '7px',
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(0, 242, 254, 0.15)',
+              transition: 'all 0.2s ease',
+              whiteSpace: 'nowrap',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(0, 242, 254, 0.16)';
+              e.currentTarget.style.borderColor = '#00f2fe';
+              e.currentTarget.style.transform = 'translateY(-1px)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(10, 30, 56, 0.85)';
+              e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.40)';
+              e.currentTarget.style.transform = 'translateY(0)';
+            }}
+          >
+            <Users size={15} color="#00f2fe" />
+            <span>PHÂN BỔ CHI PHÍ</span>
+          </button>
+
+          {/* Action 5: Lịch sử chi phí */}
+          <button
+            type="button"
+            data-testid="finance-expense-history-nav-btn"
+            onClick={() => setShowHistoryModal(true)}
+            style={{
+              gridColumn: '1 / -1',
+              height: '44px',
+              background: 'linear-gradient(135deg, rgba(0, 242, 254, 0.14) 0%, rgba(3, 105, 161, 0.18) 100%)',
+              border: '1.2px solid rgba(0, 242, 254, 0.45)',
+              borderRadius: '12px',
+              padding: '0 16px',
+              color: '#ffffff',
+              fontSize: '13px',
+              fontWeight: 750,
+              letterSpacing: '0.01em',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              boxShadow: '0 2px 10px rgba(0, 242, 254, 0.16)',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = '#00f2fe';
+              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 242, 254, 0.25) 0%, rgba(3, 105, 161, 0.30) 100%)';
+              e.currentTarget.style.transform = 'translateY(-1px)';
+              e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 242, 254, 0.30)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.45)';
+              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 242, 254, 0.14) 0%, rgba(3, 105, 161, 0.18) 100%)';
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 2px 10px rgba(0, 242, 254, 0.16)';
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <FileText size={16} color="#00f2fe" />
+              <span>LỊCH SỬ CHI PHÍ</span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '11.5px', color: '#10b981', fontWeight: 600 }}>{fundStatus}</span>
-              <ChevronRight size={17} color="#38bdf8" />
-            </div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-            <div style={{ background: 'rgba(4, 16, 36, 0.60)', padding: '5px 8px', borderRadius: '8px', border: '1px solid rgba(0, 242, 254, 0.12)' }}>
-              <div style={{ fontSize: '9.5px', color: '#94a3b8' }}>Đang chờ xác nhận</div>
-              <div style={{ fontSize: '12px', fontWeight: 750, color: '#fbbf24', marginTop: '1px' }}>
-                {fundSummary ? `${Number(fundSummary.pendingContributionTotal).toLocaleString('vi-VN')}đ` : '0đ'}
-              </div>
-            </div>
-            <div style={{ background: 'rgba(4, 16, 36, 0.60)', padding: '5px 8px', borderRadius: '8px', border: '1px solid rgba(0, 242, 254, 0.12)' }}>
-              <div style={{ fontSize: '9.5px', color: '#94a3b8' }}>Đã giải ngân</div>
-              <div style={{ fontSize: '12px', fontWeight: 750, color: '#f87171', marginTop: '1px' }}>
-                {fundSummary ? `${Number(fundSummary.totalDisbursementsConfirmed).toLocaleString('vi-VN')}đ` : '0đ'}
-              </div>
-            </div>
-          </div>
+            <ChevronRight size={16} color="#00f2fe" />
+          </button>
         </div>
-
-        {/* Primary Action Button: Mở bảng quỹ */}
-        <button
-          type="button"
-          onClick={() => setShowLedgerModal(true)}
-          style={{
-            background: 'linear-gradient(135deg, #00f2fe 0%, #00c6ff 100%)',
-            border: 'none',
-            borderRadius: '18px',
-            padding: '16px 22px',
-            color: '#041628',
-            fontSize: '15px',
-            fontWeight: 800,
-            letterSpacing: '0.01em',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            cursor: 'pointer',
-            boxShadow: '0 8px 25px rgba(0, 242, 254, 0.45)',
-            transition: 'all 0.2s ease',
-            marginTop: '2px',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-2px)';
-            e.currentTarget.style.boxShadow = '0 12px 32px rgba(0, 242, 254, 0.65)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 8px 25px rgba(0, 242, 254, 0.45)';
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <ExternalLink size={18} color="#041628" />
-            <span>Mở bảng quỹ</span>
-          </div>
-          <ChevronRight size={18} color="#041628" />
-        </button>
-
-        {/* Secondary Action Button: Phân bổ chi phí */}
-        <button
-          type="button"
-          onClick={() => setShowCostSharingModal(true)}
-          style={{
-            background: 'rgba(10, 30, 56, 0.82)',
-            border: '1.2px solid rgba(0, 242, 254, 0.40)',
-            borderRadius: '18px',
-            padding: '14px 22px',
-            color: '#00f2fe',
-            fontSize: '14px',
-            fontWeight: 700,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = '#00f2fe';
-            e.currentTarget.style.background = 'rgba(14, 38, 70, 0.92)';
-            e.currentTarget.style.transform = 'translateX(-2px)';
-            e.currentTarget.style.boxShadow = '0 6px 20px rgba(0, 242, 254, 0.25)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.40)';
-            e.currentTarget.style.background = 'rgba(10, 30, 56, 0.82)';
-            e.currentTarget.style.transform = 'translateX(0)';
-            e.currentTarget.style.boxShadow = 'none';
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Users size={18} color="#00f2fe" />
-            <span>Phân bổ chi phí</span>
-          </div>
-          <ChevronRight size={18} color="#00f2fe" />
-        </button>
-
-        {/* Tertiary Action Button: Lịch sử chi phí */}
-        <button
-          type="button"
-          onClick={() => setShowHistoryModal(true)}
-          style={{
-            background: 'rgba(10, 30, 56, 0.75)',
-            border: '1.2px solid rgba(0, 242, 254, 0.3)',
-            borderRadius: '18px',
-            padding: '14px 22px',
-            color: '#ffffff',
-            fontSize: '14px',
-            fontWeight: 600,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = '#00f2fe';
-            e.currentTarget.style.background = 'rgba(14, 38, 70, 0.88)';
-            e.currentTarget.style.transform = 'translateX(-2px)';
-            e.currentTarget.style.boxShadow = '0 6px 20px rgba(0, 242, 254, 0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.3)';
-            e.currentTarget.style.background = 'rgba(10, 30, 56, 0.75)';
-            e.currentTarget.style.transform = 'translateX(0)';
-            e.currentTarget.style.boxShadow = 'none';
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <FileText size={18} color="#00f2fe" />
-            <span>Lịch sử chi phí</span>
-          </div>
-          <ChevronRight size={18} color="#00f2fe" />
-        </button>
       </div>
 
       {/* Modal: Bảng chi tiết quỹ chung — Right-Docked Finance Detail Panel */}
@@ -791,7 +849,7 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                   Số dư khả dụng
                 </div>
                 <div style={{ fontSize: '22px', fontWeight: 850, color: '#00f2fe', marginTop: '2px', letterSpacing: '-0.01em' }}>
-                  {fundSummary ? `${Number(fundSummary.availableBalance).toLocaleString('vi-VN')}đ` : '25.000.000đ'}
+                  {fundBalanceDisplay}
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
@@ -799,9 +857,7 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                   Phần của bạn ({currentUserOwnershipPercentage}%)
                 </div>
                 <div style={{ fontSize: '16px', fontWeight: 750, color: '#ffffff', marginTop: '2px' }}>
-                  {fundSummary
-                    ? `${((Number(fundSummary.availableBalance) * currentUserOwnershipPercentage) / 100).toLocaleString('vi-VN')}đ`
-                    : `${((25000000 * currentUserOwnershipPercentage) / 100).toLocaleString('vi-VN')}đ`}
+                  {userFundShareDisplay}
                 </div>
               </div>
             </div>

@@ -55,12 +55,17 @@ public class VehicleHandoverController {
                 .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
-    @GetMapping("/vehicles/{vehicleId}/handover-history")
+    @GetMapping(value = {"/vehicles/{vehicleId}/handover-history", "/vehicles/{vehicleId}/handovers/history"})
     @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
     public ResponseEntity<List<VehicleHandoverResponse>> getHandoverHistory(
-            @PathVariable UUID vehicleId
+            @PathVariable UUID vehicleId,
+            @AuthenticationPrincipal UserPrincipal principal
     ) {
-        List<VehicleHandoverResponse> response = handoverService.getHandoverHistory(vehicleId);
+        List<VehicleHandoverResponse> response = handoverService.getHandoverHistory(
+                vehicleId,
+                principal.getId(),
+                principal.getUser().getRole()
+        );
         return ResponseEntity.ok(response);
     }
 

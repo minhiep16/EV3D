@@ -179,9 +179,11 @@ export const TripTelemetryPanel3D: React.FC<TripTelemetryPanel3DProps> = ({
       queryClient.invalidateQueries({ queryKey: ['vehicleRelevantBooking', vehicle.id] });
       queryClient.invalidateQueries({ queryKey: ['activeVehicleHandovers', vehicle.id] });
       queryClient.invalidateQueries({ queryKey: ['handoverHistory', vehicle.id] });
+      queryClient.invalidateQueries({ queryKey: ['vehicle-handover-history', vehicle.id] });
       queryClient.invalidateQueries({ queryKey: ['bookingHandover'] });
       queryClient.invalidateQueries({ queryKey: ['handoverByBooking'] });
       queryClient.invalidateQueries({ queryKey: ['tripEligibility'] });
+      queryClient.invalidateQueries({ queryKey: ['bookingTrip'] });
       queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] });
     } catch (err: any) {
       setErrorMessage(err.message || 'Không thể gửi yêu cầu trả xe. Vui lòng thử lại.');
@@ -211,9 +213,11 @@ export const TripTelemetryPanel3D: React.FC<TripTelemetryPanel3DProps> = ({
       queryClient.invalidateQueries({ queryKey: ['vehicleRelevantBooking', vehicle.id] });
       queryClient.invalidateQueries({ queryKey: ['activeVehicleHandovers', vehicle.id] });
       queryClient.invalidateQueries({ queryKey: ['handoverHistory', vehicle.id] });
+      queryClient.invalidateQueries({ queryKey: ['vehicle-handover-history', vehicle.id] });
       queryClient.invalidateQueries({ queryKey: ['bookingHandover'] });
       queryClient.invalidateQueries({ queryKey: ['handoverByBooking'] });
       queryClient.invalidateQueries({ queryKey: ['tripEligibility'] });
+      queryClient.invalidateQueries({ queryKey: ['bookingTrip'] });
       queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] });
     } catch (err: any) {
       setErrorMessage(err.message || 'Không thể hoàn tất trả xe. Vui lòng thử lại.');

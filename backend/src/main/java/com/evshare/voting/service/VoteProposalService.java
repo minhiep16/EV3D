@@ -53,6 +53,7 @@ public class VoteProposalService {
     private final MaintenanceRequestRepository maintenanceRequestRepository;
     private final ExpenseRepository expenseRepository;
     private final ExpenseShareService expenseShareService;
+    private final com.evshare.contract.repository.CoOwnershipContractRepository contractRepository;
 
     public VoteProposalService(
             VoteProposalRepository voteProposalRepository,
@@ -66,7 +67,8 @@ public class VoteProposalService {
             GroupVehicleRepository groupVehicleRepository,
             MaintenanceRequestRepository maintenanceRequestRepository,
             ExpenseRepository expenseRepository,
-            ExpenseShareService expenseShareService
+            ExpenseShareService expenseShareService,
+            com.evshare.contract.repository.CoOwnershipContractRepository contractRepository
     ) {
         this.voteProposalRepository = voteProposalRepository;
         this.proposalVoteRepository = proposalVoteRepository;
@@ -80,6 +82,7 @@ public class VoteProposalService {
         this.maintenanceRequestRepository = maintenanceRequestRepository;
         this.expenseRepository = expenseRepository;
         this.expenseShareService = expenseShareService;
+        this.contractRepository = contractRepository;
     }
 
     /**
@@ -131,6 +134,15 @@ public class VoteProposalService {
 
         User creator = principal.getUser();
 
+        // Section IX: Resolve authoritative active contract agreement version
+        String agreementVersion = "V1.0";
+        if (contractRepository != null) {
+            Optional<com.evshare.contract.entity.CoOwnershipContract> contractOpt = contractRepository.findByVehicleId(vehicleId);
+            if (contractOpt.isPresent() && contractOpt.get().getCurrentVersion() != null) {
+                agreementVersion = contractOpt.get().getCurrentVersion().getVersionNumberFormatted();
+            }
+        }
+
         VoteProposal proposal = new VoteProposal(
                 UUID.randomUUID(),
                 group,
@@ -146,7 +158,7 @@ public class VoteProposalService {
                 decisionRule,
                 quorumPct,
                 thresholdPct,
-                "V1.0",
+                agreementVersion,
                 now,
                 endsAt
         );
@@ -882,6 +894,9 @@ public class VoteProposalService {
             case MAINTENANCE -> ExpenseCategory.MAINTENANCE;
             case REPAIR -> ExpenseCategory.REPAIR;
             case ACCESSORY, UPGRADE, OTHER_COMMON_EXPENSE -> ExpenseCategory.OTHER;
+            case OWNERSHIP_TRANSFER, MEMBER_ADMISSION, MEMBER_WITHDRAWAL ->
+                throw new IllegalArgumentException("Loại đề xuất " + type.getVietnameseLabel()
+                        + " thuộc quy chế quản trị thành viên, không tạo chi phí vận hành phương tiện.");
         };
     }
 
