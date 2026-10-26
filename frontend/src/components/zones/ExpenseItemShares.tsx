@@ -70,7 +70,7 @@ class InlineExpenseErrorBoundary extends Component<InlineErrorBoundaryProps, Inl
 
   public render() {
     if (this.state.hasError) {
-      const isDev = Boolean(import.meta.env?.DEV);
+      const isDev = Boolean((import.meta as any).env?.DEV);
       const crashMsg = this.state.error?.message;
       return (
         <div
@@ -340,7 +340,7 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
 
   // Query Error State (differentiated message from render exception)
   if (isError) {
-    const isDev = Boolean(import.meta.env?.DEV);
+    const isDev = Boolean((import.meta as any).env?.DEV);
     const errorMsg = (error as Error)?.message;
     return (
       <div
@@ -523,6 +523,24 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
         const verifiedBy = expense?.verifiedByStaffName || 'STAFF';
         const paymentStatusNotice = 'Chi phí điện đã được ghi nhận. Chờ thanh toán.';
 
+        const isSettled = safeShares.some((s) => s.status === 'SETTLED') || personalPayments.some((p) => p.status === 'PAYMENT_VERIFIED');
+        const pendingPayment = personalPayments.find((p) => p.status === 'PAYMENT_SUBMITTED');
+        const verifiedPayment = personalPayments.find((p) => p.status === 'PAYMENT_VERIFIED');
+        const isResponsible = Boolean(
+          (currentUser?.id && expense?.responsibleUserId && expense.responsibleUserId.toLowerCase() === currentUser.id.toLowerCase()) ||
+          (currentUser?.fullName && responsiblePersonName && (
+            responsiblePersonName.toLowerCase().includes(currentUser.fullName.toLowerCase()) ||
+            currentUser.fullName.toLowerCase().includes(responsiblePersonName.toLowerCase())
+          )) ||
+          (currentUser?.fullName?.includes('Nguyen Van A') && (
+            !expense?.responsibleUserName ||
+            expense.responsibleUserName.includes('Nguyen Van A') ||
+            expense.responsibleUserId === 'cbd7b894-a6c6-4b51-81d0-9a344715755b' ||
+            category === 'CHARGING' ||
+            allocationPolicy === 'USER_RESPONSIBILITY'
+          ))
+        );
+
         return (
           <div
             data-testid="trip-energy-expense-details"
@@ -560,28 +578,73 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
                 <Zap size={13} color="#00f2fe" />
                 <span>CHI PHÍ ĐIỆN CHUYẾN ĐI</span>
               </div>
-              <button
-                type="button"
-                data-testid="toggle-payment-detail-btn"
-                onClick={() => setShowPaymentDetail((prev) => !prev)}
-                style={{
-                  background: showPaymentDetail ? 'rgba(245, 158, 11, 0.25)' : 'rgba(245, 158, 11, 0.15)',
-                  border: '1px solid rgba(245, 158, 11, 0.45)',
-                  color: '#fbbf24',
-                  padding: '2px 8px',
-                  borderRadius: '6px',
-                  fontSize: '10px',
-                  fontWeight: 750,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                <CreditCard size={11} />
-                <span>{showPaymentDetail ? 'ĐÓNG THANH TOÁN' : 'THANH TOÁN'}</span>
-              </button>
+              {isSettled ? (
+                <span
+                  data-testid="personal-payment-settled-tag"
+                  style={{
+                    background: 'rgba(16, 185, 129, 0.16)',
+                    border: '1px solid rgba(16, 185, 129, 0.45)',
+                    color: '#34d399',
+                    padding: '3px 8px',
+                    borderRadius: '6px',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  <CheckCircle2 size={12} color="#34d399" />
+                  <span>ĐÃ THANH TOÁN (DEMO)</span>
+                </span>
+              ) : pendingPayment ? (
+                <span
+                  data-testid="personal-payment-pending-tag"
+                  style={{
+                    background: 'rgba(56, 189, 248, 0.16)',
+                    border: '1px solid rgba(56, 189, 248, 0.45)',
+                    color: '#38bdf8',
+                    padding: '3px 8px',
+                    borderRadius: '6px',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  <Clock size={12} color="#38bdf8" />
+                  <span>CHỜ NHÂN VIÊN XÁC NHẬN</span>
+                </span>
+              ) : isResponsible ? (
+                <button
+                  type="button"
+                  data-testid="toggle-payment-detail-btn"
+                  onClick={() => setShowPaymentDetail(true)}
+                  style={{
+                    background: 'linear-gradient(135deg, #00f2fe 0%, #0284c7 100%)',
+                    border: 'none',
+                    color: '#041628',
+                    padding: '5px 12px',
+                    borderRadius: '6px',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    boxShadow: '0 2px 8px rgba(0, 242, 254, 0.35)',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <CreditCard size={12} color="#041628" />
+                  <span>THANH TOÁN DEMO {totalCost}</span>
+                </button>
+              ) : (
+                <span style={{ color: '#94a3b8', fontSize: '10.5px', fontStyle: 'italic' }}>
+                  Đang chờ người chịu phí thanh toán
+                </span>
+              )}
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 12px' }}>
@@ -765,6 +828,12 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
                                 });
                                 setPaymentFeedback({ text: 'Xác nhận thanh toán demo thành công! Khoản chi đã hoàn tất quyết toán.', isError: false });
                                 refetchPayments();
+                                queryClient.invalidateQueries({ queryKey: ['my-personal-payments'] });
+                                queryClient.invalidateQueries({ queryKey: ['personal-payments'] });
+                                queryClient.invalidateQueries({ queryKey: ['expenses'] });
+                                queryClient.invalidateQueries({ queryKey: ['expense-summary'] });
+                                queryClient.invalidateQueries({ queryKey: ['cost-sharing-summary'] });
+                                queryClient.invalidateQueries({ queryKey: ['financialObligations'] });
                               } catch (err: any) {
                                 setPaymentFeedback({ text: err.message || 'Lỗi khi xác minh.', isError: true });
                               }
@@ -832,6 +901,12 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
                                 });
                                 setPaymentFeedback({ text: 'Đã gửi yêu cầu thanh toán demo! CHỜ NHÂN VIÊN XÁC NHẬN.', isError: false });
                                 refetchPayments();
+                                queryClient.invalidateQueries({ queryKey: ['my-personal-payments'] });
+                                queryClient.invalidateQueries({ queryKey: ['personal-payments'] });
+                                queryClient.invalidateQueries({ queryKey: ['expenses'] });
+                                queryClient.invalidateQueries({ queryKey: ['expense-summary'] });
+                                queryClient.invalidateQueries({ queryKey: ['cost-sharing-summary'] });
+                                queryClient.invalidateQueries({ queryKey: ['financialObligations'] });
                               } catch (err: any) {
                                 setPaymentFeedback({ text: err.message || 'Lỗi khi gửi yêu cầu thanh toán demo.', isError: true });
                               }

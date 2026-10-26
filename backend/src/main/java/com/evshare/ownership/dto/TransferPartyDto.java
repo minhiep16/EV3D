@@ -1,5 +1,6 @@
 package com.evshare.ownership.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.math.BigDecimal;
@@ -14,7 +15,7 @@ public class TransferPartyDto {
     private String roleVi; // "Người chuyển", "Người nhận", "Người liên quan"
     private BigDecimal currentPercentage;
     private BigDecimal proposedPercentage;
-    private boolean isConsented;
+    private boolean consented;
     private Instant consentedAt;
     private String statusVi; // "Đã xác nhận", "Chờ xác nhận", "Được thông báo"
 
@@ -29,7 +30,7 @@ public class TransferPartyDto {
             String roleVi,
             BigDecimal currentPercentage,
             BigDecimal proposedPercentage,
-            boolean isConsented,
+            boolean consented,
             Instant consentedAt,
             String statusVi
     ) {
@@ -40,7 +41,7 @@ public class TransferPartyDto {
         this.roleVi = roleVi;
         this.currentPercentage = currentPercentage;
         this.proposedPercentage = proposedPercentage;
-        this.isConsented = isConsented;
+        this.consented = consented;
         this.consentedAt = consentedAt;
         this.statusVi = statusVi;
     }
@@ -101,18 +102,15 @@ public class TransferPartyDto {
         this.proposedPercentage = proposedPercentage;
     }
 
-    @JsonProperty("isConsented")
+    @JsonProperty("consented")
     public boolean isConsented() {
-        return isConsented;
+        return consented;
     }
 
     @JsonProperty("consented")
-    public boolean getConsented() {
-        return isConsented;
-    }
-
+    @JsonAlias({"isConsented"})
     public void setConsented(boolean consented) {
-        this.isConsented = consented;
+        this.consented = consented;
     }
 
     public Instant getConsentedAt() {

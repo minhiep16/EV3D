@@ -117,7 +117,7 @@ public class CoOwnershipContractService {
     public ContractVersionResponse getContractVersion(UUID contractId, UUID versionId, UserPrincipal principal) {
         CoOwnershipContractVersion version = versionRepository.findById(versionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Phiên bản hợp đồng không tồn tại: " + versionId));
-        if (!version.getContract().getId().equals(contractId)) {
+        if (contractId != null && !version.getContract().getId().equals(contractId)) {
             throw new IllegalArgumentException("Phiên bản không thuộc hợp đồng này.");
         }
         validateGroupAccess(version.getContract().getGroup().getId(), principal);
@@ -709,114 +709,207 @@ public class CoOwnershipContractService {
         );
     }
 
+    /**
+     * Map a contract version entity to its response DTO (publicly accessible across services)
+     */
+    public ContractVersionResponse mapVersionToResponse(CoOwnershipContractVersion version) {
+        if (version == null) {
+            return null;
+        }
+        return mapToVersionResponse(version);
+    }
+
     private ContractVersionResponse mapToVersionResponse(CoOwnershipContractVersion version) {
+        if (version == null) return null;
         List<ContractAcceptance> acceptances = acceptanceRepository.findByContractVersionId(version.getId());
-        List<GroupMember> activeMembers = memberRepository.findByGroupIdAndStatus(version.getContract().getGroup().getId(), MemberStatus.ACTIVE)
-                .stream().filter(m -> m.getRemovedAt() == null).toList();
+        UUID groupId = (version.getContract() != null && version.getContract().getGroup() != null)
+                ? version.getContract().getGroup().getId()
+                : null;
+        List<GroupMember> activeMembers = (groupId != null)
+                ? memberRepository.findByGroupIdAndStatus(groupId, MemberStatus.ACTIVE).stream()
+                        .filter(m -> m != null && m.getRemovedAt() == null && m.getUser() != null)
+                        .toList()
+                : Collections.emptyList();
 
-        Map<UUID, GroupMember> memberMap = activeMembers.stream().collect(Collectors.toMap(m -> m.getUser().getId(), m -> m, (a, b) -> a));
+        Map<UUID, GroupMember> memberMap = new HashMap<>();
+        for (GroupMember m : activeMembers) {
+            if (m.getUser() != null && m.getUser().getId() != null) {
+                memberMap.putIfAbsent(m.getUser().getId(), m);
+            }
+        }
 
-        List<ContractAcceptanceResponse> acceptanceResponses = acceptances.stream().map(a -> {
-            GroupMember m = memberMap.get(a.getUser().getId());
-            return mapToAcceptanceResponse(a, m);
-        }).collect(Collectors.toList());
+        List<ContractAcceptanceResponse> acceptanceResponses = new ArrayList<>();
+        if (acceptances != null) {
+            for (ContractAcceptance a : acceptances) {
+                if (a != null && a.getUser() != null) {
+                    GroupMember m = memberMap.get(a.getUser().getId());
+                    acceptanceResponses.add(mapToAcceptanceResponse(a, m));
+                }
+            }
+        }
 
         ConsentPolicy consentPolicy = resolveVersionConsentPolicy(version);
         int requiredAcceptanceCount = activeMembers.size();
-        int currentAcceptanceCount = acceptances.size();
-        boolean allAccepted = !activeMembers.isEmpty() && acceptances.size() >= activeMembers.size();
+        int currentAcceptanceCount = (acceptances != null ? acceptances.size() : 0);
+        boolean allAccepted = !activeMembers.isEmpty() && acceptances != null && acceptances.size() >= activeMembers.size();
         String additionalApprovalStatus = "Không yêu cầu";
         List<ContractSignatoryResponse> signatories = new ArrayList<>();
 
         if (consentPolicy == ConsentPolicy.INTERNAL_OWNERSHIP_TRANSFER) {
             List<OwnershipTransferRequest> transfers = transferRepository.findByContractVersionId(version.getId());
-            if (transfers.isEmpty() && version.getContract() != null && version.getContract().getGroup() != null) {
-                transfers = transferRepository.findByGroupIdOrderByCreatedAtDesc(version.getContract().getGroup().getId());
+            if (transfers.isEmpty() && version.getContentSnapshot() != null && groupId != null) {
+                List<OwnershipTransferRequest> groupTransfers = transferRepository.findByGroupIdOrderByCreatedAtDesc(groupId);
+                for (OwnershipTransferRequest tr : groupTransfers) {
+                    if (version.getContentSnapshot().contains(tr.getId().toString())) {
+                        transfers = List.of(tr);
+                        break;
+                    }
+                }
             }
             if (!transfers.isEmpty()) {
                 OwnershipTransferRequest transfer = transfers.get(0);
-                Set<UUID> validAcceptedUserIds = acceptances.stream()
-                        .filter(a -> version.getContentHash().equalsIgnoreCase(a.getContentHashAtAcceptance()))
-                        .map(a -> a.getUser().getId())
-                        .collect(Collectors.toSet());
+                Set<UUID> validAcceptedUserIds = new HashSet<>();
+                Map<UUID, Instant> acceptedAtMap = new HashMap<>();
+                if (acceptances != null) {
+                    for (ContractAcceptance a : acceptances) {
+                        if (a != null && a.getUser() != null) {
+                            boolean hashValid = version.getContentHash() != null
+                                    && version.getContentHash().equalsIgnoreCase(a.getContentHashAtAcceptance());
+                            if (hashValid) {
+                                validAcceptedUserIds.add(a.getUser().getId());
+                                if (a.getAcceptedAt() != null) {
+                                    acceptedAtMap.putIfAbsent(a.getUser().getId(), a.getAcceptedAt());
+                                }
+                            }
+                        }
+                    }
+                }
 
-                Map<UUID, Instant> acceptedAtMap = acceptances.stream()
-                        .filter(a -> version.getContentHash().equalsIgnoreCase(a.getContentHashAtAcceptance()))
-                        .collect(Collectors.toMap(a -> a.getUser().getId(), ContractAcceptance::getAcceptedAt, (first, second) -> first));
-
-                boolean fromAccepted = validAcceptedUserIds.contains(transfer.getFromUser().getId());
-                boolean toAccepted = validAcceptedUserIds.contains(transfer.getToUser().getId());
+                boolean fromAccepted = transfer.getFromUser() != null && validAcceptedUserIds.contains(transfer.getFromUser().getId());
+                boolean toAccepted = transfer.getToUser() != null && validAcceptedUserIds.contains(transfer.getToUser().getId());
 
                 requiredAcceptanceCount = 2;
                 currentAcceptanceCount = (fromAccepted ? 1 : 0) + (toAccepted ? 1 : 0);
                 allAccepted = (currentAcceptanceCount >= 2);
 
-                BigDecimal fromShare = resolvePercentageFromSnapshot(version.getOwnershipSnapshot(), transfer.getFromUser().getId());
-                BigDecimal toShare = resolvePercentageFromSnapshot(version.getOwnershipSnapshot(), transfer.getToUser().getId());
+                UUID fromUserId = transfer.getFromUser() != null ? transfer.getFromUser().getId() : null;
+                UUID toUserId = transfer.getToUser() != null ? transfer.getToUser().getId() : null;
+                BigDecimal fromShare = fromUserId != null ? resolvePercentageFromSnapshot(version.getOwnershipSnapshot(), fromUserId) : BigDecimal.ZERO;
+                BigDecimal toShare = toUserId != null ? resolvePercentageFromSnapshot(version.getOwnershipSnapshot(), toUserId) : BigDecimal.ZERO;
 
                 // 1. Transferor
-                signatories.add(new ContractSignatoryResponse(
-                        transfer.getFromUser().getId(),
-                        transfer.getFromUser().getFullName(),
-                        transfer.getFromUser().getEmail(),
-                        "TRANSFEROR",
-                        "Người chuyển",
-                        fromShare,
-                        fromAccepted,
-                        acceptedAtMap.get(transfer.getFromUser().getId()),
-                        fromAccepted ? "Đã xác nhận" : "Chờ xác nhận"
-                ));
+                if (transfer.getFromUser() != null) {
+                    signatories.add(new ContractSignatoryResponse(
+                            transfer.getFromUser().getId(),
+                            transfer.getFromUser().getFullName(),
+                            transfer.getFromUser().getEmail(),
+                            "TRANSFEROR",
+                            "Người chuyển",
+                            fromShare,
+                            fromAccepted,
+                            acceptedAtMap.get(transfer.getFromUser().getId()),
+                            fromAccepted ? "Đã xác nhận" : "Chờ xác nhận"
+                    ));
+                }
 
                 // 2. Recipient
-                signatories.add(new ContractSignatoryResponse(
-                        transfer.getToUser().getId(),
-                        transfer.getToUser().getFullName(),
-                        transfer.getToUser().getEmail(),
-                        "RECIPIENT",
-                        "Người nhận",
-                        toShare,
-                        toAccepted,
-                        acceptedAtMap.get(transfer.getToUser().getId()),
-                        toAccepted ? "Đã xác nhận" : "Chờ xác nhận"
-                ));
+                if (transfer.getToUser() != null) {
+                    signatories.add(new ContractSignatoryResponse(
+                            transfer.getToUser().getId(),
+                            transfer.getToUser().getFullName(),
+                            transfer.getToUser().getEmail(),
+                            "RECIPIENT",
+                            "Người nhận",
+                            toShare,
+                            toAccepted,
+                            acceptedAtMap.get(transfer.getToUser().getId()),
+                            toAccepted ? "Đã xác nhận" : "Chờ xác nhận"
+                    ));
+                }
 
                 // 3. Other co-owners (Le Van C) - Notified only, never fake signed
                 for (GroupMember m : activeMembers) {
-                    if (!m.getUser().getId().equals(transfer.getFromUser().getId()) && !m.getUser().getId().equals(transfer.getToUser().getId())) {
-                        BigDecimal otherShare = resolvePercentageFromSnapshot(version.getOwnershipSnapshot(), m.getUser().getId());
+                    if (m != null && m.getUser() != null) {
+                        UUID mUserId = m.getUser().getId();
+                        if (!mUserId.equals(fromUserId) && !mUserId.equals(toUserId)) {
+                            BigDecimal otherShare = resolvePercentageFromSnapshot(version.getOwnershipSnapshot(), mUserId);
+                            signatories.add(new ContractSignatoryResponse(
+                                    mUserId,
+                                    m.getUser().getFullName(),
+                                    m.getUser().getEmail(),
+                                    "NOTIFIED_CO_OWNER",
+                                    "Người liên quan",
+                                    otherShare,
+                                    false,
+                                    null,
+                                    "Được thông báo"
+                            ));
+                        }
+                    }
+                }
+            } else {
+                // If internal transfer policy but no transfer matches this version, fallback to group members
+                Set<UUID> acceptedUserIds = new HashSet<>();
+                Map<UUID, Instant> acceptedAtMap = new HashMap<>();
+                if (acceptances != null) {
+                    for (ContractAcceptance a : acceptances) {
+                        if (a != null && a.getUser() != null) {
+                            acceptedUserIds.add(a.getUser().getId());
+                            if (a.getAcceptedAt() != null) {
+                                acceptedAtMap.putIfAbsent(a.getUser().getId(), a.getAcceptedAt());
+                            }
+                        }
+                    }
+                }
+                for (GroupMember m : activeMembers) {
+                    if (m != null && m.getUser() != null) {
+                        boolean isAcc = acceptedUserIds.contains(m.getUser().getId());
+                        BigDecimal share = resolvePercentageFromSnapshot(version.getOwnershipSnapshot(), m.getUser().getId());
                         signatories.add(new ContractSignatoryResponse(
                                 m.getUser().getId(),
                                 m.getUser().getFullName(),
                                 m.getUser().getEmail(),
-                                "NOTIFIED_CO_OWNER",
-                                "Người liên quan",
-                                otherShare,
-                                false,
-                                null,
-                                "Được thông báo"
+                                "CO_OWNER",
+                                "Đồng sở hữu",
+                                share,
+                                isAcc,
+                                acceptedAtMap.get(m.getUser().getId()),
+                                isAcc ? "Đã xác nhận" : "Chờ xác nhận"
                         ));
                     }
                 }
             }
         } else {
             // INITIAL_CONTRACT or GENERAL_AMENDMENT
-            Set<UUID> acceptedUserIds = acceptances.stream().map(a -> a.getUser().getId()).collect(Collectors.toSet());
-            Map<UUID, Instant> acceptedAtMap = acceptances.stream().collect(Collectors.toMap(a -> a.getUser().getId(), ContractAcceptance::getAcceptedAt, (first, second) -> first));
+            Set<UUID> acceptedUserIds = new HashSet<>();
+            Map<UUID, Instant> acceptedAtMap = new HashMap<>();
+            if (acceptances != null) {
+                for (ContractAcceptance a : acceptances) {
+                    if (a != null && a.getUser() != null) {
+                        acceptedUserIds.add(a.getUser().getId());
+                        if (a.getAcceptedAt() != null) {
+                            acceptedAtMap.putIfAbsent(a.getUser().getId(), a.getAcceptedAt());
+                        }
+                    }
+                }
+            }
 
             for (GroupMember m : activeMembers) {
-                boolean isAcc = acceptedUserIds.contains(m.getUser().getId());
-                BigDecimal share = resolvePercentageFromSnapshot(version.getOwnershipSnapshot(), m.getUser().getId());
-                signatories.add(new ContractSignatoryResponse(
-                        m.getUser().getId(),
-                        m.getUser().getFullName(),
-                        m.getUser().getEmail(),
-                        "CO_OWNER",
-                        "Đồng sở hữu",
-                        share,
-                        isAcc,
-                        acceptedAtMap.get(m.getUser().getId()),
-                        isAcc ? "Đã xác nhận" : "Chờ xác nhận"
-                ));
+                if (m != null && m.getUser() != null) {
+                    boolean isAcc = acceptedUserIds.contains(m.getUser().getId());
+                    BigDecimal share = resolvePercentageFromSnapshot(version.getOwnershipSnapshot(), m.getUser().getId());
+                    signatories.add(new ContractSignatoryResponse(
+                            m.getUser().getId(),
+                            m.getUser().getFullName(),
+                            m.getUser().getEmail(),
+                            "CO_OWNER",
+                            "Đồng sở hữu",
+                            share,
+                            isAcc,
+                            acceptedAtMap.get(m.getUser().getId()),
+                            isAcc ? "Đã xác nhận" : "Chờ xác nhận"
+                    ));
+                }
             }
         }
 

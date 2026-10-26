@@ -93,4 +93,17 @@ public class PersonalPaymentController {
         List<PersonalExpensePaymentResponse> response = personalPaymentService.getPaymentsForCurrentUser(principal);
         return ResponseEntity.ok(response);
     }
+
+    /**
+     * List all payments audit history for STAFF and ADMIN
+     */
+    @GetMapping("/personal-payments/history")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    public ResponseEntity<List<PersonalExpensePaymentResponse>> getStaffPaymentHistory(
+            @RequestParam(value = "vehicleId", required = false) UUID vehicleId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        List<PersonalExpensePaymentResponse> response = personalPaymentService.getAllPaymentsForStaff(vehicleId, principal);
+        return ResponseEntity.ok(response);
+    }
 }

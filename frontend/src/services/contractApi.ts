@@ -36,12 +36,14 @@ export async function fetchContractVersions(contractId: string): Promise<Contrac
  * Fetch specific contract version detail.
  */
 export async function fetchContractVersionDetail(
-  contractId: string,
-  versionId: string
+  contractId?: string | null,
+  versionId?: string | null
 ): Promise<ContractVersionResponse> {
-  const res = await authenticatedFetch(
-    `/api/contracts/${encodeURIComponent(contractId)}/versions/${encodeURIComponent(versionId)}`
-  );
+  if (!versionId) throw new Error('Mã phiên bản hợp đồng không hợp lệ');
+  const url = contractId
+    ? `/api/contracts/${encodeURIComponent(contractId)}/versions/${encodeURIComponent(versionId)}`
+    : `/api/contracts/versions/${encodeURIComponent(versionId)}`;
+  const res = await authenticatedFetch(url);
   return safeParseResponse<ContractVersionResponse>(res);
 }
 

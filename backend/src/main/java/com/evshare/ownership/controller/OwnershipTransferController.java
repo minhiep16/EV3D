@@ -1,5 +1,6 @@
 package com.evshare.ownership.controller;
 
+import com.evshare.contract.dto.ContractVersionResponse;
 import com.evshare.ownership.dto.*;
 import com.evshare.ownership.service.MembershipWithdrawalService;
 import com.evshare.ownership.service.OwnershipTransferService;
@@ -59,6 +60,7 @@ public class OwnershipTransferController {
     @GetMapping({"/groups/{groupId}/transfers/incoming", "/ownership-transfers/incoming"})
     @PreAuthorize("hasAnyRole('CO_OWNER', 'ADMIN')")
     public ResponseEntity<List<OwnershipTransferResponse>> getIncomingTransfers(
+            @PathVariable(value = "groupId", required = false) UUID groupId,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         return ResponseEntity.ok(transferService.getIncomingTransferRequests(principal));
@@ -71,9 +73,10 @@ public class OwnershipTransferController {
             @RequestParam UUID vehicleId,
             @RequestParam UUID fromUserId,
             @RequestParam UUID toUserId,
-            @RequestParam BigDecimal transferPercentage
+            @RequestParam BigDecimal transferPercentage,
+            @RequestParam(required = false) String reason
     ) {
-        return ResponseEntity.ok(transferService.previewTransferDistribution(groupId, vehicleId, fromUserId, toUserId, transferPercentage));
+        return ResponseEntity.ok(transferService.previewTransferDistribution(groupId, vehicleId, fromUserId, toUserId, transferPercentage, reason));
     }
 
     @GetMapping("/ownership-transfers/{transferId}")
@@ -83,6 +86,15 @@ public class OwnershipTransferController {
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         return ResponseEntity.ok(transferService.getTransferRequestById(transferId, principal));
+    }
+
+    @GetMapping({"/ownership-transfers/{transferId}/appendix", "/ownership-transfers/{transferId}/contract-version"})
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
+    public ResponseEntity<ContractVersionResponse> getTransferAppendix(
+            @PathVariable UUID transferId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(transferService.getTransferAppendix(transferId, principal));
     }
 
     @PostMapping("/ownership-transfers/{transferId}/accept")

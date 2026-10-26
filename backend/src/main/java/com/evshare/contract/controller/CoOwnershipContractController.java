@@ -68,12 +68,13 @@ public class CoOwnershipContractController {
 
     /**
      * Get specific contract version detail
+     * GET /api/contracts/versions/{versionId}
      * GET /api/contracts/{contractId}/versions/{versionId}
      */
-    @GetMapping("/{contractId}/versions/{versionId}")
+    @GetMapping({"/versions/{versionId}", "/{contractId}/versions/{versionId}"})
     @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
     public ResponseEntity<ContractVersionResponse> getContractVersion(
-            @PathVariable("contractId") UUID contractId,
+            @PathVariable(value = "contractId", required = false) UUID contractId,
             @PathVariable("versionId") UUID versionId,
             @AuthenticationPrincipal UserPrincipal principal
     ) {

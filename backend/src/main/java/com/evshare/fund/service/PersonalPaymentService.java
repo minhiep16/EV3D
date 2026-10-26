@@ -24,6 +24,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -83,6 +85,25 @@ public class PersonalPaymentService {
 
         if (share != null && share.getStatus() == ExpenseShareStatus.SETTLED) {
             throw new IllegalStateException("Nghĩa vụ chi phí này đã được thanh toán hoàn tất (ĐÃ THANH TOÁN).");
+        }
+
+        // Idempotency: Enforce at most ONE active pending submission per payable obligation
+        List<PersonalExpensePayment> existingPending = (share != null && share.getId() != null)
+                ? paymentRepository.findByExpenseShareIdAndStatusOrderByCreatedAtDesc(share.getId(), PersonalPaymentStatus.PAYMENT_SUBMITTED)
+                : paymentRepository.findByExpenseIdAndPayerUserIdAndStatusOrderByCreatedAtDesc(expenseId, payer.getId(), PersonalPaymentStatus.PAYMENT_SUBMITTED);
+
+        if (!existingPending.isEmpty()) {
+            // Idempotent: return the existing pending submission without inserting a duplicate
+            return mapToPaymentResponse(existingPending.get(0));
+        }
+
+        // Check if already verified
+        List<PersonalExpensePayment> existingVerified = (share != null && share.getId() != null)
+                ? paymentRepository.findByExpenseShareIdAndStatusOrderByCreatedAtDesc(share.getId(), PersonalPaymentStatus.PAYMENT_VERIFIED)
+                : paymentRepository.findByExpenseIdAndPayerUserIdAndStatusOrderByCreatedAtDesc(expenseId, payer.getId(), PersonalPaymentStatus.PAYMENT_VERIFIED);
+
+        if (!existingVerified.isEmpty()) {
+            throw new IllegalStateException("Khoản chi này đã được thanh toán và xác minh thành công trước đó (ĐÃ THANH TOÁN).");
         }
 
         String paymentRef = request.paymentReference() != null && !request.paymentReference().isBlank()
@@ -152,11 +173,37 @@ public class PersonalPaymentService {
                 BigDecimal totalVerified = allSharePayments.stream()
                         .filter(p -> p.getStatus() == PersonalPaymentStatus.PAYMENT_VERIFIED || p.getId().equals(payment.getId()))
                         .map(PersonalExpensePayment::getAmount)
+                        .filter(Objects::nonNull)
                         .reduce(BigDecimal.ZERO, BigDecimal::add);
 
                 if (totalVerified.compareTo(share.getShareAmount()) >= 0) {
                     share.setStatus(ExpenseShareStatus.SETTLED);
                     expenseShareRepository.save(share);
+
+                    // Reconcile and cancel any redundant duplicate pending submissions for this settled share
+                    List<PersonalExpensePayment> redundantPending = new ArrayList<>(
+                            paymentRepository.findByExpenseShareIdAndStatusOrderByCreatedAtDesc(
+                                    share.getId(), PersonalPaymentStatus.PAYMENT_SUBMITTED)
+                    );
+                    if (payment.getExpense() != null && payment.getPayerUser() != null) {
+                        List<PersonalExpensePayment> byExpAndUser = paymentRepository.findByExpenseIdAndPayerUserIdAndStatusOrderByCreatedAtDesc(
+                                payment.getExpense().getId(), payment.getPayerUser().getId(), PersonalPaymentStatus.PAYMENT_SUBMITTED);
+                        for (PersonalExpensePayment dupExp : byExpAndUser) {
+                            if (redundantPending.stream().noneMatch(r -> r.getId().equals(dupExp.getId()))) {
+                                redundantPending.add(dupExp);
+                            }
+                        }
+                    }
+                    for (PersonalExpensePayment dup : redundantPending) {
+                        if (!dup.getId().equals(payment.getId())) {
+                            dup.setStatus(PersonalPaymentStatus.PAYMENT_REJECTED);
+                            dup.setVerifiedAt(now);
+                            dup.setVerifiedByUser(verifier);
+                            dup.setNote((dup.getNote() != null ? dup.getNote() + " | " : "") +
+                                    "Tự động đối soát: Nghĩa vụ đã được quyết toán hoàn tất bởi GD " + payment.getPaymentReference());
+                            paymentRepository.save(dup);
+                        }
+                    }
                 }
             }
         } else {
@@ -193,7 +240,8 @@ public class PersonalPaymentService {
     }
 
     /**
-     * Get pending payments (PAYMENT_SUBMITTED status), optionally filtered by vehicleId for STAFF/ADMIN verification
+     * Get pending payments (PAYMENT_SUBMITTED status), optionally filtered by vehicleId for STAFF/ADMIN verification.
+     * Deduplicates multiple attempts per obligation and filters out already settled obligations.
      */
     @Transactional(readOnly = true)
     public List<PersonalExpensePaymentResponse> getPendingPayments(UUID vehicleId, UserPrincipal principal) {
@@ -202,13 +250,53 @@ public class PersonalPaymentService {
         }
 
         List<PersonalExpensePayment> submitted = paymentRepository.findByStatusOrderByCreatedAtDesc(PersonalPaymentStatus.PAYMENT_SUBMITTED);
-        return submitted.stream()
+        Map<String, PersonalExpensePayment> uniquePendingByObligation = new java.util.LinkedHashMap<>();
+
+        for (PersonalExpensePayment p : submitted) {
+            if (vehicleId != null) {
+                Expense exp = p.getExpense();
+                if (exp == null || exp.getVehicle() == null || !vehicleId.equals(exp.getVehicle().getId())) {
+                    continue;
+                }
+            }
+            // Filter out obligations where the share is already settled
+            ExpenseShare s = p.getExpenseShare();
+            if (s != null && s.getStatus() == ExpenseShareStatus.SETTLED) {
+                continue;
+            }
+
+            String key = p.getExpenseShare() != null
+                    ? "SHARE_" + p.getExpenseShare().getId()
+                    : "EXP_" + p.getExpense().getId() + "_USER_" + p.getPayerUser().getId();
+
+            uniquePendingByObligation.putIfAbsent(key, p);
+        }
+
+        return uniquePendingByObligation.values().stream()
+                .map(this::mapToPaymentResponse)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Staff/Admin lists payment audit history (all statuses)
+     */
+    @Transactional(readOnly = true)
+    public List<PersonalExpensePaymentResponse> getAllPaymentsForStaff(UUID vehicleId, UserPrincipal principal) {
+        if (principal.getUser().getRole() != Role.STAFF && principal.getUser().getRole() != Role.ADMIN) {
+            throw new AccessDeniedException("Chỉ Nhân viên hoặc Quản trị viên mới có thẩm quyền xem lịch sử thanh toán toàn hệ thống.");
+        }
+        return paymentRepository.findAll().stream()
                 .filter(p -> {
-                    if (vehicleId == null) {
-                        return true;
+                    if (vehicleId != null) {
+                        Expense exp = p.getExpense();
+                        return exp != null && exp.getVehicle() != null && vehicleId.equals(exp.getVehicle().getId());
                     }
-                    Expense exp = p.getExpense();
-                    return exp != null && exp.getVehicle() != null && vehicleId.equals(exp.getVehicle().getId());
+                    return true;
+                })
+                .sorted((a, b) -> {
+                    if (a.getCreatedAt() == null) return 1;
+                    if (b.getCreatedAt() == null) return -1;
+                    return b.getCreatedAt().compareTo(a.getCreatedAt());
                 })
                 .map(this::mapToPaymentResponse)
                 .collect(Collectors.toList());

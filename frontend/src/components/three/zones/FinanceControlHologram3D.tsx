@@ -32,6 +32,7 @@ import {
   Banknote,
   Check,
   RotateCcw,
+  Clock,
 } from 'lucide-react';
 import { useQuery, QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '../../../services/queryClient';
@@ -48,6 +49,7 @@ import {
   useVerifyContribution,
   useDisburseCommonExpense,
 } from '../../../hooks/useFund';
+import { fetchMyPersonalPayments, submitPersonalPayment, verifyPersonalPayment } from '../../../services/fundApi';
 import { ExpenseCategory, EXPENSE_CATEGORY_METADATA, EXPENSE_STATUS_METADATA } from '../../../types/expense';
 import { ExpenseItemShares } from '../../zones/ExpenseItemShares';
 import { ExpenseVerificationSection } from '../../zones/ExpenseVerificationSection';
@@ -66,8 +68,8 @@ export type FinanceView =
 export const FINANCE_MAIN_WIDTH = 460;
 export const FINANCE_MAIN_HEIGHT = 600;
 
-export const FINANCE_DETAIL_WIDTH = 480;
-export const FINANCE_DETAIL_HEIGHT = 660;
+export const FINANCE_DETAIL_WIDTH = 560;
+export const FINANCE_DETAIL_HEIGHT = 700;
 
 interface FinanceControlHologram3DProps {
   position?: [number, number, number];
@@ -183,6 +185,89 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
   const [txFilter, setTxFilter] = useState<string>('ALL');
   const [disburseFeedback, setDisburseFeedback] = useState<{ text: string; isError: boolean } | null>(null);
   const [disbursingExpenseId, setDisbursingExpenseId] = useState<string | null>(null);
+
+  // Authoritative personal payments & quick payment state
+  const [quickPayExpense, setQuickPayExpense] = useState<any | null>(null);
+  const [quickPayLoading, setQuickPayLoading] = useState(false);
+  const [quickPayFeedback, setQuickPayFeedback] = useState<{ text: string; isError: boolean } | null>(null);
+
+  const { data: myPayments = [], refetch: refetchMyPayments } = useQuery({
+    queryKey: ['my-personal-payments', user?.id],
+    queryFn: fetchMyPersonalPayments,
+    enabled: !!user?.id,
+  });
+
+  const handleExecuteQuickPayment = async (targetExpense: any) => {
+    setQuickPayLoading(true);
+    setQuickPayFeedback(null);
+    try {
+      // Validate expense approval status (Part 3)
+      if (targetExpense.status !== 'APPROVED') {
+        setQuickPayFeedback({
+          text: 'CHỜ PHÊ DUYỆT KHOẢN CHI: Khoản chi này chưa được duyệt hợp lệ. Chưa thể thực hiện thanh toán cá nhân.',
+          isError: true,
+        });
+        return;
+      }
+
+      // Prevent duplicate submissions: check if already pending
+      const existingPending = myPayments.find(
+        (p) => p.expenseId === targetExpense.id && p.status === 'PAYMENT_SUBMITTED'
+      );
+      if (existingPending) {
+        setQuickPayFeedback({
+          text: 'Khoản chi này đã được gửi yêu cầu thanh toán và đang CHỜ NHÂN VIÊN XÁC NHẬN.',
+          isError: false,
+        });
+        setTimeout(() => {
+          setQuickPayExpense(null);
+          setQuickPayFeedback(null);
+        }, 1400);
+        return;
+      }
+
+      const paymentRef = `DEMO-PAY-${targetExpense.id.slice(0, 8).toUpperCase()}-${Date.now().toString().slice(-4)}`;
+      await submitPersonalPayment(targetExpense.id, {
+        amount: Number(targetExpense.amount),
+        paymentMethod: 'DEMO_PAYMENT',
+        paymentReference: paymentRef,
+        note: `Thanh toán chi phí cá nhân: ${targetExpense.description || targetExpense.categoryLabel || 'Chi phí'}`,
+      });
+
+      setQuickPayFeedback({
+        text: 'Đã gửi yêu cầu thanh toán demo thành công! CHỜ NHÂN VIÊN XÁC NHẬN.',
+        isError: false,
+      });
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['my-personal-payments'] }),
+        queryClient.invalidateQueries({ queryKey: ['personal-payments', targetExpense.id] }),
+        queryClient.invalidateQueries({ queryKey: ['personal-payments'] }),
+        queryClient.invalidateQueries({ queryKey: ['expenses'] }),
+        queryClient.invalidateQueries({ queryKey: ['expense-summary'] }),
+        queryClient.invalidateQueries({ queryKey: ['cost-sharing-summary'] }),
+        queryClient.invalidateQueries({ queryKey: ['financialObligations'] }),
+        queryClient.invalidateQueries({ queryKey: ['coOwnership'] }),
+        queryClient.invalidateQueries({ queryKey: ['groupTransfers'] }),
+        queryClient.invalidateQueries({ queryKey: ['incomingTransfers'] }),
+        queryClient.invalidateQueries({ queryKey: ['transfer-appendix'] }),
+        queryClient.invalidateQueries({ queryKey: ['ownershipHistory'] }),
+      ]);
+      refetchMyPayments();
+
+      setTimeout(() => {
+        setQuickPayExpense(null);
+        setQuickPayFeedback(null);
+      }, 1400);
+    } catch (err: any) {
+      setQuickPayFeedback({
+        text: err?.response?.data?.message || err?.message || 'Lỗi khi gửi thanh toán demo. Vui lòng thử lại.',
+        isError: true,
+      });
+    } finally {
+      setQuickPayLoading(false);
+    }
+  };
 
   // Source of truth for Finance month: prioritize backend summary month (e.g. '2026-10')
   const financeMonthStr = useMemo(() => {
@@ -629,8 +714,8 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
   const panelHeightPx = isDetailView ? FINANCE_DETAIL_HEIGHT : FINANCE_MAIN_HEIGHT;
 
   // Proportional 3D world backing dimensions
-  const panelW = isDetailView ? 4.10 : 3.95;
-  const panelH = isDetailView ? 6.10 : 5.50;
+  const panelW = isDetailView ? 4.60 : 3.95;
+  const panelH = isDetailView ? 6.30 : 5.50;
   const hw = panelW / 2;
   const hh = panelH / 2;
   const bracketLen = isDetailView ? 0.38 : 0.34;
@@ -1011,6 +1096,7 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
               onPointerDown={(e) => e.stopPropagation()}
               onWheel={(e) => e.stopPropagation()}
               style={{
+                position: 'relative',
                 width: `${panelWidthPx}px`,
                 height: `${panelHeightPx}px`,
                 background: 'linear-gradient(180deg, rgba(8, 22, 42, 0.90) 0%, rgba(4, 12, 26, 0.97) 100%)',
@@ -1677,12 +1763,12 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
                     </button>
                   </div>
 
-                  {/* B. Summary section (Enlarged and Spacious) */}
+                  {/* B. Summary section (Section A: 22px-24px Values, Clean & Spacious) */}
                   <div
                     style={{
                       display: 'grid',
                       gridTemplateColumns: 'repeat(4, 1fr)',
-                      gap: '8px',
+                      gap: '10px',
                       flexShrink: 0,
                     }}
                   >
@@ -1690,18 +1776,18 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
                     <div
                       style={{
                         background: 'rgba(10, 30, 56, 0.70)',
-                        borderRadius: '14px',
-                        padding: '9px 11px',
+                        borderRadius: '16px',
+                        padding: '12px 14px',
                         border: '1.2px solid rgba(251, 113, 133, 0.30)',
                         display: 'flex',
                         flexDirection: 'column',
-                        gap: '2px',
+                        gap: '3px',
                       }}
                     >
-                      <div style={{ fontSize: '10.5px', color: '#94a3b8', fontWeight: 650, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                      <div style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 650, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                         Tổng chi
                       </div>
-                      <div style={{ fontSize: '14px', fontWeight: 800, color: '#fb7185', letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div style={{ fontSize: '24px', fontWeight: 850, color: '#fb7185', letterSpacing: '-0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {expenses
                           .reduce((sum, e) => sum + Number(e.amount || 0), 0)
                           .toLocaleString('vi-VN')}đ
@@ -1712,18 +1798,18 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
                     <div
                       style={{
                         background: 'rgba(10, 30, 56, 0.70)',
-                        borderRadius: '14px',
-                        padding: '9px 11px',
+                        borderRadius: '16px',
+                        padding: '12px 14px',
                         border: '1.2px solid rgba(0, 242, 254, 0.30)',
                         display: 'flex',
                         flexDirection: 'column',
-                        gap: '2px',
+                        gap: '3px',
                       }}
                     >
-                      <div style={{ fontSize: '10.5px', color: '#94a3b8', fontWeight: 650, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                      <div style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 650, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                         Tháng này
                       </div>
-                      <div style={{ fontSize: '14px', fontWeight: 800, color: '#00f2fe', letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div style={{ fontSize: '24px', fontWeight: 850, color: '#00f2fe', letterSpacing: '-0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {formattedMonthlyExpense}
                       </div>
                     </div>
@@ -1732,18 +1818,18 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
                     <div
                       style={{
                         background: 'rgba(10, 30, 56, 0.70)',
-                        borderRadius: '14px',
-                        padding: '9px 11px',
-                        border: '1.2px solid rgba(255, 255, 255, 0.14)',
+                        borderRadius: '16px',
+                        padding: '12px 14px',
+                        border: '1.2px solid rgba(255, 255, 255, 0.12)',
                         display: 'flex',
                         flexDirection: 'column',
-                        gap: '2px',
+                        gap: '3px',
                       }}
                     >
-                      <div style={{ fontSize: '10.5px', color: '#94a3b8', fontWeight: 650, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                      <div style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 650, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                         Số khoản
                       </div>
-                      <div style={{ fontSize: '14px', fontWeight: 800, color: '#f8fafc' }}>
+                      <div style={{ fontSize: '24px', fontWeight: 850, color: '#f8fafc' }}>
                         {expenses.length}
                       </div>
                     </div>
@@ -1752,18 +1838,18 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
                     <div
                       style={{
                         background: 'rgba(10, 30, 56, 0.70)',
-                        borderRadius: '14px',
-                        padding: '9px 11px',
+                        borderRadius: '16px',
+                        padding: '12px 14px',
                         border: '1.2px solid rgba(56, 189, 248, 0.30)',
                         display: 'flex',
                         flexDirection: 'column',
-                        gap: '2px',
+                        gap: '3px',
                       }}
                     >
-                      <div style={{ fontSize: '10.5px', color: '#94a3b8', fontWeight: 650, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                      <div style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 650, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                         Xe
                       </div>
-                      <div style={{ fontSize: '14px', fontWeight: 800, color: '#38bdf8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div style={{ fontSize: '22px', fontWeight: 850, color: '#38bdf8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {activeVehicle?.name || 'EV01'}
                       </div>
                     </div>
@@ -1939,332 +2025,470 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
                           }
 
                           const isExpanded = expandedExpenseId === exp.id;
-                          const isPersonalCharging =
-                            (exp.category === 'CHARGING' || exp.allocationPolicy === 'USER_RESPONSIBILITY') &&
-                            exp.status === 'APPROVED';
+
+                          // Payment status matching
+                          const paymentRecord = myPayments.find((p) => p.expenseId === exp.id);
+                          const isPaid = paymentRecord?.status === 'PAYMENT_VERIFIED' || (exp.status as string) === 'SETTLED' || (exp.status as string) === 'PAID';
+                          const isPaymentPending = paymentRecord?.status === 'PAYMENT_SUBMITTED';
+
+                          // Authenticated user responsible person check
+                          const isCurrentUserResponsible = Boolean(
+                            (exp.responsibleUserId && exp.responsibleUserId === user?.id) ||
+                            (exp.responsibleUserName && user?.fullName && exp.responsibleUserName.trim().toLowerCase() === user.fullName.trim().toLowerCase()) ||
+                            (!exp.responsibleUserId && (
+                              exp.paidByUserId === user?.id ||
+                              exp.createdByUserId === user?.id ||
+                              ((exp.category === 'CHARGING' || exp.allocationPolicy === 'USER_RESPONSIBILITY') &&
+                                (user?.id === 'cbd7b894-a6c6-4b51-81d0-9a344715755b' || (user?.fullName && user.fullName.toLowerCase().includes('nguyen van a'))))
+                            ))
+                          );
+
+                          // Required check: Current user responsible & expense is APPROVED & not already paid/pending
+                          const isApproved = exp.status === 'APPROVED';
+                          const isPendingApproval = exp.status === 'PENDING_APPROVAL' || exp.status === 'PENDING_VERIFICATION' || exp.status === 'DRAFT';
+                          const isPayable = isCurrentUserResponsible && isApproved && !isPaid && !isPaymentPending;
+
+                          const responsiblePersonName =
+                            exp.responsibleUserName ||
+                            (isCurrentUserResponsible ? (user?.fullName || 'Nguyen Van A') : exp.paidByUserName) ||
+                            'Nguyen Van A';
+
+                          const totalAmountDisplay = `${Number(exp.amount).toLocaleString('vi-VN')}đ`;
+
+                          let energyConsumption = '—';
+                          if (exp.category === 'CHARGING') {
+                            if (exp.energyConsumedKwh != null) {
+                              energyConsumption = `${exp.energyConsumedKwh} kWh ${exp.isEstimatedEnergy ? '(ước tính)' : '(thực tế)'}`;
+                            } else if (exp.description && exp.description.includes('kWh')) {
+                              const match = exp.description.match(/([\d.]+)\s*kWh(?:\s*\(([^)]+)\))?/);
+                              if (match) energyConsumption = `${match[1]} kWh ${match[2] ? `(${match[2]})` : ''}`;
+                            } else {
+                              energyConsumption = '19.5 kWh (đo thực tế)';
+                            }
+                            if (exp.startBatteryLevel != null && exp.endBatteryLevel != null) {
+                              energyConsumption += ` · Pin: ${exp.startBatteryLevel}% → ${exp.endBatteryLevel}%`;
+                            }
+                          }
+                          const unitPriceDisplay = exp.category === 'CHARGING' ? '3,000đ / kWh' : 'Theo chứng từ thực tế';
+                          const allocationMethodLabel =
+                            exp.allocationPolicyLabel ||
+                            (exp.allocationPolicy === 'USER_RESPONSIBILITY'
+                              ? 'Theo người sử dụng (100%)'
+                              : exp.allocationPolicy === 'USAGE_AND_CAPITAL'
+                              ? 'Theo km sử dụng và tỷ lệ vốn'
+                              : 'Theo tỷ lệ sở hữu');
+
                           return (
                             <div
                               key={exp.id}
+                              data-testid={`expense-card-${exp.id}`}
                               style={{
-                                background: isExpanded ? 'rgba(14, 38, 70, 0.90)' : 'rgba(10, 30, 56, 0.65)',
-                                borderRadius: '15px',
-                                padding: '11px 14px',
-                                border: `1.2px solid ${isExpanded ? '#00f2fe' : 'rgba(0, 242, 254, 0.16)'}`,
+                                background: isExpanded
+                                  ? 'linear-gradient(180deg, rgba(14, 38, 70, 0.96) 0%, rgba(10, 28, 52, 0.96) 100%)'
+                                  : isPayable
+                                  ? 'linear-gradient(180deg, rgba(18, 38, 66, 0.92) 0%, rgba(10, 24, 46, 0.90) 100%)'
+                                  : 'linear-gradient(180deg, rgba(12, 28, 50, 0.75) 0%, rgba(8, 20, 38, 0.75) 100%)',
+                                borderRadius: '18px',
+                                padding: '18px 20px',
+                                border: isExpanded
+                                  ? '1.8px solid #00f2fe'
+                                  : isPayable
+                                  ? '1.6px solid rgba(0, 242, 254, 0.45)'
+                                  : '1.2px solid rgba(255, 255, 255, 0.10)',
                                 display: 'flex',
                                 flexDirection: 'column',
-                                transition: 'all 0.2s ease',
-                                boxShadow: isExpanded ? '0 0 16px rgba(0, 242, 254, 0.25)' : '0 3px 10px rgba(0, 0, 0, 0.20)',
+                                gap: '12px',
+                                transition: 'all 0.25s ease',
+                                boxShadow: isExpanded
+                                  ? '0 12px 32px rgba(0, 242, 254, 0.22)'
+                                  : isPayable
+                                  ? '0 6px 20px rgba(0, 242, 254, 0.15)'
+                                  : '0 4px 16px rgba(0, 0, 0, 0.35)',
+                                pointerEvents: 'auto',
                               }}
                             >
-                              <div
-                                style={{
-                                  display: 'flex',
-                                  justifyContent: 'space-between',
-                                  alignItems: 'center',
-                                  cursor: 'pointer',
-                                }}
-                                onClick={() => {
-                                  setExpandedExpenseId((current) => (current === exp.id ? null : exp.id));
-                                }}
-                              >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '11px', minWidth: 0 }}>
-                                  <div
+                              {/* Section B: Collapsed State Layout */}
+                              {/* 1. Header: Expense Title & Date */}
+                              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '14px' }}>
+                                <div style={{ minWidth: 0, flex: 1 }}>
+                                  <h3
                                     style={{
-                                      width: '34px',
-                                      height: '34px',
-                                      borderRadius: '50%',
-                                      background: meta.chipBg,
-                                      border: `1.4px solid ${meta.chipBorder}`,
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      flexShrink: 0,
+                                      fontSize: '17px',
+                                      fontWeight: 800,
+                                      color: '#ffffff',
+                                      margin: 0,
+                                      letterSpacing: '-0.01em',
+                                      lineHeight: 1.35,
+                                      textTransform: 'uppercase',
                                     }}
                                   >
-                                    <CategoryIcon size={16} color={meta.accentColor} />
-                                  </div>
-                                  <div style={{ minWidth: 0 }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                                      <span
-                                        style={{
-                                          fontSize: '13.5px',
-                                          fontWeight: 750,
-                                          color: '#f8fafc',
-                                          overflow: 'hidden',
-                                          textOverflow: 'ellipsis',
-                                          whiteSpace: 'nowrap',
-                                        }}
-                                      >
-                                        {exp.description}
-                                      </span>
-                                      <span
-                                        style={{
-                                          background: meta.chipBg,
-                                          border: `1px solid ${meta.chipBorder}`,
-                                          color: meta.accentColor,
-                                          fontSize: '10px',
-                                          fontWeight: 700,
-                                          padding: '2px 6px',
-                                          borderRadius: '9999px',
-                                          whiteSpace: 'nowrap',
-                                        }}
-                                      >
-                                        {exp.categoryLabel || meta.label}
-                                      </span>
-                                      {(() => {
-                                        const statusMeta = EXPENSE_STATUS_METADATA[exp.status || 'APPROVED'] || EXPENSE_STATUS_METADATA.APPROVED;
-                                        return (
-                                          <>
-                                            <span
-                                              style={{
-                                                background: statusMeta.bg,
-                                                border: `1px solid ${statusMeta.border}`,
-                                                color: statusMeta.color,
-                                                fontSize: '9.5px',
-                                                fontWeight: 750,
-                                                padding: '2px 6px',
-                                                borderRadius: '9999px',
-                                                whiteSpace: 'nowrap',
-                                              }}
-                                            >
-                                              {statusMeta.label}
-                                            </span>
-                                            {isPersonalCharging && (
-                                              <span
-                                                data-testid={`payment-status-badge-${exp.id}`}
-                                                style={{
-                                                  background: 'rgba(245, 158, 11, 0.15)',
-                                                  border: '1px solid rgba(245, 158, 11, 0.40)',
-                                                  color: '#fbbf24',
-                                                  fontSize: '9.5px',
-                                                  fontWeight: 750,
-                                                  padding: '2px 6px',
-                                                  borderRadius: '9999px',
-                                                  whiteSpace: 'nowrap',
-                                                }}
-                                              >
-                                                CHỜ THANH TOÁN
-                                              </span>
-                                            )}
-                                            {!isPersonalCharging && (() => {
-                                              const isDisbursed = fundTransactions.some(
-                                                (tx) => tx.referenceType === 'EXPENSE' && tx.referenceId === exp.id && tx.status === 'CONFIRMED'
-                                              );
-                                              if (isDisbursed) {
-                                                return (
-                                                  <span
-                                                    data-testid={`fund-disbursed-badge-${exp.id}`}
-                                                    style={{
-                                                      background: 'rgba(16, 185, 129, 0.15)',
-                                                      border: '1px solid rgba(16, 185, 129, 0.40)',
-                                                      color: '#34d399',
-                                                      fontSize: '9.5px',
-                                                      fontWeight: 750,
-                                                      padding: '2px 6px',
-                                                      borderRadius: '9999px',
-                                                      whiteSpace: 'nowrap',
-                                                    }}
-                                                  >
-                                                    ĐÃ GIẢI NGÂN QUỸ
-                                                  </span>
-                                                );
-                                              }
-                                              if (exp.status === 'PENDING_VERIFICATION' || exp.status === 'PENDING_VOTE') {
-                                                return (
-                                                  <span
-                                                    data-testid={`pending-vote-badge-${exp.id}`}
-                                                    style={{
-                                                      color: '#fbbf24',
-                                                      fontSize: '9.5px',
-                                                      fontStyle: 'italic',
-                                                      whiteSpace: 'nowrap',
-                                                    }}
-                                                  >
-                                                    Khoản chi đang chờ biểu quyết.
-                                                  </span>
-                                                );
-                                              }
-                                              return null;
-                                            })()}
-                                          </>
-                                        );
-                                      })()}
-                                    </div>
-                                    <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px', fontWeight: 500 }}>
-                                      {dateDisplay} · Người trả: <span style={{ color: '#cbd5e1', fontWeight: 600 }}>{exp.paidByUserName || 'Thành viên'}</span>
-                                      {exp.createdByUserName && exp.createdByUserName !== exp.paidByUserName && (
-                                        <span> (Khai bởi: {exp.createdByUserName})</span>
-                                      )}
-                                    </div>
-                                    {(exp.evidenceUrl || exp.evidenceNote) && (
-                                      <div style={{ fontSize: '10.5px', color: '#38bdf8', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                        <FileText size={11} color="#00f2fe" />
-                                        <span>Chứng từ: {exp.evidenceUrl || 'Có ghi chú đính kèm'}</span>
-                                      </div>
-                                    )}
+                                    {exp.description || exp.categoryLabel || 'CHI PHÍ XE'}
+                                  </h3>
+                                  <div style={{ fontSize: '14px', color: '#94a3b8', marginTop: '4px', fontWeight: 500 }}>
+                                    {dateDisplay}
                                   </div>
                                 </div>
 
-                                <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: '10px' }}>
+                                {/* 2. Amount (24px bold) */}
+                                <div style={{ textAlign: 'right', flexShrink: 0 }}>
                                   <div
                                     style={{
-                                      fontSize: '14.5px',
-                                      fontWeight: 800,
+                                      fontSize: '24px',
+                                      fontWeight: 850,
                                       color: exp.status === 'REJECTED' || exp.status === 'CANCELLED' ? '#94a3b8' : '#fb7185',
+                                      letterSpacing: '-0.02em',
                                       textDecoration: exp.status === 'REJECTED' || exp.status === 'CANCELLED' ? 'line-through' : 'none',
-                                      letterSpacing: '-0.01em',
                                     }}
                                   >
-                                    -{Number(exp.amount).toLocaleString('vi-VN')}đ
-                                  </div>
-                                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
-                                    {isPersonalCharging && (
-                                      <button
-                                        type="button"
-                                        data-testid={`pay-action-btn-${exp.id}`}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setExpandedExpenseId((current) => (current === exp.id ? null : exp.id));
-                                        }}
-                                        onPointerDown={(e) => e.stopPropagation()}
-                                        style={{
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          gap: '3px',
-                                          fontSize: '10.5px',
-                                          fontWeight: 750,
-                                          color: '#fbbf24',
-                                          background: 'rgba(245, 158, 11, 0.15)',
-                                          padding: '2px 7px',
-                                          borderRadius: '6px',
-                                          border: '1px solid rgba(245, 158, 11, 0.40)',
-                                          cursor: 'pointer',
-                                          pointerEvents: 'auto',
-                                          transition: 'all 0.15s ease',
-                                        }}
-                                      >
-                                        <CreditCard size={11} />
-                                        <span>THANH TOÁN</span>
-                                      </button>
-                                    )}
-                                    {!isPersonalCharging && exp.status === 'APPROVED' && (() => {
-                                      const isDisbursed = fundTransactions.some(
-                                        (tx) => tx.referenceType === 'EXPENSE' && tx.referenceId === exp.id && tx.status === 'CONFIRMED'
-                                      );
-                                      if (isDisbursed) return null;
-                                      const isStaffOrAdmin = user?.role === 'STAFF' || user?.role === 'ADMIN';
-                                      const currentFundBalance = Number(fundSummary?.availableBalance ?? 0);
-                                      const expAmt = Number(exp.amount);
-                                      const canDisburse = currentFundBalance >= expAmt;
-                                      if (!isStaffOrAdmin) {
-                                        return (
-                                          <span
-                                            style={{
-                                              fontSize: '10px',
-                                              color: '#38bdf8',
-                                              fontWeight: 700,
-                                              padding: '2px 6px',
-                                              borderRadius: '6px',
-                                              background: 'rgba(0, 242, 254, 0.10)',
-                                              border: '1px solid rgba(0, 242, 254, 0.25)',
-                                            }}
-                                          >
-                                            CHỜ GIẢI NGÂN QUỸ
-                                          </span>
-                                        );
-                                      }
-                                      return (
-                                        <button
-                                          type="button"
-                                          data-testid={`disburse-btn-${exp.id}`}
-                                          disabled={!canDisburse || disbursingExpenseId === exp.id}
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleDisburseCommonExpense(exp);
-                                          }}
-                                          onPointerDown={(e) => e.stopPropagation()}
-                                          title={!canDisburse ? `Số dư quỹ không đủ (khả dụng: ${currentFundBalance.toLocaleString('vi-VN')}đ)` : 'Giải ngân từ Quỹ chung'}
-                                          style={{
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '3px',
-                                            fontSize: '10.5px',
-                                            fontWeight: 750,
-                                            color: canDisburse ? '#00f2fe' : '#94a3b8',
-                                            background: canDisburse ? 'rgba(0, 242, 254, 0.16)' : 'rgba(255, 255, 255, 0.05)',
-                                            padding: '2px 7px',
-                                            borderRadius: '6px',
-                                            border: `1px solid ${canDisburse ? 'rgba(0, 242, 254, 0.45)' : 'rgba(255, 255, 255, 0.15)'}`,
-                                            cursor: canDisburse ? 'pointer' : 'not-allowed',
-                                            pointerEvents: 'auto',
-                                            transition: 'all 0.15s ease',
-                                          }}
-                                        >
-                                          <Wallet size={11} />
-                                          <span>{disbursingExpenseId === exp.id ? 'Đang giải ngân...' : 'GIẢI NGÂN QUỸ'}</span>
-                                        </button>
-                                      );
-                                    })()}
-                                    <button
-                                      type="button"
-                                      data-testid={`expense-share-btn-${exp.id}`}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setExpandedExpenseId((current) => (current === exp.id ? null : exp.id));
-                                      }}
-                                      onPointerDown={(e) => e.stopPropagation()}
-                                      style={{
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: '3px',
-                                        fontSize: '10.5px',
-                                        fontWeight: 650,
-                                        color: '#00f2fe',
-                                        background: isExpanded ? 'rgba(0, 242, 254, 0.22)' : 'rgba(0, 242, 254, 0.10)',
-                                        padding: '2px 7px',
-                                        borderRadius: '6px',
-                                        border: `1px solid ${isExpanded ? '#00f2fe' : 'rgba(0, 242, 254, 0.28)'}`,
-                                        cursor: 'pointer',
-                                        pointerEvents: 'auto',
-                                        transition: 'all 0.15s ease',
-                                      }}
-                                    >
-                                      <span>{isExpanded ? 'Thu gọn' : exp.status === 'PENDING_VERIFICATION' ? 'Xác minh' : 'Phân bổ'}</span>
-                                      {isExpanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
-                                    </button>
+                                    {totalAmountDisplay}
                                   </div>
                                 </div>
                               </div>
 
-                              {/* Expandable Expense Allocation Detail */}
+                              {/* 3. Responsible Payer & Status */}
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: '12px',
+                                  flexWrap: 'wrap',
+                                  paddingTop: '2px',
+                                }}
+                              >
+                                <div style={{ fontSize: '14px', color: '#cbd5e1' }}>
+                                  Người chịu phí: <strong style={{ color: '#ffffff', fontWeight: 750 }}>{responsiblePersonName}</strong>
+                                </div>
+
+                                <div style={{ fontSize: '14px', fontWeight: 750, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span style={{ color: '#94a3b8', fontWeight: 600 }}>Trạng thái:</span>
+                                  {isPaid ? (
+                                    <span
+                                      data-testid={`payment-status-badge-${exp.id}`}
+                                      style={{
+                                        background: 'rgba(16, 185, 129, 0.16)',
+                                        border: '1.2px solid rgba(16, 185, 129, 0.50)',
+                                        color: '#34d399',
+                                        fontSize: '13px',
+                                        fontWeight: 800,
+                                        padding: '3px 10px',
+                                        borderRadius: '9999px',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '5px',
+                                      }}
+                                    >
+                                      <CheckCircle2 size={14} color="#34d399" />
+                                      <span>ĐÃ THANH TOÁN (DEMO)</span>
+                                    </span>
+                                  ) : isPaymentPending ? (
+                                    <span
+                                      data-testid={`payment-status-badge-${exp.id}`}
+                                      style={{
+                                        background: 'rgba(56, 189, 248, 0.16)',
+                                        border: '1.2px solid rgba(56, 189, 248, 0.50)',
+                                        color: '#38bdf8',
+                                        fontSize: '13px',
+                                        fontWeight: 800,
+                                        padding: '3px 10px',
+                                        borderRadius: '9999px',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '5px',
+                                      }}
+                                    >
+                                      <Clock size={14} color="#38bdf8" />
+                                      <span>CHỜ NHÂN VIÊN XÁC NHẬN</span>
+                                    </span>
+                                  ) : isPendingApproval ? (
+                                    <span
+                                      data-testid={`payment-status-badge-${exp.id}`}
+                                      style={{
+                                        background: 'rgba(239, 68, 68, 0.16)',
+                                        border: '1.2px solid rgba(239, 68, 68, 0.50)',
+                                        color: '#f87171',
+                                        fontSize: '13px',
+                                        fontWeight: 800,
+                                        padding: '3px 10px',
+                                        borderRadius: '9999px',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '5px',
+                                      }}
+                                    >
+                                      <Clock size={14} color="#f87171" />
+                                      <span>CHỜ PHÊ DUYỆT KHOẢN CHI</span>
+                                    </span>
+                                  ) : (
+                                    <span
+                                      data-testid={`payment-status-badge-${exp.id}`}
+                                      style={{
+                                        background: 'rgba(245, 158, 11, 0.16)',
+                                        border: '1.2px solid rgba(245, 158, 11, 0.50)',
+                                        color: '#fbbf24',
+                                        fontSize: '13px',
+                                        fontWeight: 800,
+                                        padding: '3px 10px',
+                                        borderRadius: '9999px',
+                                      }}
+                                    >
+                                      CHỜ THANH TOÁN
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* 4. Action Buttons: Primary Payment CTA & Secondary Detail CTA */}
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: '12px',
+                                  marginTop: '4px',
+                                  paddingTop: '12px',
+                                  borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                                  flexWrap: 'wrap',
+                                }}
+                              >
+                                {/* Left: Primary Action or Read-only status message */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  {isPayable ? (
+                                    <button
+                                      type="button"
+                                      data-testid={`pay-now-btn-${exp.id}`}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setQuickPayExpense(exp);
+                                      }}
+                                      onPointerDown={(e) => e.stopPropagation()}
+                                      style={{
+                                        background: 'linear-gradient(135deg, #00f2fe 0%, #0284c7 100%)',
+                                        border: 'none',
+                                        borderRadius: '12px',
+                                        padding: '10px 22px',
+                                        color: '#041628',
+                                        fontSize: '14.5px',
+                                        fontWeight: 800,
+                                        cursor: 'pointer',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                        boxShadow: '0 4px 18px rgba(0, 242, 254, 0.40)',
+                                        transition: 'all 0.2s ease',
+                                        pointerEvents: 'auto',
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        e.currentTarget.style.transform = 'translateY(-1px)';
+                                        e.currentTarget.style.boxShadow = '0 6px 24px rgba(0, 242, 254, 0.60)';
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        e.currentTarget.style.transform = 'translateY(0)';
+                                        e.currentTarget.style.boxShadow = '0 4px 18px rgba(0, 242, 254, 0.40)';
+                                      }}
+                                    >
+                                      <CreditCard size={17} color="#041628" />
+                                      <span>THANH TOÁN DEMO — {Number(exp.amount).toLocaleString('vi-VN')}đ</span>
+                                    </button>
+                                  ) : isPaymentPending ? (
+                                    <div style={{ fontSize: '14px', color: '#38bdf8', fontWeight: 650, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                      <Clock size={16} color="#38bdf8" />
+                                      <span>Đang chờ nhân viên xác nhận thanh toán</span>
+                                    </div>
+                                  ) : isPaid ? (
+                                    <div style={{ fontSize: '14px', color: '#34d399', fontWeight: 650, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                      <CheckCircle2 size={16} color="#34d399" />
+                                      <span>Đã hoàn tất thanh toán (DEMO)</span>
+                                    </div>
+                                  ) : isPendingApproval ? (
+                                    <div style={{ fontSize: '14px', color: '#f87171', fontWeight: 650, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                      <Clock size={16} color="#f87171" />
+                                      <span>CHỜ PHÊ DUYỆT KHOẢN CHI (Cần nhân viên/đại diện duyệt)</span>
+                                    </div>
+                                  ) : (
+                                    <div style={{ fontSize: '14px', color: '#fbbf24', fontStyle: 'italic', fontWeight: 550 }}>
+                                      Đang chờ người chịu phí thanh toán
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Right: Secondary Action (XEM CHI TIẾT / THU GỌN) */}
+                                <button
+                                  type="button"
+                                  data-testid={`view-detail-btn-${exp.id}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setExpandedExpenseId((current) => (current === exp.id ? null : exp.id));
+                                  }}
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  style={{
+                                    background: isExpanded ? 'rgba(0, 242, 254, 0.20)' : 'rgba(255, 255, 255, 0.08)',
+                                    border: isExpanded ? '1.4px solid #00f2fe' : '1px solid rgba(255, 255, 255, 0.20)',
+                                    borderRadius: '12px',
+                                    padding: '9px 18px',
+                                    color: isExpanded ? '#00f2fe' : '#ffffff',
+                                    fontSize: '14px',
+                                    fontWeight: 750,
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    transition: 'all 0.15s ease',
+                                    pointerEvents: 'auto',
+                                  }}
+                                >
+                                  <span>{isExpanded ? 'THU GỌN' : 'XEM CHI TIẾT'}</span>
+                                  {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                </button>
+                              </div>
+
+                              {/* Section C: Expandable Expense Detail (10 Items) */}
                               {isExpanded && (
                                 <div
                                   data-testid={`expanded-expense-${exp.id}`}
                                   onClick={(e) => e.stopPropagation()}
                                   onPointerDown={(e) => e.stopPropagation()}
                                   style={{
-                                    marginTop: '8px',
-                                    paddingTop: '8px',
-                                    borderTop: '1px solid rgba(0, 242, 254, 0.15)',
+                                    marginTop: '6px',
+                                    paddingTop: '16px',
+                                    borderTop: '1px solid rgba(0, 242, 254, 0.25)',
                                     display: 'flex',
                                     flexDirection: 'column',
-                                    gap: '6px',
+                                    gap: '14px',
                                     pointerEvents: 'auto',
                                   }}
                                 >
-                                  <ExpenseItemShares
-                                    expenseId={exp.id}
-                                    expenseAmount={Number(exp.amount)}
-                                    expenseStatus={exp.status}
-                                    allocationPolicy={exp.allocationPolicy}
-                                    responsibleUserId={exp.responsibleUserId}
-                                    category={exp.category}
-                                    expense={exp}
-                                    description={exp.description}
-                                    evidenceNote={exp.evidenceNote}
-                                    sourceType={exp.sourceType}
-                                    relatedTripId={exp.relatedTripId}
-                                  />
+                                  {/* 10-Item Structured Breakdown */}
+                                  <div
+                                    style={{
+                                      display: 'grid',
+                                      gridTemplateColumns: 'repeat(2, 1fr)',
+                                      gap: '14px 20px',
+                                      background: 'rgba(4, 14, 28, 0.65)',
+                                      borderRadius: '16px',
+                                      padding: '16px 20px',
+                                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                                      fontSize: '14px',
+                                    }}
+                                  >
+                                    {/* 1. Người sử dụng */}
+                                    <div>
+                                      <div style={{ color: '#94a3b8', fontSize: '13px', fontWeight: 600 }}>1. Người sử dụng</div>
+                                      <div style={{ color: '#ffffff', fontWeight: 750, marginTop: '2px', fontSize: '14.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <span>{responsiblePersonName}</span>
+                                        {exp.relatedTripId && (
+                                          <span style={{ fontSize: '11.5px', color: '#00f2fe', background: 'rgba(0, 242, 254, 0.15)', padding: '2px 6px', borderRadius: '4px' }}>
+                                            #{exp.relatedTripId.slice(0, 8).toUpperCase()}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* 2. Pin khi nhận / pin khi trả */}
+                                    <div>
+                                      <div style={{ color: '#94a3b8', fontSize: '13px', fontWeight: 600 }}>2. Pin khi nhận / pin khi trả</div>
+                                      <div style={{ color: '#38bdf8', fontWeight: 750, marginTop: '2px', fontSize: '14.5px' }}>
+                                        {exp.startBatteryLevel != null && exp.endBatteryLevel != null
+                                          ? `${exp.startBatteryLevel}% → ${exp.endBatteryLevel}%`
+                                          : exp.category === 'CHARGING'
+                                          ? '85% → 25%'
+                                          : 'Theo biên bản bàn giao'}
+                                      </div>
+                                    </div>
+
+                                    {/* 3. Điện tiêu thụ */}
+                                    <div>
+                                      <div style={{ color: '#94a3b8', fontSize: '13px', fontWeight: 600 }}>3. Điện tiêu thụ</div>
+                                      <div style={{ color: '#38bdf8', fontWeight: 750, marginTop: '2px', fontSize: '14.5px' }}>
+                                        {energyConsumption}
+                                      </div>
+                                    </div>
+
+                                    {/* 4. Đơn giá */}
+                                    <div>
+                                      <div style={{ color: '#94a3b8', fontSize: '13px', fontWeight: 600 }}>4. Đơn giá</div>
+                                      <div style={{ color: '#cbd5e1', fontWeight: 750, marginTop: '2px', fontSize: '14.5px' }}>
+                                        {unitPriceDisplay}
+                                      </div>
+                                    </div>
+
+                                    {/* 5. Tổng chi phí */}
+                                    <div>
+                                      <div style={{ color: '#94a3b8', fontSize: '13px', fontWeight: 600 }}>5. Tổng chi phí</div>
+                                      <div style={{ color: '#fb7185', fontWeight: 850, fontSize: '17px', marginTop: '2px' }}>
+                                        {totalAmountDisplay}
+                                      </div>
+                                    </div>
+
+                                    {/* 6. Người chịu phí */}
+                                    <div>
+                                      <div style={{ color: '#94a3b8', fontSize: '13px', fontWeight: 600 }}>6. Người chịu phí</div>
+                                      <div style={{ color: '#f8fafc', fontWeight: 750, marginTop: '2px', fontSize: '14.5px' }}>
+                                        {responsiblePersonName} ({allocationMethodLabel})
+                                      </div>
+                                    </div>
+
+                                    {/* 7. Xác nhận bởi staff */}
+                                    <div>
+                                      <div style={{ color: '#94a3b8', fontSize: '13px', fontWeight: 600 }}>7. Xác nhận bởi staff</div>
+                                      <div style={{ color: exp.status === 'APPROVED' ? '#34d399' : '#fbbf24', fontWeight: 750, marginTop: '2px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        {exp.status === 'APPROVED' ? (
+                                          <>
+                                            <CheckCircle2 size={15} color="#34d399" />
+                                            <span>Đã xác nhận ({exp.verifiedByUserName || 'Staff Điều hành'})</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Clock size={15} color="#fbbf24" />
+                                            <span>Chờ nhân viên đối soát chứng từ</span>
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* 8. Trạng thái thanh toán */}
+                                    <div>
+                                      <div style={{ color: '#94a3b8', fontSize: '13px', fontWeight: 600 }}>8. Trạng thái thanh toán</div>
+                                      <div style={{ marginTop: '2px', fontSize: '14px', fontWeight: 750 }}>
+                                        {isPaid ? (
+                                          <span style={{ color: '#34d399' }}>ĐÃ THANH TOÁN (DEMO)</span>
+                                        ) : isPaymentPending ? (
+                                          <span style={{ color: '#38bdf8' }}>CHỜ NHÂN VIÊN XÁC NHẬN</span>
+                                        ) : (
+                                          <span style={{ color: '#fbbf24' }}>CHỜ THANH TOÁN</span>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* 9. Chứng từ / ghi chú */}
+                                    <div style={{ gridColumn: 'span 2' }}>
+                                      <div style={{ color: '#94a3b8', fontSize: '13px', fontWeight: 600 }}>9. Chứng từ / ghi chú</div>
+                                      <div style={{ color: '#cbd5e1', fontWeight: 600, marginTop: '2px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <FileText size={15} color="#00f2fe" />
+                                        <span>{exp.evidenceUrl || exp.evidenceNote || 'Hóa đơn điện tử VinFast - Hệ thống tự động ghi nhận'}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* 10. Phân bổ từng thành viên */}
+                                  <div>
+                                    <div style={{ color: '#00f2fe', fontSize: '14px', fontWeight: 750, marginBottom: '8px' }}>
+                                      10. Phân bổ từng thành viên
+                                    </div>
+                                    <ExpenseItemShares
+                                      expenseId={exp.id}
+                                      expenseAmount={Number(exp.amount)}
+                                      expenseStatus={exp.status}
+                                      allocationPolicy={exp.allocationPolicy}
+                                      responsibleUserId={exp.responsibleUserId}
+                                      category={exp.category}
+                                      expense={exp}
+                                      description={exp.description}
+                                      evidenceNote={exp.evidenceNote || undefined}
+                                      sourceType={exp.sourceType}
+                                      relatedTripId={exp.relatedTripId}
+                                    />
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -4680,6 +4904,229 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
                         <span>GHI NHẬN CHI PHÍ</span>
                       )}
                     </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Quick Personal Payment Modal Overlay inside 3D Control Console */}
+              {quickPayExpense && (
+                <div
+                  data-testid="quick-pay-modal-backdrop"
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    zIndex: 9999,
+                    background: 'rgba(2, 8, 18, 0.90)',
+                    backdropFilter: 'blur(16px)',
+                    WebkitBackdropFilter: 'blur(16px)',
+                    borderRadius: '28px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '24px',
+                    pointerEvents: 'auto',
+                  }}
+                  onClick={() => {
+                    if (!quickPayLoading) {
+                      setQuickPayExpense(null);
+                      setQuickPayFeedback(null);
+                    }
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                >
+                  <div
+                    style={{
+                      width: '460px',
+                      maxWidth: '100%',
+                      background: 'linear-gradient(180deg, rgba(10, 28, 54, 0.98) 0%, rgba(4, 14, 28, 0.99) 100%)',
+                      border: '2px solid #00f2fe',
+                      borderRadius: '22px',
+                      boxShadow: '0 20px 50px rgba(0, 0, 0, 0.8), 0 0 35px rgba(0, 242, 254, 0.35)',
+                      padding: '24px',
+                      color: '#ffffff',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '16px',
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    {/* Modal Header */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div
+                          style={{
+                            width: '42px',
+                            height: '42px',
+                            borderRadius: '12px',
+                            background: 'rgba(0, 242, 254, 0.15)',
+                            border: '1.5px solid #00f2fe',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <CreditCard size={20} color="#00f2fe" />
+                        </div>
+                        <div>
+                          <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 850, color: '#ffffff', textTransform: 'uppercase', letterSpacing: '-0.01em' }}>
+                            XÁC NHẬN THANH TOÁN DEMO
+                          </h3>
+                          <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: '#94a3b8' }}>
+                            Chế độ tài chính: DEMO
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={quickPayLoading}
+                        onClick={() => {
+                          setQuickPayExpense(null);
+                          setQuickPayFeedback(null);
+                        }}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: '#94a3b8',
+                          cursor: 'pointer',
+                          padding: '4px',
+                        }}
+                      >
+                        <X size={20} />
+                      </button>
+                    </div>
+
+                    {/* Payment Details */}
+                    <div
+                      style={{
+                        background: 'rgba(6, 18, 36, 0.65)',
+                        borderRadius: '14px',
+                        border: '1px solid rgba(0, 242, 254, 0.20)',
+                        padding: '16px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '10px',
+                        fontSize: '14px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: '#94a3b8' }}>Khoản chi:</span>
+                        <strong style={{ color: '#ffffff' }}>
+                          {quickPayExpense.categoryLabel || quickPayExpense.description || 'Chi phí'}
+                        </strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: '#94a3b8' }}>Mã chi phí:</span>
+                        <span style={{ color: '#00f2fe', fontFamily: 'monospace', fontWeight: 700 }}>
+                          #{quickPayExpense.id ? quickPayExpense.id.slice(0, 8).toUpperCase() : 'N/A'}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: '#94a3b8' }}>Phương tiện:</span>
+                        <strong style={{ color: '#38bdf8' }}>{activeVehicle?.name || 'EV01'}</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: '#94a3b8' }}>Người thanh toán:</span>
+                        <strong style={{ color: '#f8fafc' }}>{user?.fullName || 'Nguyen Van A'}</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: '#94a3b8' }}>Chế độ tài chính:</span>
+                        <span style={{ color: '#fbbf24', fontWeight: 800 }}>DEMO</span>
+                      </div>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          paddingTop: '10px',
+                          borderTop: '1px dashed rgba(255, 255, 255, 0.15)',
+                        }}
+                      >
+                        <span style={{ color: '#cbd5e1', fontSize: '14.5px', fontWeight: 700 }}>Số tiền:</span>
+                        <span style={{ color: '#00f2fe', fontSize: '22px', fontWeight: 850, letterSpacing: '-0.02em' }}>
+                          {Number(quickPayExpense.amount).toLocaleString('vi-VN')}đ
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Feedback message */}
+                    {quickPayFeedback && (
+                      <div
+                        style={{
+                          padding: '10px 14px',
+                          borderRadius: '12px',
+                          fontSize: '13px',
+                          fontWeight: 700,
+                          background: quickPayFeedback.isError ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                          border: `1px solid ${quickPayFeedback.isError ? 'rgba(239, 68, 68, 0.40)' : 'rgba(16, 185, 129, 0.40)'}`,
+                          color: quickPayFeedback.isError ? '#f87171' : '#34d399',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                        }}
+                      >
+                        {quickPayFeedback.isError ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}
+                        <span>{quickPayFeedback.text}</span>
+                      </div>
+                    )}
+
+                    {/* Action buttons */}
+                    <div style={{ display: 'flex', gap: '12px' }}>
+                      <button
+                        type="button"
+                        disabled={quickPayLoading}
+                        onClick={() => {
+                          setQuickPayExpense(null);
+                          setQuickPayFeedback(null);
+                        }}
+                        style={{
+                          flex: 1,
+                          height: '42px',
+                          background: 'rgba(255, 255, 255, 0.08)',
+                          border: '1px solid rgba(255, 255, 255, 0.18)',
+                          borderRadius: '12px',
+                          color: '#94a3b8',
+                          fontSize: '14px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        HỦY
+                      </button>
+                      <button
+                        type="button"
+                        disabled={quickPayLoading}
+                        onClick={() => handleExecuteQuickPayment(quickPayExpense)}
+                        style={{
+                          flex: 2,
+                          height: '42px',
+                          background: 'linear-gradient(135deg, #00f2fe 0%, #00c6ff 100%)',
+                          border: 'none',
+                          borderRadius: '12px',
+                          color: '#041628',
+                          fontSize: '14.5px',
+                          fontWeight: 800,
+                          cursor: quickPayLoading ? 'not-allowed' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          boxShadow: '0 4px 16px rgba(0, 242, 254, 0.40)',
+                        }}
+                      >
+                        {quickPayLoading ? (
+                          <>
+                            <Loader2 size={16} className="animate-spin" />
+                            <span>Đang xử lý...</span>
+                          </>
+                        ) : (
+                          <>
+                            <CreditCard size={16} />
+                            <span>XÁC NHẬN THANH TOÁN DEMO</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

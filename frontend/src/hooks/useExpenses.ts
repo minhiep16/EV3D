@@ -58,6 +58,8 @@ export function useExpenseSummary(
           month: month || '',
           totalExpense: 0,
           transactionCount: 0,
+          pendingCount: 0,
+          pendingAmount: 0,
           categoryBreakdown: {},
         });
       }

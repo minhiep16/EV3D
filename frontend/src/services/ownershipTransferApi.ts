@@ -1,4 +1,5 @@
 import { authenticatedFetch, safeParseResponse } from './api';
+import { ContractVersionResponse } from '../types/contract';
 import {
   OwnershipTransferResponse,
   OwnershipDistributionPreviewResponse,
@@ -37,11 +38,23 @@ export async function fetchIncomingTransfers(): Promise<OwnershipTransferRespons
 
 export async function fetchTransferById(transferId: string): Promise<OwnershipTransferResponse> {
   try {
-    const res = await authenticatedFetch(`/api/ownership-transfers/${transferId}`);
+    const res = await authenticatedFetch(`/api/ownership-transfers/${encodeURIComponent(transferId)}`);
     return await safeParseResponse<OwnershipTransferResponse>(res);
   } catch (err) {
     if (err instanceof TypeError || (err instanceof Error && err.message.includes('fetch'))) {
-      throw new Error('Không thể tải thông tin chi tiết phụ lục chuyển nhượng.');
+      throw new Error('Không thể tải thông tin chi tiết chuyển nhượng.');
+    }
+    throw err;
+  }
+}
+
+export async function fetchTransferAppendix(transferId: string): Promise<ContractVersionResponse> {
+  try {
+    const res = await authenticatedFetch(`/api/ownership-transfers/${encodeURIComponent(transferId)}/appendix`);
+    return await safeParseResponse<ContractVersionResponse>(res);
+  } catch (err) {
+    if (err instanceof TypeError || (err instanceof Error && err.message.includes('fetch'))) {
+      throw new Error('Không thể tải nội dung phụ lục chuyển nhượng từ máy chủ.');
     }
     throw err;
   }
@@ -52,10 +65,14 @@ export async function fetchTransferPreview(
   vehicleId: string,
   fromUserId: string,
   toUserId: string,
-  transferPercentage: number
+  transferPercentage: number,
+  reason?: string
 ): Promise<OwnershipDistributionPreviewResponse> {
   try {
-    const url = `/api/groups/${groupId}/transfers/preview?vehicleId=${vehicleId}&fromUserId=${fromUserId}&toUserId=${toUserId}&transferPercentage=${transferPercentage}`;
+    let url = `/api/groups/${groupId}/transfers/preview?vehicleId=${vehicleId}&fromUserId=${fromUserId}&toUserId=${toUserId}&transferPercentage=${transferPercentage}`;
+    if (reason && reason.trim()) {
+      url += `&reason=${encodeURIComponent(reason.trim())}`;
+    }
     const res = await authenticatedFetch(url);
     return await safeParseResponse<OwnershipDistributionPreviewResponse>(res);
   } catch (err) {

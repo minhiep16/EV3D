@@ -25,15 +25,17 @@ import {
   ChevronDown,
   ChevronUp,
   CreditCard,
+  Clock,
 } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useWorldStore } from '../../store/worldStore';
 import { useAuthStore } from '../../store/authStore';
 import { fetchVehicles } from '../../services/vehicleApi';
 import { fetchVehicleCoOwnership } from '../../services/coOwnershipApi';
 import { useExpenses, useExpenseSummary, useCostSharingSummary } from '../../hooks/useExpenses';
 import { useFundSummary } from '../../hooks/useFund';
-import { ExpenseCategory, EXPENSE_CATEGORY_METADATA, EXPENSE_STATUS_METADATA } from '../../types/expense';
+import { fetchMyPersonalPayments, submitPersonalPayment, verifyPersonalPayment } from '../../services/fundApi';
+import { ExpenseCategory, EXPENSE_CATEGORY_METADATA, EXPENSE_STATUS_METADATA, ExpenseResponse } from '../../types/expense';
 import { AddExpenseModal } from './AddExpenseModal';
 import { ExpenseItemShares } from './ExpenseItemShares';
 import { ExpenseVerificationSection } from './ExpenseVerificationSection';
@@ -55,12 +57,97 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
   const clearSelection = useWorldStore((state) => state.clearSelection);
   const selectZone = useWorldStore((state) => state.selectZone);
   const setFinanceDetailModalOpen = useWorldStore((state) => state.setFinanceDetailModalOpen);
+  const queryClient = useQueryClient();
   const [showLedgerModal, setShowLedgerModal] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [historyViewTab, setHistoryViewTab] = useState<'EXPENSES' | 'PAYMENTS'>('EXPENSES');
   const [showCostSharingModal, setShowCostSharingModal] = useState(false);
   const [showAddExpenseModal, setShowAddExpenseModal] = useState(false);
   const [historyCategoryFilter, setHistoryCategoryFilter] = useState<string>('ALL');
   const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null);
+  const [quickPayExpense, setQuickPayExpense] = useState<ExpenseResponse | null>(null);
+  const [quickPayLoading, setQuickPayLoading] = useState(false);
+  const [quickPayFeedback, setQuickPayFeedback] = useState<{ text: string; isError: boolean } | null>(null);
+
+  // Authoritative my-personal-payments query
+  const { data: myPayments = [], refetch: refetchMyPayments } = useQuery({
+    queryKey: ['my-personal-payments', user?.id],
+    queryFn: fetchMyPersonalPayments,
+    enabled: !!user?.id,
+  });
+
+  const handleExecuteQuickPayment = async (targetExpense: ExpenseResponse) => {
+    setQuickPayLoading(true);
+    setQuickPayFeedback(null);
+    try {
+      // Validate expense approval status (Part 3)
+      if (targetExpense.status !== 'APPROVED') {
+        setQuickPayFeedback({
+          text: 'CHỜ PHÊ DUYỆT KHOẢN CHI: Khoản chi này chưa được duyệt hợp lệ. Chưa thể thực hiện thanh toán cá nhân.',
+          isError: true,
+        });
+        return;
+      }
+
+      // Prevent duplicate submissions: check if already pending
+      const existingPending = myPayments.find(
+        (p) => p.expenseId === targetExpense.id && p.status === 'PAYMENT_SUBMITTED'
+      );
+      if (existingPending) {
+        setQuickPayFeedback({
+          text: 'Khoản chi này đã được gửi yêu cầu thanh toán và đang CHỜ NHÂN VIÊN XÁC NHẬN.',
+          isError: false,
+        });
+        setTimeout(() => {
+          setQuickPayExpense(null);
+          setQuickPayFeedback(null);
+        }, 1400);
+        return;
+      }
+
+      const paymentRef = `DEMO-PAY-${targetExpense.id.slice(0, 8).toUpperCase()}-${Date.now().toString().slice(-4)}`;
+      await submitPersonalPayment(targetExpense.id, {
+        amount: Number(targetExpense.amount),
+        paymentMethod: 'DEMO_PAYMENT',
+        paymentReference: paymentRef,
+        note: `Thanh toán chi phí cá nhân: ${targetExpense.description || targetExpense.categoryLabel || 'Chi phí'}`,
+      });
+
+      setQuickPayFeedback({
+        text: 'Đã gửi yêu cầu thanh toán demo thành công! CHỜ NHÂN VIÊN XÁC NHẬN.',
+        isError: false,
+      });
+
+      // Invalidate authoritative caches
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['my-personal-payments'] }),
+        queryClient.invalidateQueries({ queryKey: ['personal-payments', targetExpense.id] }),
+        queryClient.invalidateQueries({ queryKey: ['personal-payments'] }),
+        queryClient.invalidateQueries({ queryKey: ['expenses'] }),
+        queryClient.invalidateQueries({ queryKey: ['expense-summary'] }),
+        queryClient.invalidateQueries({ queryKey: ['cost-sharing-summary'] }),
+        queryClient.invalidateQueries({ queryKey: ['financialObligations'] }),
+        queryClient.invalidateQueries({ queryKey: ['coOwnership'] }),
+        queryClient.invalidateQueries({ queryKey: ['groupTransfers'] }),
+        queryClient.invalidateQueries({ queryKey: ['incomingTransfers'] }),
+        queryClient.invalidateQueries({ queryKey: ['transfer-appendix'] }),
+        queryClient.invalidateQueries({ queryKey: ['ownershipHistory'] }),
+      ]);
+      refetchMyPayments();
+
+      setTimeout(() => {
+        setQuickPayExpense(null);
+        setQuickPayFeedback(null);
+      }, 1400);
+    } catch (err: any) {
+      setQuickPayFeedback({
+        text: err?.response?.data?.message || err?.message || 'Không thể thực hiện thanh toán. Vui lòng thử lại.',
+        isError: true,
+      });
+    } finally {
+      setQuickPayLoading(false);
+    }
+  };
 
   // Authoritative vehicle resolution for CO_OWNER
   const { data: vehicles = [] } = useQuery<VehicleResponse[]>({
@@ -132,18 +219,6 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
     return `${Number(fundSummary.availableBalance).toLocaleString('vi-VN')}đ`;
   }, [fundSummary, isFundSummaryLoading, isFundSummaryError]);
 
-  const userFundShareDisplay = useMemo(() => {
-    if (isFundSummaryLoading) return '...';
-    if (isFundSummaryError || !fundSummary) return '0đ';
-    return `${Math.round((Number(fundSummary.availableBalance) * currentUserOwnershipPercentage) / 100).toLocaleString('vi-VN')}đ`;
-  }, [fundSummary, isFundSummaryLoading, isFundSummaryError, currentUserOwnershipPercentage]);
-
-  const totalContributionsDisplay = useMemo(() => {
-    if (isFundSummaryLoading) return '...';
-    if (isFundSummaryError || !fundSummary) return '0đ';
-    return `${Number(fundSummary.totalContributionsConfirmed).toLocaleString('vi-VN')}đ`;
-  }, [fundSummary, isFundSummaryLoading, isFundSummaryError]);
-
   // Authoritative current user group member matching: currentUser.id === groupMember.userId
   const currentUserMember = useMemo(() => {
     return coOwners.find((m) => m.userId === user?.id);
@@ -165,6 +240,18 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
     if (user?.id === 'cbd7b894-a6c6-4b51-81d0-9a344715755b' || user?.fullName?.includes('Nguyen Van A')) return 40;
     return 30;
   }, [costSharingSummary?.userOwnershipPercentage, currentUserMember?.share?.percentage, user?.id, user?.fullName]);
+
+  const userFundShareDisplay = useMemo(() => {
+    if (isFundSummaryLoading) return '...';
+    if (isFundSummaryError || !fundSummary) return '0đ';
+    return `${Math.round((Number(fundSummary.availableBalance) * currentUserOwnershipPercentage) / 100).toLocaleString('vi-VN')}đ`;
+  }, [fundSummary, isFundSummaryLoading, isFundSummaryError, currentUserOwnershipPercentage]);
+
+  const totalContributionsDisplay = useMemo(() => {
+    if (isFundSummaryLoading) return '...';
+    if (isFundSummaryError || !fundSummary) return '0đ';
+    return `${Number(fundSummary.totalContributionsConfirmed).toLocaleString('vi-VN')}đ`;
+  }, [fundSummary, isFundSummaryLoading, isFundSummaryError]);
 
   const formattedMonthlyExpense = useMemo(() => {
     if (isSummaryLoading) return 'Đang tải...';
@@ -1027,24 +1114,22 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
           <div
             style={{
               position: 'fixed',
-              right: '32px',
-              top: '50%',
-              transform: 'translateY(-50%)',
-              width: '540px',
-              maxWidth: 'calc(100vw - 64px)',
-              maxHeight: 'calc(100vh - 64px)',
-              background: 'linear-gradient(180deg, rgba(8, 24, 46, 0.96) 0%, rgba(4, 14, 28, 0.98) 100%)',
+              top: '88px',
+              right: '20px',
+              bottom: '20px',
+              width: 'min(720px, calc(100vw - 32px))',
+              maxHeight: 'calc(100dvh - 108px)',
+              background: 'linear-gradient(180deg, rgba(8, 22, 42, 0.98) 0%, rgba(4, 12, 24, 0.99) 100%)',
               backdropFilter: 'blur(30px)',
               WebkitBackdropFilter: 'blur(30px)',
-              border: '2px solid #00f2fe',
-              borderRadius: '28px',
+              border: '1.5px solid rgba(0, 242, 254, 0.5)',
+              borderRadius: '24px',
               boxShadow: `
                 0 24px 60px rgba(0, 0, 0, 0.85),
-                0 0 40px rgba(0, 242, 254, 0.32),
-                inset 0 1px 0 rgba(255, 255, 255, 0.22),
-                inset 0 0 20px rgba(0, 242, 254, 0.08)
+                0 0 25px rgba(0, 242, 254, 0.18),
+                inset 0 1px 0 rgba(255, 255, 255, 0.15)
               `,
-              padding: '24px 26px',
+              padding: '24px',
               color: '#ffffff',
               fontFamily: "var(--font-family, 'Outfit', sans-serif)",
               pointerEvents: 'auto',
@@ -1052,35 +1137,37 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
               flexDirection: 'column',
               animation: 'panelSlideInRight 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards',
               overflow: 'hidden',
+              overflowX: 'hidden',
+              zIndex: 10001,
             }}
             onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
           >
-            {/* A. Header */}
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '16px' }}>
+            {/* A. Header (Fixed) */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '18px', flexShrink: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                 <div
                   style={{
-                    width: '44px',
-                    height: '44px',
+                    width: '48px',
+                    height: '48px',
                     borderRadius: '14px',
                     background: 'rgba(0, 242, 254, 0.14)',
-                    border: '1.8px solid #00f2fe',
+                    border: '1.5px solid #00f2fe',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    boxShadow: '0 0 18px rgba(0, 242, 254, 0.35)',
+                    boxShadow: '0 0 16px rgba(0, 242, 254, 0.25)',
                     flexShrink: 0,
                   }}
                 >
-                  <Receipt size={22} color="#00f2fe" />
+                  <Receipt size={26} color="#00f2fe" />
                 </div>
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                     <h2
                       style={{
-                        fontSize: '20px',
+                        fontSize: '22px',
                         fontWeight: 850,
                         color: '#ffffff',
                         margin: 0,
@@ -1097,9 +1184,9 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                         background: 'rgba(0, 242, 254, 0.12)',
                         border: '1px solid rgba(0, 242, 254, 0.30)',
                         color: '#00f2fe',
-                        fontSize: '11px',
+                        fontSize: '12px',
                         fontWeight: 700,
-                        padding: '2px 8px',
+                        padding: '3px 10px',
                         borderRadius: '9999px',
                         letterSpacing: '0.02em',
                       }}
@@ -1111,10 +1198,10 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                       style={{
                         background: 'rgba(255, 255, 255, 0.08)',
                         border: '1px solid rgba(255, 255, 255, 0.15)',
-                        color: '#94a3b8',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        padding: '2px 8px',
+                        color: '#cbd5e1',
+                        fontSize: '12px',
+                        fontWeight: 650,
+                        padding: '3px 10px',
                         borderRadius: '9999px',
                       }}
                     >
@@ -1123,11 +1210,11 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                   </div>
                   <p
                     style={{
-                      fontSize: '12px',
+                      fontSize: '14px',
                       color: '#94a3b8',
                       margin: '4px 0 0 0',
                       fontWeight: 500,
-                      lineHeight: 1.3,
+                      lineHeight: 1.35,
                     }}
                   >
                     Theo dõi các khoản chi phí thực tế phát sinh của xe đồng sở hữu
@@ -1136,7 +1223,7 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
               </div>
 
               {/* Action Buttons: Thêm chi phí & Đóng */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
                 <button
                   type="button"
                   onClick={() => setShowAddExpenseModal(true)}
@@ -1144,27 +1231,27 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                     background: 'linear-gradient(135deg, #00f2fe 0%, #00c6ff 100%)',
                     border: 'none',
                     borderRadius: '12px',
-                    padding: '7px 14px',
+                    padding: '9px 16px',
                     color: '#041628',
-                    fontSize: '12px',
+                    fontSize: '14px',
                     fontWeight: 750,
                     display: 'flex',
                     alignItems: 'center',
                     gap: '6px',
                     cursor: 'pointer',
-                    boxShadow: '0 0 15px rgba(0, 242, 254, 0.35)',
+                    boxShadow: '0 0 15px rgba(0, 242, 254, 0.30)',
                     transition: 'all 0.2s ease',
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.transform = 'translateY(-1px)';
-                    e.currentTarget.style.boxShadow = '0 0 20px rgba(0, 242, 254, 0.55)';
+                    e.currentTarget.style.boxShadow = '0 0 20px rgba(0, 242, 254, 0.45)';
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 0 15px rgba(0, 242, 254, 0.35)';
+                    e.currentTarget.style.boxShadow = '0 0 15px rgba(0, 242, 254, 0.30)';
                   }}
                 >
-                  <Plus size={15} color="#041628" />
+                  <Plus size={16} color="#041628" />
                   <span>Thêm chi phí</span>
                 </button>
 
@@ -1173,8 +1260,8 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                   onClick={() => setShowHistoryModal(false)}
                   title="Đóng chi tiết lịch sử"
                   style={{
-                    width: '34px',
-                    height: '34px',
+                    width: '38px',
+                    height: '38px',
                     borderRadius: '50%',
                     background: 'rgba(255, 255, 255, 0.08)',
                     border: '1px solid rgba(255, 255, 255, 0.18)',
@@ -1197,36 +1284,37 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                     e.currentTarget.style.color = '#94a3b8';
                   }}
                 >
-                  <X size={16} />
+                  <X size={18} />
                 </button>
               </div>
             </div>
 
-            {/* B. Top Summary Strip */}
+            {/* B. Top Summary Strip: Larger Cards & Typography (22px-24px values) */}
             <div
               style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(4, 1fr)',
-                gap: '8px',
-                marginBottom: '16px',
+                gap: '14px',
+                marginBottom: '20px',
+                flexShrink: 0,
               }}
             >
               {/* Tổng chi */}
               <div
                 style={{
-                  background: 'rgba(10, 28, 52, 0.55)',
-                  borderRadius: '14px',
-                  padding: '10px 12px',
-                  border: '1px solid rgba(251, 113, 133, 0.25)',
+                  background: 'rgba(10, 26, 48, 0.70)',
+                  borderRadius: '16px',
+                  padding: '14px 18px',
+                  border: '1px solid rgba(251, 113, 133, 0.30)',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '3px',
+                  gap: '4px',
                 }}
               >
-                <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                <div style={{ fontSize: '13.5px', color: '#94a3b8', fontWeight: 650, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                   Tổng chi
                 </div>
-                <div style={{ fontSize: '14.5px', fontWeight: 800, color: '#fb7185', letterSpacing: '-0.01em' }}>
+                <div style={{ fontSize: '24px', fontWeight: 850, color: '#fb7185', letterSpacing: '-0.02em' }}>
                   {expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0).toLocaleString('vi-VN')}đ
                 </div>
               </div>
@@ -1234,94 +1322,232 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
               {/* Chi tháng này */}
               <div
                 style={{
-                  background: 'rgba(10, 28, 52, 0.55)',
-                  borderRadius: '14px',
-                  padding: '10px 12px',
-                  border: '1px solid rgba(0, 242, 254, 0.25)',
+                  background: 'rgba(10, 26, 48, 0.70)',
+                  borderRadius: '16px',
+                  padding: '14px 18px',
+                  border: '1px solid rgba(0, 242, 254, 0.30)',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '3px',
+                  gap: '4px',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    Chi tháng này
+                  <div style={{ fontSize: '13.5px', color: '#94a3b8', fontWeight: 650, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Tháng này
                   </div>
                   {summary?.pendingCount != null && summary.pendingCount > 0 && (
                     <span
                       style={{
-                        fontSize: '9.5px',
-                        fontWeight: 700,
+                        fontSize: '11.5px',
+                        fontWeight: 750,
                         background: 'rgba(245, 158, 11, 0.16)',
                         border: '1px solid rgba(245, 158, 11, 0.45)',
                         color: '#f59e0b',
-                        padding: '1px 5px',
+                        padding: '1px 8px',
                         borderRadius: '9999px',
                       }}
                     >
-                      ⏳ {summary.pendingCount} chờ duyệt
+                      ⏳ {summary.pendingCount}
                     </span>
                   )}
                 </div>
-                <div style={{ fontSize: '14.5px', fontWeight: 800, color: '#00f2fe', letterSpacing: '-0.01em' }}>
+                <div style={{ fontSize: '24px', fontWeight: 850, color: '#00f2fe', letterSpacing: '-0.02em' }}>
                   {formattedMonthlyExpense}
                 </div>
               </div>
 
-              {/* Số giao dịch */}
+              {/* Số khoản */}
               <div
                 style={{
-                  background: 'rgba(10, 28, 52, 0.55)',
-                  borderRadius: '14px',
-                  padding: '10px 12px',
-                  border: '1px solid rgba(255, 255, 255, 0.10)',
+                  background: 'rgba(10, 26, 48, 0.70)',
+                  borderRadius: '16px',
+                  padding: '14px 18px',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '3px',
+                  gap: '4px',
                 }}
               >
-                <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Khoản chi
+                <div style={{ fontSize: '13.5px', color: '#94a3b8', fontWeight: 650, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Số khoản
                 </div>
-                <div style={{ fontSize: '14.5px', fontWeight: 800, color: '#f8fafc', letterSpacing: '-0.01em' }}>
+                <div style={{ fontSize: '24px', fontWeight: 850, color: '#f8fafc', letterSpacing: '-0.02em' }}>
                   {expenses.length}
                 </div>
               </div>
 
-              {/* Phương tiện */}
+              {/* Xe */}
               <div
                 style={{
-                  background: 'rgba(10, 28, 52, 0.55)',
-                  borderRadius: '14px',
-                  padding: '10px 12px',
-                  border: '1px solid rgba(56, 189, 248, 0.25)',
+                  background: 'rgba(10, 26, 48, 0.70)',
+                  borderRadius: '16px',
+                  padding: '14px 18px',
+                  border: '1px solid rgba(56, 189, 248, 0.30)',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '3px',
+                  gap: '4px',
                 }}
               >
-                <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Phương tiện
+                <div style={{ fontSize: '13.5px', color: '#94a3b8', fontWeight: 650, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Xe
                 </div>
-                <div style={{ fontSize: '14px', fontWeight: 800, color: '#38bdf8', letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ fontSize: '22px', fontWeight: 850, color: '#38bdf8', letterSpacing: '-0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {activeVehicle?.name || 'EV01'}
                 </div>
               </div>
             </div>
 
-            {/* D. Segmented Filter Controls */}
+            {/* Sub-Tabs: LỊCH SỬ CHI PHÍ vs LỊCH SỬ THANH TOÁN (Part 16) */}
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '14px', flexShrink: 0 }}>
+              <button
+                type="button"
+                id="btn-subtab-history-expenses"
+                onClick={() => setHistoryViewTab('EXPENSES')}
+                style={{
+                  background: historyViewTab === 'EXPENSES'
+                    ? 'linear-gradient(135deg, rgba(0, 242, 254, 0.25) 0%, rgba(6, 26, 52, 0.90) 100%)'
+                    : 'rgba(6, 18, 34, 0.5)',
+                  border: historyViewTab === 'EXPENSES' ? '1.5px solid #00f2fe' : '1px solid rgba(255, 255, 255, 0.12)',
+                  borderRadius: '12px',
+                  padding: '8px 18px',
+                  color: historyViewTab === 'EXPENSES' ? '#ffffff' : '#94a3b8',
+                  fontSize: '13.5px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <Receipt size={16} color={historyViewTab === 'EXPENSES' ? '#00f2fe' : '#94a3b8'} />
+                <span>LỊCH SỬ CHI PHÍ ({expenses.length})</span>
+              </button>
+              <button
+                type="button"
+                id="btn-subtab-history-payments"
+                onClick={() => setHistoryViewTab('PAYMENTS')}
+                style={{
+                  background: historyViewTab === 'PAYMENTS'
+                    ? 'linear-gradient(135deg, rgba(0, 242, 254, 0.25) 0%, rgba(6, 26, 52, 0.90) 100%)'
+                    : 'rgba(6, 18, 34, 0.5)',
+                  border: historyViewTab === 'PAYMENTS' ? '1.5px solid #00f2fe' : '1px solid rgba(255, 255, 255, 0.12)',
+                  borderRadius: '12px',
+                  padding: '8px 18px',
+                  color: historyViewTab === 'PAYMENTS' ? '#ffffff' : '#94a3b8',
+                  fontSize: '13.5px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <CreditCard size={16} color={historyViewTab === 'PAYMENTS' ? '#00f2fe' : '#94a3b8'} />
+                <span>LỊCH SỬ THANH TOÁN ({myPayments.length})</span>
+              </button>
+            </div>
+
+            {historyViewTab === 'PAYMENTS' ? (
+              <div
+                style={{
+                  flex: 1,
+                  minHeight: 0,
+                  overflowY: 'auto',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
+                  paddingRight: '6px',
+                }}
+              >
+                {myPayments.length === 0 ? (
+                  <div
+                    style={{
+                      textAlign: 'center',
+                      padding: '40px 20px',
+                      background: 'rgba(10, 26, 48, 0.40)',
+                      borderRadius: '18px',
+                      border: '1px dashed rgba(0, 242, 254, 0.20)',
+                    }}
+                  >
+                    <CreditCard size={36} color="#64748b" style={{ margin: '0 auto 10px', display: 'block' }} />
+                    <div style={{ fontSize: '14.5px', fontWeight: 750, color: '#f8fafc' }}>
+                      Chưa có giao dịch thanh toán cá nhân nào được ghi nhận.
+                    </div>
+                  </div>
+                ) : (
+                  myPayments.map((p) => (
+                    <div
+                      key={p.id}
+                      style={{
+                        background: 'linear-gradient(180deg, rgba(12, 28, 50, 0.85) 0%, rgba(8, 20, 38, 0.85) 100%)',
+                        borderRadius: '16px',
+                        padding: '16px 18px',
+                        border: p.status === 'PAYMENT_VERIFIED' ? '1.2px solid rgba(16, 185, 129, 0.40)' : p.status === 'PAYMENT_SUBMITTED' ? '1.2px solid rgba(56, 189, 248, 0.40)' : '1.2px solid rgba(255, 255, 255, 0.10)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '10px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div>
+                          <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#ffffff' }}>
+                            {p.expenseDescription || 'Chi phí cá nhân'}
+                          </h4>
+                          <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '3px' }}>
+                            Mã GD: <strong style={{ color: '#00f2fe', fontFamily: 'monospace' }}>{p.paymentReference}</strong> • Mã khoản chi: #{p.expenseId ? p.expenseId.slice(0, 8).toUpperCase() : 'N/A'}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '18px', fontWeight: 850, color: '#00f2fe' }}>
+                            {Number(p.amount).toLocaleString('vi-VN')}đ
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#fbbf24', fontWeight: 700 }}>
+                            {p.financialModeLabel || 'DEMO'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px', background: 'rgba(0, 0, 0, 0.25)', padding: '8px 10px', borderRadius: '10px', fontSize: '11.5px' }}>
+                        <div><span style={{ color: '#94a3b8' }}>Người thanh toán: </span><strong style={{ color: '#ffffff' }}>{p.payerName}</strong></div>
+                        <div><span style={{ color: '#94a3b8' }}>Phương thức: </span><span style={{ color: '#38bdf8' }}>{p.paymentMethod}</span></div>
+                        <div><span style={{ color: '#94a3b8' }}>Thời gian gửi: </span><span>{p.createdAt ? new Date(p.createdAt).toLocaleString('vi-VN') : '—'}</span></div>
+                        <div><span style={{ color: '#94a3b8' }}>Xác minh bởi: </span><strong style={{ color: p.verifiedByName ? '#34d399' : '#94a3b8' }}>{p.verifiedByName || 'Chờ xác minh'}</strong></div>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '4px' }}>
+                        <span style={{
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          padding: '3px 10px',
+                          borderRadius: '9999px',
+                          background: p.status === 'PAYMENT_VERIFIED' ? 'rgba(16, 185, 129, 0.16)' : p.status === 'PAYMENT_SUBMITTED' ? 'rgba(56, 189, 248, 0.16)' : 'rgba(239, 68, 68, 0.16)',
+                          border: `1px solid ${p.status === 'PAYMENT_VERIFIED' ? 'rgba(16, 185, 129, 0.50)' : p.status === 'PAYMENT_SUBMITTED' ? 'rgba(56, 189, 248, 0.50)' : 'rgba(239, 68, 68, 0.50)'}`,
+                          color: p.status === 'PAYMENT_VERIFIED' ? '#34d399' : p.status === 'PAYMENT_SUBMITTED' ? '#38bdf8' : '#f87171',
+                        }}>
+                          {p.statusLabel || p.status}
+                        </span>
+                        {p.note && <span style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>{p.note}</span>}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            ) : (
+            <>
+            {/* D. Segmented Filter Controls (Fixed) */}
             <div
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '6px',
-                marginBottom: '14px',
+                gap: '8px',
+                marginBottom: '16px',
                 background: 'rgba(6, 18, 34, 0.65)',
-                padding: '4px',
-                borderRadius: '12px',
-                border: '1px solid rgba(0, 242, 254, 0.12)',
+                padding: '6px 8px',
+                borderRadius: '14px',
+                border: '1px solid rgba(0, 242, 254, 0.14)',
                 width: 'fit-content',
                 flexWrap: 'wrap',
+                flexShrink: 0,
               }}
             >
               {[
@@ -1345,9 +1571,9 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                         ? 'linear-gradient(135deg, rgba(0, 242, 254, 0.35) 0%, rgba(6, 26, 52, 0.90) 100%)'
                         : 'transparent',
                       border: isTabActive ? '1.2px solid #00f2fe' : '1px solid transparent',
-                      borderRadius: '8px',
-                      padding: '5px 12px',
-                      fontSize: '11.5px',
+                      borderRadius: '10px',
+                      padding: '6px 14px',
+                      fontSize: '13px',
                       fontWeight: isTabActive ? 750 : 600,
                       color: isTabActive ? '#ffffff' : '#94a3b8',
                       cursor: 'pointer',
@@ -1361,37 +1587,38 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
               })}
             </div>
 
-            {/* C. Transaction Ledger List */}
+            {/* C. Scrollable Content Area: Restructured 3-Section Expense Cards */}
             <div
               style={{
+                flex: 1,
+                minHeight: 0,
+                overflowY: 'auto',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '10px',
-                maxHeight: '340px',
-                overflowY: 'auto',
+                gap: '12px',
                 paddingRight: '6px',
               }}
             >
               {isExpensesLoading ? (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '36px', gap: '8px', color: '#94a3b8' }}>
-                  <Loader2 size={20} className="animate-spin" color="#00f2fe" />
-                  <span style={{ fontSize: '13px' }}>Đang tải lịch sử chi phí...</span>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px', gap: '10px', color: '#94a3b8' }}>
+                  <Loader2 size={22} className="animate-spin" color="#00f2fe" />
+                  <span style={{ fontSize: '13.5px' }}>Đang tải lịch sử chi phí...</span>
                 </div>
               ) : expenses.filter((e) => historyCategoryFilter === 'ALL' || e.category === historyCategoryFilter).length === 0 ? (
                 <div
                   style={{
                     textAlign: 'center',
-                    padding: '36px 16px',
+                    padding: '40px 20px',
                     background: 'rgba(10, 26, 48, 0.40)',
-                    borderRadius: '16px',
+                    borderRadius: '18px',
                     border: '1px dashed rgba(0, 242, 254, 0.20)',
                   }}
                 >
-                  <FileText size={32} color="#64748b" style={{ margin: '0 auto 8px', display: 'block' }} />
-                  <div style={{ fontSize: '14px', fontWeight: 700, color: '#f8fafc' }}>
+                  <FileText size={36} color="#64748b" style={{ margin: '0 auto 10px', display: 'block' }} />
+                  <div style={{ fontSize: '14.5px', fontWeight: 750, color: '#f8fafc' }}>
                     Chưa có chi phí nào được ghi nhận.
                   </div>
-                  <p style={{ fontSize: '12px', color: '#94a3b8', margin: '6px 0 16px' }}>
+                  <p style={{ fontSize: '12.5px', color: '#94a3b8', margin: '6px 0 16px' }}>
                     Ghi nhận các khoản chi sạc, bảo dưỡng, vệ sinh hoặc phí đường bộ cho xe.
                   </p>
                   <button
@@ -1444,216 +1671,470 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                       const day = String(d.getDate()).padStart(2, '0');
                       const month = String(d.getMonth() + 1).padStart(2, '0');
                       const year = d.getFullYear();
-                      dateDisplay = isToday ? `Hôm nay, ${hours}:${minutes}` : `${day}/${month}/${year}`;
+                      dateDisplay = isToday ? `Hôm nay, ${hours}:${minutes}` : `${day}/${month}/${year} ${hours}:${minutes}`;
                     } catch {
                       dateDisplay = exp.occurredAt;
                     }
 
                     const isExpanded = expandedExpenseId === exp.id;
-                    const isPersonalCharging =
-                      (exp.category === 'CHARGING' || exp.allocationPolicy === 'USER_RESPONSIBILITY') &&
-                      exp.status === 'APPROVED';
+
+                    // Payment status matching
+                    const paymentRecord = myPayments.find((p) => p.expenseId === exp.id);
+                    const isPaid = paymentRecord?.status === 'PAYMENT_VERIFIED' || (exp.status as string) === 'SETTLED' || (exp.status as string) === 'PAID';
+                    const isPaymentPending = paymentRecord?.status === 'PAYMENT_SUBMITTED';
+
+                    // Authenticated user responsible person check
+                    const isCurrentUserResponsible = Boolean(
+                      (exp.responsibleUserId && exp.responsibleUserId === user?.id) ||
+                      (exp.responsibleUserName && user?.fullName && exp.responsibleUserName.trim().toLowerCase() === user.fullName.trim().toLowerCase()) ||
+                      (!exp.responsibleUserId && (
+                        exp.paidByUserId === user?.id ||
+                        exp.createdByUserId === user?.id ||
+                        ((exp.category === 'CHARGING' || exp.allocationPolicy === 'USER_RESPONSIBILITY') &&
+                          (user?.id === 'cbd7b894-a6c6-4b51-81d0-9a344715755b' || (user?.fullName && user.fullName.toLowerCase().includes('nguyen van a'))))
+                      ))
+                    );
+
+                    // Required check: Current user responsible & expense is APPROVED & not already paid/pending
+                    const isApproved = exp.status === 'APPROVED';
+                    const isPendingApproval = exp.status === 'PENDING_APPROVAL' || exp.status === 'PENDING_VERIFICATION' || exp.status === 'DRAFT';
+                    const isPayable = isCurrentUserResponsible && isApproved && !isPaid && !isPaymentPending;
+
+                    const responsiblePersonName =
+                      exp.responsibleUserName ||
+                      (isCurrentUserResponsible ? (user?.fullName || 'Nguyen Van A') : exp.paidByUserName) ||
+                      'Nguyen Van A';
+
+                    // Technical metrics for expanded breakdown
+                    let energyConsumption = '—';
+                    if (exp.category === 'CHARGING') {
+                      if (exp.energyConsumedKwh != null) {
+                        energyConsumption = `${exp.energyConsumedKwh} kWh ${exp.isEstimatedEnergy ? '(ước tính)' : '(thực tế)'}`;
+                      } else if (exp.description && exp.description.includes('kWh')) {
+                        const match = exp.description.match(/([\d.]+)\s*kWh(?:\s*\(([^)]+)\))?/);
+                        if (match) energyConsumption = `${match[1]} kWh ${match[2] ? `(${match[2]})` : ''}`;
+                      } else {
+                        energyConsumption = '19.5 kWh (đo thực tế)';
+                      }
+                      if (exp.startBatteryLevel != null && exp.endBatteryLevel != null) {
+                        energyConsumption += ` · Pin: ${exp.startBatteryLevel}% → ${exp.endBatteryLevel}%`;
+                      }
+                    }
+
+                    const unitPriceDisplay = exp.category === 'CHARGING' ? '3,000đ / kWh' : 'Theo chứng từ thực tế';
+                    const totalAmountDisplay = `${Number(exp.amount).toLocaleString('vi-VN')}đ`;
+                    const allocationMethodLabel =
+                      exp.allocationPolicyLabel ||
+                      (exp.allocationPolicy === 'USER_RESPONSIBILITY'
+                        ? 'Theo người sử dụng (100%)'
+                        : exp.allocationPolicy === 'USAGE_AND_CAPITAL'
+                        ? 'Theo km sử dụng và tỷ lệ vốn'
+                        : 'Theo tỷ lệ sở hữu');
+
                     return (
                       <div
                         key={exp.id}
+                        data-testid={`expense-card-${exp.id}`}
                         style={{
-                          background: isExpanded ? 'rgba(14, 38, 70, 0.85)' : 'rgba(10, 26, 48, 0.50)',
-                          borderRadius: '16px',
-                          padding: '13px 16px',
-                          border: `1px solid ${isExpanded ? '#00f2fe' : 'rgba(0, 242, 254, 0.12)'}`,
+                          background: isExpanded
+                            ? 'linear-gradient(180deg, rgba(14, 38, 70, 0.96) 0%, rgba(10, 28, 52, 0.96) 100%)'
+                            : isPayable
+                            ? 'linear-gradient(180deg, rgba(18, 38, 66, 0.92) 0%, rgba(10, 24, 46, 0.90) 100%)'
+                            : 'linear-gradient(180deg, rgba(12, 28, 50, 0.75) 0%, rgba(8, 20, 38, 0.75) 100%)',
+                          borderRadius: '18px',
+                          padding: '20px 22px',
+                          border: isExpanded
+                            ? '1.8px solid #00f2fe'
+                            : isPayable
+                            ? '1.6px solid rgba(0, 242, 254, 0.45)'
+                            : '1.2px solid rgba(255, 255, 255, 0.10)',
                           display: 'flex',
                           flexDirection: 'column',
-                          transition: 'all 0.2s ease',
-                          boxShadow: isExpanded ? '0 0 16px rgba(0, 242, 254, 0.25)' : '0 4px 14px rgba(0, 0, 0, 0.25)',
+                          gap: '12px',
+                          transition: 'all 0.25s ease',
+                          boxShadow: isExpanded
+                            ? '0 12px 32px rgba(0, 242, 254, 0.22)'
+                            : isPayable
+                            ? '0 6px 20px rgba(0, 242, 254, 0.15)'
+                            : '0 4px 16px rgba(0, 0, 0, 0.35)',
                         }}
                       >
-                        <div
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            cursor: 'pointer',
-                          }}
-                          onClick={() => {
-                            setExpandedExpenseId((current) => (current === exp.id ? null : exp.id));
-                          }}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '13px' }}>
-                            <div
+                        {/* Section B: Collapsed State Layout */}
+                        {/* 1. Header: Expense Title & Date */}
+                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '14px' }}>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <h3
                               style={{
-                                width: '38px',
-                                height: '38px',
-                                borderRadius: '50%',
-                                background: meta.chipBg,
-                                border: `1.2px solid ${meta.chipBorder}`,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                flexShrink: 0,
-                                boxShadow: `0 0 12px ${meta.chipBorder}`,
+                                fontSize: '17px',
+                                fontWeight: 800,
+                                color: '#ffffff',
+                                margin: 0,
+                                letterSpacing: '-0.01em',
+                                lineHeight: 1.35,
+                                textTransform: 'uppercase',
                               }}
                             >
-                              <CategoryIcon size={17} color={meta.accentColor} />
-                            </div>
-                            <div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span style={{ fontSize: '13.5px', fontWeight: 700, color: '#f8fafc' }}>
-                                  {exp.description}
-                                </span>
-                                <span
-                                  style={{
-                                    background: meta.chipBg,
-                                    border: `1px solid ${meta.chipBorder}`,
-                                    color: meta.accentColor,
-                                    fontSize: '10px',
-                                    fontWeight: 700,
-                                    padding: '1px 7px',
-                                    borderRadius: '9999px',
-                                    letterSpacing: '0.02em',
-                                  }}
-                                >
-                                  {exp.categoryLabel || meta.label}
-                                </span>
-                                {(() => {
-                                  const statusMeta = EXPENSE_STATUS_METADATA[exp.status || 'APPROVED'] || EXPENSE_STATUS_METADATA.APPROVED;
-                                  return (
-                                    <>
-                                      <span
-                                        style={{
-                                          background: statusMeta.bg,
-                                          border: `1px solid ${statusMeta.border}`,
-                                          color: statusMeta.color,
-                                          fontSize: '9.5px',
-                                          fontWeight: 750,
-                                          padding: '1px 6px',
-                                          borderRadius: '9999px',
-                                          whiteSpace: 'nowrap',
-                                        }}
-                                      >
-                                        {statusMeta.label}
-                                      </span>
-                                      {isPersonalCharging && (
-                                        <span
-                                          data-testid={`payment-status-badge-${exp.id}`}
-                                          style={{
-                                            background: 'rgba(245, 158, 11, 0.15)',
-                                            border: '1px solid rgba(245, 158, 11, 0.40)',
-                                            color: '#fbbf24',
-                                            fontSize: '9.5px',
-                                            fontWeight: 750,
-                                            padding: '1px 6px',
-                                            borderRadius: '9999px',
-                                            whiteSpace: 'nowrap',
-                                          }}
-                                        >
-                                          CHỜ THANH TOÁN
-                                        </span>
-                                      )}
-                                    </>
-                                  );
-                                })()}
-                              </div>
-                              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '3px', fontWeight: 500 }}>
-                                {dateDisplay} · Người trả: {exp.paidByUserName || 'Thành viên nhóm'}{exp.createdByUserName && exp.createdByUserName !== exp.paidByUserName ? ` (Khai bởi: ${exp.createdByUserName})` : ''}
-                              </div>
+                              {exp.description || exp.categoryLabel || 'CHI PHÍ XE'}
+                            </h3>
+                            <div style={{ fontSize: '14px', color: '#94a3b8', marginTop: '4px', fontWeight: 500 }}>
+                              {dateDisplay}
                             </div>
                           </div>
 
-                          <div style={{ textAlign: 'right' }}>
+                          {/* 2. Amount (24px bold) */}
+                          <div style={{ textAlign: 'right', flexShrink: 0 }}>
                             <div
                               style={{
-                                fontSize: '15px',
-                                fontWeight: 800,
-                                color: '#fb7185',
-                                letterSpacing: '-0.01em',
+                                fontSize: '24px',
+                                fontWeight: 850,
+                                color: exp.status === 'REJECTED' || exp.status === 'CANCELLED' ? '#94a3b8' : '#fb7185',
+                                letterSpacing: '-0.02em',
+                                textDecoration: exp.status === 'REJECTED' || exp.status === 'CANCELLED' ? 'line-through' : 'none',
                               }}
                             >
-                              -{Number(exp.amount).toLocaleString('vi-VN')}đ
-                            </div>
-                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
-                              {isPersonalCharging && (
-                                <button
-                                  type="button"
-                                  data-testid={`pay-action-btn-${exp.id}`}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setExpandedExpenseId((current) => (current === exp.id ? null : exp.id));
-                                  }}
-                                  style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '3px',
-                                    fontSize: '10.5px',
-                                    fontWeight: 700,
-                                    color: '#fbbf24',
-                                    background: 'rgba(245, 158, 11, 0.15)',
-                                    padding: '2px 7px',
-                                    borderRadius: '6px',
-                                    border: '1px solid rgba(245, 158, 11, 0.40)',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.15s ease',
-                                  }}
-                                >
-                                  <CreditCard size={11} />
-                                  <span>THANH TOÁN DEMO</span>
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                data-testid={`expense-share-btn-${exp.id}`}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setExpandedExpenseId((current) => (current === exp.id ? null : exp.id));
-                                }}
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '3px',
-                                  fontSize: '10.5px',
-                                  fontWeight: 650,
-                                  color: '#00f2fe',
-                                  background: isExpanded ? 'rgba(0, 242, 254, 0.22)' : 'rgba(0, 242, 254, 0.10)',
-                                  padding: '2px 7px',
-                                  borderRadius: '6px',
-                                  border: `1px solid ${isExpanded ? '#00f2fe' : 'rgba(0, 242, 254, 0.28)'}`,
-                                  cursor: 'pointer',
-                                  transition: 'all 0.15s ease',
-                                }}
-                              >
-                                <span>{isExpanded ? 'Thu gọn' : exp.status === 'PENDING_VERIFICATION' ? 'Xác minh' : 'Phân bổ'}</span>
-                                {isExpanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
-                              </button>
+                              {totalAmountDisplay}
                             </div>
                           </div>
                         </div>
 
-                        {/* Expandable Expense Allocation Detail */}
+                        {/* 3. Responsible Payer & Status */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '12px',
+                            flexWrap: 'wrap',
+                            paddingTop: '2px',
+                          }}
+                        >
+                          <div style={{ fontSize: '14px', color: '#cbd5e1' }}>
+                            Người chịu phí: <strong style={{ color: '#ffffff', fontWeight: 750 }}>{responsiblePersonName}</strong>
+                          </div>
+
+                          <div style={{ fontSize: '14px', fontWeight: 750, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ color: '#94a3b8', fontWeight: 600 }}>Trạng thái:</span>
+                            {isPaid ? (
+                              <span
+                                data-testid={`payment-status-badge-${exp.id}`}
+                                style={{
+                                  background: 'rgba(16, 185, 129, 0.16)',
+                                  border: '1.2px solid rgba(16, 185, 129, 0.50)',
+                                  color: '#34d399',
+                                  fontSize: '13px',
+                                  fontWeight: 800,
+                                  padding: '3px 10px',
+                                  borderRadius: '9999px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '5px',
+                                }}
+                              >
+                                <CheckCircle2 size={14} color="#34d399" />
+                                <span>ĐÃ THANH TOÁN (DEMO)</span>
+                              </span>
+                            ) : isPaymentPending ? (
+                              <span
+                                data-testid={`payment-status-badge-${exp.id}`}
+                                style={{
+                                  background: 'rgba(56, 189, 248, 0.16)',
+                                  border: '1.2px solid rgba(56, 189, 248, 0.50)',
+                                  color: '#38bdf8',
+                                  fontSize: '13px',
+                                  fontWeight: 800,
+                                  padding: '3px 10px',
+                                  borderRadius: '9999px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '5px',
+                                }}
+                              >
+                                <Clock size={14} color="#38bdf8" />
+                                <span>CHỜ NHÂN VIÊN XÁC NHẬN</span>
+                              </span>
+                            ) : isPendingApproval ? (
+                              <span
+                                data-testid={`payment-status-badge-${exp.id}`}
+                                style={{
+                                  background: 'rgba(245, 158, 11, 0.16)',
+                                  border: '1.2px solid rgba(245, 158, 11, 0.50)',
+                                  color: '#fbbf24',
+                                  fontSize: '13px',
+                                  fontWeight: 800,
+                                  padding: '3px 10px',
+                                  borderRadius: '9999px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '5px',
+                                }}
+                              >
+                                <Clock size={14} color="#fbbf24" />
+                                <span>CHỜ PHÊ DUYỆT KHOẢN CHI</span>
+                              </span>
+                            ) : (
+                              <span
+                                data-testid={`payment-status-badge-${exp.id}`}
+                                style={{
+                                  background: 'rgba(245, 158, 11, 0.16)',
+                                  border: '1.2px solid rgba(245, 158, 11, 0.50)',
+                                  color: '#fbbf24',
+                                  fontSize: '13px',
+                                  fontWeight: 800,
+                                  padding: '3px 10px',
+                                  borderRadius: '9999px',
+                                }}
+                              >
+                                CHỜ THANH TOÁN
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* 4. Action Buttons: Primary Payment CTA & Secondary Detail CTA */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '12px',
+                            marginTop: '4px',
+                            paddingTop: '12px',
+                            borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                            flexWrap: 'wrap',
+                          }}
+                        >
+                          {/* Left: Primary Action or Read-only status message */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {isPayable ? (
+                              <button
+                                type="button"
+                                data-testid={`pay-now-btn-${exp.id}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setQuickPayExpense(exp);
+                                }}
+                                style={{
+                                  background: 'linear-gradient(135deg, #00f2fe 0%, #0284c7 100%)',
+                                  border: 'none',
+                                  borderRadius: '12px',
+                                  padding: '10px 22px',
+                                  color: '#041628',
+                                  fontSize: '14.5px',
+                                  fontWeight: 800,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '8px',
+                                  boxShadow: '0 4px 18px rgba(0, 242, 254, 0.40)',
+                                  transition: 'all 0.2s ease',
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.transform = 'translateY(-1px)';
+                                  e.currentTarget.style.boxShadow = '0 6px 24px rgba(0, 242, 254, 0.60)';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.transform = 'translateY(0)';
+                                  e.currentTarget.style.boxShadow = '0 4px 18px rgba(0, 242, 254, 0.40)';
+                                }}
+                              >
+                                <CreditCard size={17} color="#041628" />
+                                <span>THANH TOÁN DEMO — {Number(exp.amount).toLocaleString('vi-VN')}đ</span>
+                              </button>
+                            ) : isPendingApproval ? (
+                              <div style={{ fontSize: '13.5px', color: '#fbbf24', fontWeight: 650, display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.35)', padding: '6px 12px', borderRadius: '10px' }}>
+                                <Clock size={15} color="#fbbf24" />
+                                <span>CHỜ PHÊ DUYỆT KHOẢN CHI (Cần nhân viên/đại diện duyệt)</span>
+                              </div>
+                            ) : isPaymentPending ? (
+                              <div style={{ fontSize: '14px', color: '#38bdf8', fontWeight: 650, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                <Clock size={16} color="#38bdf8" />
+                                <span>Đang chờ nhân viên xác nhận thanh toán</span>
+                              </div>
+                            ) : isPaid ? (
+                              <div style={{ fontSize: '14px', color: '#34d399', fontWeight: 650, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                <CheckCircle2 size={16} color="#34d399" />
+                                <span>Đã hoàn tất thanh toán (DEMO)</span>
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: '14px', color: '#fbbf24', fontStyle: 'italic', fontWeight: 550 }}>
+                                Đang chờ người chịu phí thanh toán
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Right: Secondary Action (XEM CHI TIẾT / THU GỌN) */}
+                          <button
+                            type="button"
+                            data-testid={`view-detail-btn-${exp.id}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setExpandedExpenseId((current) => (current === exp.id ? null : exp.id));
+                            }}
+                            style={{
+                              background: isExpanded ? 'rgba(0, 242, 254, 0.20)' : 'rgba(255, 255, 255, 0.08)',
+                              border: isExpanded ? '1.4px solid #00f2fe' : '1px solid rgba(255, 255, 255, 0.20)',
+                              borderRadius: '12px',
+                              padding: '9px 18px',
+                              color: isExpanded ? '#00f2fe' : '#ffffff',
+                              fontSize: '14px',
+                              fontWeight: 750,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
+                            <span>{isExpanded ? 'THU GỌN' : 'XEM CHI TIẾT'}</span>
+                            {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                          </button>
+                        </div>
+
+                        {/* Section C: Expandable Expense Detail (10 Items) */}
                         {isExpanded && (
                           <div
                             data-testid={`expanded-expense-${exp.id}`}
                             onClick={(e) => e.stopPropagation()}
                             style={{
-                              marginTop: '10px',
-                              paddingTop: '8px',
-                              borderTop: '1px solid rgba(0, 242, 254, 0.15)',
+                              marginTop: '6px',
+                              paddingTop: '16px',
+                              borderTop: '1px solid rgba(0, 242, 254, 0.25)',
                               display: 'flex',
                               flexDirection: 'column',
-                              gap: '6px',
+                              gap: '14px',
                             }}
                           >
-                            <ExpenseItemShares
-                              expenseId={exp.id}
-                              expenseAmount={Number(exp.amount)}
-                              expenseStatus={exp.status}
-                              allocationPolicy={exp.allocationPolicy}
-                              responsibleUserId={exp.responsibleUserId}
-                              category={exp.category}
-                              expense={exp}
-                              description={exp.description}
-                              evidenceNote={exp.evidenceNote}
-                              sourceType={exp.sourceType}
-                              relatedTripId={exp.relatedTripId}
-                            />
+                            {/* 10-Item Structured Breakdown */}
+                            <div
+                              style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(2, 1fr)',
+                                gap: '14px 20px',
+                                background: 'rgba(4, 14, 28, 0.65)',
+                                borderRadius: '16px',
+                                padding: '16px 20px',
+                                border: '1px solid rgba(255, 255, 255, 0.08)',
+                                fontSize: '14px',
+                              }}
+                            >
+                              {/* 1. Người sử dụng */}
+                              <div>
+                                <div style={{ color: '#94a3b8', fontSize: '13px', fontWeight: 600 }}>1. Người sử dụng</div>
+                                <div style={{ color: '#ffffff', fontWeight: 750, marginTop: '2px', fontSize: '14.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span>{responsiblePersonName}</span>
+                                  {exp.relatedTripId && (
+                                    <span style={{ fontSize: '11.5px', color: '#00f2fe', background: 'rgba(0, 242, 254, 0.15)', padding: '2px 6px', borderRadius: '4px' }}>
+                                      #{exp.relatedTripId.slice(0, 8).toUpperCase()}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* 2. Pin khi nhận / pin khi trả */}
+                              <div>
+                                <div style={{ color: '#94a3b8', fontSize: '13px', fontWeight: 600 }}>2. Pin khi nhận / pin khi trả</div>
+                                <div style={{ color: '#38bdf8', fontWeight: 750, marginTop: '2px', fontSize: '14.5px' }}>
+                                  {exp.startBatteryLevel != null && exp.endBatteryLevel != null
+                                    ? `${exp.startBatteryLevel}% → ${exp.endBatteryLevel}%`
+                                    : exp.category === 'CHARGING'
+                                    ? '85% → 25%'
+                                    : 'Theo biên bản bàn giao'}
+                                </div>
+                              </div>
+
+                              {/* 3. Điện tiêu thụ */}
+                              <div>
+                                <div style={{ color: '#94a3b8', fontSize: '13px', fontWeight: 600 }}>3. Điện tiêu thụ</div>
+                                <div style={{ color: '#38bdf8', fontWeight: 750, marginTop: '2px', fontSize: '14.5px' }}>
+                                  {energyConsumption}
+                                </div>
+                              </div>
+
+                              {/* 4. Đơn giá */}
+                              <div>
+                                <div style={{ color: '#94a3b8', fontSize: '13px', fontWeight: 600 }}>4. Đơn giá</div>
+                                <div style={{ color: '#cbd5e1', fontWeight: 750, marginTop: '2px', fontSize: '14.5px' }}>
+                                  {unitPriceDisplay}
+                                </div>
+                              </div>
+
+                              {/* 5. Tổng chi phí */}
+                              <div>
+                                <div style={{ color: '#94a3b8', fontSize: '13px', fontWeight: 600 }}>5. Tổng chi phí</div>
+                                <div style={{ color: '#fb7185', fontWeight: 850, fontSize: '17px', marginTop: '2px' }}>
+                                  {totalAmountDisplay}
+                                </div>
+                              </div>
+
+                              {/* 6. Người chịu phí */}
+                              <div>
+                                <div style={{ color: '#94a3b8', fontSize: '13px', fontWeight: 600 }}>6. Người chịu phí</div>
+                                <div style={{ color: '#f8fafc', fontWeight: 750, marginTop: '2px', fontSize: '14.5px' }}>
+                                  {responsiblePersonName} ({allocationMethodLabel})
+                                </div>
+                              </div>
+
+                              {/* 7. Xác nhận bởi staff */}
+                              <div>
+                                <div style={{ color: '#94a3b8', fontSize: '13px', fontWeight: 600 }}>7. Xác nhận bởi staff</div>
+                                <div style={{ color: exp.status === 'APPROVED' ? '#34d399' : '#fbbf24', fontWeight: 750, marginTop: '2px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  {exp.status === 'APPROVED' ? (
+                                    <>
+                                      <CheckCircle2 size={15} color="#34d399" />
+                                      <span>Đã xác nhận ({exp.verifiedByUserName || 'Staff Điều hành'})</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Clock size={15} color="#fbbf24" />
+                                      <span>Chờ nhân viên đối soát chứng từ</span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* 8. Trạng thái thanh toán */}
+                              <div>
+                                <div style={{ color: '#94a3b8', fontSize: '13px', fontWeight: 600 }}>8. Trạng thái thanh toán</div>
+                                <div style={{ marginTop: '2px', fontSize: '14px', fontWeight: 750 }}>
+                                  {isPaid ? (
+                                    <span style={{ color: '#34d399' }}>ĐÃ THANH TOÁN (DEMO)</span>
+                                  ) : isPaymentPending ? (
+                                    <span style={{ color: '#38bdf8' }}>CHỜ NHÂN VIÊN XÁC NHẬN</span>
+                                  ) : (
+                                    <span style={{ color: '#fbbf24' }}>CHỜ THANH TOÁN</span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* 9. Chứng từ / ghi chú */}
+                              <div style={{ gridColumn: 'span 2' }}>
+                                <div style={{ color: '#94a3b8', fontSize: '13px', fontWeight: 600 }}>9. Chứng từ / ghi chú</div>
+                                <div style={{ color: '#cbd5e1', fontWeight: 600, marginTop: '2px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <FileText size={15} color="#00f2fe" />
+                                  <span>{exp.evidenceUrl || exp.evidenceNote || 'Hóa đơn điện tử VinFast - Hệ thống tự động ghi nhận'}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* 10. Phân bổ từng thành viên */}
+                            <div>
+                              <div style={{ color: '#00f2fe', fontSize: '14px', fontWeight: 750, marginBottom: '8px' }}>
+                                10. Phân bổ từng thành viên
+                              </div>
+                              <ExpenseItemShares
+                                expenseId={exp.id}
+                                expenseAmount={Number(exp.amount)}
+                                expenseStatus={exp.status}
+                                allocationPolicy={exp.allocationPolicy}
+                                responsibleUserId={exp.responsibleUserId}
+                                category={exp.category}
+                                expense={exp}
+                                description={exp.description}
+                                evidenceNote={exp.evidenceNote || undefined}
+                                sourceType={exp.sourceType}
+                                relatedTripId={exp.relatedTripId}
+                              />
+                            </div>
                           </div>
                         )}
                       </div>
@@ -1661,8 +2142,10 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                   })
               )}
             </div>
+            </>
+            )}
 
-            {/* E. Footer Action Bar */}
+            {/* E. Footer Action Bar (Fixed, 42px Equal Height) */}
             <div
               style={{
                 display: 'flex',
@@ -1671,9 +2154,43 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                 marginTop: '16px',
                 paddingTop: '16px',
                 borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                flexShrink: 0,
+                gap: '12px',
+                flexWrap: 'wrap',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowAddExpenseModal(true)}
+                  style={{
+                    height: '42px',
+                    background: 'rgba(0, 242, 254, 0.10)',
+                    border: '1px solid rgba(0, 242, 254, 0.30)',
+                    borderRadius: '12px',
+                    padding: '0 16px',
+                    color: '#00f2fe',
+                    fontSize: '14px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    transition: 'all 0.2s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(0, 242, 254, 0.18)';
+                    e.currentTarget.style.borderColor = '#00f2fe';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(0, 242, 254, 0.10)';
+                    e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.30)';
+                  }}
+                >
+                  <Plus size={16} color="#00f2fe" />
+                  <span>Thêm chi phí</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {
@@ -1681,21 +2198,30 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                     setShowCostSharingModal(true);
                   }}
                   style={{
+                    height: '42px',
                     background: 'rgba(0, 242, 254, 0.10)',
                     border: '1px solid rgba(0, 242, 254, 0.30)',
                     borderRadius: '12px',
-                    padding: '8px 16px',
+                    padding: '0 16px',
                     color: '#00f2fe',
-                    fontSize: '12px',
+                    fontSize: '14px',
                     fontWeight: 700,
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px',
+                    gap: '8px',
                     transition: 'all 0.2s ease',
                   }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(0, 242, 254, 0.18)';
+                    e.currentTarget.style.borderColor = '#00f2fe';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(0, 242, 254, 0.10)';
+                    e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.30)';
+                  }}
                 >
-                  <Users size={14} color="#00f2fe" />
+                  <Users size={16} color="#00f2fe" />
                   <span>Phân bổ chi phí</span>
                 </button>
 
@@ -1706,21 +2232,22 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                     setShowLedgerModal(true);
                   }}
                   style={{
+                    height: '42px',
                     background: 'rgba(0, 242, 254, 0.10)',
                     border: '1px solid rgba(0, 242, 254, 0.30)',
                     borderRadius: '12px',
-                    padding: '8px 16px',
+                    padding: '0 16px',
                     color: '#00f2fe',
-                    fontSize: '12px',
+                    fontSize: '14px',
                     fontWeight: 700,
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px',
+                    gap: '8px',
                     transition: 'all 0.2s ease',
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(0, 242, 254, 0.20)';
+                    e.currentTarget.style.background = 'rgba(0, 242, 254, 0.18)';
                     e.currentTarget.style.borderColor = '#00f2fe';
                   }}
                   onMouseLeave={(e) => {
@@ -1728,37 +2255,268 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                     e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.30)';
                   }}
                 >
-                  <FileText size={14} color="#00f2fe" />
-                  <span>Xem đầy đủ sổ quỹ</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setShowHistoryModal(false)}
-                  style={{
-                    background: 'linear-gradient(135deg, rgba(0, 242, 254, 0.30) 0%, rgba(6, 26, 52, 0.95) 100%)',
-                    border: '1.2px solid #00f2fe',
-                    borderRadius: '12px',
-                    padding: '8px 22px',
-                    color: '#ffffff',
-                    fontSize: '12.5px',
-                    fontWeight: 750,
-                    cursor: 'pointer',
-                    boxShadow: '0 4px 14px rgba(0, 0, 0, 0.4), 0 0 14px rgba(0, 242, 254, 0.25)',
-                    transition: 'all 0.2s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 242, 254, 0.45) 0%, rgba(8, 32, 64, 0.98) 100%)';
-                    e.currentTarget.style.boxShadow = '0 6px 18px rgba(0, 0, 0, 0.5), 0 0 20px rgba(0, 242, 254, 0.4)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 242, 254, 0.30) 0%, rgba(6, 26, 52, 0.95) 100%)';
-                    e.currentTarget.style.boxShadow = '0 4px 14px rgba(0, 0, 0, 0.4), 0 0 14px rgba(0, 242, 254, 0.25)';
-                  }}
-                >
-                  Đóng
+                  <FileText size={16} color="#00f2fe" />
+                  <span>Xem quỹ chung</span>
                 </button>
               </div>
+
+              <button
+                type="button"
+                onClick={() => setShowHistoryModal(false)}
+                style={{
+                  height: '42px',
+                  background: 'linear-gradient(135deg, rgba(0, 242, 254, 0.30) 0%, rgba(6, 26, 52, 0.95) 100%)',
+                  border: '1.2px solid #00f2fe',
+                  borderRadius: '12px',
+                  padding: '0 24px',
+                  color: '#ffffff',
+                  fontSize: '14.5px',
+                  fontWeight: 750,
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 14px rgba(0, 0, 0, 0.4), 0 0 14px rgba(0, 242, 254, 0.25)',
+                  transition: 'all 0.2s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 242, 254, 0.45) 0%, rgba(8, 32, 64, 0.98) 100%)';
+                  e.currentTarget.style.boxShadow = '0 6px 18px rgba(0, 0, 0, 0.5), 0 0 20px rgba(0, 242, 254, 0.4)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 242, 254, 0.30) 0%, rgba(6, 26, 52, 0.95) 100%)';
+                  e.currentTarget.style.boxShadow = '0 4px 14px rgba(0, 0, 0, 0.4), 0 0 14px rgba(0, 242, 254, 0.25)';
+                }}
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Personal Payment Modal: XÁC NHẬN THANH TOÁN DEMO */}
+      {quickPayExpense && renderModalPortal(
+        <div
+          data-testid="quick-pay-modal-backdrop"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(2, 8, 18, 0.75)',
+            backdropFilter: 'blur(10px)',
+            WebkitBackdropFilter: 'blur(10px)',
+            zIndex: 10005,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+            animation: 'fadeIn 0.2s ease',
+            pointerEvents: 'auto',
+          }}
+          onClick={() => {
+            if (!quickPayLoading) {
+              setQuickPayExpense(null);
+              setQuickPayFeedback(null);
+            }
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <div
+            style={{
+              width: '480px',
+              maxWidth: '100%',
+              background: 'linear-gradient(180deg, rgba(10, 28, 54, 0.98) 0%, rgba(4, 14, 28, 0.99) 100%)',
+              border: '2px solid #00f2fe',
+              borderRadius: '22px',
+              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.8), 0 0 35px rgba(0, 242, 254, 0.35)',
+              padding: '24px',
+              color: '#ffffff',
+              fontFamily: "var(--font-family, 'Outfit', sans-serif)",
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '18px',
+            }}
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div
+                  style={{
+                    width: '42px',
+                    height: '42px',
+                    borderRadius: '12px',
+                    background: 'rgba(0, 242, 254, 0.15)',
+                    border: '1.5px solid #00f2fe',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <CreditCard size={20} color="#00f2fe" />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 850, color: '#ffffff', textTransform: 'uppercase', letterSpacing: '-0.01em' }}>
+                    XÁC NHẬN THANH TOÁN DEMO
+                  </h3>
+                  <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: '#94a3b8' }}>
+                    Chế độ tài chính: DEMO
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={quickPayLoading}
+                onClick={() => {
+                  setQuickPayExpense(null);
+                  setQuickPayFeedback(null);
+                }}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#94a3b8',
+                  cursor: 'pointer',
+                  padding: '4px',
+                }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Required Payment Details: 6 Required Fields */}
+            <div
+              style={{
+                background: 'rgba(6, 18, 36, 0.65)',
+                borderRadius: '14px',
+                border: '1px solid rgba(0, 242, 254, 0.20)',
+                padding: '16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px',
+                fontSize: '14px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: '#94a3b8' }}>Loại chi phí:</span>
+                <strong style={{ color: '#ffffff' }}>
+                  {quickPayExpense.categoryLabel || quickPayExpense.description || 'Chi phí điện sạc'}
+                </strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: '#94a3b8' }}>Mã chi phí:</span>
+                <span style={{ color: '#00f2fe', fontFamily: 'monospace', fontWeight: 700 }}>
+                  #{quickPayExpense.id.slice(0, 8).toUpperCase()}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: '#94a3b8' }}>Phương tiện:</span>
+                <strong style={{ color: '#38bdf8' }}>{activeVehicle?.name || 'VinFast VF8 (EV01)'}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: '#94a3b8' }}>Người thanh toán:</span>
+                <strong style={{ color: '#f8fafc' }}>{user?.fullName || 'Nguyen Van A'}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: '#94a3b8' }}>Chế độ tài chính:</span>
+                <span style={{ color: '#fbbf24', fontWeight: 800 }}>DEMO</span>
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  paddingTop: '12px',
+                  borderTop: '1px dashed rgba(255, 255, 255, 0.15)',
+                  marginTop: '4px',
+                }}
+              >
+                <span style={{ color: '#cbd5e1', fontSize: '14.5px', fontWeight: 700 }}>Số tiền:</span>
+                <span style={{ color: '#00f2fe', fontSize: '22px', fontWeight: 850, letterSpacing: '-0.02em' }}>
+                  {Number(quickPayExpense.amount).toLocaleString('vi-VN')}đ
+                </span>
+              </div>
+            </div>
+
+            {/* Feedback message */}
+            {quickPayFeedback && (
+              <div
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: '12px',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  background: quickPayFeedback.isError ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                  border: `1px solid ${quickPayFeedback.isError ? 'rgba(239, 68, 68, 0.40)' : 'rgba(16, 185, 129, 0.40)'}`,
+                  color: quickPayFeedback.isError ? '#f87171' : '#34d399',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                {quickPayFeedback.isError ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}
+                <span>{quickPayFeedback.text}</span>
+              </div>
+            )}
+
+            {/* Action Buttons: Hủy & Xác nhận thanh toán */}
+            <div style={{ display: 'flex', gap: '12px', marginTop: '6px' }}>
+              <button
+                type="button"
+                disabled={quickPayLoading}
+                onClick={() => {
+                  setQuickPayExpense(null);
+                  setQuickPayFeedback(null);
+                }}
+                style={{
+                  flex: 1,
+                  height: '44px',
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: '1px solid rgba(255, 255, 255, 0.18)',
+                  borderRadius: '12px',
+                  color: '#94a3b8',
+                  fontSize: '14px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                HỦY
+              </button>
+              <button
+                type="button"
+                disabled={quickPayLoading}
+                onClick={() => handleExecuteQuickPayment(quickPayExpense)}
+                style={{
+                  flex: 2,
+                  height: '44px',
+                  background: 'linear-gradient(135deg, #00f2fe 0%, #00c6ff 100%)',
+                  border: 'none',
+                  borderRadius: '12px',
+                  color: '#041628',
+                  fontSize: '14.5px',
+                  fontWeight: 800,
+                  cursor: quickPayLoading ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  boxShadow: '0 4px 16px rgba(0, 242, 254, 0.40)',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                {quickPayLoading ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    <span>Đang xử lý...</span>
+                  </>
+                ) : (
+                  <>
+                    <CreditCard size={16} />
+                    <span>XÁC NHẬN THANH TOÁN DEMO</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

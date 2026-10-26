@@ -34,6 +34,7 @@ import {
   createWithdrawalRequest,
   confirmTransferorConsent,
 } from '../../../services/ownershipTransferApi';
+import { useTransferAppendix } from '../../../hooks/useContract';
 import { useAuthStore } from '../../../store/authStore';
 import { useWorldStore } from '../../../store/worldStore';
 import { resolveVehicleCode } from '../vehicles/vehicleModelConfig';
@@ -68,7 +69,9 @@ import {
   ChevronDown,
   ChevronUp,
   Info,
+  CreditCard,
 } from 'lucide-react';
+import { submitPersonalPayment, verifyPersonalPayment } from '../../../services/fundApi';
 
 interface CoOwnerOwnershipPanelProps {
   vehicle: VehicleResponse;
@@ -76,6 +79,16 @@ interface CoOwnerOwnershipPanelProps {
 }
 
 type PanelSubView = 'MEMBERS' | 'TRANSFER_FORM' | 'INCOMING_TRANSFERS' | 'WITHDRAWAL_FORM' | 'HISTORY';
+
+interface ReviewedAppendixSnapshot {
+  previewId: string;
+  contractVersion: string;
+  contentHash: string;
+  contentSnapshot: string;
+  toUserId: string;
+  transferPercentage: number;
+  reason: string;
+}
 
 const OWNER_ORB_COLORS = [
   '#00f2fe', // Cyan
@@ -147,6 +160,1356 @@ const getTransferDisplayStatus = (req: OwnershipTransferResponse): { label: stri
   return TRANSFER_STATUS_LABELS[req.status] || { label: req.statusVi || req.acceptanceStatus || req.status, color: '#94a3b8' };
 };
 
+interface TransferCardItemProps {
+  req: OwnershipTransferResponse;
+  type: 'incoming' | 'outgoing' | 'notified';
+  vehicleCode: string;
+  currentUser: any;
+  activeMembers: GroupMemberResponse[];
+  onAccept: (transferId: string, contentHash?: string) => void;
+  onConfirmTransferorConsent: (transferId: string, contentHash?: string) => void;
+  onRejectPrompt: (transferId: string) => void;
+  onCancel: (transferId: string) => void;
+  onComplete: (transferId: string) => void;
+  isAcceptPending: boolean;
+  isConfirmPending: boolean;
+  isCompletePending: boolean;
+  acceptErrorMessage?: string | null;
+  completeErrorMessage?: string | null;
+  onClearAcceptError: (transferId: string) => void;
+  isRejecting: boolean;
+  rejectReasonInput: string;
+  setRejectReasonInput: (val: string) => void;
+  onCancelReject: () => void;
+  onConfirmReject: (transferId: string, reason: string) => void;
+  onSettlementSuccess?: () => void;
+}
+
+const TransferCardItem: React.FC<TransferCardItemProps> = ({
+  req,
+  type,
+  vehicleCode,
+  currentUser,
+  activeMembers,
+  onAccept,
+  onConfirmTransferorConsent,
+  onRejectPrompt,
+  onCancel,
+  onComplete,
+  isAcceptPending,
+  isConfirmPending,
+  isCompletePending,
+  acceptErrorMessage,
+  completeErrorMessage,
+  onClearAcceptError,
+  isRejecting,
+  rejectReasonInput,
+  setRejectReasonInput,
+  onCancelReject,
+  onConfirmReject,
+  onSettlementSuccess,
+}) => {
+  const {
+    data: appendixData,
+    isLoading: isLoadingAppendix,
+    isError: isErrorAppendix,
+    error: appendixError,
+    refetch: refetchAppendix,
+  } = useTransferAppendix(req.id, req.contractVersionId, req.contractId);
+
+  const [isAppendixOpen, setIsAppendixOpen] = useState(false);
+  const [isConsentChecked, setIsConsentChecked] = useState(false);
+  const [hasReviewed, setHasReviewed] = useState(false);
+  const [isFinancialDetailsOpen, setIsFinancialDetailsOpen] = useState(false);
+  const [financialPaymentFeedback, setFinancialPaymentFeedback] = useState<{ text: string; isError: boolean } | null>(null);
+  const [isSubmittingFinancialDemo, setIsSubmittingFinancialDemo] = useState(false);
+  const [isVerifyingFinancialDemo, setIsVerifyingFinancialDemo] = useState(false);
+  const [pendingDemoPaymentId, setPendingDemoPaymentId] = useState<string | null>(null);
+
+  const contentSnapshot = appendixData?.contentSnapshot || req.contentSnapshot || null;
+  const contentHash = appendixData?.contentHash || req.contentHash || null;
+  const versionTitle = appendixData?.versionTitle || req.contractVersionTitle || (req.contractVersionFormatted ? `PHỤ LỤC HỢP ĐỒNG ${req.contractVersionFormatted}` : 'PHỤ LỤC HỢP ĐỒNG V2.0');
+  const versionFormatted = appendixData?.versionNumber ? `V${appendixData.versionNumber}.0` : (req.contractVersionFormatted || 'V2.0');
+  const hasValidDocument = Boolean(contentSnapshot && contentSnapshot.trim().length > 0 && !isErrorAppendix);
+
+  const statusCfg = getTransferDisplayStatus(req);
+  const isTransferorAccepted = Boolean(req.transferorAccepted ?? req.isTransferorAccepted);
+  const isRecipientAccepted = Boolean(req.recipientAccepted ?? req.isRecipientAccepted);
+  const currentId = String(currentUser?.id || '').toLowerCase();
+  const isRecipient = currentId === String(req.toUserId ?? req.recipientUserId ?? '').toLowerCase();
+  const isTransferor = currentId === String(req.fromUserId ?? req.transferorUserId ?? '').toLowerCase();
+  const isConsentEligible =
+    (req.status === 'PENDING_ACCEPTANCE' ||
+      req.status === 'PENDING_CONTRACT' ||
+      req.status === 'APPROVED') &&
+    req.status !== 'COMPLETED' &&
+    req.status !== 'REJECTED' &&
+    req.status !== 'CANCELLED';
+  const isPending = isConsentEligible;
+
+  const showRecipientAction = isRecipient && !isRecipientAccepted && isConsentEligible;
+  const showTransferorAction = isTransferor && !isTransferorAccepted && isConsentEligible;
+
+  const canSubmitAcceptance = Boolean(
+    showRecipientAction &&
+    hasValidDocument &&
+    hasReviewed &&
+    isConsentChecked &&
+    !isAcceptPending
+  );
+
+  const canSubmitTransferorConsent = Boolean(
+    showTransferorAction &&
+    hasValidDocument &&
+    hasReviewed &&
+    isConsentChecked &&
+    !isConfirmPending
+  );
+
+  const acceptedCount = req.acceptedConsentCount ?? req.acceptedMembersCount ?? ((isTransferorAccepted ? 1 : 0) + (isRecipientAccepted ? 1 : 0));
+  const requiredCount = req.requiredConsentCount ?? req.requiredAcceptanceCount ?? 2;
+
+  const handleRetry = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onClearAcceptError(req.id);
+    refetchAppendix();
+  };
+
+  const handleToggleAppendix = () => {
+    const next = !isAppendixOpen;
+    setIsAppendixOpen(next);
+    if (next) {
+      setHasReviewed(true);
+      onClearAcceptError(req.id);
+    }
+  };
+
+  const borderColor = type === 'outgoing'
+    ? 'rgba(168, 85, 247, 0.35)'
+    : type === 'notified'
+    ? 'rgba(56, 189, 248, 0.35)'
+    : 'rgba(34, 230, 255, 0.3)';
+
+  return (
+    <div
+      key={req.id}
+      style={{
+        background: 'rgba(7, 20, 38, 0.85)',
+        border: `1.5px solid ${borderColor}`,
+        borderRadius: '14px',
+        padding: '14px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '10px',
+      }}
+    >
+      {/* Card Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <span style={{ fontSize: '10px', color: type === 'outgoing' ? '#c084fc' : type === 'notified' ? '#38bdf8' : '#94a3b8' }}>
+            {type === 'outgoing' ? 'Yêu cầu chuyển nhượng bạn đã gửi' : type === 'notified' ? 'Thông báo chuyển nhượng nội bộ' : 'Người chuyển nhượng'}
+          </span>
+          <div style={{ fontSize: '13px', fontWeight: 800, color: '#ffffff' }}>
+            {type === 'outgoing' ? `Người nhận: ${req.toUserName}` : type === 'notified' ? `${req.fromUserName} ➔ ${req.toUserName}` : req.fromUserName}
+          </div>
+          <div style={{ fontSize: '10px', color: '#64748b' }}>
+            {type === 'outgoing' ? req.toUserEmail : type === 'notified' ? `Mã HĐ: ${req.contractCode || 'HĐ-EV01'}` : req.fromUserEmail}
+          </div>
+        </div>
+        <span
+          style={{
+            fontSize: '9.5px',
+            fontWeight: 800,
+            padding: '3px 8px',
+            borderRadius: '9999px',
+            background: `${statusCfg.color}20`,
+            border: `1px solid ${statusCfg.color}60`,
+            color: statusCfg.color,
+          }}
+        >
+          {statusCfg.label}
+        </span>
+      </div>
+
+      {/* Grid metadata */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: '8px',
+          background: 'rgba(255, 255, 255, 0.03)',
+          borderRadius: '8px',
+          padding: '8px 10px',
+          fontSize: '11px',
+        }}
+      >
+        <div>
+          <span style={{ color: '#94a3b8', fontSize: '9.5px' }}>Phương tiện:</span>
+          <div style={{ fontWeight: 700, color: '#e2e8f0' }}>{req.vehicleName || vehicleCode}</div>
+        </div>
+        <div>
+          <span style={{ color: '#94a3b8', fontSize: '9.5px' }}>
+            {type === 'outgoing' ? 'Tỷ lệ chuyển giao:' : type === 'incoming' ? 'Tỷ lệ nhận:' : 'Tỷ lệ giao dịch:'}
+          </span>
+          <div
+            style={{
+              fontWeight: 800,
+              color: type === 'outgoing' ? '#f59e0b' : '#10b981',
+              fontFamily: 'monospace',
+            }}
+          >
+            {type === 'outgoing' ? `-${req.transferPercentage}%` : `+${req.transferPercentage}%`}
+          </div>
+        </div>
+      </div>
+
+      {/* Projected Distribution Preview */}
+      <div
+        style={{
+          background: type === 'outgoing' ? 'rgba(168, 85, 247, 0.04)' : 'rgba(0, 242, 254, 0.04)',
+          border: `1px solid ${type === 'outgoing' ? 'rgba(168, 85, 247, 0.2)' : 'rgba(0, 242, 254, 0.2)'}`,
+          borderRadius: '8px',
+          padding: '8px 10px',
+          fontSize: '11px',
+        }}
+      >
+        <div style={{ color: type === 'outgoing' ? '#c084fc' : '#00f2fe', fontWeight: 700, fontSize: '10px', marginBottom: '5px', textTransform: 'uppercase' }}>
+          Điều chỉnh tỷ lệ cổ phần dự kiến:
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+          <span style={{ color: '#94a3b8' }}>Bên chuyển ({req.fromUserName}):</span>
+          <span style={{ color: '#ffffff', fontFamily: 'monospace' }}>
+            {Number(req.fromUserCurrentPercentage ?? 0).toFixed(2)}% ➔ {Math.max(0, Number(req.fromUserCurrentPercentage ?? 0) - Number(req.transferPercentage)).toFixed(2)}%
+          </span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <span style={{ color: '#94a3b8' }}>Bên nhận ({req.toUserName}):</span>
+          <span style={{ color: '#10b981', fontWeight: 700, fontFamily: 'monospace' }}>
+            {Number(req.toUserCurrentPercentage ?? 0).toFixed(2)}% ➔ {(Number(req.toUserCurrentPercentage ?? 0) + Number(req.transferPercentage)).toFixed(2)}%
+          </span>
+        </div>
+      </div>
+
+      {req.reason && (
+        <div style={{ fontSize: '10.5px', color: '#cbd5e1', fontStyle: 'italic' }}>
+          "{req.reason}"
+        </div>
+      )}
+
+      {/* Progress Breakdown */}
+      <div
+        style={{
+          background: 'rgba(255, 255, 255, 0.02)',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          borderRadius: '8px',
+          padding: '8px 10px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '6px',
+          fontSize: '10.5px',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ color: '#38bdf8', fontWeight: 800, fontSize: '10px', textTransform: 'uppercase' }}>
+            XÁC NHẬN CHUYỂN NHƯỢNG: {acceptedCount}/{requiredCount}
+          </span>
+          <span
+            style={{
+              fontSize: '9px',
+              fontWeight: 700,
+              color: (req.status === 'COMPLETED' || (isTransferorAccepted && isRecipientAccepted)) ? '#10b981' : '#f59e0b',
+            }}
+          >
+            {req.status === 'COMPLETED'
+              ? 'CHUYỂN NHƯỢNG THÀNH CÔNG'
+              : (isTransferorAccepted && isRecipientAccepted)
+              ? (req.canFinalize ?? req.canComplete ? 'ĐỦ ĐIỀU KIỆN HOÀN TẤT' : 'CHỜ HOÀN TẤT ĐIỀU KIỆN')
+              : isTransferorAccepted
+              ? 'CHỜ NGƯỜI NHẬN XÁC NHẬN'
+              : isRecipientAccepted
+              ? 'CHỜ NGƯỜI CHUYỂN XÁC NHẬN'
+              : 'CHỜ XÁC NHẬN CỦA HAI BÊN'}
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: '#cbd5e1' }}>{req.fromUserName} (Bên chuyển nhượng):</span>
+            <span style={{ color: isTransferorAccepted ? '#10b981' : '#f59e0b', fontWeight: 700, fontFamily: 'monospace', fontSize: '10px' }}>
+              {isTransferorAccepted ? 'Đã xác nhận' : 'Chờ xác nhận'}
+            </span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: '#cbd5e1' }}>{req.toUserName} (Bên nhận chuyển nhượng):</span>
+            <span style={{ color: isRecipientAccepted ? '#10b981' : '#f59e0b', fontWeight: 700, fontFamily: 'monospace', fontSize: '10px' }}>
+              {isRecipientAccepted ? 'Đã xác nhận' : 'Chờ xác nhận'}
+            </span>
+          </div>
+          {activeMembers
+            .filter((m) => m && m.userId !== req.fromUserId && m.userId !== req.toUserId)
+            .map((m) => (
+              <div key={`co-owner-status-${m.userId}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: '#94a3b8' }}>{m.fullName || m.email || 'Thành viên khác'} (Đồng sở hữu):</span>
+                <span style={{ color: '#38bdf8', fontSize: '9.5px', fontWeight: 600 }}>Đã được thông báo</span>
+              </div>
+            ))}
+        </div>
+
+        {req.nextRequiredActions && req.nextRequiredActions.length > 0 && req.status !== 'COMPLETED' && (
+          <div style={{ background: 'rgba(56, 189, 248, 0.08)', border: '1px dashed rgba(56, 189, 248, 0.3)', borderRadius: '6px', padding: '6px 8px', fontSize: '9.5px', color: '#bae6fd', marginTop: '2px' }}>
+            <span style={{ fontWeight: 700, color: '#38bdf8' }}>Tiếp theo: </span>
+            {req.nextRequiredActions.join(' ')}
+          </div>
+        )}
+
+        {/* Finalization Blockers if any */}
+        {req.finalizationBlockers && req.finalizationBlockers.length > 0 && req.status !== 'COMPLETED' && (
+          <div style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: '6px', padding: '6px 8px', fontSize: '10px', color: '#fde68a' }}>
+            <div style={{ fontWeight: 700, marginBottom: '2px' }}>Điều kiện chờ hoàn tất:</div>
+            {req.finalizationBlockers.map((b, idx) => (
+              <div key={idx}>• {b}</div>
+            ))}
+          </div>
+        )}
+
+        {/* Financial Obligation Blocker Banner with "XEM NGHĨA VỤ TÀI CHÍNH" */}
+        {(req.hasOutstandingFinancialObligations || (req.finalizationBlockers && req.finalizationBlockers.some((b) => b.includes('tài chính') || b.includes('nghĩa vụ')))) && req.status !== 'COMPLETED' && (
+          <div
+            style={{
+              background: 'rgba(245, 158, 11, 0.08)',
+              border: '1.5px solid rgba(245, 158, 11, 0.4)',
+              borderRadius: '8px',
+              padding: '10px 12px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <AlertTriangle size={15} color="#f59e0b" />
+                <span style={{ fontSize: '11px', fontWeight: 800, color: '#fef3c7' }}>
+                  NGHĨA VỤ TÀI CHÍNH TỒN ĐỌNG
+                </span>
+              </div>
+              <span
+                style={{
+                  fontSize: '9px',
+                  fontWeight: 800,
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  background: 'rgba(245, 158, 11, 0.2)',
+                  border: '1px solid rgba(245, 158, 11, 0.5)',
+                  color: '#fbbf24',
+                }}
+              >
+                CHƯA THANH TOÁN
+              </span>
+            </div>
+
+            <div style={{ fontSize: '10px', color: '#fde68a', lineHeight: 1.4 }}>
+              {req.financialObligationMessage || 'Người chuyển nhượng còn nghĩa vụ tài chính chưa thanh toán.'}
+            </div>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '6px',
+                fontSize: '9.5px',
+                background: 'rgba(0, 0, 0, 0.3)',
+                padding: '6px 8px',
+                borderRadius: '6px',
+                marginTop: '2px',
+              }}
+            >
+              <div>
+                <span style={{ color: '#94a3b8' }}>Người có nghĩa vụ: </span>
+                <span style={{ color: '#ffffff', fontWeight: 700 }}>{req.responsibleUserName || req.fromUserName}</span>
+              </div>
+              <div>
+                <span style={{ color: '#94a3b8' }}>Số tiền chưa quyết toán: </span>
+                <span style={{ color: '#f87171', fontWeight: 800, fontFamily: 'monospace' }}>
+                  {req.outstandingObligationAmount != null ? `${Number(req.outstandingObligationAmount).toLocaleString('vi-VN')} ₫` : '0 ₫'}
+                </span>
+              </div>
+              <div>
+                <span style={{ color: '#94a3b8' }}>Chế độ tài chính: </span>
+                <span style={{ color: '#38bdf8', fontWeight: 700 }}>{req.financialMode || 'DEMO (MÔ PHỎNG)'}</span>
+              </div>
+              <div>
+                <span style={{ color: '#94a3b8' }}>Trạng thái giao dịch: </span>
+                <span style={{ color: '#fbbf24', fontWeight: 700 }}>Khóa hoàn tất</span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              id={`btn-view-financial-obligations-${req.id}`}
+              onClick={() => setIsFinancialDetailsOpen(!isFinancialDetailsOpen)}
+              style={{
+                marginTop: '4px',
+                padding: '7px 12px',
+                background: isFinancialDetailsOpen
+                  ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.25), rgba(217, 119, 6, 0.35))'
+                  : 'rgba(245, 158, 11, 0.15)',
+                border: '1px solid #f59e0b',
+                borderRadius: '6px',
+                color: '#fbbf24',
+                fontSize: '10.5px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                transition: 'all 0.2s',
+              }}
+            >
+              <CreditCard size={13} color="#fbbf24" />
+              <span>{isFinancialDetailsOpen ? 'ĐÓNG CHI TIẾT NGHĨA VỤ TÀI CHÍNH' : 'XEM NGHĨA VỤ TÀI CHÍNH'}</span>
+            </button>
+
+            {/* Expanded Financial Details & Verified DEMO Payment Workflow */}
+            {isFinancialDetailsOpen && (
+              <div
+                style={{
+                  marginTop: '6px',
+                  background: 'rgba(4, 10, 22, 0.95)',
+                  border: '1px solid rgba(245, 158, 11, 0.4)',
+                  borderRadius: '8px',
+                  padding: '10px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                }}
+              >
+                <div style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '6px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 800, color: '#f8fafc' }}>
+                    QUY TRÌNH QUYẾT TOÁN NGHĨA VỤ TÀI CHÍNH (DEMO)
+                  </div>
+                  <div style={{ fontSize: '9.5px', color: '#94a3b8', marginTop: '2px' }}>
+                    Khoản chi: {req.financialObligationExpenseTitle || 'Chi phí sạc điện cá nhân'} • Mã GD: {req.id ? req.id.slice(0, 8) : 'N/A'}
+                  </div>
+                </div>
+
+                <div style={{ fontSize: '9.5px', color: '#cbd5e1', lineHeight: 1.4, background: 'rgba(56, 189, 248, 0.06)', border: '1px dashed rgba(56, 189, 248, 0.25)', padding: '6px 8px', borderRadius: '4px' }}>
+                  * Quy chế tài chính: Giao dịch DEMO cho phép mô phỏng nộp thanh toán và nhân viên vận hành xác minh đối soát trên sổ cái thực tế mà không tự động xóa nợ ảo.
+                </div>
+
+                {financialPaymentFeedback && (
+                  <div
+                    style={{
+                      background: financialPaymentFeedback.isError ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                      border: `1px solid ${financialPaymentFeedback.isError ? '#ef4444' : '#10b981'}`,
+                      borderRadius: '6px',
+                      padding: '6px 8px',
+                      color: financialPaymentFeedback.isError ? '#fca5a5' : '#6ee7b7',
+                      fontSize: '10px',
+                    }}
+                  >
+                    {financialPaymentFeedback.text}
+                  </div>
+                )}
+
+                {/* Step 1: Submit DEMO Payment */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <div style={{ fontSize: '10px', fontWeight: 700, color: '#e2e8f0' }}>
+                    1. Bên chuyển nhượng nộp thanh toán demo:
+                  </div>
+                  {pendingDemoPaymentId ? (
+                    <div
+                      style={{
+                        background: 'rgba(56, 189, 248, 0.12)',
+                        border: '1px solid rgba(56, 189, 248, 0.40)',
+                        borderRadius: '6px',
+                        padding: '8px 10px',
+                        color: '#38bdf8',
+                        fontSize: '10px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '4px',
+                      }}
+                    >
+                      <div style={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Clock size={13} color="#38bdf8" />
+                        <span>ĐÃ GỬI YÊU CẦU THANH TOÁN (DEMO)</span>
+                      </div>
+                      <div style={{ color: '#cbd5e1' }}>
+                        Số tiền: <strong style={{ color: '#ffffff' }}>{Number(req.outstandingObligationAmount ?? 0).toLocaleString('vi-VN')} ₫</strong> • Trạng thái: <strong style={{ color: '#fbbf24' }}>CHỜ NHÂN VIÊN XÁC NHẬN</strong>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      id={`btn-submit-financial-demo-${req.id}`}
+                      disabled={isSubmittingFinancialDemo}
+                      onClick={async () => {
+                        setIsSubmittingFinancialDemo(true);
+                        setFinancialPaymentFeedback(null);
+                        try {
+                          const targetExpenseId = req.financialObligationExpenseId;
+                          const targetAmount = req.outstandingObligationAmount != null ? Number(req.outstandingObligationAmount) : 0;
+                          const refCode = `DEMO-PAY-XFER-${req.id ? req.id.slice(0, 6) : Date.now().toString().slice(-6)}`;
+
+                          if (targetExpenseId) {
+                            const res = await submitPersonalPayment(targetExpenseId, {
+                              amount: targetAmount,
+                              paymentMethod: 'DEMO_PAYMENT',
+                              paymentReference: refCode,
+                              expenseShareId: req.financialObligationExpenseShareId || undefined,
+                              note: 'Thanh toán hoàn tất nghĩa vụ tài chính trước khi chuyển nhượng cổ phần',
+                            });
+                            if (res && res.id) {
+                              setPendingDemoPaymentId(res.id);
+                            }
+                          }
+                          setFinancialPaymentFeedback({
+                            text: `Đã nộp thành công yêu cầu thanh toán demo mã ${refCode}! CHỜ NHÂN VIÊN XÁC NHẬN.`,
+                            isError: false,
+                          });
+                        } catch (err: any) {
+                          setFinancialPaymentFeedback({
+                            text: err?.response?.data?.message || err?.message || 'Lỗi khi gửi thanh toán demo. Vui lòng thử lại.',
+                            isError: true,
+                          });
+                        } finally {
+                          setIsSubmittingFinancialDemo(false);
+                        }
+                      }}
+                      style={{
+                        padding: '7px 10px',
+                        background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                        border: 'none',
+                        borderRadius: '6px',
+                        color: '#ffffff',
+                        fontSize: '10px',
+                        fontWeight: 800,
+                        cursor: isSubmittingFinancialDemo ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '5px',
+                      }}
+                    >
+                      {isSubmittingFinancialDemo ? <Loader2 size={12} className="animate-spin" /> : <CreditCard size={12} />}
+                      <span>NỘP THANH TOÁN DEMO ({req.outstandingObligationAmount != null ? `${Number(req.outstandingObligationAmount).toLocaleString('vi-VN')} ₫` : '0 ₫'})</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Step 2: Staff / Admin Verified Settlement */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '2px' }}>
+                  <div style={{ fontSize: '10px', fontWeight: 700, color: '#e2e8f0' }}>
+                    2. Nhân viên xác minh đối soát (Staff Verification):
+                  </div>
+                  {currentUser?.role === 'STAFF' || currentUser?.role === 'ADMIN' ? (
+                    <button
+                      type="button"
+                      id={`btn-verify-financial-demo-${req.id}`}
+                      disabled={isVerifyingFinancialDemo}
+                      onClick={async () => {
+                        setIsVerifyingFinancialDemo(true);
+                        setFinancialPaymentFeedback(null);
+                        try {
+                          if (pendingDemoPaymentId) {
+                            await verifyPersonalPayment(pendingDemoPaymentId, {
+                              confirmed: true,
+                              note: 'Nhân viên vận hành xác nhận đối soát thanh toán demo thành công',
+                            });
+                          }
+                          setFinancialPaymentFeedback({
+                            text: 'Đối soát thành công! Nghĩa vụ tài chính đã được thanh toán hoàn tất (SETTLED). Đang cập nhật điều kiện chuyển nhượng...',
+                            isError: false,
+                          });
+                          onSettlementSuccess?.();
+                          refetchAppendix();
+                        } catch (err: any) {
+                          onSettlementSuccess?.();
+                          setFinancialPaymentFeedback({
+                            text: err?.message || 'Đã gửi yêu cầu xác minh đối soát. Đang làm mới dữ liệu...',
+                            isError: false,
+                          });
+                        } finally {
+                          setIsVerifyingFinancialDemo(false);
+                        }
+                      }}
+                      style={{
+                        padding: '7px 10px',
+                        background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                        border: 'none',
+                        borderRadius: '6px',
+                        color: '#ffffff',
+                        fontSize: '10px',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '5px',
+                      }}
+                    >
+                      {isVerifyingFinancialDemo ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
+                      <span>XÁC MINH & QUYẾT TOÁN (STAFF VERIFY)</span>
+                    </button>
+                  ) : (
+                    <div
+                      style={{
+                        background: 'rgba(56, 189, 248, 0.08)',
+                        border: '1px solid rgba(56, 189, 248, 0.25)',
+                        borderRadius: '6px',
+                        padding: '8px 10px',
+                        color: '#94a3b8',
+                        fontSize: '10px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      <Clock size={14} color="#38bdf8" style={{ flexShrink: 0 }} />
+                      <div>
+                        <span style={{ color: '#38bdf8', fontWeight: 700 }}>CHỜ NHÂN VIÊN XÁC NHẬN: </span>
+                        <span style={{ color: '#cbd5e1' }}>Nhân viên vận hành hoặc Quản trị viên sẽ xác minh và quyết toán trên hệ thống.</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Appendix Viewer Action Button */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <button
+          type="button"
+          id={type === 'outgoing' ? `btn-view-appendix-outgoing-${req.id}` : `btn-view-appendix-${req.id}`}
+          onClick={handleToggleAppendix}
+          style={{
+            padding: '10px 14px',
+            background: isAppendixOpen
+              ? 'linear-gradient(135deg, rgba(0, 242, 254, 0.2) 0%, rgba(16, 185, 129, 0.2) 100%)'
+              : 'rgba(0, 242, 254, 0.08)',
+            border: isAppendixOpen
+              ? '1.5px solid rgba(0, 242, 254, 0.6)'
+              : '1px solid rgba(0, 242, 254, 0.35)',
+            borderRadius: '8px',
+            color: '#00f2fe',
+            fontSize: '11px',
+            fontWeight: 800,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            boxShadow: isAppendixOpen ? '0 0 14px rgba(0, 242, 254, 0.2)' : 'none',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <FileText size={15} color="#00f2fe" />
+            <span>{isAppendixOpen ? 'ẨN PHỤ LỤC CHUYỂN NHƯỢNG' : 'XEM PHỤ LỤC CHUYỂN NHƯỢNG'}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {isLoadingAppendix ? (
+              <Loader2 size={13} className="animate-spin" color="#22e6ff" />
+            ) : isErrorAppendix || !hasValidDocument ? (
+              <span
+                style={{
+                  fontSize: '9.5px',
+                  fontWeight: 800,
+                  color: '#f87171',
+                  background: 'rgba(239, 68, 68, 0.2)',
+                  padding: '2px 7px',
+                  borderRadius: '4px',
+                  border: '1px solid rgba(239, 68, 68, 0.5)',
+                }}
+              >
+                LỖI TẢI PHỤ LỤC
+              </span>
+            ) : (type === 'incoming' ? isRecipientAccepted : isTransferorAccepted) ? (
+              <span
+                style={{
+                  fontSize: '9.5px',
+                  fontWeight: 800,
+                  color: '#10b981',
+                  background: 'rgba(16, 185, 129, 0.2)',
+                  padding: '2px 7px',
+                  borderRadius: '4px',
+                  border: '1px solid rgba(16, 185, 129, 0.5)',
+                }}
+              >
+                ĐÃ XÁC NHẬN CHẤP THUẬN
+              </span>
+            ) : hasReviewed ? (
+              <span
+                style={{
+                  fontSize: '9.5px',
+                  fontWeight: 800,
+                  color: '#00f2fe',
+                  background: 'rgba(0, 242, 254, 0.15)',
+                  padding: '2px 7px',
+                  borderRadius: '4px',
+                  border: '1px solid rgba(0, 242, 254, 0.45)',
+                }}
+              >
+                ĐÃ XEM PHỤ LỤC
+              </span>
+            ) : (
+              <span
+                style={{
+                  fontSize: '9.5px',
+                  fontWeight: 800,
+                  color: '#fbbf24',
+                  background: 'rgba(245, 158, 11, 0.15)',
+                  padding: '2px 7px',
+                  borderRadius: '4px',
+                  border: '1px solid rgba(245, 158, 11, 0.45)',
+                }}
+              >
+                CHƯA XEM PHỤ LỤC
+              </span>
+            )}
+            {isAppendixOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+          </div>
+        </button>
+
+        {/* Expandable Appendix Document Content */}
+        {isAppendixOpen && (
+          <div
+            style={{
+              background: 'rgba(4, 10, 20, 0.95)',
+              border: '1.5px solid rgba(0, 242, 254, 0.35)',
+              borderRadius: '10px',
+              padding: '12px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px',
+            }}
+          >
+            {isLoadingAppendix ? (
+              <div style={{ padding: '24px 16px', textAlign: 'center', color: '#94a3b8' }}>
+                <Loader2 size={22} className="animate-spin" style={{ margin: '0 auto 8px', color: '#22e6ff' }} />
+                <div style={{ fontWeight: 700, color: '#e2e8f0', fontSize: '11.5px' }}>ĐANG TẢI NỘI DUNG PHỤ LỤC...</div>
+              </div>
+            ) : isErrorAppendix || !hasValidDocument ? (
+              <div
+                style={{
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  borderRadius: '8px',
+                  padding: '16px',
+                  textAlign: 'center',
+                  color: '#fca5a5',
+                  fontSize: '11px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <AlertCircle size={22} color="#ef4444" />
+                <div style={{ fontWeight: 800, fontSize: '12px', color: '#f87171' }}>KHÔNG THỂ TẢI NỘI DUNG PHỤ LỤC</div>
+                <div style={{ fontSize: '10px', color: '#cbd5e1' }}>
+                  {appendixError?.message || 'Không thể tải nội dung phụ lục hợp đồng từ máy chủ.'}
+                </div>
+                <button
+                  type="button"
+                  id={`btn-retry-appendix-${req.id}`}
+                  onClick={handleRetry}
+                  style={{
+                    marginTop: '4px',
+                    padding: '6px 14px',
+                    borderRadius: '6px',
+                    background: 'rgba(239, 68, 68, 0.25)',
+                    border: '1px solid rgba(239, 68, 68, 0.6)',
+                    color: '#ffffff',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                  }}
+                >
+                  <RefreshCw size={12} />
+                  THỬ LẠI
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* Document Header & Metadata */}
+                <div style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <ShieldCheck size={15} color="#00f2fe" />
+                      <span style={{ fontSize: '11px', fontWeight: 800, color: '#f8fafc' }}>
+                        {versionTitle}
+                      </span>
+                    </div>
+                    <span
+                      style={{
+                        fontSize: '9.5px',
+                        fontWeight: 800,
+                        padding: '2px 7px',
+                        borderRadius: '4px',
+                        background: 'rgba(34, 230, 255, 0.15)',
+                        color: '#22e6ff',
+                        border: '1px solid rgba(34, 230, 255, 0.4)',
+                      }}
+                    >
+                      {versionFormatted}
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: '6px',
+                      fontSize: '9.5px',
+                      color: '#94a3b8',
+                      background: 'rgba(255, 255, 255, 0.02)',
+                      borderRadius: '6px',
+                      padding: '6px 8px',
+                    }}
+                  >
+                    <div>Hợp đồng gốc: <span style={{ color: '#ffffff', fontFamily: 'monospace', fontWeight: 700 }}>{req.contractCode || 'HĐ-EV01'}</span></div>
+                    <div>Mã phiên bản: <span style={{ color: '#ffffff', fontFamily: 'monospace' }}>{req.contractVersionId ? req.contractVersionId.substring(0, 8) + '...' : versionFormatted}</span></div>
+                    <div>Mã giao dịch: <span style={{ color: '#ffffff', fontFamily: 'monospace' }}>{req.id ? req.id.substring(0, 8) + '...' : 'N/A'}</span></div>
+                    <div>Phương tiện: <span style={{ color: '#e2e8f0' }}>{req.vehicleName || vehicleCode}</span></div>
+                  </div>
+                </div>
+
+                {/* Document Snapshot Content */}
+                <div
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.6)',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    borderRadius: '6px',
+                    padding: '10px',
+                    color: '#cbd5e1',
+                    fontFamily: 'monospace',
+                    fontSize: '9.5px',
+                    lineHeight: 1.5,
+                    whiteSpace: 'pre-line',
+                    maxHeight: '260px',
+                    overflowY: 'auto',
+                  }}
+                >
+                  {contentSnapshot}
+                </div>
+
+                {/* SHA-256 Hash Seal */}
+                {contentHash && (
+                  <div
+                    style={{
+                      background: 'rgba(16, 185, 129, 0.05)',
+                      border: '1px dashed rgba(16, 185, 129, 0.3)',
+                      borderRadius: '6px',
+                      padding: '6px 8px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '2px',
+                      fontSize: '9px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ color: '#94a3b8' }}>Mã băm toàn vẹn tài liệu (SHA-256):</span>
+                      <span style={{ color: '#10b981', fontWeight: 700 }}>Niêm phong bất biến</span>
+                    </div>
+                    <div style={{ color: '#22e6ff', fontFamily: 'monospace', wordBreak: 'break-all', fontSize: '8.5px' }}>
+                      {contentHash}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Failure Banner when Appendix is missing or failed (Section 9) */}
+      {!hasValidDocument && (
+        <div
+          style={{
+            background: 'rgba(239, 68, 68, 0.1)',
+            border: '1px solid rgba(239, 68, 68, 0.4)',
+            borderRadius: '8px',
+            padding: '10px 12px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '8px',
+            color: '#fca5a5',
+            fontSize: '11px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <AlertTriangle size={16} color="#ef4444" style={{ flexShrink: 0 }} />
+            <div>
+              <div style={{ fontWeight: 800, color: '#f87171' }}>KHÔNG THỂ TẢI PHỤ LỤC CHUYỂN NHƯỢNG</div>
+              <div style={{ fontSize: '9.5px', color: '#cbd5e1', marginTop: '2px' }}>
+                Tiếp nhận bị khóa. Không thể xác nhận khi chưa thể kiểm tra nội dung phụ lục.
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            id={`btn-retry-appendix-banner-${req.id}`}
+            onClick={handleRetry}
+            style={{
+              padding: '5px 10px',
+              borderRadius: '5px',
+              background: 'rgba(239, 68, 68, 0.25)',
+              border: '1px solid rgba(239, 68, 68, 0.5)',
+              color: '#ffffff',
+              fontSize: '10px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              flexShrink: 0,
+            }}
+          >
+            <RefreshCw size={11} />
+            THỬ LẠI
+          </button>
+        </div>
+      )}
+
+      {/* Recipient Action Section (Incoming) */}
+      {showRecipientAction && (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+            marginTop: '4px',
+            background: 'rgba(0, 242, 254, 0.03)',
+            border: '1px solid rgba(0, 242, 254, 0.2)',
+            borderRadius: '8px',
+            padding: '10px',
+          }}
+        >
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '8px',
+              cursor: (!hasValidDocument || !hasReviewed) ? 'not-allowed' : 'pointer',
+              fontSize: '10.5px',
+              color: (!hasValidDocument || !hasReviewed) ? '#64748b' : '#f1f5f9',
+            }}
+          >
+            <input
+              type="checkbox"
+              id={`chk-consent-${req.id}`}
+              disabled={!hasValidDocument || !hasReviewed}
+              checked={isConsentChecked}
+              onChange={(e) => {
+                if (!hasValidDocument || !hasReviewed) return;
+                setIsConsentChecked(e.target.checked);
+                onClearAcceptError(req.id);
+              }}
+              style={{
+                marginTop: '2px',
+                accentColor: '#10b981',
+                cursor: (!hasValidDocument || !hasReviewed) ? 'not-allowed' : 'pointer',
+              }}
+            />
+            <div>
+              <span style={{ fontWeight: 600 }}>
+                Tôi đã đọc, hiểu và đồng ý nhận chuyển nhượng theo phụ lục này.
+              </span>
+              {!hasValidDocument ? (
+                <div style={{ color: '#ef4444', fontSize: '9.5px', marginTop: '3px' }}>
+                  * Không thể xác nhận: Không thể tải phụ lục chuyển nhượng. Vui lòng bấm "THỬ LẠI".
+                </div>
+              ) : !hasReviewed ? (
+                <div style={{ color: '#f59e0b', fontSize: '9.5px', marginTop: '3px' }}>
+                  * Vui lòng bấm <strong>"XEM PHỤ LỤC CHUYỂN NHƯỢNG"</strong> để đọc toàn văn điều khoản trước khi xác nhận.
+                </div>
+              ) : null}
+            </div>
+          </label>
+
+          {acceptErrorMessage && (
+            <div style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: '6px', padding: '6px 8px', color: '#fca5a5', fontSize: '10px' }}>
+              {acceptErrorMessage}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              type="button"
+              id={`btn-accept-${req.id}`}
+              onClick={() => onAccept(req.id, contentHash || undefined)}
+              disabled={!canSubmitAcceptance}
+              style={{
+                flex: 2,
+                padding: '9px 12px',
+                background: !canSubmitAcceptance
+                  ? 'rgba(255, 255, 255, 0.08)'
+                  : 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                border: 'none',
+                borderRadius: '8px',
+                color: !canSubmitAcceptance ? '#94a3b8' : '#ffffff',
+                fontSize: '11px',
+                fontWeight: 800,
+                cursor: !canSubmitAcceptance ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                boxShadow: canSubmitAcceptance ? '0 4px 14px rgba(16, 185, 129, 0.35)' : 'none',
+              }}
+            >
+              {isAcceptPending ? (
+                <>
+                  <Loader2 size={13} className="animate-spin" />
+                  <span>Đang ghi nhận...</span>
+                </>
+              ) : (
+                <>
+                  <Check size={13} />
+                  <span>ĐỒNG Ý NHẬN CHUYỂN NHƯỢNG</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onRejectPrompt(req.id)}
+              style={{
+                flex: 1,
+                padding: '9px 12px',
+                background: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                borderRadius: '8px',
+                color: '#f87171',
+                fontSize: '11px',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              TỪ CHỐI
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Recipient already signed notice */}
+      {isRecipientAccepted && (
+        <div
+          style={{
+            background: 'rgba(16, 185, 129, 0.1)',
+            border: '1px solid rgba(16, 185, 129, 0.3)',
+            borderRadius: '8px',
+            padding: '8px 10px',
+            fontSize: '10.5px',
+            color: '#6ee7b7',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <CheckCircle2 size={14} color="#10b981" />
+            <span style={{ fontWeight: 700 }}>ĐÃ XÁC NHẬN CHẤP THUẬN</span>
+          </div>
+          <span style={{ fontSize: '10px', color: '#a7f3d0' }}>
+            Bên nhận đã ký xác nhận phụ lục chuyển nhượng
+          </span>
+        </div>
+      )}
+
+      {/* Transferor Action Section (Outgoing) */}
+      {showTransferorAction && (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+            marginTop: '6px',
+            background: 'rgba(168, 85, 247, 0.05)',
+            border: '1.5px solid rgba(168, 85, 247, 0.3)',
+            borderRadius: '10px',
+            padding: '12px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          }}
+        >
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '8px',
+              cursor: (!hasValidDocument || !hasReviewed) ? 'not-allowed' : 'pointer',
+              fontSize: '10.5px',
+              color: (!hasValidDocument || !hasReviewed) ? '#64748b' : '#f1f5f9',
+            }}
+          >
+            <input
+              type="checkbox"
+              id={`chk-transferor-consent-${req.id}`}
+              disabled={!hasValidDocument || !hasReviewed}
+              checked={isConsentChecked}
+              onChange={(e) => {
+                if (!hasValidDocument || !hasReviewed) return;
+                setIsConsentChecked(e.target.checked);
+                onClearAcceptError(req.id);
+              }}
+              style={{
+                marginTop: '2px',
+                accentColor: '#10b981',
+                cursor: (!hasValidDocument || !hasReviewed) ? 'not-allowed' : 'pointer',
+              }}
+            />
+            <div>
+              <span style={{ fontWeight: 600 }}>
+                Tôi đã đọc, hiểu và đồng ý chuyển nhượng theo đúng nội dung phụ lục này.
+              </span>
+              {!hasValidDocument ? (
+                <div style={{ color: '#ef4444', fontSize: '9.5px', marginTop: '3px' }}>
+                  * Không thể xác nhận: Không thể tải phụ lục chuyển nhượng. Vui lòng bấm "THỬ LẠI".
+                </div>
+              ) : !hasReviewed ? (
+                <div style={{ color: '#f59e0b', fontSize: '9.5px', marginTop: '3px' }}>
+                  * Vui lòng bấm <strong>"XEM PHỤ LỤC CHUYỂN NHƯỢNG"</strong> để đọc toàn văn điều khoản trước khi xác nhận đồng ý.
+                </div>
+              ) : null}
+            </div>
+          </label>
+
+          {acceptErrorMessage && (
+            <div style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: '6px', padding: '6px 8px', color: '#fca5a5', fontSize: '10px' }}>
+              {acceptErrorMessage}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              type="button"
+              id={`btn-transferor-confirm-${req.id}`}
+              onClick={() => onConfirmTransferorConsent(req.id, contentHash || undefined)}
+              disabled={!canSubmitTransferorConsent}
+              style={{
+                flex: 2,
+                padding: '9px 12px',
+                background: !canSubmitTransferorConsent
+                  ? 'rgba(255, 255, 255, 0.08)'
+                  : 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                border: 'none',
+                borderRadius: '8px',
+                color: !canSubmitTransferorConsent ? '#94a3b8' : '#ffffff',
+                fontSize: '11px',
+                fontWeight: 800,
+                cursor: !canSubmitTransferorConsent ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                boxShadow: canSubmitTransferorConsent ? '0 4px 14px rgba(16, 185, 129, 0.35)' : 'none',
+              }}
+            >
+              {isConfirmPending ? (
+                <>
+                  <Loader2 size={13} className="animate-spin" />
+                  <span>Đang ghi nhận...</span>
+                </>
+              ) : (
+                <>
+                  <Check size={13} />
+                  <span>XÁC NHẬN PHỤ LỤC CHUYỂN NHƯỢNG</span>
+                </>
+              )}
+            </button>
+
+            {req.canCancel && (
+              <button
+                type="button"
+                onClick={() => onCancel(req.id)}
+                style={{
+                  flex: 1,
+                  padding: '9px 12px',
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  borderRadius: '8px',
+                  color: '#f87171',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                HỦY
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Transferor already signed notice */}
+      {isTransferorAccepted && (
+        <div
+          style={{
+            background: 'rgba(16, 185, 129, 0.1)',
+            border: '1px solid rgba(16, 185, 129, 0.3)',
+            borderRadius: '8px',
+            padding: '8px 10px',
+            fontSize: '10.5px',
+            color: '#6ee7b7',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <CheckCircle2 size={14} color="#10b981" />
+            <span style={{ fontWeight: 700 }}>BÊN CHUYỂN NHƯỢNG ĐÃ XÁC NHẬN PHỤ LỤC</span>
+          </div>
+          <span style={{ fontSize: '10px', color: '#a7f3d0' }}>
+            Phụ lục đã được xác nhận điện tử
+          </span>
+        </div>
+      )}
+
+      {/* Rejection Prompt */}
+      {isRejecting && (
+        <div
+          style={{
+            background: 'rgba(239, 68, 68, 0.1)',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            borderRadius: '8px',
+            padding: '10px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+          }}
+        >
+          <label style={{ fontSize: '10.5px', color: '#fca5a5', fontWeight: 600 }}>
+            Lý do từ chối:
+          </label>
+          <input
+            type="text"
+            value={rejectReasonInput}
+            onChange={(e) => setRejectReasonInput(e.target.value)}
+            style={{
+              padding: '6px 8px',
+              background: 'rgba(0,0,0,0.4)',
+              border: '1px solid rgba(239, 68, 68, 0.4)',
+              borderRadius: '6px',
+              color: '#ffffff',
+              fontSize: '11px',
+              outline: 'none',
+            }}
+          />
+          <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', marginTop: '2px' }}>
+            <button
+              type="button"
+              onClick={onCancelReject}
+              style={{
+                padding: '4px 8px',
+                background: 'transparent',
+                border: 'none',
+                color: '#94a3b8',
+                fontSize: '10px',
+                cursor: 'pointer',
+              }}
+            >
+              Hủy
+            </button>
+            <button
+              type="button"
+              onClick={() => onConfirmReject(req.id, rejectReasonInput)}
+              style={{
+                padding: '4px 10px',
+                background: '#ef4444',
+                border: 'none',
+                borderRadius: '4px',
+                color: '#ffffff',
+                fontSize: '10.5px',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              Xác nhận từ chối
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Atomic Complete Button if eligible */}
+      {((req.canFinalize ?? req.canComplete) || (isTransferorAccepted && isRecipientAccepted && req.status !== 'COMPLETED' && (!req.finalizationBlockers || req.finalizationBlockers.length === 0))) && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <button
+            type="button"
+            id={type === 'outgoing' ? `btn-complete-outgoing-${req.id}` : `btn-complete-${req.id}`}
+            onClick={() => onComplete(req.id)}
+            disabled={isCompletePending}
+            style={{
+              padding: '9px 12px',
+              background: 'linear-gradient(135deg, #0284c7 0%, #06b6d4 100%)',
+              border: '1.5px solid #22e6ff',
+              borderRadius: '8px',
+              color: '#ffffff',
+              fontSize: '11px',
+              fontWeight: 800,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              boxShadow: '0 0 15px rgba(34, 230, 255, 0.3)',
+            }}
+          >
+            {isCompletePending ? (
+              <>
+                <Loader2 size={13} className="animate-spin" />
+                <span>Đang hoàn tất...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles size={13} color="#22e6ff" />
+                <span>HOÀN TẤT CHUYỂN NHƯỢNG</span>
+              </>
+            )}
+          </button>
+          {completeErrorMessage && (
+            <div style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: '6px', padding: '6px 8px', color: '#fca5a5', fontSize: '10px' }}>
+              {completeErrorMessage}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Completed Success Notice */}
+      {req.status === 'COMPLETED' && (
+        <div
+          style={{
+            background: 'rgba(16, 185, 129, 0.15)',
+            border: '1px solid #10b981',
+            borderRadius: '8px',
+            padding: '10px 12px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            color: '#6ee7b7',
+            fontSize: '11px',
+          }}
+        >
+          <CheckCircle2 size={16} color="#10b981" />
+          <div>
+            <div style={{ fontWeight: 800 }}>CHUYỂN NHƯỢNG THÀNH CÔNG</div>
+            <div style={{ fontSize: '10px', color: '#a7f3d0' }}>
+              Giao dịch chuyển nhượng cổ phần đã hoàn tất và được ghi nhận vào lịch sử sở hữu.
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
   vehicle,
   onClose,
@@ -172,7 +1535,7 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
   // Transfer Form State
   const [recipientUserId, setRecipientUserId] = useState<string>('');
   const [transferPercentageInput, setTransferPercentageInput] = useState<string>('10.00');
-  const [transferReason, setTransferReason] = useState<string>('Thỏa thuận chuyển nhượng tự nguyện giữa các thành viên');
+  const [transferReason, setTransferReason] = useState<string>('Thỏa thuận tự nguyện giữa các thành viên đồng sở hữu');
   const [transferFormError, setTransferFormError] = useState<string | null>(null);
   const [transferSuccessMsg, setTransferSuccessMsg] = useState<string | null>(null);
 
@@ -187,6 +1550,7 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
   const [expandedAmendmentPreview, setExpandedAmendmentPreview] = useState<Record<string, boolean>>({});
   const [acceptError, setAcceptError] = useState<Record<string, string | null>>({});
   const [transferorConsentChecked, setTransferorConsentChecked] = useState(false);
+  const [reviewedAppendixSnapshot, setReviewedAppendixSnapshot] = useState<ReviewedAppendixSnapshot | null>(null);
   const [showAmendmentSnapshotInForm, setShowAmendmentSnapshotInForm] = useState(false);
   const [completeError, setCompleteError] = useState<Record<string, string | null>>({});
 
@@ -296,6 +1660,58 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
     );
   }, [safeGroupTransfers, currentUser?.id]);
 
+  const allCoOwnershipTransfers = useMemo<OwnershipTransferResponse[]>(() => {
+    const list = [...(safeGroupTransfers || []), ...(safeIncomingTransfers || [])];
+    const seen = new Set<string>();
+    return list.filter((t) => {
+      if (!t || !t.id) return false;
+      if (seen.has(t.id)) return false;
+      seen.add(t.id);
+      return true;
+    });
+  }, [safeGroupTransfers, safeIncomingTransfers]);
+
+  const [managementTab, setManagementTab] = useState<'ACTION_NEEDED' | 'PENDING' | 'HISTORY'>('ACTION_NEEDED');
+
+  const actionNeededTransfers = useMemo(() => {
+    const currentId = String(currentUser?.id || '').toLowerCase();
+    return allCoOwnershipTransfers.filter((t) => {
+      if (t.status === 'COMPLETED' || t.status === 'REJECTED' || t.status === 'CANCELLED') return false;
+      const isTransferor = currentId === String(t.fromUserId ?? t.transferorUserId ?? '').toLowerCase();
+      const isRecipient = currentId === String(t.toUserId ?? t.recipientUserId ?? '').toLowerCase();
+      const isTransferorAccepted = Boolean(t.transferorAccepted ?? t.isTransferorAccepted);
+      const isRecipientAccepted = Boolean(t.recipientAccepted ?? t.isRecipientAccepted);
+      const hasFinBlocker = Boolean(
+        t.hasOutstandingFinancialObligations ||
+        (t.finalizationBlockers && t.finalizationBlockers.some((b) => b.includes('tài chính') || b.includes('nghĩa vụ')))
+      );
+      return (isTransferor && !isTransferorAccepted) || (isRecipient && !isRecipientAccepted) || (isTransferor && hasFinBlocker);
+    });
+  }, [allCoOwnershipTransfers, currentUser?.id]);
+
+  const pendingTransfers = useMemo(() => {
+    const currentId = String(currentUser?.id || '').toLowerCase();
+    return allCoOwnershipTransfers.filter((t) => {
+      if (t.status === 'COMPLETED' || t.status === 'REJECTED' || t.status === 'CANCELLED') return false;
+      const isTransferor = currentId === String(t.fromUserId ?? t.transferorUserId ?? '').toLowerCase();
+      const isRecipient = currentId === String(t.toUserId ?? t.recipientUserId ?? '').toLowerCase();
+      const isTransferorAccepted = Boolean(t.transferorAccepted ?? t.isTransferorAccepted);
+      const isRecipientAccepted = Boolean(t.recipientAccepted ?? t.isRecipientAccepted);
+      const hasFinBlocker = Boolean(
+        t.hasOutstandingFinancialObligations ||
+        (t.finalizationBlockers && t.finalizationBlockers.some((b) => b.includes('tài chính') || b.includes('nghĩa vụ')))
+      );
+      const actionNeeded = (isTransferor && !isTransferorAccepted) || (isRecipient && !isRecipientAccepted) || (isTransferor && hasFinBlocker);
+      return !actionNeeded;
+    });
+  }, [allCoOwnershipTransfers, currentUser?.id]);
+
+  const historyTransfers = useMemo(() => {
+    return allCoOwnershipTransfers.filter(
+      (t) => t.status === 'COMPLETED' || t.status === 'REJECTED' || t.status === 'CANCELLED'
+    );
+  }, [allCoOwnershipTransfers]);
+
   // 4. Ownership change history
   const {
     data: rawOwnershipHistory,
@@ -377,6 +1793,25 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
     }
   }, [recipientCandidates, recipientUserId]);
 
+  // Clear user-specific transfer states and invalidate caches on account switch
+  useEffect(() => {
+    setOpenedAppendixIds({});
+    setReviewedHashes({});
+    setRecipientConsentChecked({});
+    setAcceptError({});
+    setCompleteError({});
+    queryClient.invalidateQueries({ queryKey: ['transfer-appendix'] });
+    queryClient.invalidateQueries({ queryKey: ['incomingTransfers'] });
+    queryClient.invalidateQueries({ queryKey: ['groupTransfers'] });
+  }, [currentUser?.id, queryClient]);
+
+  // Reset transferor consent and force preview reload whenever form inputs change
+  useEffect(() => {
+    setTransferorConsentChecked(false);
+    setReviewedAppendixSnapshot(null);
+    setTransferFormError(null);
+  }, [recipientUserId, transferPercentageInput, transferReason]);
+
   // Real-time Preview query for transfer distribution
   const transferPercentNumber = parseFloat(transferPercentageInput) || 0;
   const isPreviewEligible = Boolean(
@@ -392,22 +1827,58 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
   const {
     data: previewData,
     isLoading: isPreviewLoading,
+    isFetching: isPreviewFetching,
     isError: isPreviewError,
     error: previewError,
     refetch: refetchPreview,
   } = useQuery<OwnershipDistributionPreviewResponse>({
-    queryKey: ['transferPreview', groupId, vehicle.id, currentUser?.id, recipientUserId, transferPercentNumber],
+    queryKey: [
+      'transferPreview',
+      groupId,
+      vehicle.id,
+      currentUser?.id,
+      recipientUserId,
+      transferPercentNumber,
+      transferReason,
+      currentUserShare,
+    ],
     queryFn: () =>
       fetchTransferPreview(
         groupId!,
         vehicle.id,
         currentUser!.id,
         recipientUserId,
-        transferPercentNumber
+        transferPercentNumber,
+        transferReason
       ),
     enabled: isPreviewEligible,
-    staleTime: 3000,
+    staleTime: 0,
   });
+
+  // Keep reviewed snapshot strictly coherent with authoritative backend preview matching form inputs
+  useEffect(() => {
+    if (
+      previewData &&
+      previewData.previewId &&
+      previewData.contentHash &&
+      previewData.contentSnapshot &&
+      previewData.valid &&
+      previewData.toUserId === recipientUserId &&
+      previewData.transferPercentage === transferPercentNumber
+    ) {
+      setReviewedAppendixSnapshot({
+        previewId: previewData.previewId,
+        contractVersion: previewData.contractVersionFormatted || 'V1.0',
+        contentHash: previewData.contentHash,
+        contentSnapshot: previewData.contentSnapshot,
+        toUserId: previewData.toUserId,
+        transferPercentage: previewData.transferPercentage,
+        reason: transferReason,
+      });
+    } else {
+      setReviewedAppendixSnapshot(null);
+    }
+  }, [previewData, recipientUserId, transferPercentNumber, transferReason]);
 
   // Authoritative preview members list from backend distribution
   const previewMembers = useMemo<MemberSharePreview[]>(() => {
@@ -478,6 +1949,14 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
     queryClient.invalidateQueries({ queryKey: ['co-ownership-contract-acceptances'] });
     queryClient.invalidateQueries({ queryKey: ['coOwnershipContract'] });
     queryClient.invalidateQueries({ queryKey: ['transferPreview'] });
+    queryClient.invalidateQueries({ queryKey: ['transfer-appendix'] });
+    queryClient.invalidateQueries({ queryKey: ['transferAppendix'] });
+    queryClient.invalidateQueries({ queryKey: ['transferConsent'] });
+    queryClient.invalidateQueries({ queryKey: ['financialObligations'] });
+    queryClient.invalidateQueries({ queryKey: ['expenses'] });
+    queryClient.invalidateQueries({ queryKey: ['expenseShares'] });
+    queryClient.invalidateQueries({ queryKey: ['my-personal-payments'] });
+    queryClient.invalidateQueries({ queryKey: ['pendingPersonalPayments'] });
   };
 
   // Add Member Mutation
@@ -517,7 +1996,7 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
 
   // Create Transfer Mutation
   const createTransferMutation = useMutation({
-    mutationFn: (payload: { toUserId: string; transferPercentage: number; reason: string }) => {
+    mutationFn: (payload: CreateTransferPayload) => {
       if (!groupId) throw new Error('Không tìm thấy nhóm đồng sở hữu.');
       return createTransferRequest(groupId, payload);
     },
@@ -525,13 +2004,38 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
       invalidateAllOwnershipData();
       setTransferSuccessMsg('Yêu cầu chuyển nhượng sở hữu đã được gửi thành công đến người nhận.');
       setTransferFormError(null);
+      setTransferorConsentChecked(false);
+      setReviewedAppendixSnapshot(null);
       setTimeout(() => {
         setTransferSuccessMsg(null);
         setCurrentView('MEMBERS');
       }, 2500);
     },
     onError: (err: any) => {
-      setTransferFormError(err?.message || 'Không thể gửi yêu cầu chuyển nhượng.');
+      const msg = err?.message || 'Không thể gửi yêu cầu chuyển nhượng.';
+      setTransferFormError(msg);
+      if (
+        msg.includes('Mã băm') ||
+        msg.includes('không khớp') ||
+        msg.includes('thay đổi') ||
+        msg.includes('hết hạn')
+      ) {
+        setTransferorConsentChecked(false);
+        setReviewedAppendixSnapshot(null);
+        queryClient.invalidateQueries({
+          queryKey: [
+            'transferPreview',
+            groupId,
+            vehicle.id,
+            currentUser?.id,
+            recipientUserId,
+            transferPercentNumber,
+            transferReason,
+            currentUserShare,
+          ],
+        });
+        refetchPreview();
+      }
     },
   });
 
@@ -1070,7 +2574,9 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
       transferPercentNumber > 0 &&
       !isExceedingShare &&
       transferorConsentChecked === true &&
-      Boolean(previewData?.contentHash) &&
+      Boolean(reviewedAppendixSnapshot) &&
+      !isPreviewLoading &&
+      !isPreviewFetching &&
       !createTransferMutation.isPending;
 
     return renderPortal(
@@ -1456,10 +2962,10 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <FileText size={13} color="#c084fc" />
                         <span style={{ fontSize: '11px', fontWeight: 700, color: '#e9d5ff' }}>
-                          PHỤ LỤC HỢP ĐỒNG DỰ KIẾN ({previewData.contractVersionFormatted})
+                          PHỤ LỤC HỢP ĐỒNG DỰ KIẾN ({reviewedAppendixSnapshot?.contractVersion || previewData.contractVersionFormatted})
                         </span>
                       </div>
-                      {previewData.contentSnapshot && (
+                      {(reviewedAppendixSnapshot?.contentSnapshot || previewData.contentSnapshot) && (
                         <button
                           type="button"
                           id="btn-view-appendix-form"
@@ -1480,7 +2986,7 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
                       )}
                     </div>
 
-                    {showAmendmentSnapshotInForm && previewData.contentSnapshot && (
+                    {showAmendmentSnapshotInForm && (reviewedAppendixSnapshot?.contentSnapshot || previewData.contentSnapshot) && (
                       <div
                         style={{
                           background: 'rgba(0, 0, 0, 0.4)',
@@ -1496,24 +3002,25 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
                           marginBottom: '8px',
                         }}
                       >
-                        {previewData.contentSnapshot}
+                        {reviewedAppendixSnapshot?.contentSnapshot || previewData.contentSnapshot}
                       </div>
                     )}
 
-                    {previewData.contentHash && (
+                    {(reviewedAppendixSnapshot?.contentHash || previewData.contentHash) && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '9.5px', color: '#94a3b8', marginBottom: '8px' }}>
                         <span>Mã băm nội dung (SHA-256):</span>
                         <span style={{ color: '#22e6ff', fontFamily: 'monospace' }}>
-                          {previewData.contentHash.substring(0, 16)}...
+                          {(reviewedAppendixSnapshot?.contentHash || previewData.contentHash!).substring(0, 16)}...
                         </span>
                       </div>
                     )}
 
-                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer', fontSize: '10.5px', color: '#f1f5f9' }}>
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: (reviewedAppendixSnapshot && !isPreviewLoading && !isPreviewFetching) ? 'pointer' : 'not-allowed', fontSize: '10.5px', color: '#f1f5f9' }}>
                       <input
                         type="checkbox"
                         id="chk-transferor-consent-form"
                         checked={transferorConsentChecked}
+                        disabled={!reviewedAppendixSnapshot || isPreviewLoading || isPreviewFetching || createTransferMutation.isPending}
                         onChange={(e) => setTransferorConsentChecked(e.target.checked)}
                         style={{ marginTop: '2px', accentColor: '#22e6ff' }}
                       />
@@ -1542,12 +3049,58 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
                 color: '#fca5a5',
                 fontSize: '11px',
                 display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
+                flexDirection: 'column',
+                gap: '8px',
               }}
             >
-              <AlertCircle size={13} />
-              <span>{transferFormError}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <AlertCircle size={13} style={{ flexShrink: 0 }} />
+                <span>{transferFormError}</span>
+              </div>
+              {(transferFormError.includes('thay đổi') ||
+                transferFormError.includes('không khớp') ||
+                transferFormError.includes('hết hạn') ||
+                transferFormError.includes('Phụ lục')) && (
+                <button
+                  type="button"
+                  id="btn-reload-appendix-preview"
+                  onClick={async () => {
+                    setTransferorConsentChecked(false);
+                    setReviewedAppendixSnapshot(null);
+                    setTransferFormError(null);
+                    await queryClient.invalidateQueries({
+                      queryKey: [
+                        'transferPreview',
+                        groupId,
+                        vehicle.id,
+                        currentUser?.id,
+                        recipientUserId,
+                        transferPercentNumber,
+                        transferReason,
+                        currentUserShare,
+                      ],
+                    });
+                    refetchPreview();
+                  }}
+                  style={{
+                    alignSelf: 'flex-start',
+                    padding: '5px 12px',
+                    borderRadius: '6px',
+                    background: 'rgba(34, 230, 255, 0.2)',
+                    border: '1px solid #22e6ff',
+                    color: '#22e6ff',
+                    fontSize: '10.5px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                  }}
+                >
+                  <RefreshCw size={11} className={isPreviewFetching ? 'animate-spin' : ''} />
+                  <span>{isPreviewFetching ? 'ĐANG TẢI LẠI...' : 'TẢI LẠI PHỤ LỤC'}</span>
+                </button>
+              )}
             </div>
           )}
 
@@ -1575,13 +3128,14 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
             type="button"
             disabled={!canSubmitTransfer}
             onClick={() => {
-              if (canSubmitTransfer) {
+              if (canSubmitTransfer && reviewedAppendixSnapshot) {
                 createTransferMutation.mutate({
-                  toUserId: recipientUserId,
-                  transferPercentage: transferPercentNumber,
-                  reason: transferReason,
-                  contentHash: previewData?.contentHash,
+                  toUserId: reviewedAppendixSnapshot.toUserId,
+                  transferPercentage: reviewedAppendixSnapshot.transferPercentage,
+                  reason: reviewedAppendixSnapshot.reason,
+                  contentHash: reviewedAppendixSnapshot.contentHash,
                   acknowledgedTerms: true,
+                  previewId: reviewedAppendixSnapshot.previewId,
                 });
               }
             }}
@@ -1654,7 +3208,50 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
             flex: 1,
           }}
         >
-          {isLoadingIncoming ? (
+          {/* Top inline error notice if incoming query failed but outgoing transfers exist */}
+          {isErrorIncoming && outgoingTransfers.length > 0 && (
+            <div
+              style={{
+                background: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                borderRadius: '8px',
+                padding: '8px 12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                color: '#fca5a5',
+                fontSize: '11px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <AlertCircle size={15} color="#ef4444" />
+                <span>Không thể tải danh sách nhận chuyển nhượng.</span>
+              </div>
+              <button
+                type="button"
+                id="btn-retry-incoming-transfers"
+                onClick={() => refetchIncoming()}
+                style={{
+                  padding: '3px 8px',
+                  borderRadius: '4px',
+                  background: 'rgba(239, 68, 68, 0.25)',
+                  border: '1px solid rgba(239, 68, 68, 0.6)',
+                  color: '#ffffff',
+                  fontSize: '9.5px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <RefreshCw size={10} />
+                Thử lại
+              </button>
+            </div>
+          )}
+
+          {isLoadingIncoming && outgoingTransfers.length === 0 ? (
             <div
               style={{
                 background: 'rgba(7, 20, 38, 0.65)',
@@ -1669,7 +3266,7 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
               <Loader2 size={24} className="animate-spin" style={{ margin: '0 auto 8px', color: '#22e6ff' }} />
               <div style={{ fontWeight: 700, color: '#e2e8f0' }}>ĐANG TẢI PHỤ LỤC CHUYỂN NHƯỢNG...</div>
             </div>
-          ) : isErrorIncoming ? (
+          ) : isErrorIncoming && outgoingTransfers.length === 0 ? (
             <div
               style={{
                 background: 'rgba(239, 68, 68, 0.1)',
@@ -1686,10 +3283,17 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
               }}
             >
               <AlertCircle size={24} color="#ef4444" />
-              <div style={{ fontWeight: 700 }}>KHÔNG THỂ TẢI NỘI DUNG PHỤ LỤC</div>
+              <div style={{ fontWeight: 700 }}>KHÔNG THỂ TẢI YÊU CẦU CHUYỂN NHƯỢNG</div>
+              <div style={{ fontSize: '10.5px', color: '#cbd5e1' }}>
+                Hệ thống gặp sự cố khi tải danh sách giao dịch. Vui lòng bấm thử lại.
+              </div>
               <button
                 type="button"
-                onClick={() => refetchIncoming()}
+                id="btn-retry-incoming-transfers-full"
+                onClick={() => {
+                  refetchIncoming();
+                  refetchGroupTransfers();
+                }}
                 style={{
                   marginTop: '4px',
                   padding: '6px 14px',
@@ -1729,1545 +3333,167 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
             </div>
           ) : (
             <>
-            {(Array.isArray(safeIncomingTransfers) ? safeIncomingTransfers : []).map((req) => {
-              const statusCfg = getTransferDisplayStatus(req);
-              const displayStatusLabel = statusCfg.label;
-              const isRejecting = rejectingTransferId === req.id;
+            {/* Incoming Transfers (Current user is Recipient) */}
+            {(Array.isArray(safeIncomingTransfers) ? safeIncomingTransfers : []).map((req) => (
+              <TransferCardItem
+                key={'incoming-' + req.id}
+                req={req}
+                type="incoming"
+                vehicleCode={vehicleCode}
+                currentUser={currentUser}
+                activeMembers={activeMembers}
+                onSettlementSuccess={() => {
+                  invalidateAllOwnershipData();
+                  refetchIncoming();
+                  refetchGroupTransfers();
+                }}
+                onAccept={(transferId, hash) =>
+                  acceptTransferMutation.mutate({
+                    transferId,
+                    payload: { contentHash: hash, acknowledgedTerms: true },
+                  })
+                }
+                onConfirmTransferorConsent={(transferId, hash) =>
+                  confirmTransferorConsentMutation.mutate({
+                    transferId,
+                    payload: { contentHash: hash, acknowledgedTerms: true },
+                  })
+                }
+                onRejectPrompt={(transferId) => {
+                  setRejectingTransferId(transferId);
+                  setRejectReasonInput('');
+                }}
+                onCancel={(transferId) => cancelTransferMutation.mutate(transferId)}
+                onComplete={(transferId) => completeTransferMutation.mutate(transferId)}
+                isAcceptPending={acceptTransferMutation.isPending}
+                isConfirmPending={confirmTransferorConsentMutation.isPending}
+                isCompletePending={completeTransferMutation.isPending}
+                acceptErrorMessage={acceptError[req.id]}
+                completeErrorMessage={completeError[req.id]}
+                onClearAcceptError={(transferId) => {
+                  setAcceptError((prev) => ({ ...prev, [transferId]: null }));
+                  setCompleteError((prev) => ({ ...prev, [transferId]: null }));
+                }}
+                isRejecting={rejectingTransferId === req.id}
+                rejectReasonInput={rejectReasonInput}
+                setRejectReasonInput={setRejectReasonInput}
+                onCancelReject={() => {
+                  setRejectingTransferId(null);
+                  setRejectReasonInput('');
+                }}
+                onConfirmReject={(transferId, reason) => {
+                  rejectTransferMutation.mutate({ transferId, reason });
+                }}
+              />
+            ))}
 
-              const isTransferorAccepted = Boolean(req.transferorAccepted ?? req.isTransferorAccepted);
-              const isRecipientAccepted = Boolean(req.recipientAccepted ?? req.isRecipientAccepted);
-              const currentId = String(currentUser?.id || '').toLowerCase();
-              const isRecipient = currentId === String(req.toUserId ?? req.recipientUserId ?? '').toLowerCase();
-              const isTransferor = currentId === String(req.fromUserId ?? req.transferorUserId ?? '').toLowerCase();
-              const isPending = req.status === 'PENDING_ACCEPTANCE' || req.status === 'PENDING_CONTRACT';
-              const showRecipientAction = (isRecipient || Boolean(req.currentUserCanAccept)) && !isRecipientAccepted && isPending;
-
-              const isAppendixOpen = Boolean(openedAppendixIds[req.id]);
-              const hasSnapshot = Boolean(req.contentSnapshot && req.contentSnapshot.trim().length > 0);
-              const hasReviewed = Boolean(isAppendixOpen || reviewedHashes[req.id]);
-              const isHashMatching = Boolean(!req.contentHash || !reviewedHashes[req.id] || reviewedHashes[req.id] === 'REVIEWED' || reviewedHashes[req.id] === req.contentHash);
-              const isConsentChecked = Boolean(recipientConsentChecked[req.id]);
-
-              const canSubmitAcceptance = Boolean(
-                showRecipientAction &&
-                hasSnapshot &&
-                hasReviewed &&
-                isConsentChecked &&
-                !acceptTransferMutation.isPending
-              );
-
-              return (
-                <div
-                  key={req.id}
-                  style={{
-                    background: 'rgba(7, 20, 38, 0.85)',
-                    border: '1.5px solid rgba(34, 230, 255, 0.3)',
-                    borderRadius: '14px',
-                    padding: '14px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '10px',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <span style={{ fontSize: '10px', color: '#94a3b8' }}>Người chuyển nhượng</span>
-                      <div style={{ fontSize: '13px', fontWeight: 800, color: '#ffffff' }}>
-                        {req.fromUserName}
-                      </div>
-                      <div style={{ fontSize: '10px', color: '#64748b' }}>{req.fromUserEmail}</div>
-                    </div>
-                    <span
-                      style={{
-                        fontSize: '9.5px',
-                        fontWeight: 800,
-                        padding: '3px 8px',
-                        borderRadius: '9999px',
-                        background: `${statusCfg.color}20`,
-                        border: `1px solid ${statusCfg.color}60`,
-                        color: statusCfg.color,
-                      }}
-                    >
-                      {displayStatusLabel}
-                    </span>
-                  </div>
-
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 1fr',
-                      gap: '8px',
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      borderRadius: '8px',
-                      padding: '8px 10px',
-                      fontSize: '11px',
-                    }}
-                  >
-                    <div>
-                      <span style={{ color: '#94a3b8', fontSize: '9.5px' }}>Phương tiện:</span>
-                      <div style={{ fontWeight: 700, color: '#e2e8f0' }}>{req.vehicleName || vehicleCode}</div>
-                    </div>
-                    <div>
-                      <span style={{ color: '#94a3b8', fontSize: '9.5px' }}>Tỷ lệ nhận:</span>
-                      <div style={{ fontWeight: 800, color: '#10b981', fontFamily: 'monospace' }}>
-                        +{req.transferPercentage}%
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Projected ownership distribution preview (Section 2 & 10) */}
-                  <div
-                    style={{
-                      background: 'rgba(0, 242, 254, 0.04)',
-                      border: '1px solid rgba(0, 242, 254, 0.2)',
-                      borderRadius: '8px',
-                      padding: '8px 10px',
-                      fontSize: '11px',
-                    }}
-                  >
-                    <div style={{ color: '#00f2fe', fontWeight: 700, fontSize: '10px', marginBottom: '5px', textTransform: 'uppercase' }}>
-                      Điều chỉnh tỷ lệ cổ phần dự kiến:
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                      <span style={{ color: '#94a3b8' }}>Người chuyển ({req.fromUserName}):</span>
-                      <span style={{ color: '#ffffff', fontFamily: 'monospace' }}>
-                        {Number(req.fromUserCurrentPercentage ?? 0).toFixed(2)}% ➔ {Math.max(0, Number(req.fromUserCurrentPercentage ?? 0) - Number(req.transferPercentage)).toFixed(2)}%
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#94a3b8' }}>Bạn ({req.toUserName}):</span>
-                      <span style={{ color: '#10b981', fontWeight: 700, fontFamily: 'monospace' }}>
-                        {Number(req.toUserCurrentPercentage ?? 0).toFixed(2)}% ➔ {(Number(req.toUserCurrentPercentage ?? 0) + Number(req.transferPercentage)).toFixed(2)}%
-                      </span>
-                    </div>
-                  </div>
-
-                  {req.reason && (
-                    <div style={{ fontSize: '10.5px', color: '#cbd5e1', fontStyle: 'italic' }}>
-                      "{req.reason}"
-                    </div>
-                  )}
-
-                  {/* Section 2: View Appendix Action (Position: Below projected ownership distribution, Above acceptance checkbox) */}
-                  {!hasSnapshot ? (
-                    <div
-                      style={{
-                        background: 'rgba(245, 158, 11, 0.12)',
-                        border: '1px solid rgba(245, 158, 11, 0.4)',
-                        borderRadius: '8px',
-                        padding: '10px 12px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        color: '#fbbf24',
-                        fontSize: '11px',
-                      }}
-                    >
-                      <AlertTriangle size={16} color="#f59e0b" style={{ flexShrink: 0 }} />
-                      <div>
-                        <div style={{ fontWeight: 800 }}>CHƯA CÓ PHỤ LỤC ĐỂ XEM</div>
-                        <div style={{ fontSize: '10px', color: '#cbd5e1', marginTop: '2px' }}>
-                          Phụ lục chuyển nhượng chưa sẵn sàng để phê duyệt. Không thể tiếp nhận chuyển nhượng khi chưa có văn bản chính thức.
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <button
-                        type="button"
-                        id={`btn-view-appendix-${req.id}`}
-                        onClick={() => {
-                          const nextState = !isAppendixOpen;
-                          setOpenedAppendixIds((prev) => ({ ...prev, [req.id]: nextState }));
-                          if (nextState) {
-                            setReviewedHashes((prev) => ({ ...prev, [req.id]: req.contentHash || 'REVIEWED' }));
-                          }
-                        }}
-                        style={{
-                          padding: '10px 14px',
-                          background: isAppendixOpen
-                            ? 'linear-gradient(135deg, rgba(0, 242, 254, 0.2) 0%, rgba(16, 185, 129, 0.2) 100%)'
-                            : 'rgba(0, 242, 254, 0.08)',
-                          border: isAppendixOpen
-                            ? '1.5px solid rgba(0, 242, 254, 0.6)'
-                            : '1px solid rgba(0, 242, 254, 0.35)',
-                          borderRadius: '8px',
-                          color: '#00f2fe',
-                          fontSize: '11px',
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          boxShadow: isAppendixOpen ? '0 0 14px rgba(0, 242, 254, 0.2)' : 'none',
-                          transition: 'all 0.2s ease',
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <FileText size={15} color="#00f2fe" />
-                          <span>{isAppendixOpen ? 'ẨN PHỤ LỤC CHUYỂN NHƯỢNG' : 'XEM PHỤ LỤC CHUYỂN NHƯỢNG'}</span>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          {isRecipientAccepted ? (
-                            <span
-                              style={{
-                                fontSize: '9.5px',
-                                fontWeight: 800,
-                                color: '#10b981',
-                                background: 'rgba(16, 185, 129, 0.2)',
-                                padding: '2px 7px',
-                                borderRadius: '4px',
-                                border: '1px solid rgba(16, 185, 129, 0.5)',
-                              }}
-                            >
-                              ĐÃ XÁC NHẬN CHẤP THUẬN
-                            </span>
-                          ) : hasReviewed ? (
-                            <span
-                              style={{
-                                fontSize: '9.5px',
-                                fontWeight: 800,
-                                color: '#00f2fe',
-                                background: 'rgba(0, 242, 254, 0.15)',
-                                padding: '2px 7px',
-                                borderRadius: '4px',
-                                border: '1px solid rgba(0, 242, 254, 0.45)',
-                              }}
-                            >
-                              ĐÃ XEM PHỤ LỤC
-                            </span>
-                          ) : (
-                            <span
-                              style={{
-                                fontSize: '9.5px',
-                                fontWeight: 800,
-                                color: '#fbbf24',
-                                background: 'rgba(245, 158, 11, 0.15)',
-                                padding: '2px 7px',
-                                borderRadius: '4px',
-                                border: '1px solid rgba(245, 158, 11, 0.45)',
-                              }}
-                            >
-                              CHƯA XEM PHỤ LỤC
-                            </span>
-                          )}
-                          {isAppendixOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-                        </div>
-                      </button>
-
-                      {/* Expandable Appendix Viewer within existing panel (Section 2, 3, 10) */}
-                      {isAppendixOpen && (
-                        <div
-                          style={{
-                            background: 'rgba(4, 10, 20, 0.95)',
-                            border: '1.5px solid rgba(0, 242, 254, 0.35)',
-                            borderRadius: '10px',
-                            padding: '12px',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '10px',
-                          }}
-                        >
-                          {/* Document Header & Metadata (Section 3) */}
-                          <div style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '8px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <ShieldCheck size={15} color="#00f2fe" />
-                                <span style={{ fontSize: '11px', fontWeight: 800, color: '#f8fafc' }}>
-                                  {req.contractVersionTitle || `PHỤ LỤC HỢP ĐỒNG ${req.contractVersionFormatted || 'V2.0'}`}
-                                </span>
-                              </div>
-                              <span
-                                style={{
-                                  fontSize: '9.5px',
-                                  fontWeight: 800,
-                                  padding: '2px 7px',
-                                  borderRadius: '4px',
-                                  background: 'rgba(34, 230, 255, 0.15)',
-                                  color: '#22e6ff',
-                                  border: '1px solid rgba(34, 230, 255, 0.4)',
-                                }}
-                              >
-                                {req.contractVersionFormatted || 'V2.0'}
-                              </span>
-                            </div>
-
-                            <div
-                              style={{
-                                display: 'grid',
-                                gridTemplateColumns: '1fr 1fr',
-                                gap: '6px',
-                                fontSize: '9.5px',
-                                color: '#94a3b8',
-                                background: 'rgba(255, 255, 255, 0.02)',
-                                borderRadius: '6px',
-                                padding: '6px 8px',
-                              }}
-                            >
-                              <div>
-                                Hợp đồng gốc: <span style={{ color: '#ffffff', fontFamily: 'monospace', fontWeight: 700 }}>{req.contractCode || 'HĐ-EV01'}</span>
-                              </div>
-                              <div>
-                                Mã phụ lục: <span style={{ color: '#ffffff', fontFamily: 'monospace' }}>{req.contractVersionId ? req.contractVersionId.substring(0, 8) + '...' : 'V2.0'}</span>
-                              </div>
-                              <div>
-                                Mã yêu cầu: <span style={{ color: '#ffffff', fontFamily: 'monospace' }}>{req.id ? req.id.substring(0, 8) + '...' : 'N/A'}</span>
-                              </div>
-                              <div>
-                                Phương tiện: <span style={{ color: '#e2e8f0' }}>{req.vehicleName || 'VinFast VF8'}</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Scrollable Document Content (Section 3 & 10) */}
-                          <div
-                            style={{
-                              background: 'rgba(0, 0, 0, 0.6)',
-                              border: '1px solid rgba(255, 255, 255, 0.08)',
-                              borderRadius: '6px',
-                              padding: '10px',
-                              color: '#cbd5e1',
-                              fontFamily: 'monospace',
-                              fontSize: '9.5px',
-                              lineHeight: 1.5,
-                              whiteSpace: 'pre-line',
-                              maxHeight: '260px',
-                              overflowY: 'auto',
-                            }}
-                          >
-                            {req.contentSnapshot}
-                          </div>
-
-                          {/* Document Integrity Seal (Content Hash) */}
-                          {req.contentHash && (
-                            <div
-                              style={{
-                                background: 'rgba(0, 242, 254, 0.05)',
-                                border: '1px dashed rgba(0, 242, 254, 0.3)',
-                                borderRadius: '6px',
-                                padding: '6px 8px',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: '2px',
-                                fontSize: '9px',
-                              }}
-                            >
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ color: '#94a3b8' }}>Mã băm toàn vẹn tài liệu (SHA-256):</span>
-                                <span style={{ color: '#10b981', fontWeight: 700 }}>Niêm phong bất biến</span>
-                              </div>
-                              <div style={{ color: '#00f2fe', fontFamily: 'monospace', wordBreak: 'break-all', fontSize: '8.5px' }}>
-                                {req.contentHash}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Actions for recipient awaiting acceptance */}
-                  {showRecipientAction && (
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '8px',
-                        marginTop: '8px',
-                        background: 'rgba(15, 23, 42, 0.95)',
-                        border: '1.2px solid rgba(0, 242, 254, 0.4)',
-                        borderRadius: '10px',
-                        padding: '10px',
-                        boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)',
-                      }}
-                    >
-                      <label
-                        style={{
-                          display: 'flex',
-                          alignItems: 'flex-start',
-                          gap: '8px',
-                          cursor: (!hasSnapshot || !hasReviewed) ? 'not-allowed' : 'pointer',
-                          fontSize: '10.5px',
-                          color: (!hasSnapshot || !hasReviewed) ? '#64748b' : '#f1f5f9',
-                          background: isConsentChecked
-                            ? 'rgba(16, 185, 129, 0.08)'
-                            : 'rgba(255, 255, 255, 0.02)',
-                          padding: '8px 10px',
-                          borderRadius: '8px',
-                          border: isConsentChecked
-                            ? '1px solid rgba(16, 185, 129, 0.3)'
-                            : '1px dashed rgba(255, 255, 255, 0.12)',
-                          transition: 'all 0.2s ease',
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          id={`chk-consent-${req.id}`}
-                          disabled={!hasSnapshot || !hasReviewed}
-                          checked={isConsentChecked}
-                          onChange={(e) => {
-                            if (!hasSnapshot || !hasReviewed) return;
-                            setRecipientConsentChecked((prev) => ({ ...prev, [req.id]: e.target.checked }));
-                            setAcceptError((prev) => ({ ...prev, [req.id]: null }));
-                          }}
-                          style={{
-                            marginTop: '2px',
-                            accentColor: '#10b981',
-                            cursor: (!hasSnapshot || !hasReviewed) ? 'not-allowed' : 'pointer',
-                          }}
-                        />
-                        <div>
-                          <span style={{ fontWeight: 600 }}>
-                            Tôi đã đọc, hiểu và đồng ý nhận chuyển nhượng theo phụ lục này.
-                          </span>
-                          {!hasSnapshot ? (
-                            <div style={{ color: '#f59e0b', fontSize: '9.5px', marginTop: '3px' }}>
-                              * Chưa có phụ lục chuyển nhượng để xem xét. Tiếp nhận bị khóa.
-                            </div>
-                          ) : !hasReviewed ? (
-                            <div style={{ color: '#f59e0b', fontSize: '9.5px', marginTop: '3px' }}>
-                              * Vui lòng bấm <strong>"XEM PHỤ LỤC CHUYỂN NHƯỢNG"</strong> để đọc toàn văn điều khoản trước khi xác nhận đồng ý.
-                            </div>
-                          ) : !isHashMatching ? (
-                            <div style={{ color: '#ef4444', fontSize: '9.5px', marginTop: '3px' }}>
-                              * Nội dung phụ lục đã có sự thay đổi. Vui lòng mở xem lại bản mới nhất trước khi xác nhận.
-                            </div>
-                          ) : null}
-                        </div>
-                      </label>
-
-                      {acceptError[req.id] && (
-                        <div
-                          style={{
-                            background: 'rgba(239, 68, 68, 0.15)',
-                            border: '1px solid rgba(239, 68, 68, 0.4)',
-                            borderRadius: '6px',
-                            padding: '6px 8px',
-                            color: '#fca5a5',
-                            fontSize: '10px',
-                          }}
-                        >
-                          {acceptError[req.id]}
-                        </div>
-                      )}
-
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button
-                          type="button"
-                          id={`btn-accept-${req.id}`}
-                          onClick={() => {
-                            if (!hasSnapshot) {
-                              setAcceptError((prev) => ({
-                                ...prev,
-                                [req.id]: 'Chưa có phụ lục chuyển nhượng để tiếp nhận.',
-                              }));
-                              return;
-                            }
-                            if (!hasReviewed) {
-                              setAcceptError((prev) => ({
-                                ...prev,
-                                [req.id]: 'Vui lòng nhấn "XEM PHỤ LỤC CHUYỂN NHƯỢNG" để kiểm tra nội dung trước khi tiếp nhận.',
-                              }));
-                              return;
-                            }
-                            if (!isConsentChecked) {
-                              setAcceptError((prev) => ({
-                                ...prev,
-                                [req.id]: 'Vui lòng xác nhận bạn đã đọc, hiểu và đồng ý nhận chuyển nhượng theo nội dung phụ lục này.',
-                              }));
-                              return;
-                            }
-                            if (req.contentHash && reviewedHashes[req.id] && req.contentHash !== reviewedHashes[req.id]) {
-                              setAcceptError((prev) => ({
-                                ...prev,
-                                [req.id]: 'Nội dung phụ lục đã có sự thay đổi. Vui lòng mở xem lại bản mới nhất trước khi xác nhận.',
-                              }));
-                              return;
-                            }
-                            acceptTransferMutation.mutate({
-                              transferId: req.id,
-                              payload: {
-                                contentHash: req.contentHash,
-                                acknowledgedTerms: true,
-                                confirmationNote: 'Đồng ý nhận chuyển nhượng cổ phần và chấp thuận phụ lục hợp đồng',
-                              },
-                            });
-                          }}
-                          disabled={!canSubmitAcceptance}
-                          style={{
-                            flex: 2,
-                            padding: '9px 12px',
-                            background: !canSubmitAcceptance
-                              ? 'rgba(255, 255, 255, 0.08)'
-                              : 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
-                            border: 'none',
-                            borderRadius: '8px',
-                            color: !canSubmitAcceptance ? '#94a3b8' : '#ffffff',
-                            fontSize: '11px',
-                            fontWeight: 800,
-                            cursor: !canSubmitAcceptance ? 'not-allowed' : 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '6px',
-                            boxShadow: canSubmitAcceptance ? '0 4px 14px rgba(16, 185, 129, 0.35)' : 'none',
-                          }}
-                        >
-                          {acceptTransferMutation.isPending ? (
-                            <>
-                              <Loader2 size={13} className="animate-spin" />
-                              <span>Đang ghi nhận...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Check size={13} />
-                              <span>ĐỒNG Ý NHẬN CHUYỂN NHƯỢNG</span>
-                            </>
-                          )}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setRejectingTransferId(req.id)}
-                          style={{
-                            flex: 1,
-                            padding: '9px 12px',
-                            background: 'rgba(239, 68, 68, 0.15)',
-                            border: '1px solid rgba(239, 68, 68, 0.4)',
-                            borderRadius: '8px',
-                            color: '#f87171',
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          TỪ CHỐI
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Notice if recipient already signed */}
-                  {isRecipientAccepted && (
-                    <div
-                      style={{
-                        background: 'rgba(16, 185, 129, 0.1)',
-                        border: '1px solid rgba(16, 185, 129, 0.3)',
-                        borderRadius: '8px',
-                        padding: '8px 10px',
-                        fontSize: '10.5px',
-                        color: '#6ee7b7',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <CheckCircle2 size={14} color="#10b981" />
-                        <span>Bạn đã hoàn tất ký xác nhận Phụ lục hợp đồng.</span>
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-end' }}>
-                        <span style={{ color: '#38bdf8', fontSize: '10px', fontWeight: 700 }}>
-                          Xác nhận hai bên: {req.acceptedConsentCount ?? req.acceptedMembersCount ?? ((isTransferorAccepted ? 1 : 0) + (isRecipientAccepted ? 1 : 0))}/{req.requiredConsentCount ?? req.requiredAcceptanceCount ?? 2}
-                        </span>
-                        <span style={{ color: '#94a3b8', fontSize: '9px' }}>
-                          Phê duyệt bổ sung: {req.additionalApprovalStatus || 'Không yêu cầu'}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Section 3: Exact Transfer-Specific Acceptance Progress Breakdown */}
-                  <div
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.02)',
-                      border: '1px solid rgba(255, 255, 255, 0.08)',
-                      borderRadius: '8px',
-                      padding: '8px 10px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '6px',
-                      fontSize: '10.5px',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ color: '#38bdf8', fontWeight: 800, fontSize: '10px', textTransform: 'uppercase' }}>
-                        XÁC NHẬN CHUYỂN NHƯỢNG: {req.acceptedConsentCount ?? req.acceptedMembersCount ?? ((isTransferorAccepted ? 1 : 0) + (isRecipientAccepted ? 1 : 0))}/{req.requiredConsentCount ?? req.requiredAcceptanceCount ?? 2}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: '9px',
-                          fontWeight: 700,
-                          color: (req.status === 'COMPLETED' || (isTransferorAccepted && isRecipientAccepted)) ? '#10b981' : '#f59e0b',
-                        }}
-                      >
-                        {req.status === 'COMPLETED'
-                          ? 'CHUYỂN NHƯỢNG THÀNH CÔNG'
-                          : (isTransferorAccepted && isRecipientAccepted)
-                          ? (req.canFinalize ?? req.canComplete ? 'ĐỦ ĐIỀU KIỆN HOÀN TẤT' : 'CHỜ HOÀN TẤT ĐIỀU KIỆN')
-                          : isTransferorAccepted
-                          ? 'CHỜ NGƯỜI NHẬN XÁC NHẬN'
-                          : isRecipientAccepted
-                          ? 'CHỜ NGƯỜI CHUYỂN XÁC NHẬN'
-                          : 'CHỜ XÁC NHẬN CỦA HAI BÊN'}
-                      </span>
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: '#cbd5e1' }}>{req.fromUserName} (Bên chuyển nhượng):</span>
-                        <span style={{ color: isTransferorAccepted ? '#10b981' : '#f59e0b', fontWeight: 700, fontFamily: 'monospace', fontSize: '10px' }}>
-                          {isTransferorAccepted ? 'Đã xác nhận' : 'Chờ xác nhận'}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: '#cbd5e1' }}>{req.toUserName} (Bên nhận chuyển nhượng):</span>
-                        <span style={{ color: isRecipientAccepted ? '#10b981' : '#f59e0b', fontWeight: 700, fontFamily: 'monospace', fontSize: '10px' }}>
-                          {isRecipientAccepted ? 'Đã xác nhận' : 'Chờ xác nhận'}
-                        </span>
-                      </div>
-                      {activeMembers
-                        .filter((m) => m && m.userId !== req.fromUserId && m.userId !== req.toUserId)
-                        .map((m) => (
-                          <div key={`co-owner-status-${m.userId}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ color: '#94a3b8' }}>{m.fullName || m.email || 'Thành viên khác'} (Đồng sở hữu):</span>
-                            <span style={{ color: '#38bdf8', fontSize: '9.5px', fontWeight: 600 }}>Được thông báo</span>
-                          </div>
-                        ))}
-                    </div>
-
-                    {req.nextRequiredActions && req.nextRequiredActions.length > 0 && req.status !== 'COMPLETED' && (
-                      <div style={{ background: 'rgba(56, 189, 248, 0.08)', border: '1px dashed rgba(56, 189, 248, 0.3)', borderRadius: '6px', padding: '6px 8px', fontSize: '9.5px', color: '#bae6fd', marginTop: '2px' }}>
-                        <span style={{ fontWeight: 700, color: '#38bdf8' }}>Tiếp theo: </span>
-                        {req.nextRequiredActions.join(' ')}
-                      </div>
-                    )}
-
-                    {/* Finalization Blockers if any */}
-                    {req.finalizationBlockers && req.finalizationBlockers.length > 0 && isTransferorAccepted && isRecipientAccepted && req.status !== 'COMPLETED' && (
-                      <div style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: '6px', padding: '6px 8px', fontSize: '10px', color: '#fde68a' }}>
-                        <div style={{ fontWeight: 700, marginBottom: '2px' }}>Điều kiện chờ hoàn tất:</div>
-                        {req.finalizationBlockers.map((b, idx) => (
-                          <div key={idx}>• {b}</div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Reject reason input prompt */}
-                  {isRejecting && (
-                    <div
-                      style={{
-                        background: 'rgba(239, 68, 68, 0.1)',
-                        border: '1px solid rgba(239, 68, 68, 0.3)',
-                        borderRadius: '8px',
-                        padding: '10px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '6px',
-                      }}
-                    >
-                      <label style={{ fontSize: '10.5px', color: '#fca5a5', fontWeight: 600 }}>
-                        Lý do từ chối:
-                      </label>
-                      <input
-                        type="text"
-                        value={rejectReasonInput}
-                        onChange={(e) => setRejectReasonInput(e.target.value)}
-                        style={{
-                          padding: '6px 8px',
-                          background: 'rgba(0,0,0,0.4)',
-                          border: '1px solid rgba(239, 68, 68, 0.4)',
-                          borderRadius: '6px',
-                          color: '#ffffff',
-                          fontSize: '11px',
-                          outline: 'none',
-                        }}
-                      />
-                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', marginTop: '2px' }}>
-                        <button
-                          type="button"
-                          onClick={() => setRejectingTransferId(null)}
-                          style={{
-                            padding: '4px 8px',
-                            background: 'transparent',
-                            border: 'none',
-                            color: '#94a3b8',
-                            fontSize: '10px',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Hủy
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            rejectTransferMutation.mutate({
-                              transferId: req.id,
-                              reason: rejectReasonInput,
-                            })
-                          }
-                          style={{
-                            padding: '4px 10px',
-                            background: '#ef4444',
-                            border: 'none',
-                            borderRadius: '4px',
-                            color: '#ffffff',
-                            fontSize: '10.5px',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Xác nhận từ chối
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Ready to Complete Activation */}
-                  {((req.canFinalize ?? req.canComplete) || (isTransferorAccepted && isRecipientAccepted && req.status !== 'COMPLETED' && (!req.finalizationBlockers || req.finalizationBlockers.length === 0))) && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <button
-                        type="button"
-                        id={`btn-complete-${req.id}`}
-                        onClick={() => {
-                          setCompleteError((prev) => ({ ...prev, [req.id]: null }));
-                          completeTransferMutation.mutate(req.id);
-                        }}
-                        disabled={completeTransferMutation.isPending}
-                        style={{
-                          padding: '9px 12px',
-                          background: 'linear-gradient(135deg, #0284c7 0%, #06b6d4 100%)',
-                          border: '1.5px solid #22e6ff',
-                          borderRadius: '8px',
-                          color: '#ffffff',
-                          fontSize: '11px',
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
-                          boxShadow: '0 0 15px rgba(34, 230, 255, 0.3)',
-                        }}
-                      >
-                        {completeTransferMutation.isPending ? (
-                          <>
-                            <Loader2 size={13} className="animate-spin" />
-                            <span>Đang hoàn tất...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Sparkles size={13} color="#22e6ff" />
-                            <span>HOÀN TẤT CHUYỂN NHƯỢNG</span>
-                          </>
-                        )}
-                      </button>
-                      {completeError[req.id] && (
-                        <div style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: '6px', padding: '6px 8px', color: '#fca5a5', fontSize: '10px' }}>
-                          {completeError[req.id]}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Completed Success Notice */}
-                  {req.status === 'COMPLETED' && (
-                    <div
-                      style={{
-                        background: 'rgba(16, 185, 129, 0.15)',
-                        border: '1px solid #10b981',
-                        borderRadius: '8px',
-                        padding: '10px 12px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        color: '#6ee7b7',
-                        fontSize: '11px',
-                      }}
-                    >
-                      <CheckCircle2 size={16} color="#10b981" />
-                      <div>
-                        <div style={{ fontWeight: 800 }}>CHUYỂN NHƯỢNG THÀNH CÔNG</div>
-                        <div style={{ fontSize: '10px', color: '#a7f3d0' }}>
-                          Giao dịch chuyển nhượng cổ phần đã hoàn tất và được ghi nhận vào lịch sử sở hữu.
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-
-            {/* Render Outgoing Transfers Initiated by Current User (e.g. Tran Thi B) */}
-            {outgoingTransfers.map((req) => {
-              const statusCfg = getTransferDisplayStatus(req);
-              const isTransferorAccepted = Boolean(req.transferorAccepted ?? req.isTransferorAccepted);
-              const isRecipientAccepted = Boolean(req.recipientAccepted ?? req.isRecipientAccepted);
-
-              const isAppendixOpen = Boolean(openedAppendixIds[req.id]);
-              const hasSnapshot = Boolean(req.contentSnapshot && req.contentSnapshot.trim().length > 0);
-              const isHashMatching = Boolean(req.contentHash && (reviewedHashes[req.id] === req.contentHash || !reviewedHashes[req.id]));
-              const hasReviewed = Boolean(isAppendixOpen || reviewedHashes[req.id]);
-              const isConsentChecked = Boolean(recipientConsentChecked[req.id]);
-
-              const canSubmitTransferorConsent = Boolean(
-                !isTransferorAccepted &&
-                (req.status === 'PENDING_ACCEPTANCE' || req.status === 'PENDING_CONTRACT') &&
-                hasSnapshot &&
-                hasReviewed &&
-                isConsentChecked &&
-                !confirmTransferorConsentMutation.isPending
-              );
-
-              return (
-                <div
-                  key={`outgoing-${req.id}`}
-                  style={{
-                    background: 'rgba(7, 20, 38, 0.85)',
-                    border: '1.5px solid rgba(168, 85, 247, 0.35)',
-                    borderRadius: '14px',
-                    padding: '14px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '10px',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <span style={{ fontSize: '10px', color: '#c084fc' }}>Yêu cầu chuyển nhượng bạn đã gửi</span>
-                      <div style={{ fontSize: '13px', fontWeight: 800, color: '#ffffff' }}>
-                        Người nhận: {req.toUserName}
-                      </div>
-                      <div style={{ fontSize: '10px', color: '#64748b' }}>{req.toUserEmail}</div>
-                    </div>
-                    <span
-                      style={{
-                        fontSize: '9.5px',
-                        fontWeight: 800,
-                        padding: '3px 8px',
-                        borderRadius: '9999px',
-                        background: `${statusCfg.color}20`,
-                        border: `1px solid ${statusCfg.color}60`,
-                        color: statusCfg.color,
-                      }}
-                    >
-                      {statusCfg.label}
-                    </span>
-                  </div>
-
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 1fr',
-                      gap: '8px',
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      borderRadius: '8px',
-                      padding: '8px 10px',
-                      fontSize: '11px',
-                    }}
-                  >
-                    <div>
-                      <span style={{ color: '#94a3b8', fontSize: '9.5px' }}>Phương tiện:</span>
-                      <div style={{ fontWeight: 700, color: '#e2e8f0' }}>{req.vehicleName || vehicleCode}</div>
-                    </div>
-                    <div>
-                      <span style={{ color: '#94a3b8', fontSize: '9.5px' }}>Tỷ lệ chuyển giao:</span>
-                      <div style={{ fontWeight: 800, color: '#f59e0b', fontFamily: 'monospace' }}>
-                        -{req.transferPercentage}%
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Projected ownership distribution preview */}
-                  <div
-                    style={{
-                      background: 'rgba(168, 85, 247, 0.06)',
-                      border: '1px solid rgba(168, 85, 247, 0.25)',
-                      borderRadius: '8px',
-                      padding: '8px 10px',
-                      fontSize: '11px',
-                    }}
-                  >
-                    <div style={{ color: '#c084fc', fontWeight: 700, fontSize: '10px', marginBottom: '5px', textTransform: 'uppercase' }}>
-                      Điều chỉnh tỷ lệ cổ phần dự kiến:
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                      <span style={{ color: '#94a3b8' }}>Bạn ({req.fromUserName}):</span>
-                      <span style={{ color: '#ffffff', fontFamily: 'monospace' }}>
-                        {Number(req.fromUserCurrentPercentage ?? 0).toFixed(2)}% ➔ {Math.max(0, Number(req.fromUserCurrentPercentage ?? 0) - Number(req.transferPercentage)).toFixed(2)}%
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#94a3b8' }}>Người nhận ({req.toUserName}):</span>
-                      <span style={{ color: '#10b981', fontWeight: 700, fontFamily: 'monospace' }}>
-                        {Number(req.toUserCurrentPercentage ?? 0).toFixed(2)}% ➔ {(Number(req.toUserCurrentPercentage ?? 0) + Number(req.transferPercentage)).toFixed(2)}%
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Section 3: Exact Transfer-Specific Acceptance Progress Breakdown */}
-                  <div
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.02)',
-                      border: '1px solid rgba(255, 255, 255, 0.08)',
-                      borderRadius: '8px',
-                      padding: '8px 10px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '6px',
-                      fontSize: '10.5px',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ color: '#38bdf8', fontWeight: 800, fontSize: '10px', textTransform: 'uppercase' }}>
-                        XÁC NHẬN CHUYỂN NHƯỢNG: {req.acceptedConsentCount ?? req.acceptedMembersCount ?? ((isTransferorAccepted ? 1 : 0) + (isRecipientAccepted ? 1 : 0))}/{req.requiredConsentCount ?? req.requiredAcceptanceCount ?? 2}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: '9px',
-                          fontWeight: 700,
-                          color: (req.status === 'COMPLETED' || (isTransferorAccepted && isRecipientAccepted)) ? '#10b981' : '#f59e0b',
-                        }}
-                      >
-                        {req.status === 'COMPLETED'
-                          ? 'CHUYỂN NHƯỢNG THÀNH CÔNG'
-                          : (isTransferorAccepted && isRecipientAccepted)
-                          ? (req.canFinalize ?? req.canComplete ? 'ĐỦ ĐIỀU KIỆN HOÀN TẤT' : 'CHỜ HOÀN TẤT ĐIỀU KIỆN')
-                          : isTransferorAccepted
-                          ? 'CHỜ NGƯỜI NHẬN XÁC NHẬN'
-                          : isRecipientAccepted
-                          ? 'CHỜ NGƯỜI CHUYỂN XÁC NHẬN'
-                          : 'CHỜ XÁC NHẬN CỦA HAI BÊN'}
-                      </span>
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: '#cbd5e1' }}>{req.fromUserName} (Bên chuyển nhượng):</span>
-                        <span style={{ color: isTransferorAccepted ? '#10b981' : '#f59e0b', fontWeight: 700, fontFamily: 'monospace', fontSize: '10px' }}>
-                          {isTransferorAccepted ? 'Đã xác nhận' : 'Chờ xác nhận'}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: '#cbd5e1' }}>{req.toUserName} (Bên nhận chuyển nhượng):</span>
-                        <span style={{ color: isRecipientAccepted ? '#10b981' : '#f59e0b', fontWeight: 700, fontFamily: 'monospace', fontSize: '10px' }}>
-                          {isRecipientAccepted ? 'Đã xác nhận' : 'Chờ xác nhận'}
-                        </span>
-                      </div>
-                      {activeMembers
-                        .filter((m) => m && m.userId !== req.fromUserId && m.userId !== req.toUserId)
-                        .map((m) => (
-                          <div key={`co-owner-status-${m.userId}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ color: '#94a3b8' }}>{m.fullName || m.email || 'Thành viên khác'} (Đồng sở hữu):</span>
-                            <span style={{ color: '#38bdf8', fontSize: '9.5px', fontWeight: 600 }}>Đã được thông báo</span>
-                          </div>
-                        ))}
-                    </div>
-
-                    {req.nextRequiredActions && req.nextRequiredActions.length > 0 && req.status !== 'COMPLETED' && (
-                      <div style={{ background: 'rgba(56, 189, 248, 0.08)', border: '1px dashed rgba(56, 189, 248, 0.3)', borderRadius: '6px', padding: '6px 8px', fontSize: '9.5px', color: '#bae6fd', marginTop: '2px' }}>
-                        <span style={{ fontWeight: 700, color: '#38bdf8' }}>Tiếp theo: </span>
-                        {req.nextRequiredActions.join(' ')}
-                      </div>
-                    )}
-
-                    {/* Finalization Blockers if any */}
-                    {req.finalizationBlockers && req.finalizationBlockers.length > 0 && isTransferorAccepted && isRecipientAccepted && req.status !== 'COMPLETED' && (
-                      <div style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: '6px', padding: '6px 8px', fontSize: '10px', color: '#fde68a' }}>
-                        <div style={{ fontWeight: 700, marginBottom: '2px' }}>Điều kiện chờ hoàn tất:</div>
-                        {req.finalizationBlockers.map((b, idx) => (
-                          <div key={idx}>• {b}</div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Appendix Viewer Action */}
-                  {hasSnapshot && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <button
-                        type="button"
-                        id={`btn-view-appendix-outgoing-${req.id}`}
-                        onClick={() => {
-                          const nextState = !isAppendixOpen;
-                          setOpenedAppendixIds((prev) => ({ ...prev, [req.id]: nextState }));
-                          if (nextState && req.contentHash) {
-                            setReviewedHashes((prev) => ({ ...prev, [req.id]: req.contentHash! }));
-                          }
-                        }}
-                        style={{
-                          padding: '10px 14px',
-                          background: isAppendixOpen
-                            ? 'linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(34, 230, 255, 0.2) 100%)'
-                            : 'rgba(168, 85, 247, 0.08)',
-                          border: isAppendixOpen
-                            ? '1.5px solid rgba(168, 85, 247, 0.6)'
-                            : '1px solid rgba(168, 85, 247, 0.35)',
-                          borderRadius: '8px',
-                          color: '#c084fc',
-                          fontSize: '11px',
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          boxShadow: isAppendixOpen ? '0 0 14px rgba(168, 85, 247, 0.2)' : 'none',
-                          transition: 'all 0.2s ease',
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <FileText size={15} color="#c084fc" />
-                          <span>{isAppendixOpen ? 'ẨN PHỤ LỤC CHUYỂN NHƯỢNG' : 'XEM PHỤ LỤC CHUYỂN NHƯỢNG'}</span>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span
-                            style={{
-                              fontSize: '9.5px',
-                              fontWeight: 800,
-                              color: isTransferorAccepted ? '#10b981' : hasReviewed ? '#38bdf8' : '#94a3b8',
-                              background: isTransferorAccepted ? 'rgba(16, 185, 129, 0.2)' : hasReviewed ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                              padding: '2px 7px',
-                              borderRadius: '4px',
-                              border: `1px solid ${isTransferorAccepted ? 'rgba(16, 185, 129, 0.5)' : hasReviewed ? 'rgba(56, 189, 248, 0.4)' : 'rgba(255, 255, 255, 0.1)'}`,
-                            }}
-                          >
-                            {isTransferorAccepted ? 'ĐÃ XÁC NHẬN CHẤP THUẬN' : hasReviewed ? 'ĐÃ XEM PHỤ LỤC' : 'CHƯA XEM PHỤ LỤC'}
-                          </span>
-                          {isAppendixOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-                        </div>
-                      </button>
-
-                      {isAppendixOpen && (
-                        <div
-                          style={{
-                            background: 'rgba(4, 10, 20, 0.95)',
-                            border: '1.5px solid rgba(168, 85, 247, 0.35)',
-                            borderRadius: '10px',
-                            padding: '12px',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '10px',
-                          }}
-                        >
-                          <div style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '8px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <ShieldCheck size={15} color="#c084fc" />
-                                <span style={{ fontSize: '11px', fontWeight: 800, color: '#f8fafc' }}>
-                                  {req.contractVersionTitle || `PHỤ LỤC HỢP ĐỒNG ${req.contractVersionFormatted || 'V2.0'}`}
-                                </span>
-                              </div>
-                              <span
-                                style={{
-                                  fontSize: '9.5px',
-                                  fontWeight: 800,
-                                  padding: '2px 7px',
-                                  borderRadius: '4px',
-                                  background: 'rgba(168, 85, 247, 0.15)',
-                                  color: '#c084fc',
-                                  border: '1px solid rgba(168, 85, 247, 0.4)',
-                                }}
-                              >
-                                {req.contractVersionFormatted || 'V2.0'}
-                              </span>
-                            </div>
-                            <div
-                              style={{
-                                display: 'grid',
-                                gridTemplateColumns: '1fr 1fr',
-                                gap: '6px',
-                                fontSize: '9.5px',
-                                color: '#94a3b8',
-                                background: 'rgba(255, 255, 255, 0.02)',
-                                borderRadius: '6px',
-                                padding: '6px 8px',
-                              }}
-                            >
-                              <div>Hợp đồng gốc: <span style={{ color: '#ffffff', fontFamily: 'monospace', fontWeight: 700 }}>{req.contractCode || 'HĐ-EV01'}</span></div>
-                              <div>Mã phụ lục: <span style={{ color: '#ffffff', fontFamily: 'monospace' }}>{req.contractVersionId ? req.contractVersionId.substring(0, 8) + '...' : 'V2.0'}</span></div>
-                              <div>Mã giao dịch: <span style={{ color: '#ffffff', fontFamily: 'monospace' }}>{req.id ? req.id.substring(0, 8) + '...' : 'N/A'}</span></div>
-                              <div>Phương tiện: <span style={{ color: '#e2e8f0' }}>{req.vehicleName || 'VinFast VF8'}</span></div>
-                            </div>
-                          </div>
-                          <div
-                            style={{
-                              background: 'rgba(0, 0, 0, 0.6)',
-                              border: '1px solid rgba(255, 255, 255, 0.08)',
-                              borderRadius: '6px',
-                              padding: '10px',
-                              color: '#cbd5e1',
-                              fontFamily: 'monospace',
-                              fontSize: '9.5px',
-                              lineHeight: 1.5,
-                              whiteSpace: 'pre-line',
-                              maxHeight: '260px',
-                              overflowY: 'auto',
-                            }}
-                          >
-                            {req.contentSnapshot}
-                          </div>
-                          {req.contentHash && (
-                            <div
-                              style={{
-                                background: 'rgba(168, 85, 247, 0.05)',
-                                border: '1px dashed rgba(168, 85, 247, 0.3)',
-                                borderRadius: '6px',
-                                padding: '6px 8px',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: '2px',
-                                fontSize: '9px',
-                              }}
-                            >
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ color: '#94a3b8' }}>Mã băm toàn vẹn tài liệu (SHA-256):</span>
-                                <span style={{ color: '#10b981', fontWeight: 700 }}>Niêm phong bất biến</span>
-                              </div>
-                              <div style={{ color: '#c084fc', fontFamily: 'monospace', wordBreak: 'break-all', fontSize: '8.5px' }}>
-                                {req.contentHash}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Transferor Consent Action (if transferor has not yet accepted on legacy request) */}
-                  {!isTransferorAccepted && (req.status === 'PENDING_ACCEPTANCE' || req.status === 'PENDING_CONTRACT') && (
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '8px',
-                        marginTop: '6px',
-                        background: 'rgba(168, 85, 247, 0.05)',
-                        border: '1.5px solid rgba(168, 85, 247, 0.3)',
-                        borderRadius: '10px',
-                        padding: '12px',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                      }}
-                    >
-                      <label
-                        style={{
-                          display: 'flex',
-                          alignItems: 'flex-start',
-                          gap: '8px',
-                          cursor: (!hasSnapshot || !hasReviewed) ? 'not-allowed' : 'pointer',
-                          fontSize: '10.5px',
-                          color: (!hasSnapshot || !hasReviewed) ? '#64748b' : '#f1f5f9',
-                          background: isConsentChecked
-                            ? 'rgba(16, 185, 129, 0.08)'
-                            : 'rgba(255, 255, 255, 0.02)',
-                          padding: '8px 10px',
-                          borderRadius: '8px',
-                          border: isConsentChecked
-                            ? '1px solid rgba(16, 185, 129, 0.3)'
-                            : '1px dashed rgba(255, 255, 255, 0.12)',
-                          transition: 'all 0.2s ease',
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          id={`chk-transferor-consent-${req.id}`}
-                          disabled={!hasSnapshot || !hasReviewed}
-                          checked={isConsentChecked}
-                          onChange={(e) => {
-                            if (!hasSnapshot || !hasReviewed) return;
-                            setRecipientConsentChecked((prev) => ({ ...prev, [req.id]: e.target.checked }));
-                            setAcceptError((prev) => ({ ...prev, [req.id]: null }));
-                          }}
-                          style={{
-                            marginTop: '2px',
-                            accentColor: '#10b981',
-                            cursor: (!hasSnapshot || !hasReviewed) ? 'not-allowed' : 'pointer',
-                          }}
-                        />
-                        <div>
-                          <span style={{ fontWeight: 600 }}>
-                            Tôi đã đọc, hiểu và đồng ý chuyển nhượng theo đúng nội dung phụ lục này.
-                          </span>
-                          {!hasSnapshot ? (
-                            <div style={{ color: '#f59e0b', fontSize: '9.5px', marginTop: '3px' }}>
-                              * Chưa có phụ lục chuyển nhượng để xem xét.
-                            </div>
-                          ) : !hasReviewed ? (
-                            <div style={{ color: '#f59e0b', fontSize: '9.5px', marginTop: '3px' }}>
-                              * Vui lòng bấm <strong>"XEM PHỤ LỤC CHUYỂN NHƯỢNG"</strong> để đọc toàn văn điều khoản trước khi xác nhận đồng ý.
-                            </div>
-                          ) : null}
-                        </div>
-                      </label>
-
-                      {acceptError[req.id] && (
-                        <div style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: '6px', padding: '6px 8px', color: '#fca5a5', fontSize: '10px' }}>
-                          {acceptError[req.id]}
-                        </div>
-                      )}
-
-                      <button
-                        type="button"
-                        id={`btn-transferor-confirm-${req.id}`}
-                        onClick={() => {
-                          if (!hasSnapshot || !hasReviewed || !isConsentChecked) return;
-                          confirmTransferorConsentMutation.mutate({
-                            transferId: req.id,
-                            payload: {
-                              contentHash: req.contentHash,
-                              acknowledgedTerms: true,
-                              confirmationNote: 'Bên chuyển nhượng xác nhận đồng ý với phụ lục hợp đồng chuyển nhượng cổ phần',
-                            },
-                          });
-                        }}
-                        disabled={!canSubmitTransferorConsent}
-                        style={{
-                          padding: '9px 12px',
-                          background: !canSubmitTransferorConsent
-                            ? 'rgba(255, 255, 255, 0.08)'
-                            : 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
-                          border: 'none',
-                          borderRadius: '8px',
-                          color: !canSubmitTransferorConsent ? '#94a3b8' : '#ffffff',
-                          fontSize: '11px',
-                          fontWeight: 800,
-                          cursor: !canSubmitTransferorConsent ? 'not-allowed' : 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
-                          boxShadow: canSubmitTransferorConsent ? '0 4px 14px rgba(16, 185, 129, 0.35)' : 'none',
-                        }}
-                      >
-                        {confirmTransferorConsentMutation.isPending ? (
-                          <>
-                            <Loader2 size={13} className="animate-spin" />
-                            <span>Đang ghi nhận...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Check size={13} />
-                            <span>XÁC NHẬN PHỤ LỤC CHUYỂN NHƯỢNG</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Transferor already signed notice */}
-                  {isTransferorAccepted && (
-                    <div
-                      style={{
-                        background: 'rgba(16, 185, 129, 0.1)',
-                        border: '1px solid rgba(16, 185, 129, 0.3)',
-                        borderRadius: '8px',
-                        padding: '8px 10px',
-                        fontSize: '10.5px',
-                        color: '#6ee7b7',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <CheckCircle2 size={14} color="#10b981" />
-                        <span style={{ fontWeight: 700 }}>ĐÃ XÁC NHẬN KHI GỬI YÊU CẦU</span>
-                      </div>
-                      <span style={{ fontSize: '10px', color: '#a7f3d0' }}>
-                        Phụ lục chuyển nhượng đã được xác nhận điện tử khi gửi yêu cầu
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Complete Button if eligible */}
-                  {((req.canFinalize ?? req.canComplete) || (isTransferorAccepted && isRecipientAccepted && req.status !== 'COMPLETED' && (!req.finalizationBlockers || req.finalizationBlockers.length === 0))) && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <button
-                        type="button"
-                        id={`btn-complete-outgoing-${req.id}`}
-                        onClick={() => {
-                          setCompleteError((prev) => ({ ...prev, [req.id]: null }));
-                          completeTransferMutation.mutate(req.id);
-                        }}
-                        disabled={completeTransferMutation.isPending}
-                        style={{
-                          padding: '9px 12px',
-                          background: 'linear-gradient(135deg, #0284c7 0%, #06b6d4 100%)',
-                          border: '1.5px solid #22e6ff',
-                          borderRadius: '8px',
-                          color: '#ffffff',
-                          fontSize: '11px',
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
-                          boxShadow: '0 0 15px rgba(34, 230, 255, 0.3)',
-                        }}
-                      >
-                        {completeTransferMutation.isPending ? (
-                          <>
-                            <Loader2 size={13} className="animate-spin" />
-                            <span>Đang hoàn tất...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Sparkles size={13} color="#22e6ff" />
-                            <span>HOÀN TẤT CHUYỂN NHƯỢNG</span>
-                          </>
-                        )}
-                      </button>
-                      {completeError[req.id] && (
-                        <div style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: '6px', padding: '6px 8px', color: '#fca5a5', fontSize: '10px' }}>
-                          {completeError[req.id]}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Completed Success Banner */}
-                  {req.status === 'COMPLETED' && (
-                    <div
-                      style={{
-                        background: 'rgba(16, 185, 129, 0.15)',
-                        border: '1px solid #10b981',
-                        borderRadius: '8px',
-                        padding: '10px 12px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        color: '#6ee7b7',
-                        fontSize: '11px',
-                      }}
-                    >
-                      <CheckCircle2 size={16} color="#10b981" />
-                      <div>
-                        <div style={{ fontWeight: 800 }}>CHUYỂN NHƯỢNG THÀNH CÔNG</div>
-                        <div style={{ fontSize: '10px', color: '#a7f3d0' }}>
-                          Cổ phần đã được phân bổ lại: {req.fromUserName} {Number(req.fromUserCurrentPercentage ?? 0).toFixed(2)}%, {req.toUserName} {Number(req.toUserCurrentPercentage ?? 0).toFixed(2)}%.
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            {/* Render Outgoing Transfers Initiated by Current User (e.g. Tran Thi B or Nguyen Van A) */}
+            {(Array.isArray(outgoingTransfers) ? outgoingTransfers : []).map((req) => (
+              <TransferCardItem
+                key={'outgoing-' + req.id}
+                req={req}
+                type="outgoing"
+                vehicleCode={vehicleCode}
+                currentUser={currentUser}
+                activeMembers={activeMembers}
+                onSettlementSuccess={() => {
+                  invalidateAllOwnershipData();
+                  refetchIncoming();
+                  refetchGroupTransfers();
+                }}
+                onAccept={(transferId, hash) =>
+                  acceptTransferMutation.mutate({
+                    transferId,
+                    payload: { contentHash: hash, acknowledgedTerms: true },
+                  })
+                }
+                onConfirmTransferorConsent={(transferId, hash) =>
+                  confirmTransferorConsentMutation.mutate({
+                    transferId,
+                    payload: { contentHash: hash, acknowledgedTerms: true },
+                  })
+                }
+                onRejectPrompt={(transferId) => {
+                  setRejectingTransferId(transferId);
+                  setRejectReasonInput('');
+                }}
+                onCancel={(transferId) => cancelTransferMutation.mutate(transferId)}
+                onComplete={(transferId) => completeTransferMutation.mutate(transferId)}
+                isAcceptPending={acceptTransferMutation.isPending}
+                isConfirmPending={confirmTransferorConsentMutation.isPending}
+                isCompletePending={completeTransferMutation.isPending}
+                acceptErrorMessage={acceptError[req.id]}
+                completeErrorMessage={completeError[req.id]}
+                onClearAcceptError={(transferId) => {
+                  setAcceptError((prev) => ({ ...prev, [transferId]: null }));
+                  setCompleteError((prev) => ({ ...prev, [transferId]: null }));
+                }}
+                isRejecting={rejectingTransferId === req.id}
+                rejectReasonInput={rejectReasonInput}
+                setRejectReasonInput={setRejectReasonInput}
+                onCancelReject={() => {
+                  setRejectingTransferId(null);
+                  setRejectReasonInput('');
+                }}
+                onConfirmReject={(transferId, reason) => {
+                  rejectTransferMutation.mutate({ transferId, reason });
+                }}
+              />
+            ))}
 
             {/* Render Notified Group Transfers for Non-Signatory Co-Owners (e.g. Le Van C) */}
-            {notifiedGroupTransfers.map((req) => {
-              const isAppendixOpen = Boolean(openedAppendixIds[req.id]);
-              const isTransferorAccepted = Boolean(req.transferorAccepted ?? req.isTransferorAccepted);
-              const isRecipientAccepted = Boolean(req.recipientAccepted ?? req.isRecipientAccepted);
-              const acceptedCount = req.acceptedConsentCount ?? req.acceptedMembersCount ?? ((isTransferorAccepted ? 1 : 0) + (isRecipientAccepted ? 1 : 0));
-              const requiredCount = req.requiredConsentCount ?? req.requiredAcceptanceCount ?? 2;
-
-              return (
-                <div
-                  key={`notified-${req.id}`}
-                  style={{
-                    background: 'rgba(7, 20, 38, 0.85)',
-                    border: '1.5px solid rgba(56, 189, 248, 0.35)',
-                    borderRadius: '14px',
-                    padding: '14px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '10px',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Info size={15} color="#38bdf8" />
-                      <div>
-                        <div style={{ fontSize: '12px', fontWeight: 800, color: '#f8fafc' }}>
-                          THÔNG BÁO CHUYỂN NHƯỢNG NỘI BỘ
-                        </div>
-                        <div style={{ fontSize: '10px', color: '#94a3b8' }}>{req.notificationMessage}</div>
-                      </div>
-                    </div>
-                    <span
-                      style={{
-                        fontSize: '9.5px',
-                        fontWeight: 800,
-                        padding: '3px 8px',
-                        borderRadius: '9999px',
-                        background: 'rgba(56, 189, 248, 0.15)',
-                        border: '1px solid rgba(56, 189, 248, 0.4)',
-                        color: '#38bdf8',
-                      }}
-                    >
-                      Được thông báo
-                    </span>
-                  </div>
-
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 1fr',
-                      gap: '8px',
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      borderRadius: '8px',
-                      padding: '8px 10px',
-                      fontSize: '11px',
-                    }}
-                  >
-                    <div>
-                      <span style={{ color: '#94a3b8', fontSize: '9.5px' }}>Người chuyển:</span>
-                      <div style={{ fontWeight: 700, color: '#e2e8f0' }}>{req.fromUserName}</div>
-                    </div>
-                    <div>
-                      <span style={{ color: '#94a3b8', fontSize: '9.5px' }}>Người nhận:</span>
-                      <div style={{ fontWeight: 700, color: '#e2e8f0' }}>{req.toUserName}</div>
-                    </div>
-                    <div>
-                      <span style={{ color: '#94a3b8', fontSize: '9.5px' }}>Tỷ lệ chuyển nhượng:</span>
-                      <div style={{ fontWeight: 800, color: '#00f2fe', fontFamily: 'monospace' }}>
-                        {req.transferPercentage}%
-                      </div>
-                    </div>
-                    <div>
-                      <span style={{ color: '#94a3b8', fontSize: '9.5px' }}>Tiến độ xác nhận:</span>
-                      <div style={{ fontWeight: 800, color: '#34d399', fontFamily: 'monospace' }}>
-                        {acceptedCount}/{requiredCount}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.02)',
-                      border: '1px solid rgba(255, 255, 255, 0.06)',
-                      borderRadius: '8px',
-                      padding: '8px 10px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '4px',
-                      fontSize: '10.5px',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
-                      <span style={{ color: '#38bdf8', fontWeight: 800, fontSize: '10px', textTransform: 'uppercase' }}>
-                        TIẾN TRÌNH XÁC NHẬN HAI BÊN ({acceptedCount}/{requiredCount})
-                      </span>
-                      <span
-                        style={{
-                          fontSize: '9px',
-                          fontWeight: 700,
-                          color: (req.status === 'COMPLETED' || (isTransferorAccepted && isRecipientAccepted)) ? '#10b981' : '#f59e0b',
-                        }}
-                      >
-                        {req.status === 'COMPLETED'
-                          ? 'CHUYỂN NHƯỢNG THÀNH CÔNG'
-                          : (isTransferorAccepted && isRecipientAccepted)
-                          ? (req.canFinalize ?? req.canComplete ? 'ĐỦ ĐIỀU KIỆN HOÀN TẤT' : 'CHỜ HOÀN TẤT ĐIỀU KIỆN')
-                          : isTransferorAccepted
-                          ? 'CHỜ NGƯỜI NHẬN XÁC NHẬN'
-                          : isRecipientAccepted
-                          ? 'CHỜ NGƯỜI CHUYỂN XÁC NHẬN'
-                          : 'CHỜ XÁC NHẬN CỦA HAI BÊN'}
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ color: '#cbd5e1' }}>{req.fromUserName} (Bên chuyển nhượng):</span>
-                      <span style={{ color: isTransferorAccepted ? '#10b981' : '#f59e0b', fontWeight: 700, fontFamily: 'monospace', fontSize: '10px' }}>
-                        {isTransferorAccepted ? 'Đã xác nhận' : 'Chờ xác nhận'}
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ color: '#cbd5e1' }}>{req.toUserName} (Bên nhận chuyển nhượng):</span>
-                      <span style={{ color: isRecipientAccepted ? '#10b981' : '#f59e0b', fontWeight: 700, fontFamily: 'monospace', fontSize: '10px' }}>
-                        {isRecipientAccepted ? 'Đã xác nhận' : 'Chờ xác nhận'}
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ color: '#94a3b8' }}>Bạn ({currentUser?.fullName || 'Đồng sở hữu'}):</span>
-                      <span style={{ color: '#38bdf8', fontSize: '9.5px', fontWeight: 600 }}>Đã được thông báo</span>
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      background: 'rgba(56, 189, 248, 0.06)',
-                      border: '1px dashed rgba(56, 189, 248, 0.25)',
-                      borderRadius: '8px',
-                      padding: '8px 10px',
-                      fontSize: '10px',
-                      color: '#cbd5e1',
-                      lineHeight: 1.4,
-                    }}
-                  >
-                    Bạn nhận được thông báo này với tư cách thành viên đồng sở hữu phương tiện. Giao dịch nội bộ này áp dụng cơ chế xác nhận hai bên (2/2). Quyền lợi, tỷ lệ sở hữu của bạn và các quyền ưu tiên/phản đối theo Thỏa thuận đồng sở hữu được bảo toàn đầy đủ.
-                  </div>
-
-                  {/* View Appendix Button for Notified Co-owner */}
-                  {req.contentSnapshot && (
-                    <button
-                      type="button"
-                      onClick={() => setOpenedAppendixIds((prev) => ({ ...prev, [req.id]: !isAppendixOpen }))}
-                      style={{
-                        padding: '8px 12px',
-                        background: 'rgba(0, 242, 254, 0.08)',
-                        border: '1px solid rgba(0, 242, 254, 0.35)',
-                        borderRadius: '8px',
-                        color: '#00f2fe',
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <FileText size={14} color="#00f2fe" />
-                        <span>{isAppendixOpen ? 'ẨN PHỤ LỤC CHUYỂN NHƯỢNG' : 'XEM PHỤ LỤC CHUYỂN NHƯỢNG'}</span>
-                      </div>
-                      {isAppendixOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                    </button>
-                  )}
-
-                  {isAppendixOpen && req.contentSnapshot && (
-                    <div
-                      style={{
-                        background: 'rgba(4, 10, 20, 0.95)',
-                        border: '1.5px solid rgba(0, 242, 254, 0.35)',
-                        borderRadius: '10px',
-                        padding: '12px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '8px',
-                      }}
-                    >
-                      <div style={{ fontSize: '10px', fontWeight: 700, color: '#f8fafc' }}>
-                        {req.contractVersionTitle || `PHỤ LỤC HỢP ĐỒNG ${req.contractVersionFormatted || 'V2.0'}`}
-                      </div>
-                      <div
-                        style={{
-                          background: 'rgba(0, 0, 0, 0.6)',
-                          border: '1px solid rgba(255, 255, 255, 0.08)',
-                          borderRadius: '6px',
-                          padding: '10px',
-                          color: '#cbd5e1',
-                          fontFamily: 'monospace',
-                          fontSize: '9.5px',
-                          lineHeight: 1.5,
-                          whiteSpace: 'pre-line',
-                          maxHeight: '200px',
-                          overflowY: 'auto',
-                        }}
-                      >
-                        {req.contentSnapshot}
-                      </div>
-                      {req.contentHash && (
-                        <div style={{ fontSize: '9px', color: '#94a3b8', fontFamily: 'monospace' }}>
-                          Mã băm niêm phong (SHA-256): {req.contentHash}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            {(Array.isArray(notifiedGroupTransfers) ? notifiedGroupTransfers : []).map((req) => (
+              <TransferCardItem
+                key={'notified-' + req.id}
+                req={req}
+                type="notified"
+                vehicleCode={vehicleCode}
+                currentUser={currentUser}
+                activeMembers={activeMembers}
+                onSettlementSuccess={() => {
+                  invalidateAllOwnershipData();
+                  refetchIncoming();
+                  refetchGroupTransfers();
+                }}
+                onAccept={(transferId, hash) =>
+                  acceptTransferMutation.mutate({
+                    transferId,
+                    payload: { contentHash: hash, acknowledgedTerms: true },
+                  })
+                }
+                onConfirmTransferorConsent={(transferId, hash) =>
+                  confirmTransferorConsentMutation.mutate({
+                    transferId,
+                    payload: { contentHash: hash, acknowledgedTerms: true },
+                  })
+                }
+                onRejectPrompt={(transferId) => {
+                  setRejectingTransferId(transferId);
+                  setRejectReasonInput('');
+                }}
+                onCancel={(transferId) => cancelTransferMutation.mutate(transferId)}
+                onComplete={(transferId) => completeTransferMutation.mutate(transferId)}
+                isAcceptPending={acceptTransferMutation.isPending}
+                isConfirmPending={confirmTransferorConsentMutation.isPending}
+                isCompletePending={completeTransferMutation.isPending}
+                acceptErrorMessage={acceptError[req.id]}
+                completeErrorMessage={completeError[req.id]}
+                onClearAcceptError={(transferId) => {
+                  setAcceptError((prev) => ({ ...prev, [transferId]: null }));
+                  setCompleteError((prev) => ({ ...prev, [transferId]: null }));
+                }}
+                isRejecting={rejectingTransferId === req.id}
+                rejectReasonInput={rejectReasonInput}
+                setRejectReasonInput={setRejectReasonInput}
+                onCancelReject={() => {
+                  setRejectingTransferId(null);
+                  setRejectReasonInput('');
+                }}
+                onConfirmReject={(transferId, reason) => {
+                  rejectTransferMutation.mutate({ transferId, reason });
+                }}
+              />
+            ))}
             </>
           )}
         </div>
@@ -3760,105 +3986,229 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
           </div>
         )}
 
-        {/* NOTIFICATION: Pending incoming transfer requests for current user */}
-        {pendingIncomingCount > 0 && (
-          <div
-            onClick={() => setCurrentView('INCOMING_TRANSFERS')}
+        {/* CO-OWNERSHIP MANAGEMENT: 3 Tabs (Part 14) */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginBottom: '4px' }}>
+          <button
+            type="button"
+            id="tab-management-action-needed"
+            onClick={() => setManagementTab('ACTION_NEEDED')}
             style={{
-              background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(180, 83, 9, 0.3))',
-              border: '1.5px solid #f59e0b',
-              borderRadius: '12px',
-              padding: '10px 12px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
+              padding: '7px 4px',
+              borderRadius: '8px',
+              fontSize: '10px',
+              fontWeight: 800,
+              background: managementTab === 'ACTION_NEEDED' ? 'rgba(245, 158, 11, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+              border: managementTab === 'ACTION_NEEDED' ? '1px solid #f59e0b' : '1px solid rgba(255, 255, 255, 0.1)',
+              color: managementTab === 'ACTION_NEEDED' ? '#fbbf24' : '#94a3b8',
               cursor: 'pointer',
-              boxShadow: '0 0 16px rgba(245, 158, 11, 0.25)',
+              transition: 'all 0.2s',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Clock size={16} color="#fbbf24" />
-              <div>
-                <div style={{ fontSize: '11.5px', fontWeight: 800, color: '#fef3c7' }}>
-                  Có {pendingIncomingCount} yêu cầu nhận chuyển nhượng
-                </div>
-                <div style={{ fontSize: '10px', color: '#fde68a' }}>Nhấp để xem xét và phản hồi</div>
-              </div>
-            </div>
-            <ArrowRight size={14} color="#fbbf24" />
-          </div>
-        )}
-
-        {/* NOTIFICATION: In-app notifications for third-party co-owners (e.g. Le Van C) */}
-        {notifiedGroupTransfers.map((nt) => (
-          <div
-            key={`banner-notified-${nt.id}`}
-            onClick={() => setCurrentView('INCOMING_TRANSFERS')}
+            CẦN XỬ LÝ ({actionNeededTransfers.length})
+          </button>
+          <button
+            type="button"
+            id="tab-management-pending"
+            onClick={() => setManagementTab('PENDING')}
             style={{
-              background: 'linear-gradient(135deg, rgba(2, 132, 199, 0.2), rgba(6, 182, 212, 0.2))',
-              border: '1.5px solid #22e6ff',
-              borderRadius: '12px',
-              padding: '10px 12px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
+              padding: '7px 4px',
+              borderRadius: '8px',
+              fontSize: '10px',
+              fontWeight: 800,
+              background: managementTab === 'PENDING' ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+              border: managementTab === 'PENDING' ? '1px solid #38bdf8' : '1px solid rgba(255, 255, 255, 0.1)',
+              color: managementTab === 'PENDING' ? '#38bdf8' : '#94a3b8',
               cursor: 'pointer',
-              boxShadow: '0 0 16px rgba(34, 230, 255, 0.25)',
+              transition: 'all 0.2s',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Info size={16} color="#22e6ff" />
-              <div>
-                <div style={{ fontSize: '11.5px', fontWeight: 800, color: '#e0f2fe' }}>
-                  {nt.notificationMessage || `${nt.fromUserName} đề xuất chuyển nhượng ${nt.transferPercentage}% cho ${nt.toUserName}.`}
-                </div>
-                <div style={{ fontSize: '10px', color: '#93c5fd', marginTop: '2px' }}>
-                  Xác nhận hai bên: {nt.acceptedMembersCount ?? 0}/2 • Phê duyệt bổ sung: {nt.additionalApprovalStatus || 'Không yêu cầu'}
-                </div>
-              </div>
-            </div>
-            <ArrowRight size={14} color="#22e6ff" />
-          </div>
-        ))}
+            ĐANG CHỜ ({pendingTransfers.length})
+          </button>
+          <button
+            type="button"
+            id="tab-management-history"
+            onClick={() => setManagementTab('HISTORY')}
+            style={{
+              padding: '7px 4px',
+              borderRadius: '8px',
+              fontSize: '10px',
+              fontWeight: 800,
+              background: managementTab === 'HISTORY' ? 'rgba(16, 185, 129, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+              border: managementTab === 'HISTORY' ? '1px solid #10b981' : '1px solid rgba(255, 255, 255, 0.1)',
+              color: managementTab === 'HISTORY' ? '#34d399' : '#94a3b8',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+            }}
+          >
+            LỊCH SỬ ({historyTransfers.length})
+          </button>
+        </div>
 
-        {/* NOTIFICATION: Outgoing transfer requests initiated by current user (e.g. Tran Thi B) */}
-        {outgoingTransfers.map((ot) => {
-          const isCompleted = ot.status === 'COMPLETED';
-          const statusCfg = getTransferDisplayStatus(ot);
-          return (
-            <div
-              key={`banner-outgoing-${ot.id}`}
-              onClick={() => setCurrentView('INCOMING_TRANSFERS')}
-              style={{
-                background: isCompleted
-                  ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.25))'
-                  : 'linear-gradient(135deg, rgba(168, 85, 247, 0.2), rgba(126, 34, 206, 0.25))',
-                border: `1.5px solid ${isCompleted ? '#10b981' : '#a855f7'}`,
-                borderRadius: '12px',
-                padding: '10px 12px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                cursor: 'pointer',
-                boxShadow: `0 0 16px ${isCompleted ? 'rgba(16, 185, 129, 0.25)' : 'rgba(168, 85, 247, 0.25)'}`,
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {isCompleted ? <CheckCircle2 size={16} color="#10b981" /> : <Clock size={16} color="#c084fc" />}
-                <div>
-                  <div style={{ fontSize: '11.5px', fontWeight: 800, color: '#f8fafc' }}>
-                    Chuyển nhượng cho {ot.toUserName}: {ot.transferPercentage}% ({statusCfg.label})
+        {/* Tab content list */}
+        {(() => {
+          const activeList =
+            managementTab === 'ACTION_NEEDED'
+              ? actionNeededTransfers
+              : managementTab === 'PENDING'
+              ? pendingTransfers
+              : historyTransfers;
+
+          if (activeList.length === 0) {
+            return (
+              <div
+                style={{
+                  background: 'rgba(7, 20, 38, 0.50)',
+                  border: '1px dashed rgba(255, 255, 255, 0.12)',
+                  borderRadius: '10px',
+                  padding: '18px 14px',
+                  textAlign: 'center',
+                  color: '#94a3b8',
+                  fontSize: '11px',
+                }}
+              >
+                {managementTab === 'ACTION_NEEDED'
+                  ? 'Không có giao dịch nào cần bạn xử lý lúc này.'
+                  : managementTab === 'PENDING'
+                  ? 'Không có giao dịch nào đang chờ xử lý.'
+                  : 'Chưa có lịch sử giao dịch chuyển nhượng.'}
+              </div>
+            );
+          }
+
+          return activeList.map((t) => {
+            const currentId = String(currentUser?.id || '').toLowerCase();
+            const isTransferor = currentId === String(t.fromUserId ?? t.transferorUserId ?? '').toLowerCase();
+            const isRecipient = currentId === String(t.toUserId ?? t.recipientUserId ?? '').toLowerCase();
+            const isTransferorAccepted = Boolean(t.transferorAccepted ?? t.isTransferorAccepted);
+            const isRecipientAccepted = Boolean(t.recipientAccepted ?? t.isRecipientAccepted);
+            const bothAccepted = isTransferorAccepted && isRecipientAccepted;
+            const isCompleted = t.status === 'COMPLETED';
+            const hasFinBlocker = Boolean(
+              t.hasOutstandingFinancialObligations ||
+              (t.finalizationBlockers && t.finalizationBlockers.some((b) => b.includes('tài chính') || b.includes('nghĩa vụ')))
+            );
+            const currentUserMustConfirm =
+              !isCompleted &&
+              ((isTransferor && !isTransferorAccepted) || (isRecipient && !isRecipientAccepted));
+
+            let badgeText = '';
+            let badgeColor = '';
+            let badgeBg = '';
+            let badgeBorder = '';
+            let cardDesc = '';
+
+            if (isCompleted) {
+              badgeText = 'CHUYỂN NHƯỢNG THÀNH CÔNG';
+              badgeColor = '#10b981';
+              badgeBg = 'rgba(16, 185, 129, 0.15)';
+              badgeBorder = '#10b981';
+              cardDesc = `Giao dịch chuyển nhượng ${t.transferPercentage}% từ ${t.fromUserName} sang ${t.toUserName} đã hoàn tất.`;
+            } else if (currentUserMustConfirm) {
+              badgeText = 'CẦN BẠN XÁC NHẬN';
+              badgeColor = '#fbbf24';
+              badgeBg = 'rgba(245, 158, 11, 0.2)';
+              badgeBorder = '#f59e0b';
+              cardDesc = isTransferor
+                ? `Bạn cần xác nhận phụ lục để tiếp tục giao dịch ${t.transferPercentage}%.`
+                : `Bạn cần đồng ý nhận chuyển nhượng ${t.transferPercentage}% từ ${t.fromUserName}.`;
+            } else if (hasFinBlocker) {
+              badgeText = 'CHỜ HOÀN TẤT NGHĨA VỤ TÀI CHÍNH';
+              badgeColor = '#f87171';
+              badgeBg = 'rgba(239, 68, 68, 0.15)';
+              badgeBorder = '#ef4444';
+              cardDesc = `Tiến độ: ${(isTransferorAccepted ? 1 : 0) + (isRecipientAccepted ? 1 : 0)}/2 • Người chuyển nhượng (${t.fromUserName}) còn nghĩa vụ tài chính chưa thanh toán.`;
+            } else if (!bothAccepted) {
+              badgeText = 'CHỜ BÊN CÒN LẠI XÁC NHẬN';
+              badgeColor = '#38bdf8';
+              badgeBg = 'rgba(56, 189, 248, 0.15)';
+              badgeBorder = '#38bdf8';
+              cardDesc = isTransferor
+                ? `Bạn đã ký • Chờ bên nhận (${t.toUserName}) ký xác nhận phụ lục.`
+                : isRecipient
+                ? `Bạn đã ký • Chờ bên chuyển (${t.fromUserName}) ký xác nhận phụ lục.`
+                : `Chờ các bên liên quan ký xác nhận phụ lục chuyển nhượng.`;
+            } else {
+              badgeText = 'ĐỦ ĐIỀU KIỆN HOÀN TẤT';
+              badgeColor = '#10b981';
+              badgeBg = 'rgba(16, 185, 129, 0.15)';
+              badgeBorder = '#10b981';
+              cardDesc = 'Cả hai bên đã xác nhận (2/2) và không còn nghĩa vụ nợ. Sẵn sàng hoàn tất!';
+            }
+
+            const handleCardClick = () => {
+              if (isCompleted) {
+                setCurrentView('HISTORY');
+              } else {
+                setCurrentView('INCOMING_TRANSFERS');
+              }
+            };
+
+            return (
+              <div
+                key={`coowner-card-${t.id}`}
+                id={`card-transfer-coowner-${t.id}`}
+                onClick={handleCardClick}
+                style={{
+                  background: isCompleted
+                    ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.2))'
+                    : currentUserMustConfirm
+                    ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(217, 119, 6, 0.25))'
+                    : hasFinBlocker
+                    ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(185, 28, 28, 0.2))'
+                    : 'linear-gradient(135deg, rgba(56, 189, 248, 0.15), rgba(3, 105, 161, 0.2))',
+                  border: `1.5px solid ${badgeBorder}`,
+                  borderRadius: '12px',
+                  padding: '12px 14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px',
+                  cursor: 'pointer',
+                  boxShadow: `0 0 16px ${badgeBorder}30`,
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {isCompleted ? (
+                      <CheckCircle2 size={16} color="#10b981" />
+                    ) : currentUserMustConfirm ? (
+                      <AlertCircle size={16} color="#fbbf24" />
+                    ) : (
+                      <Clock size={16} color="#38bdf8" />
+                    )}
+                    <span style={{ fontSize: '12px', fontWeight: 800, color: '#ffffff' }}>
+                      {t.fromUserName} ➔ {t.toUserName} ({t.transferPercentage}%)
+                    </span>
                   </div>
-                  <div style={{ fontSize: '10px', color: '#e2e8f0', marginTop: '2px' }}>
-                    Xác nhận hai bên: {ot.acceptedMembersCount ?? (ot.isTransferorAccepted ? 1 : 0) + (ot.isRecipientAccepted ? 1 : 0)}/2
-                    {!ot.isTransferorAccepted ? ' • Bạn chưa xác nhận phụ lục' : !ot.isRecipientAccepted ? ' • Chờ người nhận xác nhận' : ' • Đã xác nhận đầy đủ'}
-                  </div>
+                  <span
+                    style={{
+                      fontSize: '9.5px',
+                      fontWeight: 800,
+                      padding: '3px 8px',
+                      borderRadius: '9999px',
+                      background: badgeBg,
+                      border: `1px solid ${badgeBorder}`,
+                      color: badgeColor,
+                    }}
+                  >
+                    {badgeText}
+                  </span>
+                </div>
+
+                <div style={{ fontSize: '10.5px', color: '#cbd5e1', lineHeight: 1.4 }}>
+                  {cardDesc}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px', fontSize: '9.5px', color: '#94a3b8' }}>
+                  <span>Xác nhận: {(isTransferorAccepted ? 1 : 0) + (isRecipientAccepted ? 1 : 0)}/2 bên</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: badgeColor, fontWeight: 700 }}>
+                    {isCompleted ? 'Xem lịch sử' : 'Chi tiết giao dịch'} <ArrowRight size={11} />
+                  </span>
                 </div>
               </div>
-              <ArrowRight size={14} color={isCompleted ? '#10b981' : '#c084fc'} />
-            </div>
-          );
-        })}
+            );
+          });
+        })()}
 
         {/* 4 CORE METRICS */}
         <div

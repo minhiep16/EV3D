@@ -9,6 +9,7 @@ import {
   acceptContractVersion,
   activateContractVersion,
 } from '../services/contractApi';
+import { fetchTransferAppendix } from '../services/ownershipTransferApi';
 import {
   ContractSummaryResponse,
   ContractVersionResponse,
@@ -60,11 +61,39 @@ export function useContractVersionDetail(
   return useQuery<ContractVersionResponse>({
     queryKey: ['co-ownership-contract-version', contractId, versionId],
     queryFn: () => {
-      if (!contractId || !versionId) return Promise.reject(new Error('Thiếu tham số'));
+      if (!versionId) return Promise.reject(new Error('Thiếu tham số'));
       return fetchContractVersionDetail(contractId, versionId);
     },
-    enabled: !!contractId && !!versionId,
+    enabled: !!versionId,
     staleTime: 6000,
+  });
+}
+
+/**
+ * Authoritative TanStack Query hook to load transfer appendix.
+ * Bound to transferRequestId to prevent cross-transfer state leakage.
+ */
+export function useTransferAppendix(
+  transferRequestId: string | null | undefined,
+  contractVersionId?: string | null | undefined,
+  contractId?: string | null | undefined
+) {
+  return useQuery<ContractVersionResponse>({
+    queryKey: ['transfer-appendix', transferRequestId],
+    queryFn: async () => {
+      if (!transferRequestId) throw new Error('Mã yêu cầu chuyển nhượng không hợp lệ');
+      try {
+        return await fetchTransferAppendix(transferRequestId);
+      } catch (err) {
+        if (contractVersionId) {
+          return await fetchContractVersionDetail(contractId, contractVersionId);
+        }
+        throw err;
+      }
+    },
+    enabled: Boolean(transferRequestId),
+    staleTime: 5000,
+    retry: 1,
   });
 }
 

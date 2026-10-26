@@ -51,6 +51,7 @@ export interface OwnershipDistributionPreviewResponse {
   contractVersionFormatted?: string;
   contentSnapshot?: string;
   contentHash?: string;
+  previewId?: string;
 }
 
 export interface TransferParty {
@@ -61,7 +62,8 @@ export interface TransferParty {
   roleVi: string;
   currentPercentage?: number;
   proposedPercentage?: number;
-  isConsented: boolean;
+  consented: boolean;
+  isConsented?: boolean;
   consentedAt?: string | null;
   statusVi: string;
 }
@@ -94,6 +96,7 @@ export interface OwnershipTransferResponse {
   effectiveAt?: string | null;
   relatedProposalId?: string | null;
   relatedContractVersionId?: string | null;
+  contractId?: string | null;
   contractCode?: string;
   contractVersionId?: string;
   contractVersionFormatted?: string;
@@ -130,8 +133,18 @@ export interface OwnershipTransferResponse {
   currentUserAccepted?: boolean;
   currentUserCanAccept?: boolean;
   appendixAvailable?: boolean;
+  appendixStatus?: 'AVAILABLE' | 'MISSING' | string;
   appendixHash?: string;
   nextRequiredActions?: string[];
+  hasOutstandingFinancialObligations?: boolean;
+  outstandingObligationAmount?: number;
+  financialObligationMessage?: string;
+  financialObligationExpenseId?: string | null;
+  financialObligationExpenseShareId?: string | null;
+  financialObligationExpenseTitle?: string | null;
+  responsibleUserId?: string | null;
+  responsibleUserName?: string | null;
+  financialMode?: string | null;
 }
 
 export interface OwnershipHistoryResponse {
@@ -175,6 +188,7 @@ export interface CreateTransferPayload {
   reason?: string;
   contentHash?: string;
   acknowledgedTerms?: boolean;
+  previewId?: string;
 }
 
 export interface AcceptTransferPayload {

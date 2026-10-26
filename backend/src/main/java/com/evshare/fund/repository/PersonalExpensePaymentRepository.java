@@ -16,4 +16,10 @@ public interface PersonalExpensePaymentRepository extends JpaRepository<Personal
     List<PersonalExpensePayment> findByPayerUserIdOrderByCreatedAtDesc(UUID payerUserId);
 
     List<PersonalExpensePayment> findByStatusOrderByCreatedAtDesc(PersonalPaymentStatus status);
+
+    List<PersonalExpensePayment> findByExpenseShareIdAndStatusOrderByCreatedAtDesc(UUID expenseShareId, PersonalPaymentStatus status);
+
+    List<PersonalExpensePayment> findByExpenseIdAndPayerUserIdAndStatusOrderByCreatedAtDesc(UUID expenseId, UUID payerUserId, PersonalPaymentStatus status);
+
+    List<PersonalExpensePayment> findByExpenseIdAndPayerUserIdOrderByCreatedAtDesc(UUID expenseId, UUID payerUserId);
 }

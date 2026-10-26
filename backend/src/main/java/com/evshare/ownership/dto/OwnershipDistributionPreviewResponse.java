@@ -29,6 +29,7 @@ public class OwnershipDistributionPreviewResponse {
     private String contractVersionFormatted;
     private String contentSnapshot;
     private String contentHash;
+    private String previewId;
 
     public OwnershipDistributionPreviewResponse() {
     }
@@ -180,5 +181,13 @@ public class OwnershipDistributionPreviewResponse {
 
     public void setContentHash(String contentHash) {
         this.contentHash = contentHash;
+    }
+
+    public String getPreviewId() {
+        return previewId;
+    }
+
+    public void setPreviewId(String previewId) {
+        this.previewId = previewId;
     }
 }

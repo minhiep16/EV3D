@@ -64,6 +64,15 @@ public class OwnershipTransferResponse {
     private boolean currentUserAccepted;
     private boolean currentUserCanAccept;
     private List<String> nextRequiredActions = new ArrayList<>();
+    private boolean hasOutstandingFinancialObligations;
+    private BigDecimal outstandingObligationAmount;
+    private String financialObligationMessage;
+    private UUID financialObligationExpenseId;
+    private UUID financialObligationExpenseShareId;
+    private String financialObligationExpenseTitle;
+    private UUID responsibleUserId;
+    private String responsibleUserName;
+    private String financialMode;
 
     public OwnershipTransferResponse() {
     }
@@ -107,6 +116,9 @@ public class OwnershipTransferResponse {
             if (entity.getContractVersion().getContract() != null) {
                 resp.setContractCode(entity.getContractVersion().getContract().getContractCode());
             }
+            resp.setAppendixStatus(resp.isAppendixAvailable() ? "AVAILABLE" : "MISSING");
+        } else {
+            resp.setAppendixStatus("MISSING");
         }
         resp.setRelatedProposalId(entity.getRelatedProposalId());
         resp.setCreatedAt(entity.getCreatedAt());
@@ -121,12 +133,12 @@ public class OwnershipTransferResponse {
             boolean isRecipient = currentUserId.equals(resp.getToUserId());
             boolean isTransferor = currentUserId.equals(resp.getFromUserId());
             String st = resp.getStatus();
-            boolean isPending = ("PENDING_ACCEPTANCE".equals(st) || "PENDING_CONTRACT".equals(st));
+            boolean isPending = ("PENDING_ACCEPTANCE".equals(st) || "PENDING_CONTRACT".equals(st) || "APPROVED".equals(st)) && !"COMPLETED".equals(st) && !"REJECTED".equals(st) && !"CANCELLED".equals(st);
             boolean canAct = isPending && ((isRecipient && !resp.isRecipientAccepted()) || (isTransferor && !resp.isTransferorAccepted()));
             resp.setCanAccept(canAct);
             resp.setCanReject(isRecipient && !resp.isRecipientAccepted() && isPending);
             resp.setCanCancel(isTransferor && isPending);
-            resp.setCanComplete("PENDING_CONTRACT".equals(st) || "APPROVED".equals(st));
+            resp.setCanComplete(("PENDING_CONTRACT".equals(st) || "APPROVED".equals(st)) && !"COMPLETED".equals(st));
             resp.setCurrentUserAccepted(isTransferor ? resp.isTransferorAccepted() : (isRecipient ? resp.isRecipientAccepted() : false));
             resp.setCurrentUserCanAccept(canAct);
         }
@@ -617,6 +629,18 @@ public class OwnershipTransferResponse {
         return toUserId;
     }
 
+    private String appendixStatus;
+
+    @JsonProperty("appendixStatus")
+    public String getAppendixStatus() {
+        if (appendixStatus != null) return appendixStatus;
+        return isAppendixAvailable() ? "AVAILABLE" : "MISSING";
+    }
+
+    public void setAppendixStatus(String appendixStatus) {
+        this.appendixStatus = appendixStatus;
+    }
+
     @JsonProperty("appendixAvailable")
     public boolean isAppendixAvailable() {
         return contentSnapshot != null && !contentSnapshot.isBlank();
@@ -662,5 +686,86 @@ public class OwnershipTransferResponse {
 
     public void setNextRequiredActions(List<String> nextRequiredActions) {
         this.nextRequiredActions = nextRequiredActions;
+    }
+
+    @JsonProperty("hasOutstandingFinancialObligations")
+    public boolean isHasOutstandingFinancialObligations() {
+        return hasOutstandingFinancialObligations;
+    }
+
+    public void setHasOutstandingFinancialObligations(boolean hasOutstandingFinancialObligations) {
+        this.hasOutstandingFinancialObligations = hasOutstandingFinancialObligations;
+    }
+
+    @JsonProperty("outstandingObligationAmount")
+    public BigDecimal getOutstandingObligationAmount() {
+        return outstandingObligationAmount;
+    }
+
+    public void setOutstandingObligationAmount(BigDecimal outstandingObligationAmount) {
+        this.outstandingObligationAmount = outstandingObligationAmount;
+    }
+
+    @JsonProperty("financialObligationMessage")
+    public String getFinancialObligationMessage() {
+        return financialObligationMessage;
+    }
+
+    public void setFinancialObligationMessage(String financialObligationMessage) {
+        this.financialObligationMessage = financialObligationMessage;
+    }
+
+    @JsonProperty("financialObligationExpenseId")
+    public UUID getFinancialObligationExpenseId() {
+        return financialObligationExpenseId;
+    }
+
+    public void setFinancialObligationExpenseId(UUID financialObligationExpenseId) {
+        this.financialObligationExpenseId = financialObligationExpenseId;
+    }
+
+    @JsonProperty("financialObligationExpenseShareId")
+    public UUID getFinancialObligationExpenseShareId() {
+        return financialObligationExpenseShareId;
+    }
+
+    public void setFinancialObligationExpenseShareId(UUID financialObligationExpenseShareId) {
+        this.financialObligationExpenseShareId = financialObligationExpenseShareId;
+    }
+
+    @JsonProperty("financialObligationExpenseTitle")
+    public String getFinancialObligationExpenseTitle() {
+        return financialObligationExpenseTitle;
+    }
+
+    public void setFinancialObligationExpenseTitle(String financialObligationExpenseTitle) {
+        this.financialObligationExpenseTitle = financialObligationExpenseTitle;
+    }
+
+    @JsonProperty("responsibleUserId")
+    public UUID getResponsibleUserId() {
+        return responsibleUserId;
+    }
+
+    public void setResponsibleUserId(UUID responsibleUserId) {
+        this.responsibleUserId = responsibleUserId;
+    }
+
+    @JsonProperty("responsibleUserName")
+    public String getResponsibleUserName() {
+        return responsibleUserName;
+    }
+
+    public void setResponsibleUserName(String responsibleUserName) {
+        this.responsibleUserName = responsibleUserName;
+    }
+
+    @JsonProperty("financialMode")
+    public String getFinancialMode() {
+        return financialMode;
+    }
+
+    public void setFinancialMode(String financialMode) {
+        this.financialMode = financialMode;
     }
 }
