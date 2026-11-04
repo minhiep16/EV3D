@@ -589,7 +589,7 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
         <TripVisualizationWorld vehicle={vehicle} />
       )}
 
-      {isSelected && vehicleDamageMappingMode && (
+      {isSelected && (vehicleDamageMappingMode || vehicleInspectionMode) && (
         <VehicleDamageWorld vehicle={vehicle} />
       )}
 

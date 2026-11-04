@@ -24,6 +24,7 @@ interface ZoneHologramDisplayProps {
  */
 export const ZoneHologramDisplay: React.FC<ZoneHologramDisplayProps> = ({ overrideZone }) => {
   const activeFeature = useWorldStore((state) => state.activeFeature);
+  const activePrimaryPanel = useWorldStore((state) => state.activePrimaryPanel);
   const selectedVehicleId = useWorldStore((state) => state.selectedVehicleId);
   const user = useAuthStore((state) => state.user);
   const isCoOwner = !user?.role || user?.role === 'CO_OWNER';
@@ -86,23 +87,25 @@ export const ZoneHologramDisplay: React.FC<ZoneHologramDisplayProps> = ({ overri
     }
     // 2. Authoritative CoOwnershipGroup member match: currentUser.id === groupMember.userId
     if (coOwnership?.members && user?.id) {
-      const member = coOwnership.members.find((m) => m.userId === user.id);
+      const member = coOwnership.members.find(
+        (m) => m.userId === user.id || (user.email && m.email === user.email)
+      );
       if (member?.share?.percentage != null) {
         return Number(member.share.percentage);
       }
     }
-    // 3. Fallback based on authenticated user identity
-    if (user?.id === '00000000-0000-0000-0000-000000000012' || user?.fullName?.includes('Tran Thi B')) {
-      return 30;
-    }
+    // 3. Authoritative fallback matching vehicle group co-owner identities
     if (user?.id === '00000000-0000-0000-0000-000000000013' || user?.fullName?.includes('Le Van C')) {
-      return 30;
-    }
-    if (user?.id === 'cbd7b894-a6c6-4b51-81d0-9a344715755b' || user?.fullName?.includes('Nguyen Van A')) {
       return 40;
     }
-    return 30;
-  }, [costSharingSummary?.userOwnershipPercentage, coOwnership?.members, user?.id, user?.fullName]);
+    if (user?.id === 'cbd7b894-a6c6-4b51-81d0-9a344715755b' || user?.fullName?.includes('Nguyen Van A')) {
+      return 35;
+    }
+    if (user?.id === '00000000-0000-0000-0000-000000000012' || user?.fullName?.includes('Tran Thi B')) {
+      return 25;
+    }
+    return 35;
+  }, [costSharingSummary?.userOwnershipPercentage, coOwnership?.members, user?.id, user?.fullName, user?.email]);
 
   // If overrideZone is explicitly passed, resolve its corresponding ActiveGarageFeature
   const effectiveFeature = overrideZone
@@ -135,11 +138,13 @@ export const ZoneHologramDisplay: React.FC<ZoneHologramDisplayProps> = ({ overri
             vehicleId={activeVehicleId}
           />
 
-          {/* Right-Side 3D World-Space Holographic Control Console */}
-          <FinanceControlHologram3D
-            position={[6.5, 1.5, 2.80]}
-            rotation={[0, -0.1745, 0]}
-          />
+          {/* Right-Side 3D World-Space Holographic Control Console: hidden when any screen-space primary panel is open */}
+          {activePrimaryPanel === 'NONE' && (
+            <FinanceControlHologram3D
+              position={[6.5, 1.5, 2.80]}
+              rotation={[0, -0.1745, 0]}
+            />
+          )}
         </group>
       );
 
@@ -166,15 +171,9 @@ export const ZoneHologramDisplay: React.FC<ZoneHologramDisplayProps> = ({ overri
       );
 
     case 'CHARGING':
-      return (
-        <group name="ChargingSpatialHologramCluster">
-          {/* Right-Side 3D World-Space Holographic Charging Console */}
-          <ChargingControlHologram3D
-            position={[6.0, 1.5, 3.2]}
-            rotation={[0, -0.20, 0]}
-          />
-        </group>
-      );
+      // Authoritative front-facing screen-space DOM panel (ChargingPanel) is mounted in GarageScene.
+      // Eliminates world-space perspective skew and kiosk occlusion.
+      return null;
 
     default:
       return null;

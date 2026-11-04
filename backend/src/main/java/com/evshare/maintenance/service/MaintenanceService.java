@@ -2,9 +2,17 @@ package com.evshare.maintenance.service;
 
 import com.evshare.common.exception.ResourceNotFoundException;
 import com.evshare.common.exception.UnauthorizedException;
+import com.evshare.damage.dto.DamageRecordResponse;
 import com.evshare.damage.entity.DamageRecord;
 import com.evshare.damage.entity.DamageStatus;
 import com.evshare.damage.repository.DamageRecordRepository;
+import com.evshare.expense.entity.*;
+import com.evshare.expense.repository.ExpenseRepository;
+import com.evshare.expense.service.ExpenseShareService;
+import com.evshare.fund.dto.CommonDisbursementRequest;
+import com.evshare.fund.entity.SharedFund;
+import com.evshare.fund.repository.SharedFundRepository;
+import com.evshare.fund.service.SharedFundService;
 import com.evshare.maintenance.dto.CastMaintenanceVoteRequest;
 import com.evshare.maintenance.dto.CompleteMaintenanceRequest;
 import com.evshare.maintenance.dto.CreateMaintenanceRequest;
@@ -64,6 +72,13 @@ public class MaintenanceService {
     private final MaintenanceApprovalVoteRepository voteRepository;
     private final OwnershipShareRepository ownershipShareRepository;
     private final CoOwnershipGroupRepository coOwnershipGroupRepository;
+    private final ExpenseRepository expenseRepository;
+    private final ExpenseShareService expenseShareService;
+    private final SharedFundService sharedFundService;
+    private final SharedFundRepository sharedFundRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.evshare.notification.service.NotificationService notificationService;
 
     public MaintenanceService(
             MaintenanceRequestRepository maintenanceRequestRepository,
@@ -75,7 +90,11 @@ public class MaintenanceService {
             GroupVehicleRepository groupVehicleRepository,
             MaintenanceApprovalVoteRepository voteRepository,
             OwnershipShareRepository ownershipShareRepository,
-            CoOwnershipGroupRepository coOwnershipGroupRepository
+            CoOwnershipGroupRepository coOwnershipGroupRepository,
+            ExpenseRepository expenseRepository,
+            ExpenseShareService expenseShareService,
+            SharedFundService sharedFundService,
+            SharedFundRepository sharedFundRepository
     ) {
         this.maintenanceRequestRepository = maintenanceRequestRepository;
         this.vehicleRepository = vehicleRepository;
@@ -87,6 +106,10 @@ public class MaintenanceService {
         this.voteRepository = voteRepository;
         this.ownershipShareRepository = ownershipShareRepository;
         this.coOwnershipGroupRepository = coOwnershipGroupRepository;
+        this.expenseRepository = expenseRepository;
+        this.expenseShareService = expenseShareService;
+        this.sharedFundService = sharedFundService;
+        this.sharedFundRepository = sharedFundRepository;
     }
 
     /**
@@ -120,7 +143,7 @@ public class MaintenanceService {
     }
 
     /**
-     * STAFF / ADMIN creates a new maintenance request.
+     * STAFF / ADMIN / CO_OWNER creates a new maintenance request.
      * New requests start in PENDING_APPROVAL status requiring co-owner approval before starting.
      */
     @Transactional
@@ -130,12 +153,17 @@ public class MaintenanceService {
             UUID actorId,
             Role actorRole
     ) {
-        if (actorRole != Role.STAFF && actorRole != Role.ADMIN) {
-            throw new AccessDeniedException("Chỉ Nhân viên hoặc Quản trị viên mới có quyền tạo yêu cầu bảo dưỡng.");
+        if (actorRole != Role.STAFF && actorRole != Role.ADMIN && actorRole != Role.CO_OWNER) {
+            throw new AccessDeniedException("Chỉ Nhân viên, Quản trị viên hoặc Đồng sở hữu mới có quyền tạo yêu cầu bảo dưỡng.");
         }
 
         Vehicle vehicle = vehicleRepository.findById(vehicleId)
                 .orElseThrow(() -> new ResourceNotFoundException("Xe không tồn tại trong hệ thống: " + vehicleId));
+
+        if (actorRole == Role.CO_OWNER) {
+            CoOwnershipGroup group = getActiveGroupForVehicle(vehicleId);
+            getActiveGroupMember(group.getId(), actorId);
+        }
 
         User creator = userRepository.findById(actorId)
                 .orElseThrow(() -> new ResourceNotFoundException("Người dùng không tồn tại: " + actorId));
@@ -146,14 +174,37 @@ public class MaintenanceService {
                     .orElseThrow(() -> new ResourceNotFoundException("Nhân viên phụ trách không tồn tại: " + request.getAssignedStaffId()));
         }
 
+        String desc = request.getDescription() != null ? request.getDescription().trim() : "";
+        if (request.getEstimatedCost() != null && request.getEstimatedCost().compareTo(BigDecimal.ZERO) > 0) {
+            desc = (desc.isBlank() ? "" : desc + " | ") + "Dự toán chi phí: " + request.getEstimatedCost().setScale(0, java.math.RoundingMode.HALF_UP) + " VND";
+        }
+
+        // Duplicate Request Prevention & Backend Idempotency (Section 6)
+        if (request.getDamageRecordIds() != null && !request.getDamageRecordIds().isEmpty()) {
+            List<MaintenanceRequest> existingRequests = maintenanceRequestRepository.findByVehicleIdOrderByCreatedAtDesc(vehicleId);
+            for (MaintenanceRequest existing : existingRequests) {
+                if (existing.getStatus() != MaintenanceStatus.COMPLETED
+                        && existing.getStatus() != MaintenanceStatus.CANCELLED
+                        && existing.getStatus() != MaintenanceStatus.REJECTED) {
+                    if (existing.getDamageRecords() != null) {
+                        for (DamageRecord dr : existing.getDamageRecords()) {
+                            if (request.getDamageRecordIds().contains(dr.getId())) {
+                                return MaintenanceResponse.fromEntity(existing);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         MaintenanceRequest maintenance = new MaintenanceRequest(
                 UUID.randomUUID(),
                 vehicle,
-                MaintenanceStatus.PENDING_APPROVAL,
+                actorRole == Role.CO_OWNER ? MaintenanceStatus.PENDING : MaintenanceStatus.PENDING_APPROVAL,
                 request.getPriority() != null ? request.getPriority() : MaintenancePriority.MEDIUM,
                 request.getMaintenanceType() != null ? request.getMaintenanceType() : MaintenanceType.PREVENTIVE,
                 request.getTitle().trim(),
-                request.getDescription() != null ? request.getDescription().trim() : null,
+                desc.isBlank() ? null : desc,
                 request.getScheduledAt(),
                 creator,
                 assignedStaff
@@ -162,16 +213,39 @@ public class MaintenanceService {
         // Associate damage records if provided
         if (request.getDamageRecordIds() != null && !request.getDamageRecordIds().isEmpty()) {
             List<DamageRecord> damages = damageRecordRepository.findAllById(request.getDamageRecordIds());
+            if (damages.size() != request.getDamageRecordIds().size()) {
+                throw new ResourceNotFoundException("Một hoặc nhiều bản ghi hư hỏng không tồn tại trong hệ thống.");
+            }
             Set<DamageRecord> validDamages = new HashSet<>();
             for (DamageRecord damage : damages) {
-                if (damage.getVehicle() != null && damage.getVehicle().getId().equals(vehicleId)) {
-                    validDamages.add(damage);
+                if (damage.getVehicle() == null || !damage.getVehicle().getId().equals(vehicleId)) {
+                    throw new IllegalArgumentException("Hư hỏng không thuộc về phương tiện đã chọn: " + damage.getId());
                 }
+                if (damage.getStatus() == DamageStatus.RESOLVED) {
+                    throw new IllegalStateException("Hư hỏng đã được khắc phục (RESOLVED), không thể tạo đề xuất sửa chữa mới: " + damage.getId());
+                }
+                validDamages.add(damage);
             }
             maintenance.setDamageRecords(validDamages);
         }
 
         MaintenanceRequest saved = maintenanceRequestRepository.save(maintenance);
+
+        if (notificationService != null) {
+            try {
+                CoOwnershipGroup grp = getActiveGroupForVehicle(saved.getVehicle().getId());
+                if (grp != null) {
+                    notificationService.notifyProposalAwaitingVote(
+                            saved.getVehicle().getId(),
+                            grp.getId(),
+                            saved.getId(),
+                            saved.getTitle()
+                    );
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
         return MaintenanceResponse.fromEntity(saved);
     }
 
@@ -284,6 +358,20 @@ public class MaintenanceService {
         }
 
         MaintenanceRequest saved = maintenanceRequestRepository.save(maintenance);
+
+        if (notificationService != null) {
+            try {
+                CoOwnershipGroup grp = getActiveGroupForVehicle(saved.getVehicle().getId());
+                notificationService.notifyStaffScheduledRepair(
+                        saved.getVehicle().getId(),
+                        grp != null ? grp.getId() : null,
+                        saved.getId(),
+                        saved.getScheduledAt() != null ? saved.getScheduledAt().toString() : "kế hoạch"
+                );
+            } catch (Exception ignored) {
+            }
+        }
+
         return MaintenanceResponse.fromEntity(saved);
     }
 
@@ -352,6 +440,19 @@ public class MaintenanceService {
         }
 
         MaintenanceRequest saved = maintenanceRequestRepository.save(maintenance);
+
+        if (notificationService != null) {
+            try {
+                CoOwnershipGroup grp = getActiveGroupForVehicle(saved.getVehicle().getId());
+                notificationService.notifyStaffRepairStarted(
+                        saved.getVehicle().getId(),
+                        grp != null ? grp.getId() : null,
+                        saved.getId()
+                );
+            } catch (Exception ignored) {
+            }
+        }
+
         return MaintenanceResponse.fromEntity(saved);
     }
 
@@ -379,24 +480,192 @@ public class MaintenanceService {
             throw new IllegalStateException("Chỉ có thể hoàn tất yêu cầu bảo dưỡng đang trong tiến trình xử lý (IN_PROGRESS). Trạng thái hiện tại: " + maintenance.getStatus());
         }
 
+        // Section 17: Completion Inspection Gate (PASSED, FAILED, REQUIRES_REWORK)
+        if (request != null && request.getInspectionResult() != null) {
+            String ir = request.getInspectionResult().trim().toUpperCase();
+            if (ir.equals("FAILED") || ir.equals("REQUIRES_REWORK")) {
+                String reworkNote = "Nghiệm thu: " + (ir.equals("FAILED") ? "KHÔNG ĐẠT" : "CẦN SỬA LẠI");
+                if (request.getCompletionNote() != null && !request.getCompletionNote().isBlank()) {
+                    reworkNote += " - " + request.getCompletionNote().trim();
+                }
+                maintenance.setCompletionNote(reworkNote);
+                MaintenanceRequest saved = maintenanceRequestRepository.save(maintenance);
+
+                if (notificationService != null) {
+                    try {
+                        CoOwnershipGroup grp = getActiveGroupForVehicle(saved.getVehicle().getId());
+                        notificationService.notifyRepairInspectionFailed(
+                                saved.getVehicle().getId(),
+                                grp != null ? grp.getId() : null,
+                                saved.getId(),
+                                request.getCompletionNote()
+                        );
+                    } catch (Exception ignored) {
+                    }
+                }
+
+                return MaintenanceResponse.fromEntity(saved);
+            }
+        }
+
         maintenance.setStatus(MaintenanceStatus.COMPLETED);
         Instant now = Instant.now();
         maintenance.setCompletedAt(now);
-        if (request != null && request.getCompletionNote() != null) {
-            maintenance.setCompletionNote(request.getCompletionNote().trim());
+
+        // Build audit completion note
+        StringBuilder noteBuilder = new StringBuilder();
+        noteBuilder.append("Nghiệm thu: ĐẠT (PASSED)");
+        if (request != null) {
+            if (request.getPerformedWork() != null && !request.getPerformedWork().isBlank()) {
+                noteBuilder.append(" | Công việc: ").append(request.getPerformedWork().trim());
+            }
+            if (request.getReplacedParts() != null && !request.getReplacedParts().isBlank()) {
+                noteBuilder.append(" | Phụ tùng: ").append(request.getReplacedParts().trim());
+            }
+            if (request.getFinalOdometer() != null && request.getFinalOdometer().compareTo(BigDecimal.ZERO) > 0) {
+                noteBuilder.append(" | ODO: ").append(request.getFinalOdometer()).append(" km");
+                maintenance.getVehicle().setOdometer(request.getFinalOdometer());
+                vehicleRepository.save(maintenance.getVehicle());
+            }
+            if (request.getActualCost() != null && request.getActualCost().compareTo(BigDecimal.ZERO) > 0) {
+                noteBuilder.append(" | Chi phí thực tế: ").append(request.getActualCost().setScale(0, java.math.RoundingMode.HALF_UP)).append(" VND");
+            }
+            if (request.getCompletionNote() != null && !request.getCompletionNote().isBlank()) {
+                noteBuilder.append(" | Ghi chú: ").append(request.getCompletionNote().trim());
+            }
         }
+        maintenance.setCompletionNote(noteBuilder.toString());
 
         // Transactionally resolve all linked damage records (Requirement 18: DO NOT delete rows)
         if (maintenance.getDamageRecords() != null) {
             for (DamageRecord damage : maintenance.getDamageRecords()) {
-                damage.setStatus(DamageStatus.RESOLVED);
-                damage.setResolvedAt(now);
-                damage.setResolvedByMaintenanceRequestId(maintenance.getId());
-                damageRecordRepository.save(damage);
+                if (damage.getStatus() == DamageStatus.UNDER_MAINTENANCE || damage.getStatus() == DamageStatus.OPEN) {
+                    damage.setStatus(DamageStatus.RESOLVED);
+                    damage.setResolvedAt(now);
+                    damage.setResolvedByMaintenanceRequestId(maintenance.getId());
+                    damageRecordRepository.save(damage);
+                }
+            }
+        }
+
+        // Support explicitly passed resolvedDamageIds in CompleteMaintenanceRequest
+        if (request != null && request.getResolvedDamageIds() != null && !request.getResolvedDamageIds().isEmpty()) {
+            List<DamageRecord> explicitDamages = damageRecordRepository.findAllById(request.getResolvedDamageIds());
+            for (DamageRecord damage : explicitDamages) {
+                if (damage.getVehicle() != null && damage.getVehicle().getId().equals(maintenance.getVehicle().getId())) {
+                    if (damage.getStatus() != DamageStatus.RESOLVED) {
+                        damage.setStatus(DamageStatus.RESOLVED);
+                        damage.setResolvedAt(now);
+                        damage.setResolvedByMaintenanceRequestId(maintenance.getId());
+                        damageRecordRepository.save(damage);
+                        if (maintenance.getDamageRecords() != null) {
+                            maintenance.getDamageRecords().add(damage);
+                        }
+                    }
+                }
             }
         }
 
         MaintenanceRequest saved = maintenanceRequestRepository.save(maintenance);
+
+        // Section 19 & 20: Record Actual Verified Expense and run existing periodic maintenance cost allocation
+        if (request != null && request.getActualCost() != null && request.getActualCost().compareTo(BigDecimal.ZERO) > 0) {
+            CoOwnershipGroup group = getActiveGroupForVehicle(saved.getVehicle().getId());
+            User staffUser = userRepository.findById(actorId).orElse(saved.getCreatedBy());
+
+            ExpenseCategory category = (saved.getMaintenanceType() == MaintenanceType.REPAIR || saved.getMaintenanceType() == MaintenanceType.BODY)
+                    ? ExpenseCategory.REPAIR
+                    : ExpenseCategory.MAINTENANCE;
+
+            // Idempotent: check if expense already created for this maintenance request
+            boolean expenseExists = expenseRepository.findByVehicleIdOrderByOccurredAtDesc(saved.getVehicle().getId())
+                    .stream()
+                    .anyMatch(e -> saved.getId().toString().equals(e.getSourceReferenceId()));
+
+            if (!expenseExists) {
+                Expense expense = new Expense(
+                        UUID.randomUUID(),
+                        saved.getVehicle(),
+                        group,
+                        category,
+                        request.getActualCost(),
+                        "Bảo dưỡng: " + saved.getTitle(),
+                        now,
+                        staffUser,
+                        staffUser,
+                        ExpenseSourceType.MANUAL,
+                        saved.getId().toString(),
+                        ExpenseStatus.APPROVED,
+                        request.getEvidenceUrl(),
+                        noteBuilder.toString()
+                );
+                expense.setApprovedAt(now);
+                if (saved.getRelatedProposalId() != null) {
+                    expense.setRelatedProposalId(saved.getRelatedProposalId());
+                }
+                expense.setAllocationPolicy(ExpenseAllocationPolicy.USAGE_AND_CAPITAL);
+
+                Expense savedExpense = expenseRepository.save(expense);
+
+                // Section 20: Reuse authoritative periodic maintenance allocation service
+                try {
+                    expenseShareService.generateSharesForExpense(savedExpense);
+                } catch (Exception ex) {
+                    // Log error without mutating the authoritative USAGE_AND_CAPITAL policy
+                }
+
+                if (notificationService != null) {
+                    try {
+                        String costStr = String.format("%,d VND", savedExpense.getAmount().longValue());
+                        String expenseDisplay = (savedExpense.getDescription() != null && !savedExpense.getDescription().isBlank())
+                                ? savedExpense.getDescription()
+                                : saved.getTitle();
+                        notificationService.notifyFinancialAllocation(
+                                group.getId(),
+                                savedExpense.getId(),
+                                expenseDisplay,
+                                costStr
+                        );
+                    } catch (Exception ignored) {
+                    }
+                }
+
+                // Section 22 & 23: Authorized Shared Fund spending
+                if (Boolean.TRUE.equals(request.getUseSharedFund())) {
+                    try {
+                        SharedFund sharedFund = sharedFundRepository.findByGroupId(group.getId()).orElse(null);
+                        if (sharedFund != null) {
+                            BigDecimal disburseAmt = request.getSharedFundDisburseAmount() != null && request.getSharedFundDisburseAmount().compareTo(BigDecimal.ZERO) > 0
+                                    ? request.getSharedFundDisburseAmount().min(request.getActualCost())
+                                    : request.getActualCost();
+
+                            UserPrincipal staffPrincipal = new UserPrincipal(staffUser);
+                            sharedFundService.disburseCommonExpense(
+                                    sharedFund.getId(),
+                                    new CommonDisbursementRequest(
+                                            savedExpense.getId(),
+                                            disburseAmt,
+                                            "Trích Quỹ chung bảo dưỡng xe " + saved.getVehicle().getName()
+                                    ),
+                                    staffPrincipal
+                            );
+
+                            if (notificationService != null) {
+                                String expenseDisplay = (savedExpense.getDescription() != null && !savedExpense.getDescription().isBlank())
+                                        ? savedExpense.getDescription()
+                                        : saved.getTitle();
+                                notificationService.notifyFinancialSettled(
+                                        group.getId(),
+                                        savedExpense.getId(),
+                                        expenseDisplay
+                                );
+                            }
+                        }
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+        }
 
         // Vehicle availability check: verify no other active IN_PROGRESS maintenance
         Vehicle vehicle = maintenance.getVehicle();
@@ -414,6 +683,28 @@ public class MaintenanceService {
                 vehicle.setStatus(VehicleStatus.AVAILABLE);
             }
             vehicleRepository.save(vehicle);
+        }
+
+        if (notificationService != null) {
+            try {
+                CoOwnershipGroup grp = getActiveGroupForVehicle(saved.getVehicle().getId());
+                notificationService.notifyRepairInspectionPassed(
+                        saved.getVehicle().getId(),
+                        grp != null ? grp.getId() : null,
+                        saved.getId()
+                );
+                if (saved.getDamageRecords() != null) {
+                    for (DamageRecord damage : saved.getDamageRecords()) {
+                        notificationService.notifyDamageResolved(
+                                saved.getVehicle().getId(),
+                                saved.getVehicle() != null ? saved.getVehicle().getLicensePlate() : null,
+                                damage.getVehiclePartCode(),
+                                damage.getId()
+                        );
+                    }
+                }
+            } catch (Exception ignored) {
+            }
         }
 
         return MaintenanceResponse.fromEntity(saved);
@@ -449,6 +740,20 @@ public class MaintenanceService {
 
         maintenance.setStatus(MaintenanceStatus.CANCELLED);
         MaintenanceRequest saved = maintenanceRequestRepository.save(maintenance);
+
+        if (notificationService != null) {
+            try {
+                CoOwnershipGroup grp = getActiveGroupForVehicle(saved.getVehicle().getId());
+                notificationService.notifyStaffScheduledRepair(
+                        saved.getVehicle().getId(),
+                        grp != null ? grp.getId() : null,
+                        saved.getId(),
+                        saved.getScheduledAt() != null ? saved.getScheduledAt().toString() : "kế hoạch"
+                );
+            } catch (Exception ignored) {
+            }
+        }
+
         return MaintenanceResponse.fromEntity(saved);
     }
 
@@ -466,12 +771,15 @@ public class MaintenanceService {
 
         BigDecimal approveWeight = BigDecimal.ZERO;
         BigDecimal rejectWeight = BigDecimal.ZERO;
+        BigDecimal abstainWeight = BigDecimal.ZERO;
 
         for (MaintenanceApprovalVote v : votes) {
             if (v.getDecision() == VoteDecision.APPROVE) {
                 approveWeight = approveWeight.add(v.getVotingWeight());
             } else if (v.getDecision() == VoteDecision.REJECT) {
                 rejectWeight = rejectWeight.add(v.getVotingWeight());
+            } else if (v.getDecision() == VoteDecision.ABSTAIN) {
+                abstainWeight = abstainWeight.add(v.getVotingWeight());
             }
         }
 
@@ -480,19 +788,25 @@ public class MaintenanceService {
             totalShares = new BigDecimal("100.00");
         }
 
-        BigDecimal pendingWeight = totalShares.subtract(approveWeight).subtract(rejectWeight);
+        BigDecimal pendingWeight = totalShares.subtract(approveWeight).subtract(rejectWeight).subtract(abstainWeight);
         if (pendingWeight.compareTo(BigDecimal.ZERO) < 0) {
             pendingWeight = BigDecimal.ZERO;
         }
 
         // Authoritative decision logic (Requirements 5 & 6)
+        CoOwnershipGroup group = coOwnershipGroupRepository.findById(groupId).orElse(null);
+        BigDecimal threshold = (group != null && group.getApprovalThresholdPercentage() != null)
+                ? group.getApprovalThresholdPercentage()
+                : MAINTENANCE_APPROVAL_THRESHOLD;
+
         if (maintenance.getStatus() == MaintenanceStatus.PENDING_APPROVAL) {
-            if (approveWeight.compareTo(MAINTENANCE_APPROVAL_THRESHOLD) > 0) {
+            if (approveWeight.compareTo(threshold) >= 0) {
                 maintenance.setStatus(MaintenanceStatus.APPROVED);
                 maintenance.setApprovedAt(Instant.now());
                 maintenance.setApprovedWeight(approveWeight);
                 maintenanceRequestRepository.save(maintenance);
-            } else if (rejectWeight.compareTo(MAINTENANCE_APPROVAL_THRESHOLD) >= 0) {
+            } else if (totalShares.subtract(rejectWeight).compareTo(threshold) < 0) {
+                // If maximum achievable approval weight is strictly less than threshold, proposal is rejected
                 maintenance.setStatus(MaintenanceStatus.REJECTED);
                 maintenanceRequestRepository.save(maintenance);
             }
@@ -511,12 +825,15 @@ public class MaintenanceService {
 
         BigDecimal approveWeight = BigDecimal.ZERO;
         BigDecimal rejectWeight = BigDecimal.ZERO;
+        BigDecimal abstainWeight = BigDecimal.ZERO;
 
         for (MaintenanceApprovalVote v : votes) {
             if (v.getDecision() == VoteDecision.APPROVE) {
                 approveWeight = approveWeight.add(v.getVotingWeight());
             } else if (v.getDecision() == VoteDecision.REJECT) {
                 rejectWeight = rejectWeight.add(v.getVotingWeight());
+            } else if (v.getDecision() == VoteDecision.ABSTAIN) {
+                abstainWeight = abstainWeight.add(v.getVotingWeight());
             }
         }
 
@@ -525,7 +842,7 @@ public class MaintenanceService {
             totalShares = new BigDecimal("100.00");
         }
 
-        BigDecimal pendingWeight = totalShares.subtract(approveWeight).subtract(rejectWeight);
+        BigDecimal pendingWeight = totalShares.subtract(approveWeight).subtract(rejectWeight).subtract(abstainWeight);
         if (pendingWeight.compareTo(BigDecimal.ZERO) < 0) {
             pendingWeight = BigDecimal.ZERO;
         }
@@ -543,6 +860,11 @@ public class MaintenanceService {
             BigDecimal rejectWeight,
             BigDecimal pendingWeight
     ) {
+        CoOwnershipGroup grp = coOwnershipGroupRepository.findById(groupId).orElse(null);
+        BigDecimal requiredThreshold = (grp != null && grp.getApprovalThresholdPercentage() != null)
+                ? grp.getApprovalThresholdPercentage()
+                : MAINTENANCE_APPROVAL_THRESHOLD;
+
         MaintenanceApprovalResponse response = new MaintenanceApprovalResponse();
         response.setMaintenanceRequestId(maintenance.getId());
         response.setVehicleId(vehicleId);
@@ -550,7 +872,7 @@ public class MaintenanceService {
         response.setApproveWeight(approveWeight);
         response.setRejectWeight(rejectWeight);
         response.setPendingWeight(pendingWeight);
-        response.setRequiredThreshold(MAINTENANCE_APPROVAL_THRESHOLD);
+        response.setRequiredThreshold(requiredThreshold);
         response.setApprovedAt(maintenance.getApprovedAt());
         response.setApprovedWeight(maintenance.getApprovedWeight());
 
@@ -655,5 +977,74 @@ public class MaintenanceService {
         if (!hasAccess) {
             throw new AccessDeniedException("Bạn không có quyền truy cập thông tin bảo dưỡng của xe này.");
         }
+    }
+
+    /**
+     * Audited reconciliation: Reconciles verified damage records whose repairs were completed
+     * and PASSED inspection in previous maintenance requests, but were not linked in the join table.
+     */
+    @Transactional
+    public List<DamageRecordResponse> reconcileCompletedRepairDamages(UUID vehicleId, UserPrincipal principal) {
+        validateVehicleAccess(vehicleId, principal);
+
+        List<MaintenanceRequest> completedRequests = maintenanceRequestRepository.findByVehicleIdOrderByCreatedAtDesc(vehicleId)
+                .stream()
+                .filter(m -> m.getStatus() == MaintenanceStatus.COMPLETED)
+                .filter(m -> m.getCompletionNote() == null || (!m.getCompletionNote().contains("FAILED") && !m.getCompletionNote().contains("KHÔNG ĐẠT")))
+                .toList();
+
+        List<DamageRecord> vehicleDamages = damageRecordRepository.findByVehicleIdOrderByCreatedAtDesc(vehicleId);
+        List<DamageRecordResponse> reconciled = new java.util.ArrayList<>();
+        Instant now = Instant.now();
+
+        for (MaintenanceRequest maint : completedRequests) {
+            // 1. Direct join-table damages that remained OPEN/UNDER_MAINTENANCE
+            if (maint.getDamageRecords() != null) {
+                for (DamageRecord damage : maint.getDamageRecords()) {
+                    if (damage.getStatus() != DamageStatus.RESOLVED) {
+                        damage.setStatus(DamageStatus.RESOLVED);
+                        damage.setResolvedAt(maint.getCompletedAt() != null ? maint.getCompletedAt() : now);
+                        damage.setResolvedByMaintenanceRequestId(maint.getId());
+                        damageRecordRepository.save(damage);
+                        reconciled.add(DamageRecordResponse.fromEntity(damage));
+                    }
+                }
+            }
+
+            // 2. Damage matching by part from title/description if join table was empty
+            String title = (maint.getTitle() != null ? maint.getTitle().toUpperCase() : "");
+            String desc = (maint.getDescription() != null ? maint.getDescription().toUpperCase() : "");
+
+            for (DamageRecord damage : vehicleDamages) {
+                if (damage.getStatus() != DamageStatus.RESOLVED && damage.getVehiclePartCode() != null) {
+                    String part = damage.getVehiclePartCode().toUpperCase();
+                    boolean partMatched = title.contains(part) || desc.contains(part);
+                    if (!partMatched) {
+                        if (part.equals("DOOR_RL") && (title.contains("CỬA SAU TRÁI") || desc.contains("CỬA SAU TRÁI") || title.contains("CỬA SAU T") || title.contains("DOOR_RL"))) {
+                            partMatched = true;
+                        } else if (part.equals("DOOR_FR") && (title.contains("CỬA TRƯỚC PHẢI") || desc.contains("CỬA TRƯỚC PHẢI") || title.contains("CỬA TRƯỚC P") || title.contains("DOOR_FR"))) {
+                            partMatched = true;
+                        } else if (part.equals("DOOR_FL") && (title.contains("CỬA TRƯỚC TRÁI") || desc.contains("CỬA TRƯỚC TRÁI"))) {
+                            partMatched = true;
+                        } else if (part.equals("DOOR_RR") && (title.contains("CỬA SAU PHẢI") || desc.contains("CỬA SAU PHẢI"))) {
+                            partMatched = true;
+                        }
+                    }
+
+                    if (partMatched) {
+                        damage.setStatus(DamageStatus.RESOLVED);
+                        damage.setResolvedAt(maint.getCompletedAt() != null ? maint.getCompletedAt() : now);
+                        damage.setResolvedByMaintenanceRequestId(maint.getId());
+                        DamageRecord savedDmg = damageRecordRepository.save(damage);
+                        if (maint.getDamageRecords() != null) {
+                            maint.getDamageRecords().add(savedDmg);
+                        }
+                        reconciled.add(DamageRecordResponse.fromEntity(savedDmg));
+                    }
+                }
+            }
+        }
+
+        return reconciled;
     }
 }

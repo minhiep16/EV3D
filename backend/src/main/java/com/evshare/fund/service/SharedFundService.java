@@ -4,6 +4,7 @@ import com.evshare.common.exception.DuplicateResourceException;
 import com.evshare.common.exception.ResourceNotFoundException;
 import com.evshare.expense.entity.*;
 import com.evshare.expense.repository.ExpenseRepository;
+import com.evshare.expense.repository.ExpenseShareRepository;
 import com.evshare.fund.dto.*;
 import com.evshare.fund.entity.*;
 import com.evshare.fund.repository.FundContributionRepository;
@@ -33,7 +34,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.evshare.fund.config.FinancialModeConfig;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -52,6 +55,7 @@ public class SharedFundService {
     private final UserRepository userRepository;
     private final FinancialModeConfig financialModeConfig;
     private final VoteProposalRepository voteProposalRepository;
+    private final ExpenseShareRepository expenseShareRepository;
 
     public SharedFundService(
             SharedFundRepository sharedFundRepository,
@@ -64,7 +68,8 @@ public class SharedFundService {
             GroupVehicleRepository groupVehicleRepository,
             UserRepository userRepository,
             FinancialModeConfig financialModeConfig,
-            VoteProposalRepository voteProposalRepository
+            VoteProposalRepository voteProposalRepository,
+            ExpenseShareRepository expenseShareRepository
     ) {
         this.sharedFundRepository = sharedFundRepository;
         this.fundContributionRepository = fundContributionRepository;
@@ -77,6 +82,7 @@ public class SharedFundService {
         this.userRepository = userRepository;
         this.financialModeConfig = financialModeConfig;
         this.voteProposalRepository = voteProposalRepository;
+        this.expenseShareRepository = expenseShareRepository;
     }
 
     /**
@@ -365,6 +371,56 @@ public class SharedFundService {
         tx.setFinancialMode(financialModeConfig.getMode());
 
         FundTransaction savedTx = fundTransactionRepository.save(tx);
+
+        // Phase 24: Prevent double charging: Amount funded by SharedFund must not become duplicate personal debt
+        try {
+            List<ExpenseShare> shares = expenseShareRepository.findByExpenseIdOrderByOwnershipPercentageDesc(expense.getId());
+            if (shares != null && !shares.isEmpty()) {
+                boolean isFullDisbursement = disburseAmount.compareTo(expense.getAmount()) >= 0;
+                if (isFullDisbursement) {
+                    for (ExpenseShare share : shares) {
+                        share.setShareAmount(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
+                        share.setStatus(ExpenseShareStatus.SETTLED);
+                    }
+                } else {
+                    BigDecimal remainingTotalDebt = expense.getAmount().subtract(disburseAmount).setScale(2, RoundingMode.HALF_UP);
+                    BigDecimal initialTotalShare = shares.stream()
+                            .map(ExpenseShare::getShareAmount)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                    List<BigDecimal> newAmounts = new ArrayList<>();
+                    for (ExpenseShare share : shares) {
+                        BigDecimal reduction = initialTotalShare.compareTo(BigDecimal.ZERO) > 0
+                                ? disburseAmount.multiply(share.getShareAmount()).divide(initialTotalShare, 0, RoundingMode.HALF_UP)
+                                : disburseAmount.multiply(share.getOwnershipPercentage()).divide(new BigDecimal("100"), 0, RoundingMode.HALF_UP);
+                        BigDecimal newAmt = share.getShareAmount().subtract(reduction);
+                        if (newAmt.compareTo(BigDecimal.ZERO) < 0) {
+                            newAmt = BigDecimal.ZERO;
+                        }
+                        newAmounts.add(newAmt.setScale(2, RoundingMode.HALF_UP));
+                    }
+
+                    // Strict conservation of currency: SUM(newAmounts) == remainingTotalDebt
+                    BigDecimal currentSum = newAmounts.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+                    BigDecimal diff = remainingTotalDebt.subtract(currentSum);
+                    if (diff.compareTo(BigDecimal.ZERO) != 0 && !newAmounts.isEmpty()) {
+                        newAmounts.set(0, newAmounts.get(0).add(diff).setScale(2, RoundingMode.HALF_UP));
+                    }
+
+                    for (int i = 0; i < shares.size(); i++) {
+                        ExpenseShare share = shares.get(i);
+                        BigDecimal finalAmt = newAmounts.get(i);
+                        share.setShareAmount(finalAmt);
+                        if (finalAmt.compareTo(BigDecimal.ZERO) <= 0) {
+                            share.setStatus(ExpenseShareStatus.SETTLED);
+                        }
+                    }
+                }
+                expenseShareRepository.saveAll(shares);
+            }
+        } catch (Exception ignored) {
+        }
+
         return mapToTransactionResponse(savedTx);
     }
 

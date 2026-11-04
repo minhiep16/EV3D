@@ -400,6 +400,8 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
         <span>
           {isUnresolvedResponsibility
             ? 'Chưa xác định người chịu chi phí.'
+            : allocationPolicy === 'USAGE_AND_CAPITAL'
+            ? 'Chi phí đã ghi nhận, chưa thể phân bổ vì thiếu dữ liệu sử dụng xe trong kỳ.'
             : expenseStatus === 'APPROVED'
             ? 'Khoản chi đã được duyệt nhưng chưa có dữ liệu phân bổ.'
             : 'Chưa có dữ liệu phân bổ cho khoản chi này.'}
@@ -429,7 +431,7 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
     (currentPolicy === 'USER_RESPONSIBILITY'
       ? 'Theo người sử dụng'
       : currentPolicy === 'USAGE_AND_CAPITAL'
-      ? 'Theo km sử dụng và tỷ lệ vốn'
+      ? 'Phân bổ theo số km sử dụng và tỷ lệ vốn'
       : 'Theo tỷ lệ sở hữu');
 
   const totalKmSnapshot = firstShare?.totalKmSnapshot ?? null;
@@ -987,6 +989,23 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
         </div>
       )}
 
+      {currentPolicy === 'USAGE_AND_CAPITAL' && Number(totalKmSnapshot ?? 0) === 0 && (
+        <div
+          data-testid="zero-km-fallback-notice"
+          style={{
+            background: 'rgba(0, 242, 254, 0.08)',
+            border: '1px dashed rgba(0, 242, 254, 0.35)',
+            borderRadius: '6px',
+            padding: '5px 8px',
+            fontSize: '9.5px',
+            color: '#cbd5e1',
+            lineHeight: 1.35,
+          }}
+        >
+          Chưa phát sinh km sử dụng trong kỳ. Chi phí được phân bổ theo tỷ lệ vốn nghịch chiều theo quy định nhóm.
+        </div>
+      )}
+
       {hasNegativeRedistribution && (
         <div
           data-testid="negative-redistribution-notice"
@@ -1206,6 +1225,248 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
           {allocationTotal.toLocaleString('vi-VN')}đ
         </span>
       </div>
+
+      {/* Authoritative Co-Owner Payment & Settlement Section (Phase 24 Hotfix for Shared Expenses) */}
+      {(() => {
+        const isStaffOrAdmin = currentUser?.role === 'STAFF' || currentUser?.role === 'ADMIN';
+        const userShare = safeShares.find((s) => Boolean(currentUser?.id && s.userId === currentUser.id));
+
+        // Find existing payments for this expense or this user's share
+        const pendingPayment = personalPayments.find(
+          (p) => p.status === 'PAYMENT_SUBMITTED' && (isStaffOrAdmin || p.payerUserId === currentUser?.id)
+        );
+        const verifiedPayment = personalPayments.find(
+          (p) => p.status === 'PAYMENT_VERIFIED' && (isStaffOrAdmin || p.payerUserId === currentUser?.id)
+        );
+
+        const isShareSettled = (userShare && userShare.status === 'SETTLED') || Boolean(verifiedPayment);
+        const payableAmount = userShare ? Number(userShare.shareAmount) : normalizedExpenseAmount;
+
+        // Only display if user is a co-owner with an allocated share, or staff inspecting verification
+        if (!userShare && !isStaffOrAdmin) return null;
+
+        return (
+          <div
+            data-testid="shared-expense-payment-section"
+            style={{
+              marginTop: '8px',
+              padding: '10px 12px',
+              background: 'rgba(15, 23, 42, 0.75)',
+              border: '1px solid rgba(0, 242, 254, 0.25)',
+              borderRadius: '8px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+            }}
+          >
+            {/* Feedback banner */}
+            {paymentFeedback && (
+              <div
+                style={{
+                  padding: '6px 10px',
+                  borderRadius: '6px',
+                  fontSize: '10.5px',
+                  fontWeight: 650,
+                  background: paymentFeedback.isError ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                  border: `1px solid ${paymentFeedback.isError ? '#ef4444' : '#10b981'}`,
+                  color: paymentFeedback.isError ? '#f87171' : '#34d399',
+                }}
+              >
+                {paymentFeedback.text}
+              </div>
+            )}
+
+            {/* If user share is settled */}
+            {isShareSettled ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ color: '#94a3b8', fontSize: '11px' }}>
+                  Nghĩa vụ chi phí của bạn ({userShare?.ownershipPercentage || 0}%):
+                </span>
+                <span
+                  style={{
+                    background: 'rgba(16, 185, 129, 0.18)',
+                    border: '1px solid rgba(16, 185, 129, 0.45)',
+                    color: '#34d399',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    padding: '3px 8px',
+                    borderRadius: '6px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                  }}
+                >
+                  <CheckCircle2 size={13} color="#34d399" />
+                  <span>ĐÃ THANH TOÁN ({payableAmount.toLocaleString('vi-VN')}đ)</span>
+                </span>
+              </div>
+            ) : pendingPayment && !isStaffOrAdmin ? (
+              /* If pending payment by current user */
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ color: '#94a3b8', fontSize: '11px' }}>
+                  Phần thanh toán của bạn ({payableAmount.toLocaleString('vi-VN')}đ):
+                </span>
+                <span
+                  style={{
+                    background: 'rgba(56, 189, 248, 0.18)',
+                    border: '1px solid rgba(56, 189, 248, 0.45)',
+                    color: '#38bdf8',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    padding: '3px 8px',
+                    borderRadius: '6px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                  }}
+                >
+                  <Clock size={13} color="#38bdf8" />
+                  <span>CHỜ NHÂN VIÊN XÁC MINH</span>
+                </span>
+              </div>
+            ) : userShare && !isShareSettled && !pendingPayment ? (
+              /* Co-owner can pay their allocated share */
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px' }}>
+                  <span style={{ color: '#f8fafc', fontWeight: 750 }}>
+                    PHẢI THANH TOÁN ({userShare.ownershipPercentage}%):
+                  </span>
+                  <span style={{ color: '#00f2fe', fontWeight: 800, fontSize: '12.5px' }}>
+                    {payableAmount.toLocaleString('vi-VN')}đ
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    background: 'rgba(0, 242, 254, 0.06)',
+                    border: '1px dashed rgba(0, 242, 254, 0.25)',
+                    borderRadius: '6px',
+                    padding: '5px 8px',
+                    fontSize: '9.5px',
+                    color: '#94a3b8',
+                    lineHeight: 1.35,
+                  }}
+                >
+                  Giao dịch DEMO: Thanh toán mô phỏng phục vụ kiểm thử EVShare 3D.
+                </div>
+
+                <button
+                  type="button"
+                  data-testid={`pay-share-btn-${userShare.id}`}
+                  onClick={async () => {
+                    try {
+                      await submitPersonalPaymentMutation.mutateAsync({
+                        amount: payableAmount,
+                        expenseShareId: userShare.id,
+                        paymentMethod: 'DEMO_PAYMENT',
+                        paymentReference: `DEMO-SHARE-${expenseId.slice(0, 6).toUpperCase()}-${Date.now().toString().slice(-4)}`,
+                        note: `Thanh toán phần phân bổ chi phí sửa chữa / bảo dưỡng (${userShare.ownershipPercentage}%)`,
+                      });
+                      setPaymentFeedback({ text: 'Đã gửi yêu cầu thanh toán demo! CHỜ NHÂN VIÊN XÁC MINH.', isError: false });
+                      refetchPayments();
+                      queryClient.invalidateQueries({ queryKey: ['my-personal-payments'] });
+                      queryClient.invalidateQueries({ queryKey: ['personal-payments'] });
+                      queryClient.invalidateQueries({ queryKey: ['expense-shares', expenseId] });
+                      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+                    } catch (err: any) {
+                      setPaymentFeedback({ text: err.message || 'Lỗi khi gửi yêu cầu thanh toán.', isError: true });
+                    }
+                  }}
+                  disabled={submitPersonalPaymentMutation.isPending}
+                  style={{
+                    background: 'linear-gradient(135deg, #00f2fe 0%, #0284c7 100%)',
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: '#041628',
+                    padding: '7px 12px',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    boxShadow: '0 2px 10px rgba(0, 242, 254, 0.3)',
+                  }}
+                >
+                  <CreditCard size={13} color="#041628" />
+                  <span>
+                    {submitPersonalPaymentMutation.isPending
+                      ? 'Đang gửi yêu cầu...'
+                      : `THANH TOÁN NGAY (${payableAmount.toLocaleString('vi-VN')}đ)`}
+                  </span>
+                </button>
+              </div>
+            ) : null}
+
+            {/* STAFF / ADMIN Verification task */}
+            {isStaffOrAdmin && pendingPayment && (
+              <div
+                style={{
+                  background: 'rgba(56, 189, 248, 0.08)',
+                  border: '1px solid rgba(56, 189, 248, 0.3)',
+                  borderRadius: '6px',
+                  padding: '8px 10px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '5px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#38bdf8', fontWeight: 750, fontSize: '10.5px' }}>
+                    Yêu cầu thanh toán demo: {pendingPayment.payerName || 'Thành viên'} — {Number(pendingPayment.amount).toLocaleString('vi-VN')}đ
+                  </span>
+                  <span style={{ color: '#fbbf24', background: 'rgba(245, 158, 11, 0.2)', border: '1px solid rgba(245, 158, 11, 0.4)', borderRadius: '4px', padding: '1px 5px', fontSize: '9px', fontWeight: 800 }}>
+                    CHỜ XÁC MINH
+                  </span>
+                </div>
+                <div style={{ color: '#94a3b8', fontSize: '9.5px' }}>
+                  Mã tham chiếu: {pendingPayment.paymentReference || 'N/A'}
+                </div>
+                <button
+                  type="button"
+                  data-testid={`verify-share-payment-${pendingPayment.id}`}
+                  onClick={async () => {
+                    try {
+                      await verifyPersonalPaymentMutation.mutateAsync({
+                        paymentId: pendingPayment.id,
+                        payload: { confirmed: true, note: 'Nhân viên xác nhận thanh toán demo phần bổ chi phí sửa chữa.' },
+                      });
+                      setPaymentFeedback({ text: 'Xác nhận thanh toán demo thành công! Nghĩa vụ đã được quyết toán.', isError: false });
+                      refetchPayments();
+                      queryClient.invalidateQueries({ queryKey: ['my-personal-payments'] });
+                      queryClient.invalidateQueries({ queryKey: ['personal-payments'] });
+                      queryClient.invalidateQueries({ queryKey: ['expense-shares', expenseId] });
+                      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+                    } catch (err: any) {
+                      setPaymentFeedback({ text: err.message || 'Lỗi khi xác minh.', isError: true });
+                    }
+                  }}
+                  disabled={verifyPersonalPaymentMutation.isPending}
+                  style={{
+                    background: '#10b981',
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: '#041628',
+                    padding: '6px 10px',
+                    fontSize: '10.5px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '5px',
+                    marginTop: '2px',
+                  }}
+                >
+                  <ShieldCheck size={12} />
+                  <span>{verifyPersonalPaymentMutation.isPending ? 'Đang xác nhận...' : 'XÁC NHẬN THANH TOÁN DEMO (STAFF)'}</span>
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 };

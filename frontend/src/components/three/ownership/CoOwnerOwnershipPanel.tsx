@@ -70,6 +70,7 @@ import {
   ChevronUp,
   Info,
   CreditCard,
+  Eye,
 } from 'lucide-react';
 import { submitPersonalPayment, verifyPersonalPayment } from '../../../services/fundApi';
 
@@ -1671,12 +1672,26 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
     });
   }, [safeGroupTransfers, safeIncomingTransfers]);
 
-  const [managementTab, setManagementTab] = useState<'ACTION_NEEDED' | 'PENDING' | 'HISTORY'>('ACTION_NEEDED');
+  const [managementTab, setManagementTab] = useState<'OVERVIEW' | 'PENDING' | 'HISTORY'>('OVERVIEW');
+  const [focusedTransferId, setFocusedTransferId] = useState<string | null>(null);
+  const [selectedHistoryDetail, setSelectedHistoryDetail] = useState<OwnershipTransferResponse | null>(null);
 
+  // Authoritative classification helper for transfer records (Phase 23 Hotfix)
+  const isTerminalStatus = (status: string | undefined): boolean => {
+    if (!status) return false;
+    const s = status.toUpperCase();
+    return s === 'COMPLETED' || s === 'REJECTED' || s === 'CANCELLED' || s === 'EXPIRED';
+  };
+
+  const isPendingStatus = (status: string | undefined): boolean => {
+    return !isTerminalStatus(status);
+  };
+
+  // 1. Pending-action summaries for Overview tab (transfers requiring user action or attention)
   const actionNeededTransfers = useMemo(() => {
     const currentId = String(currentUser?.id || '').toLowerCase();
     return allCoOwnershipTransfers.filter((t) => {
-      if (t.status === 'COMPLETED' || t.status === 'REJECTED' || t.status === 'CANCELLED') return false;
+      if (isTerminalStatus(t.status)) return false;
       const isTransferor = currentId === String(t.fromUserId ?? t.transferorUserId ?? '').toLowerCase();
       const isRecipient = currentId === String(t.toUserId ?? t.recipientUserId ?? '').toLowerCase();
       const isTransferorAccepted = Boolean(t.transferorAccepted ?? t.isTransferorAccepted);
@@ -1689,30 +1704,28 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
     });
   }, [allCoOwnershipTransfers, currentUser?.id]);
 
+  // 2. Pending tab: All active, non-terminal transfer requests visible to user
   const pendingTransfers = useMemo(() => {
-    const currentId = String(currentUser?.id || '').toLowerCase();
-    return allCoOwnershipTransfers.filter((t) => {
-      if (t.status === 'COMPLETED' || t.status === 'REJECTED' || t.status === 'CANCELLED') return false;
-      const isTransferor = currentId === String(t.fromUserId ?? t.transferorUserId ?? '').toLowerCase();
-      const isRecipient = currentId === String(t.toUserId ?? t.recipientUserId ?? '').toLowerCase();
-      const isTransferorAccepted = Boolean(t.transferorAccepted ?? t.isTransferorAccepted);
-      const isRecipientAccepted = Boolean(t.recipientAccepted ?? t.isRecipientAccepted);
-      const hasFinBlocker = Boolean(
-        t.hasOutstandingFinancialObligations ||
-        (t.finalizationBlockers && t.finalizationBlockers.some((b) => b.includes('tài chính') || b.includes('nghĩa vụ')))
-      );
-      const actionNeeded = (isTransferor && !isTransferorAccepted) || (isRecipient && !isRecipientAccepted) || (isTransferor && hasFinBlocker);
-      return !actionNeeded;
-    });
-  }, [allCoOwnershipTransfers, currentUser?.id]);
+    const list: OwnershipTransferResponse[] = [];
+    const seenIds = new Set<string>();
 
-  const historyTransfers = useMemo(() => {
-    return allCoOwnershipTransfers.filter(
-      (t) => t.status === 'COMPLETED' || t.status === 'REJECTED' || t.status === 'CANCELLED'
-    );
+    for (const t of allCoOwnershipTransfers) {
+      if (t && t.id && isPendingStatus(t.status)) {
+        if (!seenIds.has(t.id)) {
+          seenIds.add(t.id);
+          list.push(t);
+        }
+      }
+    }
+
+    return list.sort((a, b) => {
+      const timeA = new Date(a.createdAt || 0).getTime();
+      const timeB = new Date(b.createdAt || 0).getTime();
+      return timeB - timeA;
+    });
   }, [allCoOwnershipTransfers]);
 
-  // 4. Ownership change history
+  // 4. Ownership change history from audit repository
   const {
     data: rawOwnershipHistory,
     isLoading: isLoadingHistory,
@@ -1721,7 +1734,8 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
   } = useQuery<OwnershipHistoryResponse[]>({
     queryKey: ['ownershipHistory', groupId],
     queryFn: () => (groupId ? fetchOwnershipHistory(groupId) : Promise.resolve([])),
-    enabled: Boolean(groupId && currentView === 'HISTORY'),
+    enabled: Boolean(groupId),
+    staleTime: 5000,
   });
 
   const safeOwnershipHistory = useMemo<OwnershipHistoryResponse[]>(() => {
@@ -1732,6 +1746,60 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
     if (Array.isArray((rawOwnershipHistory as any)?.data)) return (rawOwnershipHistory as any).data;
     return [];
   }, [rawOwnershipHistory]);
+
+  // 3. History tab: All terminal transfer requests and completed audit records (mutually exclusive from Pending)
+  const historyTransfers = useMemo(() => {
+    const list: OwnershipTransferResponse[] = [];
+    const seenIds = new Set<string>();
+
+    // Terminal records from transfer requests
+    for (const t of allCoOwnershipTransfers) {
+      if (t && t.id && isTerminalStatus(t.status)) {
+        if (!seenIds.has(t.id)) {
+          seenIds.add(t.id);
+          list.push(t);
+        }
+      }
+    }
+
+    // Historical records from history repository (identifying each record by immutable ID)
+    for (const h of safeOwnershipHistory) {
+      if (h && h.id) {
+        const key = h.transferRequestId || h.id;
+        if (!seenIds.has(key)) {
+          seenIds.add(key);
+          list.push({
+            id: key,
+            transferRequestId: h.transferRequestId || h.id,
+            groupId: h.groupId,
+            groupName: h.groupName,
+            vehicleId: h.vehicleId,
+            vehicleName: h.vehicleName,
+            fromUserId: h.fromUserId || '',
+            fromUserName: h.fromUserName || 'Thành viên',
+            fromUserEmail: '',
+            toUserId: h.toUserId || '',
+            toUserName: h.toUserName || 'Người nhận',
+            toUserEmail: '',
+            transferPercentage: h.transferredPercentage,
+            status: 'COMPLETED',
+            statusVi: 'CHUYỂN NHƯỢNG THÀNH CÔNG',
+            reason: h.reason || undefined,
+            createdAt: h.recordedAt || h.effectiveAt,
+            completedAt: h.effectiveAt,
+            effectiveAt: h.effectiveAt,
+            proposedOwnershipSnapshot: h.newOwnershipSnapshot || undefined,
+          });
+        }
+      }
+    }
+
+    return list.sort((a, b) => {
+      const timeA = new Date(a.completedAt || a.effectiveAt || a.rejectedAt || a.createdAt || 0).getTime();
+      const timeB = new Date(b.completedAt || b.effectiveAt || b.rejectedAt || b.createdAt || 0).getTime();
+      return timeB - timeA;
+    });
+  }, [allCoOwnershipTransfers, safeOwnershipHistory]);
 
   const safeMembers = useMemo<GroupMemberResponse[]>(() => {
     if (!coOwnership) return [];
@@ -2152,9 +2220,9 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
   const panelStyle: React.CSSProperties = {
     position: 'fixed',
     top: '90px',
-    right: '24px',
+    right: '20px',
     bottom: '20px',
-    width: 'min(500px, calc(100vw - 32px))',
+    width: 'min(520px, calc(100vw - 32px))',
     height: 'calc(100vh - 110px)',
     maxHeight: 'calc(100vh - 110px)',
     zIndex: 1000,
@@ -2172,6 +2240,28 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
     userSelect: 'none',
     fontFamily: 'var(--font-family, system-ui, -apple-system, sans-serif)',
     animation: 'contractPanelFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+  };
+
+  const handleOpenTransferDetail = (transferId: string) => {
+    setFocusedTransferId(transferId);
+    setCurrentView('INCOMING_TRANSFERS');
+  };
+
+  const parseSnapshotMembers = (snapshotStr?: string | null): Array<{ fullName: string; percentage: number | string; role?: string }> => {
+    if (!snapshotStr) return [];
+    try {
+      const parsed = JSON.parse(snapshotStr);
+      if (Array.isArray(parsed)) {
+        return parsed.map((m: any) => ({
+          fullName: m.fullName || m.userName || m.name || 'Thành viên',
+          percentage: m.percentage ?? m.sharePercentage ?? m.share?.percentage ?? 0,
+          role: m.role || m.memberRole || 'MEMBER',
+        }));
+      }
+    } catch (e) {
+      // not JSON
+    }
+    return [];
   };
 
   const renderPortal = (content: React.ReactNode) => {
@@ -2198,6 +2288,8 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
             type="button"
             onClick={() => {
               setCurrentView('MEMBERS');
+              setFocusedTransferId(null);
+              setSelectedHistoryDetail(null);
               clearOwnerSelection();
               setTransferFormError(null);
               setWithdrawalFormError(null);
@@ -3331,6 +3423,113 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
               <div style={{ fontWeight: 700, color: '#e2e8f0', marginBottom: '4px' }}>CHƯA CÓ YÊU CẦU CHUYỂN NHƯỢNG</div>
               <div>Không có yêu cầu chuyển nhượng nào đang chờ bạn xử lý.</div>
             </div>
+          ) : focusedTransferId ? (
+            (() => {
+              const focusedItem = allCoOwnershipTransfers.find((t) => t.id === focusedTransferId);
+              if (!focusedItem) {
+                return (
+                  <div style={{ textAlign: 'center', padding: '16px', color: '#94a3b8', fontSize: '11px' }}>
+                    Không tìm thấy thông tin chi tiết giao dịch {focusedTransferId}.
+                  </div>
+                );
+              }
+              const currentId = String(currentUser?.id || '').toLowerCase();
+              const fType = currentId === String(focusedItem.fromUserId ?? focusedItem.transferorUserId ?? '').toLowerCase()
+                ? 'outgoing'
+                : currentId === String(focusedItem.toUserId ?? focusedItem.recipientUserId ?? '').toLowerCase()
+                ? 'incoming'
+                : 'notified';
+              return (
+                <>
+                  <div
+                    style={{
+                      background: 'rgba(34, 230, 255, 0.1)',
+                      border: '1px solid rgba(34, 230, 255, 0.35)',
+                      borderRadius: '8px',
+                      padding: '8px 12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      fontSize: '11px',
+                      color: '#22e6ff',
+                      marginBottom: '6px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Info size={14} />
+                      <span>Chi tiết giao dịch: <strong style={{ fontFamily: 'monospace' }}>{focusedTransferId.substring(0, 8)}...</strong></span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setFocusedTransferId(null)}
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.08)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '4px',
+                        color: '#ffffff',
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        padding: '3px 8px',
+                      }}
+                    >
+                      Hiển thị tất cả
+                    </button>
+                  </div>
+
+                  <TransferCardItem
+                    key={'focused-' + focusedItem.id}
+                    req={focusedItem}
+                    type={fType}
+                    vehicleCode={vehicleCode}
+                    currentUser={currentUser}
+                    activeMembers={activeMembers}
+                    onSettlementSuccess={() => {
+                      invalidateAllOwnershipData();
+                      refetchIncoming();
+                      refetchGroupTransfers();
+                    }}
+                    onAccept={(transferId, hash) =>
+                      acceptTransferMutation.mutate({
+                        transferId,
+                        payload: { contentHash: hash, acknowledgedTerms: true },
+                      })
+                    }
+                    onConfirmTransferorConsent={(transferId, hash) =>
+                      confirmTransferorConsentMutation.mutate({
+                        transferId,
+                        payload: { contentHash: hash, acknowledgedTerms: true },
+                      })
+                    }
+                    onRejectPrompt={(transferId) => {
+                      setRejectingTransferId(transferId);
+                      setRejectReasonInput('');
+                    }}
+                    onCancel={(transferId) => cancelTransferMutation.mutate(transferId)}
+                    onComplete={(transferId) => completeTransferMutation.mutate(transferId)}
+                    isAcceptPending={acceptTransferMutation.isPending}
+                    isConfirmPending={confirmTransferorConsentMutation.isPending}
+                    isCompletePending={completeTransferMutation.isPending}
+                    acceptErrorMessage={acceptError[focusedItem.id]}
+                    completeErrorMessage={completeError[focusedItem.id]}
+                    onClearAcceptError={(transferId) => {
+                      setAcceptError((prev) => ({ ...prev, [transferId]: null }));
+                      setCompleteError((prev) => ({ ...prev, [transferId]: null }));
+                    }}
+                    isRejecting={rejectingTransferId === focusedItem.id}
+                    rejectReasonInput={rejectReasonInput}
+                    setRejectReasonInput={setRejectReasonInput}
+                    onCancelReject={() => {
+                      setRejectingTransferId(null);
+                      setRejectReasonInput('');
+                    }}
+                    onConfirmReject={(transferId, reason) => {
+                      rejectTransferMutation.mutate({ transferId, reason });
+                    }}
+                  />
+                </>
+              );
+            })()
           ) : (
             <>
             {/* Incoming Transfers (Current user is Recipient) */}
@@ -3938,15 +4137,118 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
         </div>
       </div>
 
-      {/* 2. CONTENT BODY */}
+      {/* 2. THREE TABS BAR (flexShrink: 0) */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: '6px',
+          padding: '10px 16px',
+          background: 'rgba(8, 16, 30, 0.95)',
+          borderBottom: '1px solid rgba(34, 230, 255, 0.15)',
+          flexShrink: 0,
+        }}
+      >
+        <button
+          type="button"
+          id="tab-management-overview"
+          onClick={() => {
+            setManagementTab('OVERVIEW');
+            setSelectedHistoryDetail(null);
+          }}
+          style={{
+            padding: '8px 4px',
+            borderRadius: '8px',
+            fontSize: '12px',
+            fontWeight: 800,
+            background: managementTab === 'OVERVIEW' ? 'rgba(34, 230, 255, 0.20)' : 'rgba(255, 255, 255, 0.04)',
+            border: managementTab === 'OVERVIEW' ? '1.5px solid #22e6ff' : '1px solid rgba(255, 255, 255, 0.12)',
+            color: managementTab === 'OVERVIEW' ? '#22e6ff' : '#94a3b8',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            boxShadow: managementTab === 'OVERVIEW' ? '0 0 14px rgba(34, 230, 255, 0.35)' : 'none',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            letterSpacing: '0.02em',
+          }}
+        >
+          TỔNG QUAN
+        </button>
+        <button
+          type="button"
+          id="tab-management-pending"
+          onClick={() => {
+            setManagementTab('PENDING');
+            setSelectedHistoryDetail(null);
+          }}
+          style={{
+            padding: '8px 4px',
+            borderRadius: '8px',
+            fontSize: '12px',
+            fontWeight: 800,
+            background: managementTab === 'PENDING' ? 'rgba(34, 230, 255, 0.20)' : 'rgba(255, 255, 255, 0.04)',
+            border: managementTab === 'PENDING' ? '1.5px solid #22e6ff' : '1px solid rgba(255, 255, 255, 0.12)',
+            color: managementTab === 'PENDING' ? '#22e6ff' : '#94a3b8',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            boxShadow: managementTab === 'PENDING' ? '0 0 14px rgba(34, 230, 255, 0.35)' : 'none',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            letterSpacing: '0.02em',
+          }}
+        >
+          ĐANG CHỜ ({pendingTransfers.length})
+        </button>
+        <button
+          type="button"
+          id="tab-management-history"
+          onClick={() => {
+            setManagementTab('HISTORY');
+            setSelectedHistoryDetail(null);
+          }}
+          style={{
+            padding: '8px 4px',
+            borderRadius: '8px',
+            fontSize: '12px',
+            fontWeight: 800,
+            background: managementTab === 'HISTORY' ? 'rgba(34, 230, 255, 0.20)' : 'rgba(255, 255, 255, 0.04)',
+            border: managementTab === 'HISTORY' ? '1.5px solid #22e6ff' : '1px solid rgba(255, 255, 255, 0.12)',
+            color: managementTab === 'HISTORY' ? '#22e6ff' : '#94a3b8',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            boxShadow: managementTab === 'HISTORY' ? '0 0 14px rgba(34, 230, 255, 0.35)' : 'none',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            letterSpacing: '0.02em',
+          }}
+        >
+          LỊCH SỬ ({historyTransfers.length})
+        </button>
+      </div>
+
+      {/* 3. CONTENT BODY */}
       <div
         style={{
           padding: '16px',
           overflowY: 'auto',
+          overflowX: 'hidden',
           display: 'flex',
           flexDirection: 'column',
           gap: '12px',
           flex: 1,
+          minHeight: 0,
         }}
       >
         {/* Loading / Error States */}
@@ -3986,75 +4288,11 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
           </div>
         )}
 
-        {/* CO-OWNERSHIP MANAGEMENT: 3 Tabs (Part 14) */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginBottom: '4px' }}>
-          <button
-            type="button"
-            id="tab-management-action-needed"
-            onClick={() => setManagementTab('ACTION_NEEDED')}
-            style={{
-              padding: '7px 4px',
-              borderRadius: '8px',
-              fontSize: '10px',
-              fontWeight: 800,
-              background: managementTab === 'ACTION_NEEDED' ? 'rgba(245, 158, 11, 0.25)' : 'rgba(255, 255, 255, 0.05)',
-              border: managementTab === 'ACTION_NEEDED' ? '1px solid #f59e0b' : '1px solid rgba(255, 255, 255, 0.1)',
-              color: managementTab === 'ACTION_NEEDED' ? '#fbbf24' : '#94a3b8',
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-            }}
-          >
-            CẦN XỬ LÝ ({actionNeededTransfers.length})
-          </button>
-          <button
-            type="button"
-            id="tab-management-pending"
-            onClick={() => setManagementTab('PENDING')}
-            style={{
-              padding: '7px 4px',
-              borderRadius: '8px',
-              fontSize: '10px',
-              fontWeight: 800,
-              background: managementTab === 'PENDING' ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.05)',
-              border: managementTab === 'PENDING' ? '1px solid #38bdf8' : '1px solid rgba(255, 255, 255, 0.1)',
-              color: managementTab === 'PENDING' ? '#38bdf8' : '#94a3b8',
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-            }}
-          >
-            ĐANG CHỜ ({pendingTransfers.length})
-          </button>
-          <button
-            type="button"
-            id="tab-management-history"
-            onClick={() => setManagementTab('HISTORY')}
-            style={{
-              padding: '7px 4px',
-              borderRadius: '8px',
-              fontSize: '10px',
-              fontWeight: 800,
-              background: managementTab === 'HISTORY' ? 'rgba(16, 185, 129, 0.25)' : 'rgba(255, 255, 255, 0.05)',
-              border: managementTab === 'HISTORY' ? '1px solid #10b981' : '1px solid rgba(255, 255, 255, 0.1)',
-              color: managementTab === 'HISTORY' ? '#34d399' : '#94a3b8',
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-            }}
-          >
-            LỊCH SỬ ({historyTransfers.length})
-          </button>
-        </div>
-
-        {/* Tab content list */}
-        {(() => {
-          const activeList =
-            managementTab === 'ACTION_NEEDED'
-              ? actionNeededTransfers
-              : managementTab === 'PENDING'
-              ? pendingTransfers
-              : historyTransfers;
-
-          if (activeList.length === 0) {
-            return (
+        {/* TAB 1: TỔNG QUAN */}
+        {managementTab === 'OVERVIEW' && (
+          <>
+            {/* Overview Pending Action Summaries */}
+            {actionNeededTransfers.length === 0 ? (
               <div
                 style={{
                   background: 'rgba(7, 20, 38, 0.50)',
@@ -4066,149 +4304,144 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
                   fontSize: '11px',
                 }}
               >
-                {managementTab === 'ACTION_NEEDED'
-                  ? 'Không có giao dịch nào cần bạn xử lý lúc này.'
-                  : managementTab === 'PENDING'
-                  ? 'Không có giao dịch nào đang chờ xử lý.'
-                  : 'Chưa có lịch sử giao dịch chuyển nhượng.'}
+                Không có giao dịch nào cần bạn xử lý lúc này.
               </div>
-            );
-          }
+            ) : (
+              actionNeededTransfers.map((t) => {
+                const currentId = String(currentUser?.id || '').toLowerCase();
+                const isTransferor = currentId === String(t.fromUserId ?? t.transferorUserId ?? '').toLowerCase();
+                const isRecipient = currentId === String(t.toUserId ?? t.recipientUserId ?? '').toLowerCase();
+                const isTransferorAccepted = Boolean(t.transferorAccepted ?? t.isTransferorAccepted);
+                const isRecipientAccepted = Boolean(t.recipientAccepted ?? t.isRecipientAccepted);
+                const bothAccepted = isTransferorAccepted && isRecipientAccepted;
+                const isCompleted = t.status === 'COMPLETED';
+                const hasFinBlocker = Boolean(
+                  t.hasOutstandingFinancialObligations ||
+                  (t.finalizationBlockers && t.finalizationBlockers.some((b) => b.includes('tài chính') || b.includes('nghĩa vụ')))
+                );
+                const currentUserMustConfirm =
+                  !isCompleted &&
+                  ((isTransferor && !isTransferorAccepted) || (isRecipient && !isRecipientAccepted));
 
-          return activeList.map((t) => {
-            const currentId = String(currentUser?.id || '').toLowerCase();
-            const isTransferor = currentId === String(t.fromUserId ?? t.transferorUserId ?? '').toLowerCase();
-            const isRecipient = currentId === String(t.toUserId ?? t.recipientUserId ?? '').toLowerCase();
-            const isTransferorAccepted = Boolean(t.transferorAccepted ?? t.isTransferorAccepted);
-            const isRecipientAccepted = Boolean(t.recipientAccepted ?? t.isRecipientAccepted);
-            const bothAccepted = isTransferorAccepted && isRecipientAccepted;
-            const isCompleted = t.status === 'COMPLETED';
-            const hasFinBlocker = Boolean(
-              t.hasOutstandingFinancialObligations ||
-              (t.finalizationBlockers && t.finalizationBlockers.some((b) => b.includes('tài chính') || b.includes('nghĩa vụ')))
-            );
-            const currentUserMustConfirm =
-              !isCompleted &&
-              ((isTransferor && !isTransferorAccepted) || (isRecipient && !isRecipientAccepted));
+                let badgeText = '';
+                let badgeColor = '';
+                let badgeBg = '';
+                let badgeBorder = '';
+                let cardDesc = '';
 
-            let badgeText = '';
-            let badgeColor = '';
-            let badgeBg = '';
-            let badgeBorder = '';
-            let cardDesc = '';
+                if (isCompleted) {
+                  badgeText = 'CHUYỂN NHƯỢNG THÀNH CÔNG';
+                  badgeColor = '#10b981';
+                  badgeBg = 'rgba(16, 185, 129, 0.15)';
+                  badgeBorder = '#10b981';
+                  cardDesc = `Giao dịch chuyển nhượng ${t.transferPercentage}% từ ${t.fromUserName} sang ${t.toUserName} đã hoàn tất.`;
+                } else if (currentUserMustConfirm) {
+                  badgeText = 'CẦN BẠN XÁC NHẬN';
+                  badgeColor = '#fbbf24';
+                  badgeBg = 'rgba(245, 158, 11, 0.2)';
+                  badgeBorder = '#f59e0b';
+                  cardDesc = isTransferor
+                    ? `Bạn cần xác nhận phụ lục để tiếp tục giao dịch ${t.transferPercentage}%.`
+                    : `Bạn cần đồng ý nhận chuyển nhượng ${t.transferPercentage}% từ ${t.fromUserName}.`;
+                } else if (hasFinBlocker) {
+                  badgeText = 'CHỜ HOÀN TẤT NGHĨA VỤ TÀI CHÍNH';
+                  badgeColor = '#f87171';
+                  badgeBg = 'rgba(239, 68, 68, 0.15)';
+                  badgeBorder = '#ef4444';
+                  cardDesc = `Tiến độ: ${(isTransferorAccepted ? 1 : 0) + (isRecipientAccepted ? 1 : 0)}/2 • Người chuyển nhượng (${t.fromUserName}) còn nghĩa vụ tài chính chưa thanh toán.`;
+                } else if (!bothAccepted) {
+                  badgeText = 'CHỜ BÊN CÒN LẠI XÁC NHẬN';
+                  badgeColor = '#38bdf8';
+                  badgeBg = 'rgba(56, 189, 248, 0.15)';
+                  badgeBorder = '#38bdf8';
+                  cardDesc = isTransferor
+                    ? `Bạn đã ký • Chờ bên nhận (${t.toUserName}) ký xác nhận phụ lục.`
+                    : isRecipient
+                    ? `Bạn đã ký • Chờ bên chuyển (${t.fromUserName}) ký xác nhận phụ lục.`
+                    : `Chờ các bên liên quan ký xác nhận phụ lục chuyển nhượng.`;
+                } else {
+                  badgeText = 'ĐỦ ĐIỀU KIỆN HOÀN TẤT';
+                  badgeColor = '#10b981';
+                  badgeBg = 'rgba(16, 185, 129, 0.15)';
+                  badgeBorder = '#10b981';
+                  cardDesc = 'Cả hai bên đã xác nhận (2/2) và không còn nghĩa vụ nợ. Sẵn sàng hoàn tất!';
+                }
 
-            if (isCompleted) {
-              badgeText = 'CHUYỂN NHƯỢNG THÀNH CÔNG';
-              badgeColor = '#10b981';
-              badgeBg = 'rgba(16, 185, 129, 0.15)';
-              badgeBorder = '#10b981';
-              cardDesc = `Giao dịch chuyển nhượng ${t.transferPercentage}% từ ${t.fromUserName} sang ${t.toUserName} đã hoàn tất.`;
-            } else if (currentUserMustConfirm) {
-              badgeText = 'CẦN BẠN XÁC NHẬN';
-              badgeColor = '#fbbf24';
-              badgeBg = 'rgba(245, 158, 11, 0.2)';
-              badgeBorder = '#f59e0b';
-              cardDesc = isTransferor
-                ? `Bạn cần xác nhận phụ lục để tiếp tục giao dịch ${t.transferPercentage}%.`
-                : `Bạn cần đồng ý nhận chuyển nhượng ${t.transferPercentage}% từ ${t.fromUserName}.`;
-            } else if (hasFinBlocker) {
-              badgeText = 'CHỜ HOÀN TẤT NGHĨA VỤ TÀI CHÍNH';
-              badgeColor = '#f87171';
-              badgeBg = 'rgba(239, 68, 68, 0.15)';
-              badgeBorder = '#ef4444';
-              cardDesc = `Tiến độ: ${(isTransferorAccepted ? 1 : 0) + (isRecipientAccepted ? 1 : 0)}/2 • Người chuyển nhượng (${t.fromUserName}) còn nghĩa vụ tài chính chưa thanh toán.`;
-            } else if (!bothAccepted) {
-              badgeText = 'CHỜ BÊN CÒN LẠI XÁC NHẬN';
-              badgeColor = '#38bdf8';
-              badgeBg = 'rgba(56, 189, 248, 0.15)';
-              badgeBorder = '#38bdf8';
-              cardDesc = isTransferor
-                ? `Bạn đã ký • Chờ bên nhận (${t.toUserName}) ký xác nhận phụ lục.`
-                : isRecipient
-                ? `Bạn đã ký • Chờ bên chuyển (${t.fromUserName}) ký xác nhận phụ lục.`
-                : `Chờ các bên liên quan ký xác nhận phụ lục chuyển nhượng.`;
-            } else {
-              badgeText = 'ĐỦ ĐIỀU KIỆN HOÀN TẤT';
-              badgeColor = '#10b981';
-              badgeBg = 'rgba(16, 185, 129, 0.15)';
-              badgeBorder = '#10b981';
-              cardDesc = 'Cả hai bên đã xác nhận (2/2) và không còn nghĩa vụ nợ. Sẵn sàng hoàn tất!';
-            }
+                const handleCardClick = () => {
+                  if (isCompleted) {
+                    setSelectedHistoryDetail(t);
+                    setManagementTab('HISTORY');
+                  } else {
+                    handleOpenTransferDetail(t.id);
+                  }
+                };
 
-            const handleCardClick = () => {
-              if (isCompleted) {
-                setCurrentView('HISTORY');
-              } else {
-                setCurrentView('INCOMING_TRANSFERS');
-              }
-            };
-
-            return (
-              <div
-                key={`coowner-card-${t.id}`}
-                id={`card-transfer-coowner-${t.id}`}
-                onClick={handleCardClick}
-                style={{
-                  background: isCompleted
-                    ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.2))'
-                    : currentUserMustConfirm
-                    ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(217, 119, 6, 0.25))'
-                    : hasFinBlocker
-                    ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(185, 28, 28, 0.2))'
-                    : 'linear-gradient(135deg, rgba(56, 189, 248, 0.15), rgba(3, 105, 161, 0.2))',
-                  border: `1.5px solid ${badgeBorder}`,
-                  borderRadius: '12px',
-                  padding: '12px 14px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '6px',
-                  cursor: 'pointer',
-                  boxShadow: `0 0 16px ${badgeBorder}30`,
-                  transition: 'all 0.2s ease',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    {isCompleted ? (
-                      <CheckCircle2 size={16} color="#10b981" />
-                    ) : currentUserMustConfirm ? (
-                      <AlertCircle size={16} color="#fbbf24" />
-                    ) : (
-                      <Clock size={16} color="#38bdf8" />
-                    )}
-                    <span style={{ fontSize: '12px', fontWeight: 800, color: '#ffffff' }}>
-                      {t.fromUserName} ➔ {t.toUserName} ({t.transferPercentage}%)
-                    </span>
-                  </div>
-                  <span
+                return (
+                  <div
+                    key={`coowner-card-${t.id}`}
+                    id={`card-transfer-coowner-${t.id}`}
+                    onClick={handleCardClick}
                     style={{
-                      fontSize: '9.5px',
-                      fontWeight: 800,
-                      padding: '3px 8px',
-                      borderRadius: '9999px',
-                      background: badgeBg,
-                      border: `1px solid ${badgeBorder}`,
-                      color: badgeColor,
+                      background: isCompleted
+                        ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.2))'
+                        : currentUserMustConfirm
+                        ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(217, 119, 6, 0.25))'
+                        : hasFinBlocker
+                        ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(185, 28, 28, 0.2))'
+                        : 'linear-gradient(135deg, rgba(56, 189, 248, 0.15), rgba(3, 105, 161, 0.2))',
+                      border: `1.5px solid ${badgeBorder}`,
+                      borderRadius: '12px',
+                      padding: '12px 14px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '6px',
+                      cursor: 'pointer',
+                      boxShadow: `0 0 16px ${badgeBorder}30`,
+                      transition: 'all 0.2s ease',
                     }}
                   >
-                    {badgeText}
-                  </span>
-                </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {isCompleted ? (
+                          <CheckCircle2 size={16} color="#10b981" />
+                        ) : currentUserMustConfirm ? (
+                          <AlertCircle size={16} color="#fbbf24" />
+                        ) : (
+                          <Clock size={16} color="#38bdf8" />
+                        )}
+                        <span style={{ fontSize: '12px', fontWeight: 800, color: '#ffffff' }}>
+                          {t.fromUserName} ➔ {t.toUserName} ({t.transferPercentage}%)
+                        </span>
+                      </div>
+                      <span
+                        style={{
+                          fontSize: '9.5px',
+                          fontWeight: 800,
+                          padding: '3px 8px',
+                          borderRadius: '9999px',
+                          background: badgeBg,
+                          border: `1px solid ${badgeBorder}`,
+                          color: badgeColor,
+                        }}
+                      >
+                        {badgeText}
+                      </span>
+                    </div>
 
-                <div style={{ fontSize: '10.5px', color: '#cbd5e1', lineHeight: 1.4 }}>
-                  {cardDesc}
-                </div>
+                    <div style={{ fontSize: '10.5px', color: '#cbd5e1', lineHeight: 1.4 }}>
+                      {cardDesc}
+                    </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px', fontSize: '9.5px', color: '#94a3b8' }}>
-                  <span>Xác nhận: {(isTransferorAccepted ? 1 : 0) + (isRecipientAccepted ? 1 : 0)}/2 bên</span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: badgeColor, fontWeight: 700 }}>
-                    {isCompleted ? 'Xem lịch sử' : 'Chi tiết giao dịch'} <ArrowRight size={11} />
-                  </span>
-                </div>
-              </div>
-            );
-          });
-        })()}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px', fontSize: '9.5px', color: '#94a3b8' }}>
+                      <span>Xác nhận: {(isTransferorAccepted ? 1 : 0) + (isRecipientAccepted ? 1 : 0)}/2 bên</span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: badgeColor, fontWeight: 700 }}>
+                        {isCompleted ? 'Xem lịch sử' : 'Chi tiết giao dịch'} <ArrowRight size={11} />
+                      </span>
+                    </div>
+                  </div>
+                );
+              })
+            )}
 
         {/* 4 CORE METRICS */}
         <div
@@ -4344,7 +4577,10 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
 
           <button
             type="button"
-            onClick={() => setCurrentView('INCOMING_TRANSFERS')}
+            onClick={() => {
+              setFocusedTransferId(null);
+              setCurrentView('INCOMING_TRANSFERS');
+            }}
             style={{
               padding: '8px 10px',
               background:
@@ -4402,7 +4638,10 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
 
           <button
             type="button"
-            onClick={() => setCurrentView('HISTORY')}
+            onClick={() => {
+              setSelectedHistoryDetail(null);
+              setManagementTab('HISTORY');
+            }}
             style={{
               padding: '8px 10px',
               background: 'rgba(255, 255, 255, 0.05)',
@@ -4710,6 +4949,578 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
                   {addMutation.isPending ? 'Đang thêm...' : 'Xác nhận thêm thành viên'}
                 </button>
               </div>
+            )}
+          </div>
+        )}
+          </>
+        )}
+
+        {/* TAB 2: ĐANG CHỜ (Active non-terminal transfer requests) */}
+        {managementTab === 'PENDING' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {(isLoadingIncoming || isLoadingGroupTransfers) && pendingTransfers.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '28px 16px', color: '#22e6ff', fontSize: '11.5px' }}>
+                <Loader2 size={20} className="animate-spin" style={{ display: 'inline', marginRight: '6px' }} />
+                Đang tải danh sách giao dịch đang chờ...
+              </div>
+            ) : (isErrorIncoming || isErrorGroupTransfers) && pendingTransfers.length === 0 ? (
+              <div
+                style={{
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  textAlign: 'center',
+                  color: '#fca5a5',
+                  fontSize: '11.5px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <AlertCircle size={20} color="#ef4444" />
+                <div style={{ fontWeight: 700 }}>Không thể tải danh sách giao dịch đang chờ</div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    refetchIncoming();
+                    refetchGroupTransfers();
+                  }}
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: '6px',
+                    background: 'rgba(239, 68, 68, 0.25)',
+                    border: '1px solid rgba(239, 68, 68, 0.6)',
+                    color: '#ffffff',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                  }}
+                >
+                  <RefreshCw size={12} />
+                  THỬ LẠI
+                </button>
+              </div>
+            ) : pendingTransfers.length === 0 ? (
+              <div
+                style={{
+                  background: 'rgba(7, 20, 38, 0.50)',
+                  border: '1px dashed rgba(255, 255, 255, 0.15)',
+                  borderRadius: '12px',
+                  padding: '32px 16px',
+                  textAlign: 'center',
+                  color: '#94a3b8',
+                  fontSize: '11.5px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <Clock size={28} color="#38bdf8" />
+                <div style={{ fontWeight: 800, color: '#f8fafc', fontSize: '13px', letterSpacing: '0.04em' }}>
+                  KHÔNG CÓ GIAO DỊCH ĐANG CHỜ
+                </div>
+                <div style={{ color: '#94a3b8', maxWidth: '320px', lineHeight: 1.4 }}>
+                  Hiện tại không có giao dịch chuyển nhượng nào đang chờ xử lý trong nhóm.
+                </div>
+              </div>
+            ) : (
+              pendingTransfers.map((t) => {
+                const currentId = String(currentUser?.id || '').toLowerCase();
+                const isTransferor = currentId === String(t.fromUserId ?? t.transferorUserId ?? '').toLowerCase();
+                const isRecipient = currentId === String(t.toUserId ?? t.recipientUserId ?? '').toLowerCase();
+                const isTransferorAccepted = Boolean(t.transferorAccepted ?? t.isTransferorAccepted);
+                const isRecipientAccepted = Boolean(t.recipientAccepted ?? t.isRecipientAccepted);
+                const acceptedCount = (isTransferorAccepted ? 1 : 0) + (isRecipientAccepted ? 1 : 0);
+                const hasFinBlocker = Boolean(
+                  t.hasOutstandingFinancialObligations ||
+                  (t.finalizationBlockers && t.finalizationBlockers.some((b) => b.includes('tài chính') || b.includes('nghĩa vụ')))
+                );
+
+                const statusCfg = getTransferDisplayStatus(t);
+
+                let nextActionText = '';
+                if (!isTransferorAccepted && !isRecipientAccepted) {
+                  nextActionText = isTransferor
+                    ? 'Bạn và bên nhận cần ký xác nhận phụ lục hợp đồng.'
+                    : isRecipient
+                    ? 'Bạn và bên chuyển nhượng cần ký xác nhận phụ lục hợp đồng.'
+                    : 'Chờ cả hai bên ký xác nhận phụ lục chuyển nhượng.';
+                } else if (!isTransferorAccepted) {
+                  nextActionText = isTransferor
+                    ? 'Bạn cần xem phụ lục và bấm xác nhận phụ lục.'
+                    : `Chờ bên chuyển nhượng (${t.fromUserName}) ký xác nhận phụ lục.`;
+                } else if (!isRecipientAccepted) {
+                  nextActionText = isRecipient
+                    ? 'Bạn cần xem phụ lục và đồng ý nhận chuyển nhượng.'
+                    : `Chờ bên nhận (${t.toUserName}) ký xác nhận phụ lục.`;
+                } else if (hasFinBlocker) {
+                  nextActionText = isTransferor
+                    ? 'Bạn cần hoàn tất thanh toán nghĩa vụ chi phí trước khi hoàn tất.'
+                    : `Chờ bên chuyển nhượng (${t.fromUserName}) hoàn tất nghĩa vụ tài chính.`;
+                } else {
+                  nextActionText = 'Đủ điều kiện hoàn tất. Cả hai bên đã xác nhận hợp đồng.';
+                }
+
+                return (
+                  <div
+                    key={`pending-card-${t.id}`}
+                    id={`card-pending-${t.id}`}
+                    style={{
+                      background: 'rgba(7, 20, 38, 0.75)',
+                      border: `1.5px solid ${statusCfg.color}50`,
+                      borderRadius: '12px',
+                      padding: '12px 14px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      boxShadow: `0 0 16px ${statusCfg.color}20`,
+                      transition: 'all 0.2s ease',
+                    }}
+                  >
+                    {/* Row 1: Participants & Percentage */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Clock size={15} color={statusCfg.color} />
+                        <span style={{ fontSize: '13px', fontWeight: 800, color: '#ffffff' }}>
+                          {t.fromUserName} ➔ {t.toUserName}
+                        </span>
+                      </div>
+                      <span
+                        style={{
+                          fontSize: '13px',
+                          fontWeight: 800,
+                          color: '#22e6ff',
+                          fontFamily: 'monospace',
+                        }}
+                      >
+                        {t.transferPercentage}%
+                      </span>
+                    </div>
+
+                    {/* Row 2: Status & Progress */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <span style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase', display: 'block' }}>TRẠNG THÁI</span>
+                        <span
+                          style={{
+                            fontSize: '9.5px',
+                            fontWeight: 800,
+                            padding: '2px 8px',
+                            borderRadius: '9999px',
+                            background: `${statusCfg.color}15`,
+                            border: `1px solid ${statusCfg.color}`,
+                            color: statusCfg.color,
+                            display: 'inline-block',
+                            marginTop: '2px',
+                          }}
+                        >
+                          {statusCfg.label}
+                        </span>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <span style={{ fontSize: '9px', color: '#94a3b8', display: 'block' }}>Tiến độ xác nhận</span>
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#f8fafc', marginTop: '2px' }}>
+                          {acceptedCount}/2 bên
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Row 3: Financial obligation concise warning if any */}
+                    {hasFinBlocker && (
+                      <div
+                        style={{
+                          background: 'rgba(239, 68, 68, 0.12)',
+                          border: '1px solid rgba(239, 68, 68, 0.35)',
+                          borderRadius: '6px',
+                          padding: '6px 8px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          fontSize: '10px',
+                          color: '#fca5a5',
+                        }}
+                      >
+                        <AlertTriangle size={12} color="#ef4444" style={{ flexShrink: 0 }} />
+                        <span>
+                          CHỜ HOÀN TẤT NGHĨA VỤ TÀI CHÍNH
+                          {t.outstandingObligationAmount ? `: ${Number(t.outstandingObligationAmount).toLocaleString('vi-VN')} ₫` : ''}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Row 4: Next responsible actor */}
+                    <div style={{ fontSize: '10.5px', color: '#cbd5e1', lineHeight: 1.4 }}>
+                      <span style={{ color: '#94a3b8', fontWeight: 600 }}>Next: </span>
+                      <span>{nextActionText}</span>
+                    </div>
+
+                    {/* Row 5: Action Button CHI TIẾT GIAO DỊCH */}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '4px', borderTop: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                      <button
+                        type="button"
+                        id={`btn-detail-pending-${t.id}`}
+                        onClick={() => handleOpenTransferDetail(t.id)}
+                        style={{
+                          background: 'rgba(34, 230, 255, 0.12)',
+                          border: '1px solid rgba(34, 230, 255, 0.35)',
+                          borderRadius: '6px',
+                          padding: '5px 12px',
+                          color: '#22e6ff',
+                          fontSize: '11px',
+                          fontWeight: 750,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          transition: 'all 0.2s',
+                        }}
+                      >
+                        <span>CHI TIẾT GIAO DỊCH</span>
+                        <ArrowRight size={12} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+
+        {/* TAB 3: LỊCH SỬ (Definitively ended transfer transactions) */}
+        {managementTab === 'HISTORY' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {selectedHistoryDetail ? (
+              // READ-ONLY HISTORICAL DETAIL VIEW
+              <div
+                style={{
+                  background: 'rgba(7, 20, 38, 0.85)',
+                  border: '1px solid rgba(16, 185, 129, 0.35)',
+                  borderRadius: '14px',
+                  padding: '14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <History size={16} color="#10b981" />
+                    <span style={{ fontSize: '13px', fontWeight: 800, color: '#ffffff' }}>
+                      CHI TIẾT LỊCH SỬ CHUYỂN NHƯỢNG
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedHistoryDetail(null)}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.08)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '6px',
+                      color: '#cbd5e1',
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      padding: '4px 8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    <ArrowLeft size={12} />
+                    <span>Quay lại danh sách</span>
+                  </button>
+                </div>
+
+                {/* Status and ID */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255, 255, 255, 0.03)', padding: '8px 10px', borderRadius: '8px' }}>
+                  <div>
+                    <span style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase', display: 'block' }}>MÃ GIAO DỊCH</span>
+                    <span style={{ fontSize: '11px', fontFamily: 'monospace', fontWeight: 700, color: '#22e6ff' }}>
+                      {selectedHistoryDetail.transferRequestId || selectedHistoryDetail.id}
+                    </span>
+                  </div>
+                  <span
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 800,
+                      padding: '3px 8px',
+                      borderRadius: '9999px',
+                      background: selectedHistoryDetail.status === 'COMPLETED' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                      border: selectedHistoryDetail.status === 'COMPLETED' ? '1px solid #10b981' : '1px solid #ef4444',
+                      color: selectedHistoryDetail.status === 'COMPLETED' ? '#10b981' : '#f87171',
+                    }}
+                  >
+                    {selectedHistoryDetail.statusVi || (selectedHistoryDetail.status === 'COMPLETED' ? 'CHUYỂN NHƯỢNG THÀNH CÔNG' : selectedHistoryDetail.status === 'REJECTED' ? 'BỊ TỪ CHỐI' : 'ĐÃ HỦY')}
+                  </span>
+                </div>
+
+                {/* Parties & Percentage */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '11px' }}>
+                  <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '8px', borderRadius: '6px' }}>
+                    <span style={{ color: '#94a3b8', fontSize: '9.5px', display: 'block' }}>Bên chuyển nhượng:</span>
+                    <span style={{ fontWeight: 700, color: '#f8fafc', fontSize: '12px' }}>{selectedHistoryDetail.fromUserName}</span>
+                  </div>
+                  <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '8px', borderRadius: '6px' }}>
+                    <span style={{ color: '#94a3b8', fontSize: '9.5px', display: 'block' }}>Bên nhận chuyển nhượng:</span>
+                    <span style={{ fontWeight: 700, color: '#f8fafc', fontSize: '12px' }}>{selectedHistoryDetail.toUserName}</span>
+                  </div>
+                  <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '8px', borderRadius: '6px' }}>
+                    <span style={{ color: '#94a3b8', fontSize: '9.5px', display: 'block' }}>Tỷ lệ chuyển nhượng:</span>
+                    <span style={{ fontWeight: 800, color: '#10b981', fontFamily: 'monospace', fontSize: '13px' }}>
+                      {selectedHistoryDetail.transferPercentage}%
+                    </span>
+                  </div>
+                  <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '8px', borderRadius: '6px' }}>
+                    <span style={{ color: '#94a3b8', fontSize: '9.5px', display: 'block' }}>Thời điểm hoàn tất:</span>
+                    <span style={{ fontWeight: 600, color: '#cbd5e1', fontSize: '10.5px' }}>
+                      {selectedHistoryDetail.completedAt || selectedHistoryDetail.effectiveAt || selectedHistoryDetail.createdAt
+                        ? new Date(selectedHistoryDetail.completedAt || selectedHistoryDetail.effectiveAt || selectedHistoryDetail.createdAt).toLocaleString('vi-VN')
+                        : 'Đã hoàn tất'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Ownership Distribution Snapshots */}
+                {(() => {
+                  const matchHist = safeOwnershipHistory.find(
+                    (h) => h.transferRequestId === selectedHistoryDetail.id || h.id === selectedHistoryDetail.id
+                  );
+                  const prevMembers = parseSnapshotMembers(matchHist?.previousOwnershipSnapshot);
+                  const newMembers = parseSnapshotMembers(matchHist?.newOwnershipSnapshot || selectedHistoryDetail.proposedOwnershipSnapshot);
+
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '8px 10px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                        <span style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
+                          PHÂN BỔ SỞ HỮU TRƯỚC GIAO DỊCH
+                        </span>
+                        {prevMembers.length > 0 ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                            {prevMembers.map((m, idx) => (
+                              <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px' }}>
+                                <span style={{ color: '#cbd5e1' }}>{m.fullName}</span>
+                                <span style={{ fontFamily: 'monospace', color: '#94a3b8' }}>{m.percentage}%</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: '10px', color: '#64748b', fontStyle: 'italic' }}>
+                            Không khả dụng trong dữ liệu lưu vết phiên bản gốc.
+                          </div>
+                        )}
+                      </div>
+
+                      <div style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '8px 10px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                        <span style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
+                          PHÂN BỔ SỞ HỮU SAU GIAO DỊCH
+                        </span>
+                        {newMembers.length > 0 ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                            {newMembers.map((m, idx) => (
+                              <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px' }}>
+                                <span style={{ color: '#f8fafc', fontWeight: 600 }}>{m.fullName}</span>
+                                <span style={{ fontFamily: 'monospace', color: '#22e6ff', fontWeight: 700 }}>{m.percentage}%</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: '10px', color: '#64748b', fontStyle: 'italic' }}>
+                            Không khả dụng trong dữ liệu lưu vết.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Contract Appendix Audit */}
+                <div style={{ background: 'rgba(168, 85, 247, 0.06)', border: '1px solid rgba(168, 85, 247, 0.25)', borderRadius: '8px', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: '#c084fc', fontWeight: 700 }}>Phụ lục hợp đồng liên kết:</span>
+                    <span style={{ color: '#e9d5ff', fontWeight: 800 }}>{selectedHistoryDetail.contractVersionFormatted || 'V2.0'}</span>
+                  </div>
+                  <div style={{ color: '#94a3b8' }}>
+                    Mã hợp đồng: <span style={{ color: '#ffffff', fontFamily: 'monospace' }}>{selectedHistoryDetail.contractCode || 'HĐ-EV01'}</span>
+                  </div>
+                  {selectedHistoryDetail.contentHash && (
+                    <div style={{ color: '#94a3b8' }}>
+                      Mã băm toàn vẹn (SHA-256): <span style={{ color: '#10b981', fontFamily: 'monospace', fontSize: '9px', wordBreak: 'break-all' }}>{selectedHistoryDetail.contentHash}</span>
+                    </div>
+                  )}
+                </div>
+
+                {selectedHistoryDetail.reason && (
+                  <div style={{ fontSize: '10.5px', color: '#cbd5e1', fontStyle: 'italic' }}>
+                    "{selectedHistoryDetail.reason}"
+                  </div>
+                )}
+              </div>
+            ) : isLoadingHistory && historyTransfers.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '28px 16px', color: '#22e6ff', fontSize: '11.5px' }}>
+                <Loader2 size={20} className="animate-spin" style={{ display: 'inline', marginRight: '6px' }} />
+                Đang tải lịch sử chuyển nhượng...
+              </div>
+            ) : isErrorHistory && historyTransfers.length === 0 ? (
+              <div
+                style={{
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  textAlign: 'center',
+                  color: '#fca5a5',
+                  fontSize: '11.5px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <AlertCircle size={20} color="#ef4444" />
+                <div style={{ fontWeight: 700 }}>Không thể tải lịch sử chuyển nhượng</div>
+                <button
+                  type="button"
+                  onClick={() => refetchHistory()}
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: '6px',
+                    background: 'rgba(239, 68, 68, 0.25)',
+                    border: '1px solid rgba(239, 68, 68, 0.6)',
+                    color: '#ffffff',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                  }}
+                >
+                  <RefreshCw size={12} />
+                  THỬ LẠI
+                </button>
+              </div>
+            ) : historyTransfers.length === 0 ? (
+              <div
+                style={{
+                  background: 'rgba(7, 20, 38, 0.50)',
+                  border: '1px dashed rgba(255, 255, 255, 0.15)',
+                  borderRadius: '12px',
+                  padding: '32px 16px',
+                  textAlign: 'center',
+                  color: '#94a3b8',
+                  fontSize: '11.5px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <History size={28} color="#10b981" />
+                <div style={{ fontWeight: 800, color: '#f8fafc', fontSize: '13px', letterSpacing: '0.04em' }}>
+                  CHƯA CÓ LỊCH SỬ CHUYỂN NHƯỢNG
+                </div>
+                <div style={{ color: '#94a3b8', maxWidth: '320px', lineHeight: 1.4 }}>
+                  Chưa có giao dịch chuyển nhượng nào kết thúc trong nhóm này.
+                </div>
+              </div>
+            ) : (
+              historyTransfers.map((t) => {
+                const isCompleted = t.status === 'COMPLETED';
+                const statusColor = isCompleted ? '#10b981' : '#f87171';
+                const statusLabel = isCompleted ? 'CHUYỂN NHƯỢNG THÀNH CÔNG' : t.status === 'REJECTED' ? 'BỊ TỪ CHỐI' : 'ĐÃ HỦY';
+
+                return (
+                  <div
+                    key={`history-card-${t.id}`}
+                    id={`card-history-${t.id}`}
+                    style={{
+                      background: 'rgba(7, 20, 38, 0.75)',
+                      border: `1.5px solid ${statusColor}40`,
+                      borderRadius: '12px',
+                      padding: '12px 14px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      boxShadow: `0 0 16px ${statusColor}15`,
+                      transition: 'all 0.2s ease',
+                    }}
+                  >
+                    {/* Row 1: Participants & Percentage */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <CheckCircle2 size={15} color={statusColor} />
+                        <span style={{ fontSize: '13px', fontWeight: 800, color: '#ffffff' }}>
+                          {t.fromUserName} ➔ {t.toUserName}
+                        </span>
+                      </div>
+                      <span
+                        style={{
+                          fontSize: '13px',
+                          fontWeight: 800,
+                          color: '#10b981',
+                          fontFamily: 'monospace',
+                        }}
+                      >
+                        {t.transferPercentage}%
+                      </span>
+                    </div>
+
+                    {/* Row 2: Final Result & Timestamp */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span
+                        style={{
+                          fontSize: '9.5px',
+                          fontWeight: 800,
+                          padding: '2px 8px',
+                          borderRadius: '9999px',
+                          background: `${statusColor}15`,
+                          border: `1px solid ${statusColor}`,
+                          color: statusColor,
+                        }}
+                      >
+                        {statusLabel}
+                      </span>
+                      <span style={{ fontSize: '10px', color: '#94a3b8' }}>
+                        Hoàn tất: {t.completedAt || t.effectiveAt || t.createdAt
+                          ? new Date(t.completedAt || t.effectiveAt || t.createdAt).toLocaleString('vi-VN')
+                          : 'Đã hoàn tất'}
+                      </span>
+                    </div>
+
+                    {/* Row 3: Action button XEM LỊCH SỬ */}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '4px', borderTop: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                      <button
+                        type="button"
+                        id={`btn-view-history-${t.id}`}
+                        onClick={() => setSelectedHistoryDetail(t)}
+                        style={{
+                          background: 'rgba(16, 185, 129, 0.12)',
+                          border: '1px solid rgba(16, 185, 129, 0.35)',
+                          borderRadius: '6px',
+                          padding: '5px 12px',
+                          color: '#34d399',
+                          fontSize: '11px',
+                          fontWeight: 750,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          transition: 'all 0.2s',
+                        }}
+                      >
+                        <Eye size={12} />
+                        <span>XEM LỊCH SỬ</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
             )}
           </div>
         )}

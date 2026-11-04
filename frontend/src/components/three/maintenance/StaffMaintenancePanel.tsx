@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Wrench,
@@ -26,6 +26,7 @@ import {
   MaintenancePriority,
   MaintenanceType,
   CreateMaintenancePayload,
+  CompleteMaintenancePayload,
   MAINTENANCE_STATUS_CONFIG,
   MAINTENANCE_PRIORITY_CONFIG,
   MAINTENANCE_TYPE_CONFIG,
@@ -54,6 +55,9 @@ interface StaffMaintenanceItemCardProps {
   isCompleting: boolean;
   scheduleDateTime: string;
   completionNote: string;
+  actualCost: string;
+  inspectionResult: 'PASSED' | 'FAILED' | 'REQUIRES_REWORK';
+  useSharedFund: boolean;
   selectedDamageId: string | null;
   onSelect: () => void;
   onFocusDamage: (damageId: string, partCode: string) => void;
@@ -64,6 +68,9 @@ interface StaffMaintenanceItemCardProps {
   onOpenComplete: () => void;
   onCloseComplete: () => void;
   onCompletionNoteChange: (val: string) => void;
+  onActualCostChange: (val: string) => void;
+  onInspectionResultChange: (val: 'PASSED' | 'FAILED' | 'REQUIRES_REWORK') => void;
+  onUseSharedFundChange: (val: boolean) => void;
   onConfirmComplete: () => void;
   onStart: () => void;
   onCancel: () => void;
@@ -80,6 +87,9 @@ const StaffMaintenanceItemCard: React.FC<StaffMaintenanceItemCardProps> = ({
   isCompleting,
   scheduleDateTime,
   completionNote,
+  actualCost,
+  inspectionResult,
+  useSharedFund,
   selectedDamageId,
   onSelect,
   onFocusDamage,
@@ -90,6 +100,9 @@ const StaffMaintenanceItemCard: React.FC<StaffMaintenanceItemCardProps> = ({
   onOpenComplete,
   onCloseComplete,
   onCompletionNoteChange,
+  onActualCostChange,
+  onInspectionResultChange,
+  onUseSharedFundChange,
   onConfirmComplete,
   onStart,
   onCancel,
@@ -517,6 +530,80 @@ const StaffMaintenanceItemCard: React.FC<StaffMaintenanceItemCardProps> = ({
             gap: '6px',
           }}
         >
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+            <div>
+              <label style={{ fontSize: '9.5px', color: '#34d399', fontWeight: 600 }}>
+                Chi phí thực tế (VND):
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={actualCost}
+                onChange={(e) => onActualCostChange(e.target.value)}
+                placeholder="0"
+                style={{
+                  width: '100%',
+                  marginTop: '2px',
+                  background: '#0f172a',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  borderRadius: '4px',
+                  padding: '4px 6px',
+                  fontSize: '11px',
+                  color: '#ffffff',
+                }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: '9.5px', color: '#34d399', fontWeight: 600 }}>
+                Nghiệm thu:
+              </label>
+              <select
+                value={inspectionResult}
+                onChange={(e) =>
+                  onInspectionResultChange(
+                    e.target.value as 'PASSED' | 'FAILED' | 'REQUIRES_REWORK'
+                  )
+                }
+                style={{
+                  width: '100%',
+                  marginTop: '2px',
+                  background: '#0f172a',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  borderRadius: '4px',
+                  padding: '4px 6px',
+                  fontSize: '11px',
+                  color: '#ffffff',
+                }}
+              >
+                <option value="PASSED">ĐẠT (Hoàn tất)</option>
+                <option value="REQUIRES_REWORK">CẦN LÀM LẠI</option>
+                <option value="FAILED">KHÔNG ĐẠT</option>
+              </select>
+            </div>
+          </div>
+
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '10px',
+              color: '#a7f3d0',
+              cursor: 'pointer',
+              marginTop: '2px',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={useSharedFund}
+              onChange={(e) => onUseSharedFundChange(e.target.checked)}
+            />
+            <span>Thanh toán từ Quỹ chung đồng sở hữu (DEMO)</span>
+          </label>
+          <div style={{ fontSize: '9px', color: '#94a3b8', fontStyle: 'italic', marginBottom: '4px' }}>
+            Chế độ thử nghiệm — không giao dịch tiền thật
+          </div>
+
           <label style={{ fontSize: '10px', color: '#34d399', fontWeight: 600 }}>
             Ghi chú hoàn tất bảo dưỡng:
           </label>
@@ -541,7 +628,7 @@ const StaffMaintenanceItemCard: React.FC<StaffMaintenanceItemCardProps> = ({
               onClick={onConfirmComplete}
               disabled={isCompletePending}
               style={{
-                background: '#059669',
+                background: inspectionResult === 'PASSED' ? '#059669' : '#d97706',
                 border: 'none',
                 borderRadius: '4px',
                 padding: '5px 10px',
@@ -551,7 +638,7 @@ const StaffMaintenanceItemCard: React.FC<StaffMaintenanceItemCardProps> = ({
                 cursor: 'pointer',
               }}
             >
-              Xác nhận hoàn tất
+              {inspectionResult === 'PASSED' ? 'Xác nhận hoàn tất' : 'Lưu kết quả kiểm tra'}
             </button>
             <button
               type="button"
@@ -960,6 +1047,11 @@ export const StaffMaintenancePanel: React.FC<StaffMaintenancePanelProps> = ({
   const [scheduleDateTime, setScheduleDateTime] = useState('');
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [completionNote, setCompletionNote] = useState('');
+  const [completionCost, setCompletionCost] = useState('0');
+  const [completionInspectionResult, setCompletionInspectionResult] = useState<
+    'PASSED' | 'FAILED' | 'REQUIRES_REWORK'
+  >('PASSED');
+  const [completionUseSharedFund, setCompletionUseSharedFund] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -982,6 +1074,7 @@ export const StaffMaintenancePanel: React.FC<StaffMaintenancePanelProps> = ({
   );
   const [formPriority, setFormPriority] = useState<MaintenancePriority>('MEDIUM');
   const [formDescription, setFormDescription] = useState('');
+  const [formEstimatedCost, setFormEstimatedCost] = useState('');
   const [formScheduledAt, setFormScheduledAt] = useState('');
   const [formSelectedDamages, setFormSelectedDamages] = useState<string[]>(
     preselectedDamageId ? [preselectedDamageId] : []
@@ -1006,6 +1099,30 @@ export const StaffMaintenancePanel: React.FC<StaffMaintenancePanelProps> = ({
     staleTime: 5000,
   });
 
+  // Auto-open and prefill form when preselectedDamageId changes
+  // Protected with ref to prevent background query refetches from overwriting user edits (Section 4)
+  const lastPrefilledDamageRef = React.useRef<string | null>(null);
+  useEffect(() => {
+    if (preselectedDamageId && lastPrefilledDamageRef.current !== preselectedDamageId) {
+      lastPrefilledDamageRef.current = preselectedDamageId;
+      setShowCreateForm(true);
+      setFormType('REPAIR');
+      setFormSelectedDamages([preselectedDamageId]);
+      const matchedDmg = vehicleDamages.find((d) => d.id === preselectedDamageId);
+      const partName =
+        getPartById(preselectedPartCode || matchedDmg?.vehiclePartCode || '')?.nameVi ||
+        preselectedPartCode ||
+        'Bộ phận';
+      setFormTitle(`Sửa chữa hư hỏng: ${partName}`);
+      if (matchedDmg?.severity) {
+        setFormPriority(matchedDmg.severity === 'SEVERE' ? 'CRITICAL' : matchedDmg.severity === 'MODERATE' ? 'HIGH' : 'MEDIUM');
+      }
+      if (matchedDmg?.note) {
+        setFormDescription(matchedDmg.note);
+      }
+    }
+  }, [preselectedDamageId, preselectedPartCode, vehicleDamages]);
+
   // Clear messages helper
   const showToast = (type: 'success' | 'error', text: string) => {
     if (type === 'success') {
@@ -1028,6 +1145,11 @@ export const StaffMaintenancePanel: React.FC<StaffMaintenancePanelProps> = ({
     queryClient.invalidateQueries({ queryKey: ['vehicle', vehicle.id] });
     queryClient.invalidateQueries({ queryKey: ['vehicleDamages', vehicle.id] });
     queryClient.invalidateQueries({ queryKey: ['damageHistory', vehicle.id] });
+    queryClient.invalidateQueries({ queryKey: ['expenses'] });
+    queryClient.invalidateQueries({ queryKey: ['sharedFund'] });
+    queryClient.invalidateQueries({ queryKey: ['staffApprovedWork'] });
+    queryClient.invalidateQueries({ queryKey: ['vote-proposals'] });
+    queryClient.invalidateQueries({ queryKey: ['notifications'] });
   };
 
   // Mutations
@@ -1039,6 +1161,7 @@ export const StaffMaintenancePanel: React.FC<StaffMaintenancePanelProps> = ({
       setShowCreateForm(false);
       setFormTitle('');
       setFormDescription('');
+      setFormEstimatedCost('');
       setFormScheduledAt('');
       setFormSelectedDamages([]);
       showToast('success', `Đã tạo yêu cầu bảo dưỡng "${data.title}" thành công.`);
@@ -1074,16 +1197,23 @@ export const StaffMaintenancePanel: React.FC<StaffMaintenancePanelProps> = ({
   });
 
   const completeMutation = useMutation({
-    mutationFn: ({ id, note }: { id: string; note?: string }) =>
-      completeMaintenance(id, { completionNote: note }),
-    onSuccess: () => {
+    mutationFn: ({ id, payload }: { id: string; payload?: CompleteMaintenancePayload }) =>
+      completeMaintenance(id, payload || {}),
+    onSuccess: (data) => {
       handleQueryInvalidation();
       setCompletingId(null);
       setCompletionNote('');
-      showToast('success', 'Hoàn tất bảo dưỡng. Trạng thái phương tiện đã được cập nhật.');
+      setCompletionCost('0');
+      setCompletionInspectionResult('PASSED');
+      setCompletionUseSharedFund(false);
+      if (data.status === 'COMPLETED') {
+        showToast('success', 'Hoàn tất bảo dưỡng. Chi phí đã được hạch toán và phân bổ (DEMO).');
+      } else {
+        showToast('success', 'Đã lưu kết quả kiểm tra. Bảo dưỡng tiếp tục thực hiện.');
+      }
     },
     onError: (err: any) => {
-      showToast('error', err?.message || 'Không thể hoàn tất bảo dưỡng.');
+      showToast('error', err?.message || 'Không thể cập nhật bảo dưỡng.');
     },
   });
 
@@ -1140,6 +1270,7 @@ export const StaffMaintenancePanel: React.FC<StaffMaintenancePanelProps> = ({
       description: formDescription.trim() || undefined,
       scheduledAt: formScheduledAt ? new Date(formScheduledAt).toISOString() : null,
       damageRecordIds: formSelectedDamages.length > 0 ? formSelectedDamages : undefined,
+      estimatedCost: formEstimatedCost ? Number(formEstimatedCost) : undefined,
     });
   };
 
@@ -1645,6 +1776,31 @@ export const StaffMaintenancePanel: React.FC<StaffMaintenancePanelProps> = ({
               />
             </div>
 
+            {/* Dự toán kinh phí */}
+            <div>
+              <label style={{ fontSize: '10.5px', color: '#cbd5e1', fontWeight: 600 }}>
+                Dự toán chi phí (VND - Tùy chọn)
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={formEstimatedCost}
+                onChange={(e) => setFormEstimatedCost(e.target.value)}
+                placeholder="Ví dụ: 1500000"
+                style={{
+                  width: '100%',
+                  marginTop: '4px',
+                  background: 'rgba(15, 23, 42, 0.9)',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  borderRadius: '6px',
+                  padding: '6px 8px',
+                  fontSize: '11px',
+                  color: '#ffffff',
+                  outline: 'none',
+                }}
+              />
+            </div>
+
             {/* Mô tả chi tiết */}
             <div>
               <label style={{ fontSize: '10.5px', color: '#cbd5e1', fontWeight: 600 }}>
@@ -1859,13 +2015,29 @@ export const StaffMaintenancePanel: React.FC<StaffMaintenancePanelProps> = ({
                   onOpenComplete={() => {
                     setCompletingId(item.id);
                     setCompletionNote('');
+                    setCompletionCost('0');
+                    setCompletionInspectionResult('PASSED');
+                    setCompletionUseSharedFund(false);
                   }}
                   onCloseComplete={() => setCompletingId(null)}
                   onCompletionNoteChange={setCompletionNote}
+                  actualCost={completionCost}
+                  onActualCostChange={setCompletionCost}
+                  inspectionResult={completionInspectionResult}
+                  onInspectionResultChange={setCompletionInspectionResult}
+                  useSharedFund={completionUseSharedFund}
+                  onUseSharedFundChange={setCompletionUseSharedFund}
                   onConfirmComplete={() => {
+                    const costNum = Number(completionCost) || 0;
                     completeMutation.mutate({
                       id: item.id,
-                      note: completionNote.trim() || undefined,
+                      payload: {
+                        completionNote: completionNote.trim() || undefined,
+                        actualCost: costNum,
+                        inspectionResult: completionInspectionResult,
+                        useSharedFund: completionUseSharedFund,
+                        sharedFundDisburseAmount: completionUseSharedFund ? costNum : 0,
+                      },
                     });
                   }}
                   onStart={() => startMutation.mutate(item.id)}

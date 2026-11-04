@@ -5,7 +5,6 @@ import {
   BatteryCharging,
   BatteryMedium,
   Clock,
-  ChevronRight,
   Power,
 } from 'lucide-react';
 import { useWorldStore } from '../../../store/worldStore';
@@ -29,12 +28,14 @@ interface ChargingControlHologram3DProps {
  * Displays live battery telemetry, smart charging stations, and charging session controls.
  */
 export const ChargingControlHologram3D: React.FC<ChargingControlHologram3DProps> = ({
-  position = [6.5, 1.5, 2.80],
-  rotation = [0, -0.1745, 0],
+  position = [6.6, 1.55, 2.70],
+  rotation = [0, 0, 0],
   onClose,
 }) => {
   const user = useAuthStore((state) => state.user);
   const selectedVehicleId = useWorldStore((state) => state.selectedVehicleId);
+  const selectedChargingStationId = useWorldStore((state) => state.selectedChargingStationId);
+  const setSelectedChargingStation = useWorldStore((state) => state.setSelectedChargingStation);
   const clearSelection = useWorldStore((state) => state.clearSelection);
   const enterChargingMode = useWorldStore((state) => state.enterChargingMode);
   const exitChargingMode = useWorldStore((state) => state.exitChargingMode);
@@ -67,6 +68,8 @@ export const ChargingControlHologram3D: React.FC<ChargingControlHologram3DProps>
     return vehicles[0];
   }, [vehicles, selectedVehicleId]);
 
+  const vehicleCode = resolveVehicleCode(activeVehicle);
+
   // Query active charging session
   const { data: activeSession = null } = useQuery<ChargingSessionResponse | null>({
     queryKey: ['activeChargingSession', activeVehicle?.id],
@@ -77,8 +80,73 @@ export const ChargingControlHologram3D: React.FC<ChargingControlHologram3DProps>
 
   const isCharging = activeVehicle?.status === 'CHARGING' || activeSession?.status === 'ACTIVE' || vehicleChargingMode;
 
-  const batteryPercent = activeVehicle?.batteryLevel ?? 82;
-  const estimatedRange = Math.round((batteryPercent / 100) * 420);
+  // Real vehicle battery metrics
+  const currentSoc = activeVehicle?.currentBatteryLevel ?? 80;
+  const totalCapacityKwh = activeVehicle?.usableBatteryCapacityKwh || activeVehicle?.batteryCapacity || 78.4;
+  const availableKwh = Number(((currentSoc * totalCapacityKwh) / 100).toFixed(1));
+  const estimatedRangeKm = Math.round((currentSoc / 100) * 420);
+
+  // Effective Stations
+  const effectiveStations = useMemo(() => {
+    if (stations && stations.length > 0) return stations;
+    return [
+      {
+        id: 'station-cs01-uuid',
+        code: 'CS01',
+        name: 'Trụ sạc Siêu tốc 01',
+        status: 'AVAILABLE' as const,
+        maxPowerKw: 150,
+        connectorType: 'CCS2' as const,
+        locationLabel: 'Khu vực Sạc Nhanh - Bay CS-01',
+        posX: 3.5,
+        posY: 0.14,
+        posZ: 3.2,
+        createdAt: '',
+        updatedAt: '',
+      },
+      {
+        id: 'station-cs02-uuid',
+        code: 'CS02',
+        name: 'Trụ sạc Tiêu chuẩn 02',
+        status: 'AVAILABLE' as const,
+        maxPowerKw: 60,
+        connectorType: 'CCS2' as const,
+        locationLabel: 'Khu vực Sạc Nhanh - Bay CS-02',
+        posX: 4.5,
+        posY: 0.14,
+        posZ: 3.2,
+        createdAt: '',
+        updatedAt: '',
+      },
+    ];
+  }, [stations]);
+
+  // Selected Station
+  const selectedStation = useMemo(() => {
+    if (selectedChargingStationId) {
+      const match = effectiveStations.find(
+        (s) => s.id === selectedChargingStationId || s.code === selectedChargingStationId
+      );
+      if (match) return match;
+    }
+    const available = effectiveStations.find((s) => s.status === 'AVAILABLE');
+    return available || effectiveStations[0];
+  }, [effectiveStations, selectedChargingStationId]);
+
+  // Target SOC & Dynamic Estimated Duration
+  const targetSoc = 90;
+  const estimatedRemainingMinutes = useMemo(() => {
+    if (activeSession?.estimatedRemainingMinutes != null) {
+      return activeSession.estimatedRemainingMinutes;
+    }
+    const deltaPercent = Math.max(0, targetSoc - currentSoc);
+    if (deltaPercent <= 0) return 0;
+    const remainingKwh = (deltaPercent * totalCapacityKwh) / 100;
+    const power = (isCharging && activeSession?.powerKw) || selectedStation?.maxPowerKw || 150;
+    const effectivePower = power * 0.92;
+    const hours = remainingKwh / effectivePower;
+    return Math.max(1, Math.round(hours * 60));
+  }, [activeSession?.estimatedRemainingMinutes, activeSession?.powerKw, targetSoc, currentSoc, totalCapacityKwh, selectedStation?.maxPowerKw, isCharging]);
 
   const handleClose = () => {
     if (onClose) {
@@ -93,21 +161,25 @@ export const ChargingControlHologram3D: React.FC<ChargingControlHologram3DProps>
     if (isCharging) {
       exitChargingMode();
     } else {
-      enterChargingMode(activeVehicle.id);
+      enterChargingMode(activeVehicle.id, selectedStation.id);
     }
   };
+
+  const activePowerText = isCharging
+    ? `${activeSession?.powerKw || selectedStation.maxPowerKw} kW DC`
+    : '0 kW';
 
   return (
     <FeatureHologramPanel3D
       position={position}
       rotation={rotation}
-      panelW={2.95}
-      panelH={4.35}
+      panelW={3.45}
+      panelH={4.45}
       distanceFactor={3.25}
-      contentWidth="340px"
-      title="Khu vực sạc"
-      subtitle="Quản lý trạm sạc & pin EV01"
-      icon={<Zap size={28} color="#00f2fe" />}
+      contentWidth="min(440px, calc(100vw - 24px))"
+      title="KHU VỰC SẠC"
+      subtitle={`Quản lý sạc xe ${vehicleCode}`}
+      icon={<Zap size={26} color="#00f2fe" />}
       statusBadge={
         <div
           style={{
@@ -115,12 +187,13 @@ export const ChargingControlHologram3D: React.FC<ChargingControlHologram3DProps>
             alignItems: 'center',
             gap: '5px',
             fontSize: '11px',
-            fontWeight: 700,
+            fontWeight: 800,
             color: isCharging ? '#00f2fe' : '#10b981',
             background: isCharging ? 'rgba(0, 242, 254, 0.16)' : 'rgba(16, 185, 129, 0.16)',
             border: `1px solid ${isCharging ? '#00f2fe' : '#10b981'}`,
             padding: '2px 8px',
             borderRadius: '9999px',
+            whiteSpace: 'nowrap',
           }}
         >
           <div
@@ -138,198 +211,203 @@ export const ChargingControlHologram3D: React.FC<ChargingControlHologram3DProps>
       onClose={handleClose}
       testId="charging-3d-control-panel"
     >
-      {/* 1. Main Battery State of Charge (SOC) Card */}
+      {/* 1. Unified Primary Battery Summary Card (Non-duplicated SOC) */}
       <div
         style={{
-          background: 'rgba(10, 30, 56, 0.85)',
-          border: '1.4px solid rgba(0, 242, 254, 0.35)',
-          borderRadius: '20px',
-          padding: '16px 20px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <div
-            style={{
-              width: '50px',
-              height: '50px',
-              borderRadius: '16px',
-              background: isCharging ? 'rgba(0, 242, 254, 0.2)' : 'rgba(16, 185, 129, 0.2)',
-              border: `1.5px solid ${isCharging ? '#00f2fe' : '#10b981'}`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-              boxShadow: `0 0 16px ${isCharging ? 'rgba(0, 242, 254, 0.4)' : 'rgba(16, 185, 129, 0.3)'}`,
-            }}
-          >
-            {isCharging ? (
-              <BatteryCharging size={26} color="#00f2fe" />
-            ) : (
-              <BatteryMedium size={26} color="#10b981" />
-            )}
-          </div>
-          <div>
-            <div style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 600 }}>
-              Dung lượng pin EV01 (SOC)
-            </div>
-            <div
-              style={{
-                fontSize: '26px',
-                fontWeight: 800,
-                color: '#ffffff',
-                letterSpacing: '-0.01em',
-                lineHeight: 1.15,
-                marginTop: '2px',
-              }}
-            >
-              {batteryPercent}%
-              <span style={{ fontSize: '13px', fontWeight: 600, color: '#38bdf8', marginLeft: '6px' }}>
-                ({estimatedRange} km)
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 500 }}>Công suất</div>
-          <div style={{ fontSize: '15px', fontWeight: 700, color: '#00f2fe' }}>
-            {isCharging ? '92 kW DC' : '0 kW'}
-          </div>
-        </div>
-      </div>
-
-      {/* 2. Battery Capacity Progress Bar */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px' }}>
-          <span style={{ color: '#94a3b8' }}>Dung lượng khả dụng</span>
-          <span style={{ color: '#ffffff', fontWeight: 700 }}>64.2 kWh / 78.4 kWh</span>
-        </div>
-        <div
-          style={{
-            height: '9px',
-            borderRadius: '9999px',
-            background: 'rgba(255, 255, 255, 0.08)',
-            overflow: 'hidden',
-            border: '1px solid rgba(0, 242, 254, 0.25)',
-          }}
-        >
-          <div
-            style={{
-              width: `${batteryPercent}%`,
-              height: '100%',
-              background: 'linear-gradient(90deg, #00f2fe 0%, #38bdf8 100%)',
-              borderRadius: '9999px',
-              boxShadow: '0 0 10px rgba(0, 242, 254, 0.6)',
-              transition: 'width 0.5s ease',
-            }}
-          />
-        </div>
-      </div>
-
-      {/* 3. Available Charging Stations List */}
-      <div
-        style={{
-          background: 'rgba(6, 20, 40, 0.75)',
-          border: '1.2px solid rgba(0, 242, 254, 0.25)',
+          background: 'rgba(10, 30, 56, 0.75)',
+          border: '1.2px solid rgba(0, 242, 254, 0.35)',
           borderRadius: '18px',
-          padding: '12px 14px',
+          padding: '14px 16px',
           display: 'flex',
           flexDirection: 'column',
-          gap: '8px',
+          gap: '10px',
+          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.35)',
         }}
       >
-        <div style={{ fontSize: '11.5px', fontWeight: 700, color: '#e2e8f0' }}>
-          Trụ sạc thông minh trong Showroom:
-        </div>
-
-        {/* Station 1 */}
-        <div
-          style={{
-            background: 'rgba(10, 30, 56, 0.7)',
-            border: '1px solid rgba(0, 242, 254, 0.3)',
-            borderRadius: '12px',
-            padding: '9px 12px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div
               style={{
-                width: '8px',
-                height: '8px',
-                borderRadius: '50%',
-                background: '#00f2fe',
-                boxShadow: '0 0 8px #00f2fe',
+                width: '46px',
+                height: '46px',
+                borderRadius: '14px',
+                background: isCharging ? 'rgba(0, 242, 254, 0.16)' : 'rgba(16, 185, 129, 0.16)',
+                border: `1.5px solid ${isCharging ? '#00f2fe' : '#10b981'}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                boxShadow: `0 0 14px ${isCharging ? 'rgba(0, 242, 254, 0.35)' : 'rgba(16, 185, 129, 0.3)'}`,
               }}
-            />
+            >
+              {isCharging ? (
+                <BatteryCharging size={24} color="#00f2fe" />
+              ) : (
+                <BatteryMedium size={24} color="#10b981" />
+              )}
+            </div>
             <div>
-              <div style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff' }}>
-                Station A1 (Siêu tốc DC)
+              <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Dung lượng pin (SOC)
               </div>
-              <div style={{ fontSize: '10.5px', color: '#94a3b8' }}>150 kW Max | CCS2 | Đang trống</div>
+              <div
+                style={{
+                  fontSize: '26px',
+                  fontWeight: 900,
+                  color: '#ffffff',
+                  letterSpacing: '-0.01em',
+                  lineHeight: 1.15,
+                  marginTop: '2px',
+                }}
+              >
+                {currentSoc}%
+                <span style={{ fontSize: '13px', fontWeight: 600, color: '#38bdf8', marginLeft: '6px' }}>
+                  (~{estimatedRangeKm} km)
+                </span>
+              </div>
             </div>
           </div>
-          <span
+
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: '10.5px', color: '#94a3b8', fontWeight: 500 }}>Công suất nạp</div>
+            <div style={{ fontSize: '15px', fontWeight: 800, color: '#00f2fe', marginTop: '2px' }}>
+              {activePowerText}
+            </div>
+          </div>
+        </div>
+
+        {/* Integrated Progress Bar & Energy Metadata Row */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+          <div
             style={{
-              fontSize: '10px',
-              color: '#00f2fe',
-              fontWeight: 700,
-              background: 'rgba(0, 242, 254, 0.15)',
-              padding: '2px 7px',
+              height: '8px',
               borderRadius: '9999px',
+              background: 'rgba(255, 255, 255, 0.08)',
+              overflow: 'hidden',
+              border: '1px solid rgba(0, 242, 254, 0.25)',
             }}
           >
-            ƯU TIÊN
-          </span>
-        </div>
-
-        {/* Station 2 */}
-        <div
-          style={{
-            background: 'rgba(10, 30, 56, 0.7)',
-            border: '1px solid rgba(0, 242, 254, 0.2)',
-            borderRadius: '12px',
-            padding: '9px 12px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
             <div
               style={{
-                width: '8px',
-                height: '8px',
-                borderRadius: '50%',
-                background: '#10b981',
-                boxShadow: '0 0 8px #10b981',
+                width: `${Math.min(100, Math.max(0, currentSoc))}%`,
+                height: '100%',
+                background: 'linear-gradient(90deg, #10b981 0%, #00f2fe 100%)',
+                borderRadius: '9999px',
+                boxShadow: '0 0 10px rgba(0, 242, 254, 0.5)',
+                transition: 'width 0.4s ease',
               }}
             />
-            <div>
-              <div style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff' }}>
-                Station A2 (Tiêu chuẩn AC)
-              </div>
-              <div style={{ fontSize: '10.5px', color: '#94a3b8' }}>22 kW Max | Type 2 | Đang trống</div>
-            </div>
           </div>
-          <span style={{ fontSize: '10px', color: '#10b981', fontWeight: 700 }}>KHẢ DỤNG</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px' }}>
+            <span style={{ color: '#94a3b8' }}>Năng lượng khả dụng / Danh định</span>
+            <span style={{ color: '#ffffff', fontWeight: 700 }}>
+              {availableKwh} kWh / {totalCapacityKwh} kWh
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* 4. Session Estimation Info */}
+      {/* 2. Station Selection: Two Compact, Balanced Station Cards */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          Chọn trụ sạc tại Garage:
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+          {effectiveStations.map((st) => {
+            const isStSelected = selectedStation.id === st.id;
+            const isAvail = st.status === 'AVAILABLE';
+
+            return (
+              <div
+                key={st.id}
+                onClick={() => {
+                  if (isAvail) {
+                    setSelectedChargingStation(st.id);
+                  }
+                }}
+                style={{
+                  background: isStSelected ? 'rgba(0, 242, 254, 0.16)' : 'rgba(10, 30, 56, 0.65)',
+                  border: isStSelected ? '1.5px solid #00f2fe' : '1px solid rgba(56, 189, 248, 0.25)',
+                  borderRadius: '14px',
+                  padding: '10px 12px',
+                  cursor: isAvail ? 'pointer' : 'not-allowed',
+                  opacity: isAvail ? 1.0 : 0.6,
+                  boxShadow: isStSelected ? '0 0 16px rgba(0, 242, 254, 0.28)' : 'none',
+                  transition: 'all 0.18s ease',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  gap: '6px',
+                }}
+              >
+                {/* Header: Code & Status */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <div
+                      style={{
+                        width: '7px',
+                        height: '7px',
+                        borderRadius: '50%',
+                        background: isStSelected ? '#00f2fe' : (isAvail ? '#10b981' : '#f59e0b'),
+                        boxShadow: `0 0 6px ${isStSelected ? '#00f2fe' : (isAvail ? '#10b981' : '#f59e0b')}`,
+                      }}
+                    />
+                    <span style={{ fontSize: '13px', fontWeight: 900, color: '#ffffff' }}>
+                      {st.code}
+                    </span>
+                  </div>
+                  <span
+                    style={{
+                      fontSize: '9px',
+                      fontWeight: 700,
+                      color: isAvail ? '#10b981' : '#f59e0b',
+                      background: isAvail ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                      border: `1px solid ${isAvail ? 'rgba(16, 185, 129, 0.35)' : 'rgba(245, 158, 11, 0.35)'}`,
+                      padding: '1px 5px',
+                      borderRadius: '4px',
+                    }}
+                  >
+                    {isAvail ? 'Khả dụng' : 'Bận'}
+                  </span>
+                </div>
+
+                {/* Power & Type */}
+                <div>
+                  <div style={{ fontSize: '16px', fontWeight: 900, color: '#ffffff', letterSpacing: '-0.01em' }}>
+                    {st.maxPowerKw} kW
+                  </div>
+                  <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '1px' }}>
+                    {st.connectorType} · {st.maxPowerKw >= 100 ? 'Siêu tốc' : 'Tiêu chuẩn'}
+                  </div>
+                </div>
+
+                {/* Selection State Indicator */}
+                <div
+                  style={{
+                    paddingTop: '6px',
+                    borderTop: isStSelected ? '1px solid rgba(0, 242, 254, 0.3)' : '1px solid rgba(255, 255, 255, 0.06)',
+                    fontSize: '9.5px',
+                    fontWeight: isStSelected ? 800 : 500,
+                    color: isStSelected ? '#00f2fe' : '#64748b',
+                  }}
+                >
+                  {isStSelected ? '● ĐANG CHỌN' : 'Nhấn để chọn'}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 3. Session Estimation Info (Single Compact Information Row) */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           background: 'rgba(10, 30, 56, 0.65)',
-          borderRadius: '14px',
+          borderRadius: '12px',
           padding: '9px 14px',
           border: '1px solid rgba(0, 242, 254, 0.2)',
           fontSize: '11px',
@@ -338,12 +416,14 @@ export const ChargingControlHologram3D: React.FC<ChargingControlHologram3DProps>
       >
         <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <Clock size={13} color="#00f2fe" />
-          <span>Thời gian sạc đầy:</span>
+          <span>Thời gian dự kiến (đến {targetSoc}%):</span>
         </span>
-        <span style={{ color: '#00f2fe', fontWeight: 700 }}>~28 phút (đến 80%)</span>
+        <span style={{ color: '#00f2fe', fontWeight: 800 }}>
+          {estimatedRemainingMinutes > 0 ? `~${estimatedRemainingMinutes} phút` : 'Đã đạt mức pin mục tiêu'}
+        </span>
       </div>
 
-      {/* 5. Primary Charging Control Action Button */}
+      {/* 4. Primary Charging Action Button */}
       <button
         type="button"
         onClick={handleToggleCharging}
@@ -352,19 +432,21 @@ export const ChargingControlHologram3D: React.FC<ChargingControlHologram3DProps>
             ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'
             : 'linear-gradient(135deg, #00f2fe 0%, #00c6ff 100%)',
           border: 'none',
-          borderRadius: '16px',
-          padding: '13px 18px',
+          borderRadius: '14px',
+          padding: '12px 18px',
           color: isCharging ? '#ffffff' : '#041628',
-          fontSize: '14.5px',
-          fontWeight: 800,
+          fontSize: '13.5px',
+          fontWeight: 900,
           display: 'flex',
+          flexDirection: 'column',
           alignItems: 'center',
-          justifyContent: 'space-between',
+          justifyContent: 'center',
+          gap: '2px',
           cursor: 'pointer',
           boxShadow: isCharging
-            ? '0 6px 20px rgba(239, 68, 68, 0.4)'
-            : '0 6px 20px rgba(0, 242, 254, 0.4)',
-          transition: 'all 0.2s',
+            ? '0 6px 20px rgba(239, 68, 68, 0.35)'
+            : '0 6px 20px rgba(0, 242, 254, 0.35)',
+          transition: 'all 0.18s ease',
           marginTop: '2px',
         }}
         onMouseEnter={(e) => {
@@ -374,11 +456,17 @@ export const ChargingControlHologram3D: React.FC<ChargingControlHologram3DProps>
           e.currentTarget.style.transform = 'translateY(0)';
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Power size={18} color={isCharging ? '#ffffff' : '#041628'} />
-          <span>{isCharging ? 'Dừng phiên sạc DC' : 'Bắt đầu sạc nhanh DC (150kW)'}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+          <Power size={16} color={isCharging ? '#ffffff' : '#041628'} />
+          <span>
+            {isCharging
+              ? `DỪNG PHIÊN SẠC — ${selectedStation.code}`
+              : `BẮT ĐẦU SẠC — ${selectedStation.code}`}
+          </span>
         </div>
-        <ChevronRight size={18} color={isCharging ? '#ffffff' : '#041628'} />
+        <div style={{ fontSize: '10px', fontWeight: 600, opacity: 0.85 }}>
+          {selectedStation.maxPowerKw} kW Max · {selectedStation.connectorType}
+        </div>
       </button>
     </FeatureHologramPanel3D>
   );

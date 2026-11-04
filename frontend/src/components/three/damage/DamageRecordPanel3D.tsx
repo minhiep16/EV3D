@@ -21,7 +21,7 @@ import {
   DAMAGE_SEVERITY_CONFIG,
   DAMAGE_TYPE_LABELS,
 } from '../../../types/damage';
-import { SEMANTIC_PART_LABELS_VI } from '../../../data/vehicleParts';
+import { SEMANTIC_PART_LABELS_VI, SEMANTIC_HITBOX_DEFINITIONS } from '../../../data/vehicleParts';
 import { useAuthStore } from '../../../store/authStore';
 import { useWorldStore } from '../../../store/worldStore';
 
@@ -64,9 +64,9 @@ type InspectionCondition = 'NORMAL' | 'SCRATCH' | 'DENT' | 'CRACK' | 'OTHER';
 const CONDITION_OPTIONS: { id: InspectionCondition; label: string; damageType?: DamageType }[] = [
   { id: 'NORMAL', label: 'BÌNH THƯỜNG' },
   { id: 'SCRATCH', label: 'TRẦY XƯỚC', damageType: 'SCRATCH' },
-  { id: 'DENT', label: 'MÓP', damageType: 'DENT' },
-  { id: 'CRACK', label: 'NỨT', damageType: 'CRACK' },
-  { id: 'OTHER', label: 'HỎNG KHÁC', damageType: 'OTHER' },
+  { id: 'DENT', label: 'MÓP MÉO', damageType: 'DENT' },
+  { id: 'CRACK', label: 'NỨT VỠ', damageType: 'CRACK' },
+  { id: 'OTHER', label: 'HƯ HỎNG KHÁC', damageType: 'OTHER' },
 ];
 
 export const DamageRecordPanel3D: React.FC<DamageRecordPanel3DProps> = ({
@@ -92,21 +92,27 @@ export const DamageRecordPanel3D: React.FC<DamageRecordPanel3DProps> = ({
   const [note, setNote] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
 
-  // Authoritative Validation Rules (Sections 7, 8, 9)
+  // Authoritative fallback coordinates from semantic hitbox definitions
+  const defaultPos = selectedPartCode
+    ? SEMANTIC_HITBOX_DEFINITIONS.find((h) => h.id === selectedPartCode)?.position || [0, 0.8, 0]
+    : [0, 0.8, 0];
+  const effectivePosition: [number, number, number] = (draftDamage && draftDamage.localPosition)
+    ? draftDamage.localPosition
+    : defaultPos;
+
+  // Authoritative Validation Rules
   const hasValidCoordinate = Boolean(draftDamage && draftDamage.localPosition);
   const matchedOpt = CONDITION_OPTIONS.find((c) => c.id === selectedCondition);
   const resolvedDamageType: DamageType | undefined = matchedOpt?.damageType;
 
   const canCompleteNormal = Boolean(
     selectedPartCode &&
-    hasValidCoordinate &&
     selectedCondition === 'NORMAL'
   );
 
   const canSaveDamage = Boolean(
     !isSubmitting &&
     selectedPartCode &&
-    hasValidCoordinate &&
     selectedCondition &&
     selectedCondition !== 'NORMAL' &&
     resolvedDamageType &&
@@ -136,10 +142,6 @@ export const DamageRecordPanel3D: React.FC<DamageRecordPanel3DProps> = ({
 
   const handleSave = async () => {
     if (!selectedPartCode) return;
-    if (!draftDamage || !hasValidCoordinate) {
-      setLocalError('Vui lòng nhấp vào vị trí cần kiểm tra trên mô hình xe 3D.');
-      return;
-    }
     if (!selectedCondition || selectedCondition === 'NORMAL') {
       setLocalError('Vui lòng chọn loại hư hỏng cần ghi nhận.');
       return;
@@ -158,7 +160,7 @@ export const DamageRecordPanel3D: React.FC<DamageRecordPanel3DProps> = ({
         damageType,
         severity: selectedSeverity,
         note: note.trim() || undefined,
-        localPosition: draftDamage.localPosition,
+        localPosition: effectivePosition,
       });
       setNote('');
       setSelectedCondition(null);
@@ -503,7 +505,6 @@ export const DamageRecordPanel3D: React.FC<DamageRecordPanel3DProps> = ({
                     <button
                       key={opt.id}
                       type="button"
-                      disabled={!hasValidCoordinate}
                       onClick={() => {
                         setSelectedCondition(opt.id);
                       }}
@@ -519,8 +520,7 @@ export const DamageRecordPanel3D: React.FC<DamageRecordPanel3DProps> = ({
                         color: isSelected ? '#ffffff' : '#94a3b8',
                         fontSize: '10.5px',
                         fontWeight: isSelected ? 700 : 500,
-                        cursor: !hasValidCoordinate ? 'not-allowed' : 'pointer',
-                        opacity: !hasValidCoordinate ? 0.45 : 1,
+                        cursor: 'pointer',
                         textAlign: 'center',
                         transition: 'all 0.15s ease',
                       }}
@@ -847,6 +847,33 @@ export const DamageRecordPanel3D: React.FC<DamageRecordPanel3DProps> = ({
 
             <button
               type="button"
+              id={`btn-damage-panel-detail-${selectedRecord.id}`}
+              onClick={() => {
+                useWorldStore.getState().openDamageDetailModal(selectedRecord.id);
+              }}
+              style={{
+                marginTop: '8px',
+                padding: '9px 14px',
+                borderRadius: '8px',
+                background: 'linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)',
+                border: 'none',
+                color: '#041324',
+                fontSize: '12px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                boxShadow: '0 4px 12px rgba(0, 242, 254, 0.3)',
+              }}
+            >
+              <Wrench size={13} color="#041324" />
+              <span>CHI TIẾT / SỬA CHỮA</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => onSelectDamage(null)}
               style={{
                 marginTop: '6px',
@@ -1082,7 +1109,7 @@ export const DamageRecordPanel3D: React.FC<DamageRecordPanel3DProps> = ({
                 transition: 'all 0.2s ease',
               }}
             >
-              {isSubmitting ? 'ĐANG LƯU HƯ HỎNG...' : 'HOÀN TẤT & GHI NHẬN'}
+              {isSubmitting ? 'ĐANG LƯU HƯ HỎNG...' : 'GHI NHẬN HƯ HỎNG'}
             </button>
           )}
 

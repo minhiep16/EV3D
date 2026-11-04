@@ -48,6 +48,22 @@ public class MaintenanceController {
     }
 
     /**
+     * Reconcile completed repair work with linked damage records.
+     */
+    @PostMapping("/vehicles/{vehicleId}/reconcile-damages")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN', 'CO_OWNER')")
+    public ResponseEntity<List<com.evshare.damage.dto.DamageRecordResponse>> reconcileDamages(
+            @PathVariable UUID vehicleId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        if (principal == null || principal.getUser() == null) {
+            throw new UnauthorizedException("Vui lòng đăng nhập.");
+        }
+        List<com.evshare.damage.dto.DamageRecordResponse> reconciled = maintenanceService.reconcileCompletedRepairDamages(vehicleId, principal);
+        return ResponseEntity.ok(reconciled);
+    }
+
+    /**
      * Get a single maintenance request by ID.
      */
     @GetMapping("/maintenance/{maintenanceId}")
@@ -100,10 +116,10 @@ public class MaintenanceController {
     }
 
     /**
-     * Create a new maintenance request for a vehicle (STAFF / ADMIN).
+     * Create a new maintenance request for a vehicle (STAFF / ADMIN / CO_OWNER).
      */
     @PostMapping("/vehicles/{vehicleId}/maintenance")
-    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN', 'CO_OWNER')")
     public ResponseEntity<MaintenanceResponse> createMaintenance(
             @PathVariable UUID vehicleId,
             @Valid @RequestBody CreateMaintenanceRequest request,

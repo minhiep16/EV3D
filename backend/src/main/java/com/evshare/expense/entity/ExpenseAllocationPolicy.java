@@ -2,7 +2,7 @@ package com.evshare.expense.entity;
 
 public enum ExpenseAllocationPolicy {
     USER_RESPONSIBILITY("Theo người sử dụng"),
-    USAGE_AND_CAPITAL("Theo km sử dụng và tỷ lệ vốn"),
+    USAGE_AND_CAPITAL("Phân bổ theo số km sử dụng và tỷ lệ vốn"),
     OWNERSHIP_RATIO("Theo tỷ lệ sở hữu"),
     CUSTOM_AGREEMENT("Theo thỏa thuận riêng");
 

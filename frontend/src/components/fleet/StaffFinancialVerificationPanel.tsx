@@ -259,8 +259,8 @@ export const StaffFinancialVerificationPanel: React.FC<StaffFinancialVerificatio
       <div
         style={{
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
+          flexDirection: 'column',
+          gap: '4px',
           background: 'rgba(0, 242, 254, 0.08)',
           border: '1px solid rgba(0, 242, 254, 0.25)',
           borderRadius: '8px',
@@ -268,12 +268,17 @@ export const StaffFinancialVerificationPanel: React.FC<StaffFinancialVerificatio
           fontSize: '11px',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#00f2fe', fontWeight: 700 }}>
-          <Sparkles size={13} />
-          <span>CHẾ ĐỘ TÀI CHÍNH DEMO</span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#00f2fe', fontWeight: 700 }}>
+            <Sparkles size={13} />
+            <span>CHẾ ĐỘ TÀI CHÍNH DEMO</span>
+          </div>
+          <div style={{ fontSize: '10.5px', color: '#94a3b8' }}>
+            Số dư quỹ: <strong style={{ color: '#34d399' }}>{formatVnd(fundSummary?.availableBalance ?? 0)}</strong>
+          </div>
         </div>
-        <div style={{ fontSize: '10.5px', color: '#94a3b8' }}>
-          Số dư quỹ: <strong style={{ color: '#34d399' }}>{formatVnd(fundSummary?.availableBalance ?? 0)}</strong>
+        <div style={{ fontSize: '9.5px', color: '#94a3b8', fontStyle: 'italic' }}>
+          Chế độ thử nghiệm — không giao dịch tiền thật
         </div>
       </div>
 

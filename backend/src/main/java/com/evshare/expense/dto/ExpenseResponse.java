@@ -71,6 +71,13 @@ public record ExpenseResponse(
             staffName = expense.getCreatedBy().getFullName();
         }
 
+        boolean isPaidByStaff = expense.getPaidBy() != null
+                && (expense.getPaidBy().getRole() == com.evshare.user.entity.Role.STAFF
+                || expense.getPaidBy().getRole() == com.evshare.user.entity.Role.ADMIN);
+
+        UUID paidById = (expense.getPaidBy() != null && !isPaidByStaff) ? expense.getPaidBy().getId() : null;
+        String paidByName = (expense.getPaidBy() != null && !isPaidByStaff) ? expense.getPaidBy().getFullName() : null;
+
         return new ExpenseResponse(
                 expense.getId(),
                 expense.getVehicle() != null ? expense.getVehicle().getId() : null,
@@ -81,8 +88,8 @@ public record ExpenseResponse(
                 expense.getAmount(),
                 expense.getDescription(),
                 expense.getOccurredAt(),
-                expense.getPaidBy() != null ? expense.getPaidBy().getId() : null,
-                expense.getPaidBy() != null ? expense.getPaidBy().getFullName() : null,
+                paidById,
+                paidByName,
                 expense.getCreatedBy() != null ? expense.getCreatedBy().getId() : null,
                 expense.getCreatedBy() != null ? expense.getCreatedBy().getFullName() : null,
                 expense.getSourceType(),

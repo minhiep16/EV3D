@@ -477,6 +477,10 @@ export const StaffApprovedWorkSection: React.FC<StaffApprovedWorkSectionProps> =
                       />
                     </div>
 
+                    <div style={{ fontSize: '9px', color: '#94a3b8', fontStyle: 'italic', marginTop: '2px' }}>
+                      Chế độ thử nghiệm — không giao dịch tiền thật
+                    </div>
+
                     <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', marginTop: '4px' }}>
                       <button
                         type="button"

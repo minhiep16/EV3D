@@ -36,6 +36,18 @@ public class VoteProposalController {
     }
 
     /**
+     * Create a vote proposal from an existing group repair proposal.
+     */
+    @PostMapping("/maintenance/{maintenanceId}/create-vote")
+    public ResponseEntity<VoteProposalResponse> createVoteForMaintenance(
+            @PathVariable UUID maintenanceId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        VoteProposalResponse response = voteProposalService.createVoteForMaintenance(maintenanceId, principal);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    /**
      * Get vote proposals for a vehicle (with optional status filter).
      */
     @GetMapping("/vote-proposals")

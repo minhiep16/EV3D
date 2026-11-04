@@ -162,72 +162,87 @@ public class ExpenseShareService {
         } else if (policy == ExpenseAllocationPolicy.USAGE_AND_CAPITAL) {
             sharesToSave = generateUsageAndCapitalShares(expense, vehicleId, activeShares, expenseAmount);
             if (sharesToSave.isEmpty()) {
-                // Section XIII: Zero distance or unresolved formula keeps allocation unresolved
+                // Zero-mileage safety: Do NOT divide by zero and do NOT silently fallback to OWNERSHIP_RATIO.
+                // Keep financial allocation in an explicit unresolved state until trip usage is verified.
                 return List.of();
             }
 
         } else if (policy == ExpenseAllocationPolicy.OWNERSHIP_RATIO) {
-            // Sort deterministically:
-            // 1. Highest ownership percentage first
-            // 2. Stable secondary order by User ID
-            activeShares.sort((a, b) -> {
-                int cmp = b.getPercentage().compareTo(a.getPercentage());
-                if (cmp != 0) return cmp;
-                return a.getMember().getUser().getId().compareTo(b.getMember().getUser().getId());
-            });
-
-            List<BigDecimal> rawAmounts = new ArrayList<>();
-
-            // Step 1 & 2: Calculate each member's raw share rounded to VND whole units
-            for (OwnershipShare oShare : activeShares) {
-                BigDecimal raw = expenseAmount
-                        .multiply(oShare.getPercentage())
-                        .divide(new BigDecimal("100"), 0, RoundingMode.HALF_UP)
-                        .setScale(2, RoundingMode.HALF_UP);
-                rawAmounts.add(raw);
-            }
-
-            // Step 3 & 4: Calculate remainder = expense.amount - allocatedTotal
-            BigDecimal allocatedTotal = rawAmounts.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal remainder = expenseAmount.subtract(allocatedTotal);
-
-            // Step 5: Assign remainder deterministically to recipient with highest percentage
-            if (remainder.compareTo(BigDecimal.ZERO) != 0) {
-                rawAmounts.set(0, rawAmounts.get(0).add(remainder));
-            }
-
-            // Invariant Verification: SUM(shares) == expense.amount
-            BigDecimal finalAllocatedSum = rawAmounts.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
-            if (finalAllocatedSum.compareTo(expenseAmount) != 0) {
-                throw new IllegalStateException("Lỗi kiểm toán: Tổng phân bổ " + finalAllocatedSum + " không khớp với số tiền chi phí " + expenseAmount);
-            }
-
-            // Persist ExpenseShare records with immutable percentage snapshots
-            for (int i = 0; i < activeShares.size(); i++) {
-                OwnershipShare oShare = activeShares.get(i);
-                BigDecimal amount = rawAmounts.get(i);
-
-                ExpenseShare share = new ExpenseShare(
-                        UUID.randomUUID(),
-                        expense,
-                        oShare.getMember().getUser(),
-                        oShare.getPercentage().setScale(4, RoundingMode.HALF_UP),
-                        amount,
-                        ExpenseShareStatus.ALLOCATED
-                );
-                share.setAllocationPolicy(ExpenseAllocationPolicy.OWNERSHIP_RATIO);
-                share.setAllocationPercentage(oShare.getPercentage().setScale(4, RoundingMode.HALF_UP));
-                share.setRawCalculatedAmount(amount);
-                share.setRedistributionAdjustment(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
-                share.setCalculationVersion("V2");
-                sharesToSave.add(share);
-            }
+            sharesToSave = calculateOwnershipRatioShares(expense, activeShares, expenseAmount);
 
         } else if (policy == ExpenseAllocationPolicy.CUSTOM_AGREEMENT) {
             throw new UnsupportedOperationException("Chính sách phân bổ theo thỏa thuận riêng (CUSTOM_AGREEMENT) chưa được cấu hình.");
         }
 
         return expenseShareRepository.saveAll(sharesToSave);
+    }
+
+    /**
+     * Helper to compute and build ExpenseShare entities under OWNERSHIP_RATIO.
+     * Enforces VND largest-remainder tie-breaking and accounting invariant SUM(shares) == expense.amount.
+     */
+    private List<ExpenseShare> calculateOwnershipRatioShares(
+            Expense expense,
+            List<OwnershipShare> activeShares,
+            BigDecimal expenseAmount
+    ) {
+        // Sort deterministically:
+        // 1. Highest ownership percentage first
+        // 2. Stable secondary order by User ID
+        activeShares.sort((a, b) -> {
+            int cmp = b.getPercentage().compareTo(a.getPercentage());
+            if (cmp != 0) return cmp;
+            return a.getMember().getUser().getId().compareTo(b.getMember().getUser().getId());
+        });
+
+        List<BigDecimal> rawAmounts = new ArrayList<>();
+
+        // Step 1 & 2: Calculate each member's raw share rounded to VND whole units
+        for (OwnershipShare oShare : activeShares) {
+            BigDecimal raw = expenseAmount
+                    .multiply(oShare.getPercentage())
+                    .divide(new BigDecimal("100"), 0, RoundingMode.HALF_UP)
+                    .setScale(2, RoundingMode.HALF_UP);
+            rawAmounts.add(raw);
+        }
+
+        // Step 3 & 4: Calculate remainder = expense.amount - allocatedTotal
+        BigDecimal allocatedTotal = rawAmounts.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal remainder = expenseAmount.subtract(allocatedTotal);
+
+        // Step 5: Assign remainder deterministically to recipient with highest percentage
+        if (remainder.compareTo(BigDecimal.ZERO) != 0 && !rawAmounts.isEmpty()) {
+            rawAmounts.set(0, rawAmounts.get(0).add(remainder));
+        }
+
+        // Invariant Verification: SUM(shares) == expense.amount
+        BigDecimal finalAllocatedSum = rawAmounts.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (finalAllocatedSum.compareTo(expenseAmount) != 0) {
+            throw new IllegalStateException("Lỗi kiểm toán: Tổng phân bổ " + finalAllocatedSum + " không khớp với số tiền chi phí " + expenseAmount);
+        }
+
+        // Persist ExpenseShare records with immutable percentage snapshots
+        List<ExpenseShare> sharesToSave = new ArrayList<>();
+        for (int i = 0; i < activeShares.size(); i++) {
+            OwnershipShare oShare = activeShares.get(i);
+            BigDecimal amount = rawAmounts.get(i);
+
+            ExpenseShare share = new ExpenseShare(
+                    UUID.randomUUID(),
+                    expense,
+                    oShare.getMember().getUser(),
+                    oShare.getPercentage().setScale(4, RoundingMode.HALF_UP),
+                    amount,
+                    ExpenseShareStatus.ALLOCATED
+            );
+            share.setAllocationPolicy(ExpenseAllocationPolicy.OWNERSHIP_RATIO);
+            share.setAllocationPercentage(oShare.getPercentage().setScale(4, RoundingMode.HALF_UP));
+            share.setRawCalculatedAmount(amount);
+            share.setRedistributionAdjustment(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
+            share.setCalculationVersion("V2");
+            sharesToSave.add(share);
+        }
+        return sharesToSave;
     }
 
     /**
@@ -251,7 +266,9 @@ public class ExpenseShareService {
             shares = generateSharesForExpense(expense);
         }
 
-        UUID payerId = expense.getPaidBy() != null ? expense.getPaidBy().getId() : null;
+        UUID payerId = (expense.getPaidBy() != null && expense.getPaidBy().getRole() != Role.STAFF && expense.getPaidBy().getRole() != Role.ADMIN)
+                ? expense.getPaidBy().getId()
+                : null;
         BigDecimal expenseAmount = expense.getAmount();
 
         return shares.stream()
@@ -261,6 +278,15 @@ public class ExpenseShareService {
                     return ExpenseShareResponse.fromEntity(s, isPayer, paidAmount);
                 })
                 .toList();
+    }
+
+    /**
+     * Idempotent reconciliation of missing expense shares for an approved expense.
+     * Preserves existing shares and settlements.
+     */
+    @Transactional
+    public List<ExpenseShareResponse> reconcileExpenseShares(UUID expenseId, UserPrincipal principal) {
+        return getExpenseShares(expenseId, principal);
     }
 
     /**
@@ -505,8 +531,7 @@ public class ExpenseShareService {
             totalKm = totalKm.add(km);
         }
 
-        // Section XIII: Zero-distance handling: Do NOT divide by zero. Mark allocation unresolved.
-        if (totalKm.compareTo(BigDecimal.ZERO) <= 0 || expenseAmount.compareTo(BigDecimal.ZERO) <= 0) {
+        if (expenseAmount.compareTo(BigDecimal.ZERO) <= 0) {
             return List.of();
         }
 
@@ -515,19 +540,30 @@ public class ExpenseShareService {
             return List.of();
         }
 
+        boolean isZeroKm = totalKm.compareTo(BigDecimal.ZERO) <= 0;
         BigDecimal oneOverN = BigDecimal.ONE.divide(BigDecimal.valueOf(n), 10, RoundingMode.HALF_UP);
+        BigDecimal twoOverN = BigDecimal.valueOf(2).divide(BigDecimal.valueOf(n), 10, RoundingMode.HALF_UP);
 
         // Step 1: Raw formula calculation
         List<UsageCapitalItem> items = new ArrayList<>();
         for (OwnershipShare oShare : activeShares) {
             UUID memberUserId = oShare.getMember().getUser().getId();
             BigDecimal memberKm = memberKmMap.getOrDefault(memberUserId, BigDecimal.ZERO);
-            BigDecimal kmRatio = memberKm.divide(totalKm, 10, RoundingMode.HALF_UP);
             BigDecimal ownershipRatio = oShare.getPercentage().divide(new BigDecimal("100"), 10, RoundingMode.HALF_UP);
 
-            BigDecimal factor = kmRatio.subtract(ownershipRatio).add(oneOverN);
-            BigDecimal rawCost = expenseAmount.multiply(factor);
+            BigDecimal factor;
+            if (isZeroKm) {
+                // Approved Phase 24 Zero-KM Inverse Capital Baseline:
+                // neutralUsageRatio = 1 / N, fallbackFactor_i = (2 / N) - ownershipRatio_i
+                factor = twoOverN.subtract(ownershipRatio);
+            } else {
+                // Original Phase 19 Formula when valid completed-trip mileage exists:
+                // factor_i = (memberKm_i / totalKm) - ownershipRatio_i + (1 / N)
+                BigDecimal kmRatio = memberKm.divide(totalKm, 10, RoundingMode.HALF_UP);
+                factor = kmRatio.subtract(ownershipRatio).add(oneOverN);
+            }
 
+            BigDecimal rawCost = expenseAmount.multiply(factor);
             items.add(new UsageCapitalItem(oShare, memberKm, rawCost));
         }
 

@@ -70,6 +70,7 @@ export function useCreateVoteProposal() {
       queryClient.invalidateQueries({ queryKey: ['vehicleMaintenance'] });
       queryClient.invalidateQueries({ queryKey: ['staffApprovedWork'] });
       queryClient.invalidateQueries({ queryKey: ['vote-proposal', data.id] });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
   });
 }
@@ -89,6 +90,7 @@ export function useCastVote() {
       queryClient.invalidateQueries({ queryKey: ['vehicleMaintenance'] });
       queryClient.invalidateQueries({ queryKey: ['maintenanceApproval'] });
       queryClient.invalidateQueries({ queryKey: ['staffApprovedWork'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
   });
 }
@@ -103,6 +105,7 @@ export function useFinalizeVoteProposal() {
       queryClient.invalidateQueries({ queryKey: ['vote-results', data.id] });
       queryClient.invalidateQueries({ queryKey: ['vehicleMaintenance'] });
       queryClient.invalidateQueries({ queryKey: ['staffApprovedWork'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
   });
 }
@@ -129,6 +132,9 @@ export function useStartApprovedWork() {
       queryClient.invalidateQueries({ queryKey: ['vote-proposals'] });
       queryClient.invalidateQueries({ queryKey: ['vehicleMaintenance'] });
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+      queryClient.invalidateQueries({ queryKey: ['vehicleDamages'] });
+      queryClient.invalidateQueries({ queryKey: ['damageHistory'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
   });
 }
@@ -150,6 +156,9 @@ export function useCompleteApprovedWork() {
       queryClient.invalidateQueries({ queryKey: ['fund-summary'] });
       queryClient.invalidateQueries({ queryKey: ['vehicleMaintenance'] });
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+      queryClient.invalidateQueries({ queryKey: ['vehicleDamages'] });
+      queryClient.invalidateQueries({ queryKey: ['damageHistory'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
   });
 }

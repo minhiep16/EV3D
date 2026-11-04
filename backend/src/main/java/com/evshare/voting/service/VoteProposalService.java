@@ -2,6 +2,9 @@ package com.evshare.voting.service;
 
 import com.evshare.common.exception.ResourceNotFoundException;
 import com.evshare.common.exception.UnauthorizedException;
+import com.evshare.damage.entity.DamageRecord;
+import com.evshare.damage.entity.DamageStatus;
+import com.evshare.damage.repository.DamageRecordRepository;
 import com.evshare.expense.entity.*;
 import com.evshare.expense.repository.ExpenseRepository;
 import com.evshare.expense.service.ExpenseShareService;
@@ -54,6 +57,10 @@ public class VoteProposalService {
     private final ExpenseRepository expenseRepository;
     private final ExpenseShareService expenseShareService;
     private final com.evshare.contract.repository.CoOwnershipContractRepository contractRepository;
+    private final DamageRecordRepository damageRecordRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.evshare.notification.service.NotificationService notificationService;
 
     public VoteProposalService(
             VoteProposalRepository voteProposalRepository,
@@ -68,7 +75,8 @@ public class VoteProposalService {
             MaintenanceRequestRepository maintenanceRequestRepository,
             ExpenseRepository expenseRepository,
             ExpenseShareService expenseShareService,
-            com.evshare.contract.repository.CoOwnershipContractRepository contractRepository
+            com.evshare.contract.repository.CoOwnershipContractRepository contractRepository,
+            DamageRecordRepository damageRecordRepository
     ) {
         this.voteProposalRepository = voteProposalRepository;
         this.proposalVoteRepository = proposalVoteRepository;
@@ -83,6 +91,7 @@ public class VoteProposalService {
         this.expenseRepository = expenseRepository;
         this.expenseShareService = expenseShareService;
         this.contractRepository = contractRepository;
+        this.damageRecordRepository = damageRecordRepository;
     }
 
     /**
@@ -219,6 +228,192 @@ public class VoteProposalService {
 
         List<ProposalVoteEligibility> savedEligibilities = eligibilityRepository.saveAll(eligibilities);
         savedProposal.setEligibilities(savedEligibilities);
+
+        if (notificationService != null) {
+            try {
+                notificationService.notifyNewRepairProposal(
+                        vehicleId,
+                        group.getId(),
+                        savedProposal.getId(),
+                        savedProposal.getTitle(),
+                        principal.getId()
+                );
+                notificationService.notifyVotingSessionCreated(
+                        vehicleId,
+                        group.getId(),
+                        savedProposal.getId(),
+                        savedProposal.getTitle()
+                );
+            } catch (Exception ignored) {
+            }
+        }
+
+        return buildProposalResponse(savedProposal, principal.getId());
+    }
+
+    /**
+     * Create an active vote proposal from an existing group-initiated maintenance/repair request.
+     * Transitions maintenance status to PENDING_APPROVAL and snapshots group voter eligibility.
+     */
+    @Transactional
+    public VoteProposalResponse createVoteForMaintenance(UUID maintenanceId, UserPrincipal principal) {
+        if (principal == null || principal.getUser() == null) {
+            throw new UnauthorizedException("Vui lòng đăng nhập để tạo phiên biểu quyết.");
+        }
+
+        MaintenanceRequest maint = maintenanceRequestRepository.findById(maintenanceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu bảo dưỡng không tồn tại: " + maintenanceId));
+
+        UUID vehicleId = maint.getVehicle().getId();
+        validateVehicleAccess(vehicleId, principal);
+
+        // Check if vote proposal already exists for this maintenance request
+        Optional<VoteProposal> existingProposalOpt = voteProposalRepository.findByRelatedMaintenanceRequestId(maintenanceId);
+        if (existingProposalOpt.isPresent()) {
+            VoteProposal existing = existingProposalOpt.get();
+            if (maint.getRelatedProposalId() == null) {
+                maint.setRelatedProposalId(existing.getId());
+                maintenanceRequestRepository.save(maint);
+            }
+            return buildProposalResponse(existing, principal.getId());
+        }
+        if (maint.getRelatedProposalId() != null) {
+            Optional<VoteProposal> byIdOpt = voteProposalRepository.findById(maint.getRelatedProposalId());
+            if (byIdOpt.isPresent()) {
+                return buildProposalResponse(byIdOpt.get(), principal.getId());
+            }
+        }
+
+        CoOwnershipGroup group = getActiveGroupForVehicle(vehicleId);
+
+        VoteDecisionRule decisionRule = VoteDecisionRule.OWNERSHIP_WEIGHTED;
+        if (group.getVotingRule() != null && !group.getVotingRule().isBlank()) {
+            try {
+                decisionRule = VoteDecisionRule.valueOf(group.getVotingRule());
+            } catch (Exception ignored) {
+            }
+        }
+
+        BigDecimal quorumPct = group.getQuorumPercentage() != null ? group.getQuorumPercentage() : new BigDecimal("50.00");
+        BigDecimal thresholdPct = group.getApprovalThresholdPercentage() != null ? group.getApprovalThresholdPercentage() : new BigDecimal("50.00");
+
+        // Parse estimated cost if present in description or set a reasonable default
+        BigDecimal estimatedCost = new BigDecimal("2000000.00");
+        if (maint.getDescription() != null && maint.getDescription().contains("Dự toán chi phí: ")) {
+            try {
+                String sub = maint.getDescription().substring(maint.getDescription().indexOf("Dự toán chi phí: ") + 17);
+                String numStr = sub.split(" ")[0].replaceAll("[^0-9.]", "");
+                if (!numStr.isBlank()) {
+                    estimatedCost = new BigDecimal(numStr);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        Instant now = Instant.now();
+        Instant endsAt = now.plus(5, ChronoUnit.DAYS);
+
+        String agreementVersion = "V1.0";
+        if (contractRepository != null) {
+            Optional<com.evshare.contract.entity.CoOwnershipContract> contractOpt = contractRepository.findByVehicleId(vehicleId);
+            if (contractOpt.isPresent() && contractOpt.get().getCurrentVersion() != null) {
+                agreementVersion = contractOpt.get().getCurrentVersion().getVersionNumberFormatted();
+            }
+        }
+
+        boolean hasDamages = false;
+        try {
+            hasDamages = maint.getDamageRecords() != null && !maint.getDamageRecords().isEmpty();
+        } catch (Exception ignored) {
+        }
+
+        VoteProposalType propType = (maint.getMaintenanceType() == MaintenanceType.REPAIR || hasDamages)
+                ? VoteProposalType.REPAIR
+                : (maint.getMaintenanceType() == MaintenanceType.PREVENTIVE || maint.getMaintenanceType() == MaintenanceType.INSPECTION
+                        ? VoteProposalType.MAINTENANCE
+                        : VoteProposalType.REPAIR);
+
+        VoteProposal proposal = new VoteProposal(
+                UUID.randomUUID(),
+                group,
+                maint.getVehicle(),
+                principal.getUser(),
+                propType,
+                maint.getTitle(),
+                maint.getDescription(),
+                estimatedCost,
+                estimatedCost,
+                "VND",
+                VoteProposalStatus.OPEN,
+                decisionRule,
+                quorumPct,
+                thresholdPct,
+                agreementVersion,
+                now,
+                endsAt
+        );
+
+        proposal.setRelatedMaintenanceRequest(maint);
+        VoteProposal savedProposal = voteProposalRepository.save(proposal);
+
+        // Snapshot eligible voters
+        List<GroupMember> activeMembers = memberRepository.findByGroupIdAndStatus(group.getId(), MemberStatus.ACTIVE)
+                .stream()
+                .filter(m -> m.getRemovedAt() == null)
+                .toList();
+
+        if (activeMembers.isEmpty()) {
+            throw new IllegalStateException("Nhóm đồng sở hữu không có thành viên hoạt động hợp lệ.");
+        }
+
+        Map<UUID, GroupMember> uniqueMembersByUser = new LinkedHashMap<>();
+        for (GroupMember member : activeMembers) {
+            if (member.getUser() != null) {
+                uniqueMembersByUser.putIfAbsent(member.getUser().getId(), member);
+            }
+        }
+
+        List<ProposalVoteEligibility> eligibilities = new ArrayList<>();
+        for (GroupMember member : uniqueMembersByUser.values()) {
+            BigDecimal weight;
+            if (decisionRule == VoteDecisionRule.OWNERSHIP_WEIGHTED) {
+                OwnershipShare share = ownershipShareRepository.findByGroupIdAndVehicleIdAndMemberId(group.getId(), vehicleId, member.getId())
+                        .or(() -> ownershipShareRepository.findByMemberIdAndVehicleId(member.getId(), vehicleId))
+                        .orElse(null);
+                weight = (share != null && share.getPercentage() != null) ? share.getPercentage() : BigDecimal.ZERO;
+            } else {
+                weight = BigDecimal.ONE.setScale(2, RoundingMode.HALF_UP);
+            }
+
+            ProposalVoteEligibility eligibility = new ProposalVoteEligibility(
+                    UUID.randomUUID(),
+                    savedProposal,
+                    member.getUser(),
+                    member,
+                    weight
+            );
+            eligibilities.add(eligibility);
+        }
+
+        List<ProposalVoteEligibility> savedEligibilities = eligibilityRepository.saveAll(eligibilities);
+        savedProposal.setEligibilities(savedEligibilities);
+
+        // Transition maintenance request to PENDING_APPROVAL and link proposal
+        maint.setRelatedProposalId(savedProposal.getId());
+        maint.setStatus(MaintenanceStatus.PENDING_APPROVAL);
+        maintenanceRequestRepository.save(maint);
+
+        if (notificationService != null) {
+            try {
+                notificationService.notifyVotingSessionCreated(
+                        vehicleId,
+                        group.getId(),
+                        savedProposal.getId(),
+                        savedProposal.getTitle()
+                );
+            } catch (Exception ignored) {
+            }
+        }
 
         return buildProposalResponse(savedProposal, principal.getId());
     }
@@ -492,9 +687,16 @@ public class VoteProposalService {
         proposal.setExecutedByStaff(principal.getUser());
 
         // Update related MaintenanceRequest if linked
+        MaintenanceRequest maint = null;
         if (proposal.getRelatedMaintenanceRequest() != null) {
-            MaintenanceRequest maint = proposal.getRelatedMaintenanceRequest();
-            if (maint.getStatus() == MaintenanceStatus.APPROVED || maint.getStatus() == MaintenanceStatus.SCHEDULED) {
+            maint = maintenanceRequestRepository.findByIdWithDetails(proposal.getRelatedMaintenanceRequest().getId())
+                    .orElse(proposal.getRelatedMaintenanceRequest());
+        } else {
+            maint = maintenanceRequestRepository.findByRelatedProposalId(proposal.getId()).orElse(null);
+        }
+
+        if (maint != null) {
+            if (maint.getStatus() == MaintenanceStatus.APPROVED || maint.getStatus() == MaintenanceStatus.SCHEDULED || maint.getStatus() == MaintenanceStatus.PENDING_APPROVAL) {
                 maint.setStatus(MaintenanceStatus.IN_PROGRESS);
                 maint.setStartedAt(Instant.now());
                 maint.setAssignedStaff(principal.getUser());
@@ -504,10 +706,54 @@ public class VoteProposalService {
                 Vehicle vehicle = proposal.getVehicle();
                 vehicle.setStatus(VehicleStatus.MAINTENANCE);
                 vehicleRepository.save(vehicle);
+
+                // Transactionally advance linked damage records: OPEN -> UNDER_MAINTENANCE
+                if (maint.getDamageRecords() != null && !maint.getDamageRecords().isEmpty()) {
+                    for (DamageRecord damage : maint.getDamageRecords()) {
+                        if (damage.getStatus() == DamageStatus.OPEN) {
+                            damage.setStatus(DamageStatus.UNDER_MAINTENANCE);
+                            damageRecordRepository.save(damage);
+                        }
+                    }
+                } else {
+                    // Match part from title/desc if join table was empty
+                    String t = (maint.getTitle() != null ? maint.getTitle().toUpperCase() : "") + " " + (proposal.getTitle() != null ? proposal.getTitle().toUpperCase() : "");
+                    List<DamageRecord> vehicleDamages = damageRecordRepository.findByVehicleIdOrderByCreatedAtDesc(proposal.getVehicle().getId());
+                    for (DamageRecord d : vehicleDamages) {
+                        if (d.getStatus() == DamageStatus.OPEN && d.getVehiclePartCode() != null) {
+                            String p = d.getVehiclePartCode().toUpperCase();
+                            if (t.contains(p) || (p.equals("DOOR_RL") && (t.contains("CỬA SAU TRÁI") || t.contains("CỬA SAU T"))) || (p.equals("DOOR_FR") && (t.contains("CỬA TRƯỚC PHẢI") || t.contains("CỬA TRƯỚC P")))) {
+                                d.setStatus(DamageStatus.UNDER_MAINTENANCE);
+                                DamageRecord savedD = damageRecordRepository.save(d);
+                                if (maint.getDamageRecords() != null) {
+                                    maint.getDamageRecords().add(savedD);
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
         VoteProposal saved = voteProposalRepository.save(proposal);
+
+        if (notificationService != null) {
+            try {
+                notificationService.notifyStaffAcceptedRepair(
+                        proposal.getVehicle().getId(),
+                        proposal.getGroup().getId(),
+                        maint != null ? maint.getId() : proposal.getId(),
+                        principal.getUser().getFullName()
+                );
+                notificationService.notifyStaffRepairStarted(
+                        proposal.getVehicle().getId(),
+                        proposal.getGroup().getId(),
+                        maint != null ? maint.getId() : proposal.getId()
+                );
+            } catch (Exception ignored) {
+            }
+        }
+
         return mapToApprovedWorkResponse(saved);
     }
 
@@ -591,14 +837,51 @@ public class VoteProposalService {
         proposal.setRelatedExpense(savedExpense);
 
         // Complete linked MaintenanceRequest if any
+        MaintenanceRequest maint = null;
         if (proposal.getRelatedMaintenanceRequest() != null) {
-            MaintenanceRequest maint = proposal.getRelatedMaintenanceRequest();
+            maint = maintenanceRequestRepository.findByIdWithDetails(proposal.getRelatedMaintenanceRequest().getId())
+                    .orElse(proposal.getRelatedMaintenanceRequest());
+        } else {
+            maint = maintenanceRequestRepository.findByRelatedProposalId(proposal.getId()).orElse(null);
+        }
+
+        if (maint != null) {
             maint.setStatus(MaintenanceStatus.COMPLETED);
             maint.setCompletedAt(now);
             if (request.completionNote() != null) {
                 maint.setCompletionNote(request.completionNote().trim());
             }
             maintenanceRequestRepository.save(maint);
+
+            // Transactionally resolve all linked damage records (Requirement 18: DO NOT delete rows)
+            if (maint.getDamageRecords() != null && !maint.getDamageRecords().isEmpty()) {
+                for (DamageRecord damage : maint.getDamageRecords()) {
+                    if (damage.getStatus() == DamageStatus.UNDER_MAINTENANCE || damage.getStatus() == DamageStatus.OPEN) {
+                        damage.setStatus(DamageStatus.RESOLVED);
+                        damage.setResolvedAt(now);
+                        damage.setResolvedByMaintenanceRequestId(maint.getId());
+                        damageRecordRepository.save(damage);
+                    }
+                }
+            } else {
+                // Match part from title/desc if join table was empty
+                String t = (maint.getTitle() != null ? maint.getTitle().toUpperCase() : "") + " " + (proposal.getTitle() != null ? proposal.getTitle().toUpperCase() : "");
+                List<DamageRecord> vehicleDamages = damageRecordRepository.findByVehicleIdOrderByCreatedAtDesc(proposal.getVehicle().getId());
+                for (DamageRecord d : vehicleDamages) {
+                    if (d.getStatus() != DamageStatus.RESOLVED && d.getVehiclePartCode() != null) {
+                        String p = d.getVehiclePartCode().toUpperCase();
+                        if (t.contains(p) || (p.equals("DOOR_RL") && (t.contains("CỬA SAU TRÁI") || t.contains("CỬA SAU T"))) || (p.equals("DOOR_FR") && (t.contains("CỬA TRƯỚC PHẢI") || t.contains("CỬA TRƯỚC P")))) {
+                            d.setStatus(DamageStatus.RESOLVED);
+                            d.setResolvedAt(now);
+                            d.setResolvedByMaintenanceRequestId(maint.getId());
+                            DamageRecord savedD = damageRecordRepository.save(d);
+                            if (maint.getDamageRecords() != null) {
+                                maint.getDamageRecords().add(savedD);
+                            }
+                        }
+                    }
+                }
+            }
 
             // Recheck vehicle availability
             Vehicle vehicle = proposal.getVehicle();
@@ -607,6 +890,28 @@ public class VoteProposalService {
         }
 
         VoteProposal saved = voteProposalRepository.save(proposal);
+
+        if (notificationService != null) {
+            try {
+                notificationService.notifyRepairInspectionPassed(
+                        proposal.getVehicle().getId(),
+                        proposal.getGroup().getId(),
+                        maint != null ? maint.getId() : proposal.getId()
+                );
+                if (maint != null && maint.getDamageRecords() != null) {
+                    for (DamageRecord damage : maint.getDamageRecords()) {
+                        notificationService.notifyDamageResolved(
+                                proposal.getVehicle().getId(),
+                                proposal.getVehicle() != null ? proposal.getVehicle().getLicensePlate() : null,
+                                damage.getVehiclePartCode(),
+                                damage.getId()
+                        );
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
         return mapToApprovedWorkResponse(saved);
     }
 
@@ -696,6 +1001,27 @@ public class VoteProposalService {
                     }
                 }
                 voteProposalRepository.save(proposal);
+
+                if (notificationService != null) {
+                    try {
+                        notificationService.notifyVoteFinalized(
+                                proposal.getVehicle().getId(),
+                                proposal.getGroup().getId(),
+                                proposal.getId(),
+                                proposal.getTitle(),
+                                true
+                        );
+                        if (proposal.getRelatedMaintenanceRequest() != null) {
+                            notificationService.notifyRepairApprovedForStaff(
+                                    proposal.getVehicle().getId(),
+                                    proposal.getVehicle() != null ? proposal.getVehicle().getLicensePlate() : null,
+                                    proposal.getRelatedMaintenanceRequest().getId(),
+                                    proposal.getTitle()
+                            );
+                        }
+                    } catch (Exception ignored) {
+                    }
+                }
             } else if (deadlinePassed) {
                 // Deadline passed without meeting approval conditions
                 if (!quorumMet) {
@@ -714,6 +1040,19 @@ public class VoteProposalService {
                     }
                 }
                 voteProposalRepository.save(proposal);
+
+                if (notificationService != null) {
+                    try {
+                        notificationService.notifyVoteFinalized(
+                                proposal.getVehicle().getId(),
+                                proposal.getGroup().getId(),
+                                proposal.getId(),
+                                proposal.getTitle(),
+                                false
+                        );
+                    } catch (Exception ignored) {
+                    }
+                }
             } else {
                 // Check if impossible to pass: rejection weight >= 100 - threshold
                 BigDecimal impossibleThreshold = totalEligibleWeight.subtract(thresholdNeeded);
@@ -721,6 +1060,19 @@ public class VoteProposalService {
                     proposal.setStatus(VoteProposalStatus.REJECTED);
                     proposal.setFinalizedAt(Instant.now());
                     voteProposalRepository.save(proposal);
+
+                    if (notificationService != null) {
+                        try {
+                            notificationService.notifyVoteFinalized(
+                                    proposal.getVehicle().getId(),
+                                    proposal.getGroup().getId(),
+                                    proposal.getId(),
+                                    proposal.getTitle(),
+                                    false
+                            );
+                        } catch (Exception ignored) {
+                        }
+                    }
                 }
             }
         }

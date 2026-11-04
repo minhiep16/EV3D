@@ -1,132 +1,66 @@
-import React, { useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Html } from '@react-three/drei';
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { VehicleResponse } from '../../../types/vehicle';
-import { DamageRecordResponse, DamageSeverity, DamageType } from '../../../types/damage';
-import { fetchVehicleDamages, recordVehicleDamage } from '../../../services/damageApi';
-import { PART_INSPECTION_CAMERA_CONFIGS, PART_INSPECTION_CAMERA_CONFIGS_EV02 } from '../../../config/vehicleCameraPresets';
+import { DamageRecordResponse } from '../../../types/damage';
+import { fetchVehicleDamages } from '../../../services/damageApi';
 import { resolveVehicleCode } from '../vehicles/vehicleModelConfig';
+import { resolveDamagePosition } from '../../../data/vehicleParts';
 import { useWorldStore } from '../../../store/worldStore';
-import { useAuthStore } from '../../../store/authStore';
 import { DamageMarker3D } from './DamageMarker3D';
-import { DamageRecordPanel3D } from './DamageRecordPanel3D';
 
 interface VehicleDamageWorldProps {
   vehicle: VehicleResponse;
 }
 
 export const VehicleDamageWorld: React.FC<VehicleDamageWorldProps> = ({ vehicle }) => {
-  const queryClient = useQueryClient();
-  const user = useAuthStore((state) => state.user);
-  const isStaff = user?.role === 'STAFF';
-  const isOperationsRole = user?.role === 'STAFF' || user?.role === 'ADMIN';
-
   const draftDamage = useWorldStore((state) => state.draftDamage);
   const setDraftDamage = useWorldStore((state) => state.setDraftDamage);
   const selectedDamageId = useWorldStore((state) => state.selectedDamageId);
   const selectDamageRecord = useWorldStore((state) => state.selectDamageRecord);
-  const selectedVehiclePartCode = useWorldStore((state) => state.selectedVehiclePartCode);
-  const selectVehiclePartCode = useWorldStore((state) => state.selectVehiclePartCode);
-  const selectVehiclePartWithPoint = useWorldStore((state) => state.selectVehiclePartWithPoint);
-  const exitPartInspection = useWorldStore((state) => state.exitPartInspection);
-  const returnToVehicleOverview = useWorldStore((state) => state.returnToVehicleOverview);
+  const openDamageDetailModal = useWorldStore((state) => state.openDamageDetailModal);
   const vehicleYaw = useWorldStore((state) => state.vehicleYaw);
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
   // TanStack Query: Fetch all authoritative damage records for this vehicle
-  const { data: damages = [], refetch } = useQuery<DamageRecordResponse[]>({
+  const { data: damages = [] } = useQuery<DamageRecordResponse[]>({
     queryKey: ['vehicleDamages', vehicle.id],
     queryFn: () => fetchVehicleDamages(vehicle.id),
     staleTime: 5000,
   });
 
-  // Requirement 19 & 22: Default active damage view shows only OPEN and UNDER_MAINTENANCE.
+  // Default active damage view shows only OPEN and UNDER_MAINTENANCE.
   // Repaired/RESOLVED markers disappear from active vehicle view without deleting history.
   const activeDamages = React.useMemo(() => {
     return damages.filter((item) => item.status !== 'RESOLVED');
   }, [damages]);
 
-  const selectedRecord = React.useMemo(() => {
-    if (!selectedDamageId) return null;
-    return damages.find((d) => d.id === selectedDamageId) || null;
-  }, [damages, selectedDamageId]);
-
-  // Handle saving new damage record
-  const handleSaveDamage = async (data: {
-    partCode: string;
-    damageType: DamageType;
-    severity: DamageSeverity;
-    note?: string;
-    localPosition: [number, number, number];
-  }) => {
-    if (!user) {
-      setErrorMessage('Vui lòng đăng nhập để ghi nhận hư hỏng');
-      return;
-    }
-
-    setIsSubmitting(true);
-    setErrorMessage(null);
-
-    try {
-      const created = await recordVehicleDamage(vehicle.id, {
-        vehiclePartCode: data.partCode,
-        damageType: data.damageType,
-        severity: data.severity,
-        note: data.note,
-        localPositionX: data.localPosition[0],
-        localPositionY: data.localPosition[1],
-        localPositionZ: data.localPosition[2],
-      });
-
-      // Invalidate relevant queries
-      await queryClient.invalidateQueries({ queryKey: ['vehicleDamages', vehicle.id] });
-      await refetch();
-
-      // Transition from draft to persisted
-      setDraftDamage(null);
-      selectDamageRecord(created.id);
-    } catch (err: any) {
-      const msg =
-        err.response?.data?.message ||
-        err.message ||
-        'Không thể lưu hư hỏng. Vui lòng kiểm tra lại.';
-      setErrorMessage(msg);
-      throw new Error(msg);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleDiscardDraft = () => {
-    setDraftDamage(null);
-    setErrorMessage(null);
-  };
-
   return (
     <group name="VehicleDamageWorld">
       {/* 1. Persisted 3D Damage Markers locked to vehicle turntable */}
       <group rotation={[0, vehicleYaw, 0]}>
-        {activeDamages.map((item) => (
-          <DamageMarker3D
-            key={item.id}
-            id={item.id}
-            position={[item.localPositionX, item.localPositionY, item.localPositionZ]}
-            partCode={item.vehiclePartCode}
-            damageType={item.damageType}
-            severity={item.severity}
-            status={item.status}
-            note={item.note}
-            isSelected={selectedDamageId === item.id}
-            onClick={() => {
-              selectDamageRecord(item.id);
-              setDraftDamage(null);
-            }}
-          />
-        ))}
+        {activeDamages.map((item) => {
+          const vehicleCode = resolveVehicleCode(vehicle) === 'EV02' ? 'EV02' : 'EV01';
+          const pos = resolveDamagePosition(item, vehicleCode);
+          return (
+            <DamageMarker3D
+              key={item.id}
+              id={item.id}
+              position={pos}
+              partCode={item.vehiclePartCode}
+              damageType={item.damageType}
+              severity={item.severity}
+              status={item.status}
+              note={item.note}
+              isSelected={selectedDamageId === item.id}
+              onClick={() => {
+                selectDamageRecord(item.id, item.vehiclePartCode);
+                openDamageDetailModal(item.id, item.vehiclePartCode);
+                setDraftDamage(null);
+              }}
+            />
+          );
+        })}
 
-        {/* 2. Active Temporary Draft 3D Inspection Marker */}
+        {/* 2. Active Temporary Draft 3D Inspection Marker (Staff only) */}
         {draftDamage && (
           <DamageMarker3D
             isDraft={true}
@@ -136,55 +70,6 @@ export const VehicleDamageWorld: React.FC<VehicleDamageWorldProps> = ({ vehicle 
           />
         )}
       </group>
-
-      {/* 3. Panel Safe Area: Rendered only for CO_OWNER (STAFF/ADMIN use fixed screen-space right panel) */}
-      {!isOperationsRole && (
-        <Html fullscreen style={{ pointerEvents: 'none', userSelect: 'none', zIndex: 20 }}>
-          <div
-            style={{
-              position: 'absolute',
-              right: '24px',
-              top: '20px',
-              bottom: '20px',
-              width: '370px',
-              maxWidth: 'min(370px, calc(35vw - 24px))',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'flex-start',
-              alignItems: 'stretch',
-              pointerEvents: 'none',
-            }}
-          >
-            <DamageRecordPanel3D
-              selectedPartCode={selectedVehiclePartCode}
-              draftDamage={draftDamage}
-              selectedRecord={selectedRecord}
-              savedDamages={activeDamages}
-              isSubmitting={isSubmitting}
-              errorMessage={errorMessage}
-              onSelectDamage={(id) => {
-                selectDamageRecord(id);
-                setDraftDamage(null);
-              }}
-              onSelectPart={(code) => {
-                if (code) {
-                  const isEv02 = resolveVehicleCode(vehicle) === 'EV02';
-                  const configMap = isEv02 ? PART_INSPECTION_CAMERA_CONFIGS_EV02 : PART_INSPECTION_CAMERA_CONFIGS;
-                  const defaultCenter =
-                    configMap[code]?.targetOffset || [0, 0.5, 0];
-                  selectVehiclePartWithPoint(code, defaultCenter);
-                } else {
-                  exitPartInspection();
-                }
-              }}
-              onExitPartInspection={exitPartInspection}
-              onDiscardDraft={handleDiscardDraft}
-              onSaveDamage={handleSaveDamage}
-              onClose={returnToVehicleOverview}
-            />
-          </div>
-        </Html>
-      )}
     </group>
   );
 };

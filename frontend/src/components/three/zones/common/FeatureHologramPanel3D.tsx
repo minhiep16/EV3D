@@ -330,6 +330,7 @@ export const FeatureHologramPanel3D: React.FC<FeatureHologramPanel3DProps> = ({
                           color: '#ffffff',
                           margin: 0,
                           lineHeight: 1.2,
+                          whiteSpace: 'nowrap',
                         }}
                       >
                         {title}

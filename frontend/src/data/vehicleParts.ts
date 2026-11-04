@@ -1042,3 +1042,50 @@ export function getPartById(id: VehiclePartId | string | null): VehiclePartConfi
   if (!id) return null;
   return VEHICLE_PARTS[id as VehiclePartId] || null;
 }
+
+/**
+ * Resolves the 3D local position [x, y, z] for a damage record.
+ * If the record contains valid non-zero coordinates, returns [x, y, z].
+ * If coordinates are missing, NaN, or origin [0,0,0], resolves to the canonical
+ * semantic hitbox coordinate for vehiclePartCode (with slight outward surface offset).
+ */
+export function resolveDamagePosition(
+  damage: {
+    localPositionX?: number | null;
+    localPositionY?: number | null;
+    localPositionZ?: number | null;
+    vehiclePartCode?: string | null;
+    partId?: string | null;
+  } | null | undefined,
+  vehicleCode: 'EV01' | 'EV02' = 'EV01'
+): [number, number, number] {
+  if (!damage) return [0, 0.8, 0];
+
+  const x = Number(damage.localPositionX);
+  const y = Number(damage.localPositionY);
+  const z = Number(damage.localPositionZ);
+
+  if (
+    !Number.isNaN(x) &&
+    !Number.isNaN(y) &&
+    !Number.isNaN(z) &&
+    (Math.abs(x) > 0.001 || Math.abs(y) > 0.001 || Math.abs(z) > 0.001)
+  ) {
+    return [x, y, z];
+  }
+
+  const partCode = (damage.vehiclePartCode || damage.partId) as VehiclePartId;
+  if (partCode) {
+    const hitboxList = vehicleCode === 'EV02' ? EV02_SEMANTIC_HITBOXES : SEMANTIC_HITBOX_DEFINITIONS;
+    const hitbox = hitboxList.find((h) => h.id === partCode) || SEMANTIC_HITBOX_DEFINITIONS.find((h) => h.id === partCode);
+    if (hitbox) {
+      const [hx, hy, hz] = hitbox.position;
+      const offsetX = hx !== 0 ? Math.sign(hx) * 0.05 : 0;
+      const offsetY = 0.05;
+      const offsetZ = hz !== 0 ? Math.sign(hz) * 0.05 : 0;
+      return [hx + offsetX, hy + offsetY, hz + offsetZ];
+    }
+  }
+
+  return [0, 0.8, 0];
+}

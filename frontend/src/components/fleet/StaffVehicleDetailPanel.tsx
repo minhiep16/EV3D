@@ -35,8 +35,8 @@ import {
   INSPECTION_ITEM_CONDITION_CONFIG,
 } from '../../types/inspection';
 import { fetchVehicleDamages, recordVehicleDamage } from '../../services/damageApi';
-import { getPartById, SEMANTIC_HITBOX_DEFINITIONS, PART_STATUS_CONFIG } from '../../data/vehicleParts';
-import { DamageType, DamageSeverity } from '../../types/damage';
+import { getPartById, SEMANTIC_HITBOX_DEFINITIONS, PART_STATUS_CONFIG, SEMANTIC_PART_LABELS_VI } from '../../data/vehicleParts';
+import { DamageType, DamageSeverity, DAMAGE_TYPE_LABELS } from '../../types/damage';
 import { VehiclePartId } from '../../types/vehiclePart';
 import { fetchActiveTripForVehicle, confirmTripReturnApi } from '../../services/tripApi';
 import { TripData } from '../../types/trip';
@@ -180,6 +180,8 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
   const setDraftDamage = useWorldStore((state) => state.setDraftDamage);
   const selectedDamageId = useWorldStore((state) => state.selectedDamageId);
   const selectDamageRecord = useWorldStore((state) => state.selectDamageRecord);
+  const selectVehiclePartCode = useWorldStore((state) => state.selectVehiclePartCode);
+  const openDamageDetailModal = useWorldStore((state) => state.openDamageDetailModal);
 
   // Local state for tabs and draft damage recording
   const [activeTab, setActiveTab] = useState<DetailTab>('STATUS');
@@ -438,6 +440,10 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
     staleTime: 5000,
   });
 
+  const unresolvedDamages = useMemo(() => {
+    return damages.filter((d) => d.status !== 'RESOLVED');
+  }, [damages]);
+
   // Handover selectors and active handovers query
   const selectedHandoverCheckpoint = useWorldStore((state) => state.selectedHandoverCheckpoint);
   const selectHandoverCheckpoint = useWorldStore((state) => state.selectHandoverCheckpoint);
@@ -596,16 +602,27 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
 
   // Local state for KIỂM TRA BỘ PHẬN (Vehicle Part Inspection)
   const [partCondition, setPartCondition] = useState<InspectionItemCondition>('GOOD');
+  const [partSeverity, setPartSeverity] = useState<DamageSeverity>('MINOR');
   const [partNote, setPartNote] = useState<string>('');
   const [isSavingPart, setIsSavingPart] = useState(false);
   const [isCompletingInspection, setIsCompletingInspection] = useState(false);
   const [inspectionFeedback, setInspectionFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showSpecs, setShowSpecs] = useState(false);
+
+  // Active damage record on the selected part (if any)
+  const activePartDamage = useMemo(() => {
+    if (!selectedPart?.id) return null;
+    return damages.find(
+      (d) => d.vehiclePartCode.toUpperCase() === selectedPart.id.toUpperCase() && d.status !== 'RESOLVED'
+    ) || null;
+  }, [damages, selectedPart?.id]);
 
   // Toggle for read-only inspection detail view in Handover
   const [isViewingInspectionDetail, setIsViewingInspectionDetail] = useState(false);
 
   // Synchronize part condition and note when a part is selected
   useEffect(() => {
+    setShowSpecs(false);
     if (selectedPart && activeInspection?.items) {
       const existing = activeInspection.items.find(
         (i) => i.vehiclePartCode.toUpperCase() === selectedPart.id.toUpperCase()
@@ -641,17 +658,58 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
         note: partNote.trim() ? partNote.trim() : undefined,
       });
 
+      // If defect detected, atomically create the DamageRecord
+      if (partCondition !== 'GOOD') {
+        const dType: DamageType =
+          partCondition === 'DENT'
+            ? 'DENT'
+            : partCondition === 'CRACK'
+            ? 'CRACK'
+            : partCondition === 'OTHER_DAMAGE'
+            ? 'OTHER'
+            : 'SCRATCH';
+
+        const hitbox = SEMANTIC_HITBOX_DEFINITIONS.find((h) => h.id === selectedPart.id);
+        const defaultPos = hitbox?.position || [0, 0.8, 0];
+        const localPos = draftDamage?.localPosition || defaultPos;
+
+        const createdDmg = await recordVehicleDamage(vehicle.id, {
+          vehiclePartCode: selectedPart.id,
+          damageType: dType,
+          severity: partSeverity,
+          note: partNote.trim() || `Ghi nhận ${partCondition === 'DENT' ? 'móp méo' : partCondition === 'CRACK' ? 'nứt vỡ' : 'trầy xước'} khi kiểm tra bộ phận.`,
+          localPositionX: localPos[0],
+          localPositionY: localPos[1],
+          localPositionZ: localPos[2],
+        });
+
+        // Clear temporary draft point and refresh active damage markers & notifications
+        setDraftDamage(null);
+
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['vehicleDamages', vehicle.id] }),
+          queryClient.invalidateQueries({ queryKey: ['damageHistory', vehicle.id] }),
+          queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+          queryClient.invalidateQueries({ queryKey: ['notifications', user?.id] }),
+          queryClient.invalidateQueries({ queryKey: ['unreadNotificationsCount'] }),
+          refetchDamages(),
+        ]);
+      }
+
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['activeVehicleInspection', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['latestCompletedInspection', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['notifications'] }),
       ]);
       await refetchActiveInspection();
       setInspectionFeedback({
         type: 'success',
-        text: `Đã lưu đánh giá cho ${selectedPart.nameVi}`,
+        text: partCondition === 'GOOD'
+          ? `Đã lưu đánh giá đạt chuẩn cho ${selectedPart.nameVi}`
+          : `Đã ghi nhận hư hỏng cho ${selectedPart.nameVi}`,
       });
-      setTimeout(() => setInspectionFeedback(null), 3000);
+      setTimeout(() => setInspectionFeedback(null), 3500);
     } catch (err: any) {
       setInspectionFeedback({
         type: 'error',
@@ -968,15 +1026,20 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
               >
                 <Wrench size={13} />
               </div>
-              <span style={{ fontSize: '13px', fontWeight: 800, color: '#f8fafc', letterSpacing: '0.04em' }}>
-                KIỂM TRA BỘ PHẬN 3D
-              </span>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontSize: '13px', fontWeight: 800, color: '#f8fafc', letterSpacing: '0.04em' }}>
+                  KIỂM TRA BỘ PHẬN
+                </span>
+                <span style={{ fontSize: '9.5px', color: '#00f2fe', fontWeight: 600 }}>
+                  CHẾ ĐỘ KIỂM TRA
+                </span>
+              </div>
             </div>
 
             <button
               type="button"
-              onClick={() => exitVehicleInspectionMode()}
-              title="Thoát kiểm tra"
+              onClick={() => (selectedPart ? clearVehiclePartSelection() : exitVehicleInspectionMode())}
+              title={selectedPart ? "Quay lại kiểm tra xe" : "Thoát kiểm tra"}
               style={{
                 background: 'rgba(255, 255, 255, 0.08)',
                 border: 'none',
@@ -997,97 +1060,161 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
           {selectedPart ? (
             /* Selected Part Technical Details */
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <div>
-                <div style={{ fontSize: '11px', color: '#38bdf8', fontWeight: 700, textTransform: 'uppercase' }}>
-                  {selectedPart.categoryVi}
+              {/* Section A: Thông tin bộ phận */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontSize: '10px', color: '#38bdf8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    THÔNG TIN BỘ PHẬN
+                  </div>
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '2px 8px',
+                      borderRadius: '9999px',
+                      background: PART_STATUS_CONFIG[selectedPart.status]?.bg || 'rgba(16, 185, 129, 0.15)',
+                      border: `1px solid ${PART_STATUS_CONFIG[selectedPart.status]?.color || '#10b981'}44`,
+                      color: PART_STATUS_CONFIG[selectedPart.status]?.color || '#34d399',
+                      fontSize: '10px',
+                      fontWeight: 700,
+                    }}
+                  >
+                    <CheckCircle2 size={11} />
+                    <span>{PART_STATUS_CONFIG[selectedPart.status]?.labelVi || 'Bình thường'}</span>
+                  </div>
                 </div>
-                <div style={{ fontSize: '18px', fontWeight: 800, color: '#ffffff' }}>
-                  {selectedPart.nameVi}
-                </div>
-                <div style={{ fontSize: '10px', color: '#94a3b8', fontFamily: 'monospace', marginTop: '2px' }}>
-                  Mã bộ phận: {selectedPart.id}
-                </div>
-              </div>
 
-              {/* Status Badge */}
-              <div
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '4px 10px',
-                  borderRadius: '9999px',
-                  background: PART_STATUS_CONFIG[selectedPart.status]?.bg || 'rgba(16, 185, 129, 0.15)',
-                  border: `1px solid ${PART_STATUS_CONFIG[selectedPart.status]?.color || '#10b981'}44`,
-                  color: PART_STATUS_CONFIG[selectedPart.status]?.color || '#34d399',
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  width: 'fit-content',
-                }}
-              >
-                <CheckCircle2 size={12} />
-                <span>{PART_STATUS_CONFIG[selectedPart.status]?.labelVi || 'Bình thường'}</span>
-              </div>
+                <div>
+                  <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>
+                    {selectedPart.categoryVi}
+                  </div>
+                  <div style={{ fontSize: '17px', fontWeight: 800, color: '#ffffff' }}>
+                    {selectedPart.nameVi}
+                  </div>
+                  <div style={{ fontSize: '10px', color: '#38bdf8', fontFamily: 'monospace', marginTop: '1px' }}>
+                    Mã: {selectedPart.id}
+                  </div>
+                </div>
 
-              {/* Door Dynamic Articulation Status Note */}
-              {selectedPart.id.startsWith('DOOR_') && (
+                {/* Door Dynamic Articulation Status Note */}
+                {selectedPart.id.startsWith('DOOR_') && (
+                  <div
+                    style={{
+                      background: 'rgba(0, 242, 254, 0.10)',
+                      border: '1px solid rgba(0, 242, 254, 0.35)',
+                      borderRadius: '8px',
+                      padding: '8px 10px',
+                      fontSize: '11px',
+                      color: '#e0f2fe',
+                      lineHeight: '1.4',
+                    }}
+                  >
+                    <span style={{ fontWeight: 700, color: '#00f2fe' }}>Khớp bản lề tự động: </span>
+                    Cửa xe đang mở 65° hướng ra ngoài theo trục vật lý. Camera đã chuyển sang quan sát mặt ngoài của cửa.
+                  </div>
+                )}
+
+                {/* Technical Description */}
                 <div
                   style={{
-                    background: 'rgba(0, 242, 254, 0.10)',
-                    border: '1px solid rgba(0, 242, 254, 0.35)',
+                    background: 'rgba(15, 23, 42, 0.75)',
+                    border: '1px solid rgba(56, 189, 248, 0.2)',
                     borderRadius: '8px',
                     padding: '8px 10px',
                     fontSize: '11px',
-                    color: '#e0f2fe',
-                    lineHeight: '1.4',
+                    color: '#cbd5e1',
+                    lineHeight: '1.45',
                   }}
                 >
-                  <span style={{ fontWeight: 700, color: '#00f2fe' }}>Khớp bản lề tự động: </span>
-                  Cửa xe đang mở 65° hướng ra ngoài theo trục vật lý. Camera đã chuyển sang quan sát mặt ngoài của cửa.
+                  {selectedPart.descriptionVi}
                 </div>
-              )}
 
-              {/* Part Description */}
+                {/* Collapsible Specifications List */}
+                {selectedPart.specs && selectedPart.specs.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowSpecs((prev) => !prev)}
+                      style={{
+                        background: 'rgba(30, 41, 59, 0.5)',
+                        border: '1px solid rgba(56, 189, 248, 0.2)',
+                        borderRadius: '6px',
+                        padding: '5px 8px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        color: '#94a3b8',
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      <span>Thông số kỹ thuật ({selectedPart.specs.length})</span>
+                      <span style={{ color: '#00f2fe' }}>{showSpecs ? 'Ẩn ▲' : 'Xem ▼'}</span>
+                    </button>
+                    {showSpecs && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', marginTop: '2px' }}>
+                        {selectedPart.specs.map((sp, idx) => (
+                          <div
+                            key={idx}
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              padding: '4px 8px',
+                              background: 'rgba(15, 23, 42, 0.5)',
+                              borderRadius: '4px',
+                              fontSize: '10.5px',
+                            }}
+                          >
+                            <span style={{ color: '#94a3b8' }}>{sp.label}</span>
+                            <span style={{ fontWeight: 700, color: '#ffffff' }}>{sp.value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Section B: Vị trí kiểm tra */}
               <div
                 style={{
                   background: 'rgba(15, 23, 42, 0.75)',
-                  border: '1px solid rgba(56, 189, 248, 0.2)',
+                  border: '1px solid rgba(56, 189, 248, 0.25)',
                   borderRadius: '8px',
                   padding: '10px',
-                  fontSize: '11px',
-                  color: '#cbd5e1',
-                  lineHeight: '1.45',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px',
                 }}
               >
-                {selectedPart.descriptionVi}
+                <div style={{ fontSize: '10px', fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  VỊ TRÍ KIỂM TRA
+                </div>
+                {draftDamage?.localPosition ? (
+                  <div style={{ fontSize: '11px', color: '#10b981', fontFamily: 'monospace', fontWeight: 600 }}>
+                    Tọa độ 3D: [X: {draftDamage.localPosition[0].toFixed(2)}, Y: {draftDamage.localPosition[1].toFixed(2)}, Z: {draftDamage.localPosition[2].toFixed(2)}]
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      fontSize: '11px',
+                      color: '#38bdf8',
+                      background: 'rgba(56, 189, 248, 0.08)',
+                      border: '1px dashed rgba(56, 189, 248, 0.4)',
+                      borderRadius: '6px',
+                      padding: '6px 8px',
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    📍 Nhấp trực tiếp trên mô hình 3D để ghim điểm kiểm tra chính xác
+                  </div>
+                )}
               </div>
 
-              {/* Specifications List */}
-              {selectedPart.specs && selectedPart.specs.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <div style={{ fontSize: '10px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>
-                    Thông số kỹ thuật:
-                  </div>
-                  {selectedPart.specs.map((sp, idx) => (
-                    <div
-                      key={idx}
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        padding: '5px 8px',
-                        background: 'rgba(15, 23, 42, 0.5)',
-                        borderRadius: '6px',
-                        fontSize: '11px',
-                      }}
-                    >
-                      <span style={{ color: '#94a3b8' }}>{sp.label}</span>
-                      <span style={{ fontWeight: 700, color: '#ffffff' }}>{sp.value}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Part Inspection Assessment Form */}
+              {/* Section C: Đánh giá tình trạng */}
               <div
                 style={{
                   background: 'rgba(15, 23, 42, 0.85)',
@@ -1108,15 +1235,51 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
                   </span>
                 </div>
 
+                {/* Active Damage Notice Banner & Direct Action */}
+                {activePartDamage && (
+                  <div
+                    style={{
+                      background: 'rgba(239, 68, 68, 0.15)',
+                      border: '1px solid rgba(239, 68, 68, 0.5)',
+                      borderRadius: '8px',
+                      padding: '8px 10px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '6px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '10px', fontWeight: 800, color: '#f87171' }}>
+                        ĐANG CÓ HƯ HỎNG GHI NHẬN
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '9px',
+                          fontWeight: 700,
+                          padding: '1px 5px',
+                          borderRadius: '4px',
+                          background: 'rgba(239, 68, 68, 0.3)',
+                          color: '#fca5a5',
+                        }}
+                      >
+                        {activePartDamage.severity}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '10.5px', color: '#cbd5e1' }}>
+                      {DAMAGE_TYPE_LABELS[activePartDamage.damageType] || activePartDamage.damageType} — {activePartDamage.note || 'Chưa có ghi chú'}
+                    </div>
+                  </div>
+                )}
+
                 {/* Condition Selector Chips */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                   {(
                     [
-                      { condition: 'GOOD', label: 'Tốt / Bình thường' },
-                      { condition: 'SCRATCH', label: 'Trầy xước' },
-                      { condition: 'DENT', label: 'Móp méo' },
-                      { condition: 'CRACK', label: 'Nứt vỡ' },
-                      { condition: 'OTHER_DAMAGE', label: 'Hư hỏng khác' },
+                      { condition: 'GOOD', label: 'BÌNH THƯỜNG' },
+                      { condition: 'SCRATCH', label: 'TRẦY XƯỚC' },
+                      { condition: 'DENT', label: 'MÓP MÉO' },
+                      { condition: 'CRACK', label: 'NỨT VỠ' },
+                      { condition: 'OTHER_DAMAGE', label: 'HƯ HỎNG KHÁC' },
                     ] as const
                   ).map((item) => {
                     const isSelected = partCondition === item.condition;
@@ -1127,27 +1290,30 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
                         type="button"
                         onClick={() => setPartCondition(item.condition)}
                         style={{
-                          background: isSelected ? conf.bg : 'rgba(15, 23, 42, 0.6)',
-                          border: isSelected ? `1.5px solid ${conf.color}` : '1px solid rgba(255, 255, 255, 0.1)',
+                          background: isSelected ? conf.bg : 'rgba(15, 23, 42, 0.75)',
+                          border: isSelected ? `1.5px solid ${conf.color}` : '1px solid rgba(56, 189, 248, 0.25)',
                           borderRadius: '6px',
-                          padding: '6px 8px',
-                          color: isSelected ? conf.color : '#cbd5e1',
-                          fontSize: '10.5px',
-                          fontWeight: isSelected ? 700 : 500,
+                          padding: '7px 8px',
+                          color: isSelected ? '#ffffff' : '#cbd5e1',
+                          fontSize: '11px',
+                          fontWeight: isSelected ? 800 : 600,
                           cursor: 'pointer',
+                          pointerEvents: 'auto',
                           textAlign: 'left',
                           display: 'flex',
                           alignItems: 'center',
-                          gap: '5px',
+                          gap: '6px',
+                          boxShadow: isSelected ? `0 0 10px ${conf.color}40` : 'none',
                           transition: 'all 0.15s ease',
                         }}
                       >
                         <div
                           style={{
-                            width: '6px',
-                            height: '6px',
+                            width: '7px',
+                            height: '7px',
                             borderRadius: '50%',
                             background: conf.color,
+                            boxShadow: isSelected ? `0 0 6px ${conf.color}` : 'none',
                           }}
                         />
                         <span>{item.label}</span>
@@ -1156,29 +1322,66 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
                   })}
                 </div>
 
-                {/* Part Note Input */}
-                <div>
-                  <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', marginBottom: '4px' }}>
-                    Ghi chú chi tiết:
+                {/* Section D: Damage Specification (only when defect detected) */}
+                {partCondition !== 'GOOD' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div>
+                      <div style={{ fontSize: '10px', fontWeight: 700, color: '#f59e0b', marginBottom: '4px' }}>
+                        Mức độ nghiêm trọng:
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
+                        {(['MINOR', 'MODERATE', 'SEVERE'] as const).map((sev) => {
+                          const isSelected = partSeverity === sev;
+                          const label = sev === 'MINOR' ? 'NHẸ' : sev === 'MODERATE' ? 'VỪA' : 'NGHIÊM TRỌNG';
+                          const color = sev === 'SEVERE' ? '#ef4444' : sev === 'MODERATE' ? '#f59e0b' : '#38bdf8';
+                          return (
+                            <button
+                              key={sev}
+                              type="button"
+                              onClick={() => setPartSeverity(sev)}
+                              style={{
+                                background: isSelected ? `${color}25` : 'rgba(15, 23, 42, 0.6)',
+                                border: isSelected ? `1.5px solid ${color}` : '1px solid rgba(255, 255, 255, 0.1)',
+                                borderRadius: '6px',
+                                padding: '5px 4px',
+                                color: isSelected ? color : '#94a3b8',
+                                fontSize: '10px',
+                                fontWeight: isSelected ? 700 : 500,
+                                cursor: 'pointer',
+                                textAlign: 'center',
+                              }}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', marginBottom: '4px' }}>
+                        Mô tả chi tiết hư hỏng:
+                      </div>
+                      <input
+                        type="text"
+                        value={partNote}
+                        onChange={(e) => setPartNote(e.target.value)}
+                        placeholder="Mô tả chi tiết hư hỏng..."
+                        style={{
+                          width: '100%',
+                          background: 'rgba(15, 23, 42, 0.6)',
+                          border: '1px solid rgba(56, 189, 248, 0.25)',
+                          borderRadius: '6px',
+                          padding: '7px 10px',
+                          color: '#ffffff',
+                          fontSize: '11px',
+                          outline: 'none',
+                          boxSizing: 'border-box',
+                        }}
+                      />
+                    </div>
                   </div>
-                  <input
-                    type="text"
-                    value={partNote}
-                    onChange={(e) => setPartNote(e.target.value)}
-                    placeholder="Ghi chú hiện trạng, chi tiết vết trầy..."
-                    style={{
-                      width: '100%',
-                      background: 'rgba(15, 23, 42, 0.6)',
-                      border: '1px solid rgba(56, 189, 248, 0.25)',
-                      borderRadius: '6px',
-                      padding: '7px 10px',
-                      color: '#ffffff',
-                      fontSize: '11px',
-                      outline: 'none',
-                      boxSizing: 'border-box',
-                    }}
-                  />
-                </div>
+                )}
 
                 {/* Feedback message */}
                 {inspectionFeedback && (
@@ -1203,18 +1406,21 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
                   </div>
                 )}
 
-                {/* Save Part Assessment Button */}
+                {/* Single Context-Aware Primary Action Button */}
                 <button
                   type="button"
                   onClick={handleSavePartInspection}
                   disabled={isSavingPart}
                   style={{
                     width: '100%',
-                    background: 'linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)',
+                    background:
+                      partCondition === 'GOOD'
+                        ? 'linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)'
+                        : 'linear-gradient(135deg, rgba(239, 68, 68, 0.9) 0%, rgba(220, 38, 38, 1) 100%)',
                     border: 'none',
                     borderRadius: '8px',
-                    padding: '8px',
-                    color: '#080c16',
+                    padding: '9px',
+                    color: partCondition === 'GOOD' ? '#080c16' : '#ffffff',
                     fontSize: '11px',
                     fontWeight: 800,
                     cursor: isSavingPart ? 'not-allowed' : 'pointer',
@@ -1222,46 +1428,32 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '6px',
-                    boxShadow: '0 2px 10px rgba(0, 242, 254, 0.3)',
+                    boxShadow:
+                      partCondition === 'GOOD'
+                        ? '0 2px 10px rgba(0, 242, 254, 0.3)'
+                        : '0 2px 10px rgba(239, 68, 68, 0.4)',
                   }}
                 >
-                  <Save size={13} />
-                  <span>{isSavingPart ? 'ĐANG LƯU ĐÁNH GIÁ...' : 'LƯU ĐÁNH GIÁ BỘ PHẬN NÀY'}</span>
+                  {partCondition === 'GOOD' ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
+                  <span>
+                    {isSavingPart
+                      ? 'ĐANG LƯU ĐÁNH GIÁ...'
+                      : partCondition === 'GOOD'
+                      ? 'HOÀN TẤT KIỂM TRA'
+                      : 'GHI NHẬN HƯ HỎNG'}
+                  </span>
                 </button>
               </div>
 
-              {/* Action Buttons */}
+              {/* Navigation Actions */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
-                <button
-                  type="button"
-                  onClick={() => enterVehicleDamageMappingMode(selectedPart.id)}
-                  style={{
-                    width: '100%',
-                    background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.25) 0%, rgba(217, 119, 6, 0.35) 100%)',
-                    border: '1px solid rgba(245, 158, 11, 0.6)',
-                    color: '#fbbf24',
-                    borderRadius: '8px',
-                    padding: '9px',
-                    fontSize: '11px',
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '6px',
-                    boxShadow: '0 2px 10px rgba(245, 158, 11, 0.25)',
-                  }}
-                >
-                  <AlertTriangle size={13} color="#f59e0b" />
-                  <span>GHI NHẬN HƯ HỎNG BỘ PHẬN NÀY</span>
-                </button>
                 <button
                   type="button"
                   onClick={() => clearVehiclePartSelection()}
                   style={{
                     width: '100%',
-                    background: 'rgba(0, 242, 254, 0.2)',
-                    border: '1px solid #00f2fe',
+                    background: 'rgba(0, 242, 254, 0.1)',
+                    border: '1px solid rgba(0, 242, 254, 0.4)',
                     color: '#00f2fe',
                     borderRadius: '8px',
                     padding: '8px',
@@ -1270,7 +1462,7 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
                     cursor: 'pointer',
                   }}
                 >
-                  Đóng bộ phận này
+                  QUAY LẠI KIỂM TRA XE
                 </button>
                 <button
                   type="button"
@@ -1287,7 +1479,7 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
                     cursor: 'pointer',
                   }}
                 >
-                  Thoát kiểm tra xe
+                  THOÁT KIỂM TRA XE
                 </button>
               </div>
             </div>
@@ -1792,40 +1984,105 @@ export const StaffVehicleDetailPanel: React.FC<StaffVehicleDetailPanelProps> = (
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', maxHeight: '160px', overflowY: 'auto' }}>
-                {damages.map((dmg) => (
-                  <div
-                    key={dmg.id}
-                    onClick={() => selectDamageRecord(selectedDamageId === dmg.id ? null : dmg.id)}
-                    style={{
-                      background: selectedDamageId === dmg.id ? 'rgba(239, 68, 68, 0.2)' : 'rgba(15, 23, 42, 0.5)',
-                      border: selectedDamageId === dmg.id ? '1px solid #f87171' : '1px solid rgba(255, 255, 255, 0.08)',
-                      borderRadius: '6px',
-                      padding: '6px 8px',
-                      fontSize: '11px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 700, color: '#ffffff' }}>{dmg.vehiclePartCode}</div>
-                      <div style={{ fontSize: '10px', color: '#94a3b8' }}>{dmg.note || dmg.damageType}</div>
-                    </div>
-                    <span
+                {damages.map((dmg) => {
+                  const partName = SEMANTIC_PART_LABELS_VI[dmg.vehiclePartCode] || dmg.vehiclePartCode;
+                  const typeName = DAMAGE_TYPE_LABELS[dmg.damageType] || dmg.damageType;
+                  const isResolved = dmg.status === 'RESOLVED';
+                  const isUnderMaint = dmg.status === 'UNDER_MAINTENANCE';
+                  const statusLabel = isResolved
+                    ? 'ĐÃ KHẮC PHỤC'
+                    : isUnderMaint
+                    ? 'ĐANG SỬA CHỮA'
+                    : 'CHỜ XỬ LÝ';
+                  const statusColor = isResolved
+                    ? '#10b981'
+                    : isUnderMaint
+                    ? '#38bdf8'
+                    : dmg.severity === 'SEVERE'
+                    ? '#ef4444'
+                    : '#f59e0b';
+                  const statusBg = isResolved
+                    ? 'rgba(16, 185, 129, 0.15)'
+                    : isUnderMaint
+                    ? 'rgba(56, 189, 248, 0.15)'
+                    : 'rgba(245, 158, 11, 0.15)';
+                  const sevLabel = dmg.severity === 'SEVERE' ? 'Nghiêm trọng' : dmg.severity === 'MODERATE' ? 'Vừa' : 'Nhẹ';
+                  const isSelected = selectedDamageId === dmg.id;
+
+                  return (
+                    <div
+                      key={dmg.id}
+                      onClick={() => {
+                        selectVehiclePartCode(dmg.vehiclePartCode);
+                        selectDamageRecord(dmg.id);
+                        openDamageDetailModal(dmg.id);
+                      }}
                       style={{
-                        fontSize: '9px',
-                        fontWeight: 700,
-                        padding: '2px 6px',
-                        borderRadius: '4px',
-                        background: dmg.severity === 'SEVERE' ? 'rgba(239, 68, 68, 0.25)' : 'rgba(245, 158, 11, 0.25)',
-                        color: dmg.severity === 'SEVERE' ? '#f87171' : '#fbbf24',
+                        background: isSelected
+                          ? 'rgba(239, 68, 68, 0.25)'
+                          : isResolved
+                          ? 'rgba(15, 23, 42, 0.35)'
+                          : 'rgba(15, 23, 42, 0.6)',
+                        border: isSelected
+                          ? '1px solid #f87171'
+                          : isResolved
+                          ? '1px solid rgba(16, 185, 129, 0.2)'
+                          : '1px solid rgba(255, 255, 255, 0.1)',
+                        borderRadius: '6px',
+                        padding: '7px 9px',
+                        fontSize: '11px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: '6px',
+                        transition: 'all 0.15s ease',
                       }}
                     >
-                      {dmg.severity}
-                    </span>
-                  </div>
-                ))}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontWeight: 700, color: '#ffffff' }}>{partName}</span>
+                          <span style={{ fontSize: '9.5px', color: '#94a3b8' }}>({dmg.vehiclePartCode})</span>
+                        </div>
+                        <div
+                          style={{
+                            fontSize: '10px',
+                            color: isResolved ? '#64748b' : '#cbd5e1',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {typeName} • {dmg.note || 'Không có ghi chú'}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px' }}>
+                        <span
+                          style={{
+                            fontSize: '8.5px',
+                            fontWeight: 700,
+                            padding: '1px 5px',
+                            borderRadius: '4px',
+                            background: statusBg,
+                            color: statusColor,
+                            border: `1px solid ${statusColor}40`,
+                          }}
+                        >
+                          {statusLabel}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: '8.5px',
+                            fontWeight: 600,
+                            color: dmg.severity === 'SEVERE' ? '#f87171' : '#94a3b8',
+                          }}
+                        >
+                          {sevLabel}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

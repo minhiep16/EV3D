@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { VehicleResponse } from '../../../types/vehicle';
 import { DamageRecordResponse } from '../../../types/damage';
 import { fetchVehicleDamages } from '../../../services/damageApi';
+import { resolveDamagePosition } from '../../../data/vehicleParts';
+import { resolveVehicleCode } from '../vehicles/vehicleModelConfig';
 import { useWorldStore } from '../../../store/worldStore';
 import { DamageMarker3D } from './DamageMarker3D';
 
@@ -13,6 +15,8 @@ interface VehicleDamageHistoryWorldProps {
 export const VehicleDamageHistoryWorld: React.FC<VehicleDamageHistoryWorldProps> = ({ vehicle }) => {
   const selectedDamageId = useWorldStore((state) => state.selectedDamageId);
   const selectDamageRecord = useWorldStore((state) => state.selectDamageRecord);
+  const selectVehiclePartCode = useWorldStore((state) => state.selectVehiclePartCode);
+  const openDamageDetailModal = useWorldStore((state) => state.openDamageDetailModal);
   const vehicleYaw = useWorldStore((state) => state.vehicleYaw);
   const severityFilter = useWorldStore((state) => state.damageHistorySeverityFilter);
   const statusFilter = useWorldStore((state) => state.damageHistoryStatusFilter);
@@ -50,22 +54,27 @@ export const VehicleDamageHistoryWorld: React.FC<VehicleDamageHistoryWorldProps>
     <group name="VehicleDamageHistoryWorld">
       {/* Persisted 3D Damage Markers locked to vehicle turntable transform (Requirement 9 & 20) */}
       <group rotation={[0, vehicleYaw, 0]}>
-        {visibleDamages.map((item) => (
-          <DamageMarker3D
-            key={item.id}
-            id={item.id}
-            position={[item.localPositionX, item.localPositionY, item.localPositionZ]}
-            partCode={item.vehiclePartCode}
-            damageType={item.damageType}
-            severity={item.severity}
-            status={item.status}
-            note={item.note}
-            isSelected={selectedDamageId === item.id}
-            onClick={() => {
-              selectDamageRecord(item.id);
-            }}
-          />
-        ))}
+        {visibleDamages.map((item) => {
+          const vehicleCode = resolveVehicleCode(vehicle) === 'EV02' ? 'EV02' : 'EV01';
+          const pos = resolveDamagePosition(item, vehicleCode);
+          return (
+            <DamageMarker3D
+              key={item.id}
+              id={item.id}
+              position={pos}
+              partCode={item.vehiclePartCode}
+              damageType={item.damageType}
+              severity={item.severity}
+              status={item.status}
+              note={item.note}
+              isSelected={selectedDamageId === item.id}
+              onClick={() => {
+                selectDamageRecord(item.id, item.vehiclePartCode);
+                openDamageDetailModal(item.id, item.vehiclePartCode);
+              }}
+            />
+          );
+        })}
       </group>
     </group>
   );

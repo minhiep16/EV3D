@@ -171,6 +171,7 @@ export function resolveActiveCameraPresetKey(state: {
   selectedVehiclePartId?: string | null;
   selectedVehiclePartCode?: string | null;
   selectedDamageId?: string | null;
+  isDamageDetailModalOpen?: boolean;
   vehicleCoOwnershipMode?: boolean;
   vehicleBookingMode?: boolean;
   vehicleHandoverMode?: boolean;
@@ -184,6 +185,10 @@ export function resolveActiveCameraPresetKey(state: {
   vehicleBatteryXrayMode?: boolean;
   vehicleChargingMode?: boolean;
 }): VehiclePresetKey {
+  // Authoritative damage inspection focus: when damage details modal is open or a damage is selected
+  if (state.isDamageDetailModalOpen || state.selectedDamageId) {
+    return 'VEHICLE_PART_INSPECTION';
+  }
   if (state.vehicleChargingMode) {
     if (state.selectedVehiclePartId === 'CHARGING_PORT' || state.selectedVehiclePartCode === 'CHARGING_PORT') {
       return 'CHARGING_PORT_DETAIL';

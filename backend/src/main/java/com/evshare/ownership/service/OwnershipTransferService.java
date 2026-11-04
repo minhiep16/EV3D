@@ -1024,17 +1024,7 @@ public class OwnershipTransferService {
     }
 
     private void validateUserHasNoOtherActiveContract(UUID userId, UUID targetGroupId) {
-        List<GroupMember> activeMemberships = memberRepository.findByUserIdAndStatus(userId, MemberStatus.ACTIVE);
-        for (GroupMember existing : activeMemberships) {
-            if (existing.getRemovedAt() == null && !existing.getGroup().getId().equals(targetGroupId)) {
-                CoOwnershipGroup otherGroup = existing.getGroup();
-                if (otherGroup != null && otherGroup.getStatus() == GroupStatus.ACTIVE) {
-                    throw new DuplicateResourceException(
-                            "Người dùng đã có hợp đồng đồng sở hữu đang hoạt động với một phương tiện khác."
-                    );
-                }
-            }
-        }
+        // Multi-vehicle co-ownership supported in Phase 25.
     }
 
     @Transactional

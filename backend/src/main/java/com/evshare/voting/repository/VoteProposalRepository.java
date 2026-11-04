@@ -36,4 +36,6 @@ public interface VoteProposalRepository extends JpaRepository<VoteProposal, UUID
 
     @Query("SELECT p FROM VoteProposal p WHERE p.status = 'APPROVED' OR p.executionStatus = 'IN_PROGRESS' OR p.executionStatus = 'COMPLETED' ORDER BY p.createdAt DESC")
     List<VoteProposal> findAllStaffWork();
+
+    Optional<VoteProposal> findByRelatedMaintenanceRequestId(UUID maintenanceRequestId);
 }

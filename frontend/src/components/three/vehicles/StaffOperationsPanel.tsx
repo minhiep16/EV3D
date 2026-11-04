@@ -232,6 +232,10 @@ export const StaffOperationsPanel: React.FC<StaffOperationsPanelProps> = ({
     refetchInterval: 6000,
   });
 
+  const unresolvedDamages = useMemo(() => {
+    return damages.filter((d) => d.status !== 'RESOLVED');
+  }, [damages]);
+
   // Authoritative condition check
   const isVehicleInUse = vehicle.status === 'IN_USE';
   const isTripActive = !!activeTrip && activeTrip.status === 'ACTIVE';
@@ -1274,7 +1278,7 @@ export const StaffOperationsPanel: React.FC<StaffOperationsPanelProps> = ({
               }}
             >
               <AlertTriangle size={14} color="#f59e0b" />
-              <span>GHI NHẬN HƯ HỎNG 3D ({damages.length})</span>
+              <span>GHI NHẬN HƯ HỎNG 3D ({unresolvedDamages.length})</span>
             </button>
 
             {/* Phase 14: Lịch sử hư hỏng 3D */}
@@ -1301,7 +1305,7 @@ export const StaffOperationsPanel: React.FC<StaffOperationsPanelProps> = ({
               }}
             >
               <AlertTriangle size={14} color="#00f2fe" />
-              <span>LỊCH SỬ HƯ HỎNG ({damages.length})</span>
+              <span>LỊCH SỬ HƯ HỎNG (Tổng: {damages.length})</span>
             </button>
           </div>
         </>

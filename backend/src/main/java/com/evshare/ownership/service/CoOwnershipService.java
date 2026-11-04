@@ -166,21 +166,11 @@ public class CoOwnershipService {
     }
 
     /**
-     * Authoritative Rule: ONE CO_OWNER USER = MAXIMUM ONE ACTIVE CO-OWNERSHIP CONTRACT
-     * Validates that the target user does NOT already have an ACTIVE membership in any OTHER group.
+     * Phase 25: Multi-vehicle access enabled; users can participate in multiple active co-ownership groups.
      */
     private void validateUserHasNoOtherActiveContract(UUID userId, UUID targetGroupId) {
-        List<GroupMember> activeMemberships = memberRepository.findByUserIdAndStatus(userId, MemberStatus.ACTIVE);
-        for (GroupMember existing : activeMemberships) {
-            if (existing.getRemovedAt() == null && !existing.getGroup().getId().equals(targetGroupId)) {
-                CoOwnershipGroup otherGroup = existing.getGroup();
-                if (otherGroup != null && otherGroup.getStatus() == GroupStatus.ACTIVE) {
-                    throw new DuplicateResourceException(
-                            "Người dùng đã có hợp đồng đồng sở hữu đang hoạt động với một phương tiện khác."
-                    );
-                }
-            }
-        }
+        // Multi-vehicle co-ownership supported in Phase 25.
+        // Users can own shares in multiple vehicles across distinct co-ownership groups.
     }
 
     @Transactional

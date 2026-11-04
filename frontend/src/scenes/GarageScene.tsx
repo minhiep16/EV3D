@@ -23,9 +23,11 @@ import {
 import { StaffGarageFleetSidebar } from '../components/fleet/StaffGarageFleetSidebar';
 import { StaffVehicleDetailPanel } from '../components/fleet/StaffVehicleDetailPanel';
 import { PanelErrorBoundary } from '../components/common/PanelErrorBoundary';
+import { NotificationBell } from '../components/common/NotificationBell';
 import { FleetHeroNavigator } from '../components/fleet/FleetHeroNavigator';
 import { CoOwnerVehiclePartPanel } from '../components/three/vehicles/CoOwnerVehiclePartPanel';
 import { DamageHistoryPanel } from '../components/three/damage/DamageHistoryPanel';
+import { DamageDetailModal } from '../components/three/damage/DamageDetailModal';
 import { CoOwnerBookingPanel } from '../components/three/booking/CoOwnerBookingPanel';
 import { StaffMaintenancePanel } from '../components/three/maintenance/StaffMaintenancePanel';
 import { CoOwnerMaintenancePanel } from '../components/three/maintenance/CoOwnerMaintenancePanel';
@@ -40,6 +42,7 @@ import { LobbyOwnershipSummaryBoard } from '../components/three/ownership/LobbyO
 import { CoOwnerOwnershipPanel } from '../components/three/ownership/CoOwnerOwnershipPanel';
 import { CoOwnerContractPanel } from '../components/three/contracts/CoOwnerContractPanel';
 import { ZoneInfoPanel } from '../components/zones/ZoneInfoPanel';
+import { FinanceZonePanel } from '../components/zones/FinanceZonePanel';
 
 export const GarageScene: React.FC = () => {
   const navigate = useNavigate();
@@ -78,6 +81,7 @@ export const GarageScene: React.FC = () => {
   const vehicleDamageHistoryMode = useWorldStore((state) => state.vehicleDamageHistoryMode);
   const vehicleMaintenanceMode = useWorldStore((state) => state.vehicleMaintenanceMode);
   const vehicleInspectionMode = useWorldStore((state) => state.vehicleInspectionMode);
+  const isDamageDetailModalOpen = useWorldStore((state) => state.isDamageDetailModalOpen);
   const activePrimaryPanel = useWorldStore((state) => state.activePrimaryPanel);
   const closeGaragePanel = useWorldStore((state) => state.closeGaragePanel);
   const vehicleBatteryXrayMode = useWorldStore((state) => state.vehicleBatteryXrayMode);
@@ -109,15 +113,9 @@ export const GarageScene: React.FC = () => {
   }, [vehicles, selectedVehicleId]);
 
   // For CO_OWNER role, derive authoritative active co-owned vehicle
-  // Invariant: CO_OWNER has maximum 1 active vehicle contract
+  // Phase 25: Multi-vehicle support enabled for co-owners
   const currentCoOwnerVehicle = useMemo(() => {
     if (isOperationsRole || !vehicles || vehicles.length === 0) return null;
-    if (vehicles.length > 1) {
-      console.error(
-        `[Domain Invariant Violation] CO_OWNER user is associated with ${vehicles.length} active vehicles. Expected maximum 1.`,
-        vehicles.map((v) => v.id)
-      );
-    }
     if (selectedVehicleId) {
       const match = vehicles.find(
         (v) => v.id === selectedVehicleId || resolveVehicleCode(v) === selectedVehicleId
@@ -132,36 +130,32 @@ export const GarageScene: React.FC = () => {
     resetExperienceState();
   }, [user?.id, user?.role, resetExperienceState]);
 
+  // Phase 25: Onboarding auto-routing if co-owner user has no active vehicle groups
+  useEffect(() => {
+    if (!isLoading && authReady && isCoOwner && vehicles.length === 0) {
+      navigate('/onboarding', { replace: true });
+    }
+  }, [isLoading, authReady, isCoOwner, vehicles.length, navigate]);
+
   // Stale selectedVehicleId Validation & Purge for CO_OWNER:
-  // Invariant: CO_OWNER has maximum ONE active vehicle contract
   // - If no active vehicle: clear selectedVehicleId / ownership context
-  // - If exactly 1 vehicle: automatically resolve ownership context to that vehicle (overview, without deep detail mode)
-  // - If > 1 vehicles: log invariant violation and clear stale selection
+  // - If vehicles present: ensure selected vehicle is valid, default to first if invalid
   useEffect(() => {
     if (!isOperationsRole) {
       if (vehicles.length === 0) {
         if (selectedVehicleId) {
           clearSelection();
         }
-      } else if (vehicles.length === 1) {
-        const onlyVehicle = vehicles[0];
-        const code = resolveVehicleCode(onlyVehicle);
-        if (
-          selectedVehicleId &&
-          selectedVehicleId !== onlyVehicle.id &&
-          selectedVehicleId !== code
-        ) {
-          clearSelection();
-        }
-      } else if (vehicles.length > 1) {
-        console.error(
-          `[Domain Invariant Error] CO_OWNER user has multiple active vehicles:`,
-          vehicles.map((v) => v.id)
+      } else {
+        const hasMatch = vehicles.some(
+          (v) => v.id === selectedVehicleId || resolveVehicleCode(v) === selectedVehicleId
         );
-        clearSelection();
+        if (!hasMatch) {
+          selectVehicle(vehicles[0].id, user?.role);
+        }
       }
     }
-  }, [isOperationsRole, vehicles, selectedVehicleId, clearSelection]);
+  }, [isOperationsRole, vehicles, selectedVehicleId, clearSelection, selectVehicle, user?.role]);
 
   // Ensure stale selected part state does not survive in normal vehicle overview
   useEffect(() => {
@@ -486,6 +480,9 @@ export const GarageScene: React.FC = () => {
                 </span>
               </div>
 
+              {/* Notification Bell */}
+              <NotificationBell />
+
               {/* Logout Button */}
               <button
                 type="button"
@@ -533,7 +530,7 @@ export const GarageScene: React.FC = () => {
 
           {/* D. Right Selected Vehicle Operational Panel (Authoritative Screen-Space Shell) */}
           <PanelErrorBoundary key={heroVehicle ? `${heroVehicle.id}-detail` : 'panel'}>
-            {heroVehicle && (isVehicleDetailOpen || vehicleInspectionMode || vehicleDamageMappingMode || vehicleHandoverMode) && !vehicleDamageHistoryMode && !vehicleMaintenanceMode && !vehicleBatteryXrayMode && !vehicleChargingMode && (
+            {heroVehicle && activePrimaryPanel !== 'NOTIFICATIONS' && (isVehicleDetailOpen || vehicleInspectionMode || vehicleDamageMappingMode || vehicleHandoverMode) && !vehicleDamageHistoryMode && !vehicleMaintenanceMode && !vehicleBatteryXrayMode && !vehicleChargingMode && (
               <StaffVehicleDetailPanel
                 vehicle={heroVehicle}
                 onClose={() => closeVehicleDetail()}
@@ -726,6 +723,64 @@ export const GarageScene: React.FC = () => {
                 </button>
               )}
 
+              {/* Multi-Vehicle Selector for CO_OWNER */}
+              {isCoOwner && vehicles.length > 1 && (
+                <div style={{ position: 'relative' }}>
+                  <select
+                    value={currentCoOwnerVehicle?.id || vehicles[0]?.id}
+                    onChange={(e) => {
+                      selectVehicle(e.target.value, user?.role);
+                    }}
+                    style={{
+                      background: 'rgba(7, 20, 38, 0.90)',
+                      backdropFilter: 'blur(16px)',
+                      border: '1.5px solid rgba(0, 242, 254, 0.6)',
+                      boxShadow: '0 8px 24px rgba(0, 0, 0, 0.35), 0 0 16px rgba(0, 242, 254, 0.25)',
+                      borderRadius: '9999px',
+                      padding: '6px 14px',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      color: '#00f2fe',
+                      outline: 'none',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {vehicles.map((v) => (
+                      <option key={v.id} value={v.id} style={{ background: '#0a1628', color: '#fff' }}>
+                        🚗 {v.plateNumber} ({v.model})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Onboarding / Add Vehicle link */}
+              {isCoOwner && (
+                <button
+                  type="button"
+                  onClick={() => navigate('/onboarding')}
+                  title="Thêm xe mới hoặc khám phá nhóm khác"
+                  style={{
+                    background: 'rgba(7, 20, 38, 0.90)',
+                    backdropFilter: 'blur(16px)',
+                    border: '1.5px solid rgba(34, 230, 255, 0.4)',
+                    borderRadius: '9999px',
+                    padding: '6px 14px',
+                    color: '#38bdf8',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: '0 4px 14px rgba(0, 0, 0, 0.3)',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  <span>+ THÊM XE / TÌM NHÓM</span>
+                </button>
+              )}
+
               {/* Compact Ownership Summary Strip for CO_OWNER */}
               {isCoOwner && (
                 <PanelErrorBoundary key="topbar-ownership-summary">
@@ -792,26 +847,8 @@ export const GarageScene: React.FC = () => {
                 </span>
               </div>
 
-              {/* Notification Bell Icon */}
-              <div
-                title="Thông báo"
-                style={{
-                  width: '34px',
-                  height: '34px',
-                  borderRadius: '50%',
-                  background: 'rgba(7, 20, 38, 0.85)',
-                  backdropFilter: 'blur(16px)',
-                  border: '1px solid rgba(34, 230, 255, 0.3)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#cbd5e1',
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 14px rgba(0, 0, 0, 0.25)',
-                }}
-              >
-                <Bell size={14} color="#9bb3c9" />
-              </div>
+              {/* Notification Bell */}
+              <NotificationBell />
 
               {/* Logout Button */}
               <button
@@ -879,7 +916,7 @@ export const GarageScene: React.FC = () => {
 
 
           {/* Screen-Space Fixed CO_OWNER Part Inspection Panel */}
-          {vehicleInspectionMode && (
+          {!isOperationsRole && isCoOwner && vehicleInspectionMode && !isDamageDetailModalOpen && activePrimaryPanel === 'NONE' && (
             <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0])?.id || 'ev'}-part-inspection`}>
               <CoOwnerVehiclePartPanel />
             </PanelErrorBoundary>
@@ -925,12 +962,15 @@ export const GarageScene: React.FC = () => {
             </PanelErrorBoundary>
           )}
 
-          {/* Dedicated Phase 17 Screen-Space Charging Panel for CO_OWNER (only during vehicle-focused charging, never during showroom zone modes) */}
-          {!selectedZone && activeFeature === 'NONE' && activePrimaryPanel === 'CHARGING' && (currentCoOwnerVehicle || vehicles[0]) && (
+          {/* Dedicated Phase 17 Screen-Space Charging Panel for CO_OWNER */}
+          {(activePrimaryPanel === 'CHARGING' || selectedZone === 'CHARGING') && (currentCoOwnerVehicle || vehicles[0]) && (
             <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0])?.id || 'ev'}-charging`}>
               <ChargingPanel
                 vehicle={currentCoOwnerVehicle || vehicles[0]}
-                onClose={() => closeGaragePanel('CHARGING')}
+                onClose={() => {
+                  closeGaragePanel('CHARGING');
+                  clearSelection();
+                }}
               />
             </PanelErrorBoundary>
           )}
@@ -949,9 +989,22 @@ export const GarageScene: React.FC = () => {
           )}
 
           {/* Authoritative Redesigned Showroom Zone Info Panel (e.g. Finance) for CO_OWNER */}
-          {isCoOwner && selectedZone && selectedZone !== 'VEHICLE' && !showBackToVehicle && (
+          {isCoOwner && selectedZone && selectedZone !== 'VEHICLE' && selectedZone !== 'FINANCE' && selectedZone !== 'CHARGING' && !showBackToVehicle && (
             <PanelErrorBoundary key={`zone-info-${selectedZone}`}>
               <ZoneInfoPanel onClose={() => clearSelection()} />
+            </PanelErrorBoundary>
+          )}
+
+          {/* Dedicated Phase 24 Premium Redesigned Finance Dashboard for CO_OWNER */}
+          {activePrimaryPanel === 'FINANCE' && (currentCoOwnerVehicle || vehicles[0]) && (
+            <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0]).id}-finance-dashboard`}>
+              <FinanceZonePanel
+                vehicle={currentCoOwnerVehicle || vehicles[0]}
+                onClose={() => {
+                  closeGaragePanel('FINANCE');
+                  clearSelection();
+                }}
+              />
             </PanelErrorBoundary>
           )}
 
@@ -1053,6 +1106,19 @@ export const GarageScene: React.FC = () => {
             />
           )}
         </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* AUTHORITATIVE GLOBAL DAMAGE DETAILS PANEL (ALL ROLES)    */}
+      {/* Placed at root level to ensure independent stacking      */}
+      {/* context above all 3D Annotations (z-index: 500)          */}
+      {/* ======================================================== */}
+      {(isOperationsRole ? heroVehicle : (currentCoOwnerVehicle || vehicles[0])) && (
+        <PanelErrorBoundary key={`${(isOperationsRole ? heroVehicle : (currentCoOwnerVehicle || vehicles[0]))?.id || 'ev'}-damage-detail-panel`}>
+          <DamageDetailModal
+            vehicle={(isOperationsRole ? heroVehicle : (currentCoOwnerVehicle || vehicles[0]))!}
+          />
+        </PanelErrorBoundary>
       )}
     </div>
   );

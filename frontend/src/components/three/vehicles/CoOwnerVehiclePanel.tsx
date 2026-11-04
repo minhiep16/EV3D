@@ -662,6 +662,7 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
   const enterVehicleMaintenanceMode = useWorldStore((state) => state.enterVehicleMaintenanceMode);
   const enterBatteryXrayMode = useWorldStore((state) => state.enterBatteryXrayMode);
   const enterChargingMode = useWorldStore((state) => state.enterChargingMode);
+  const openGaragePanel = useWorldStore((state) => state.openGaragePanel);
 
   const queryClient = useQueryClient();
   const [showReturnConfirm, setShowReturnConfirm] = useState(false);
@@ -737,6 +738,14 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
     enabled: authReady && !!vehicle.id,
     refetchInterval: 6000,
   });
+
+  const unresolvedDamages = useMemo(() => {
+    return damages.filter((d) => d.status !== 'RESOLVED');
+  }, [damages]);
+
+  const resolvedDamages = useMemo(() => {
+    return damages.filter((d) => d.status === 'RESOLVED');
+  }, [damages]);
 
   const pendingApprovalMaintenance = useMemo(() => {
     return vehicleMaintenanceList.find((m) => m.status === 'PENDING_APPROVAL') || null;
@@ -1084,10 +1093,28 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
           </div>
 
           {/* Card 3: Hư hỏng */}
-          <div style={statusCardStyle()}>
-            <span style={statusCardLabelStyle()}>Ghi nhận hư hỏng</span>
-            <span style={{ fontSize: '11.5px', fontWeight: 800, color: damages.length > 0 ? '#fbbf24' : '#34d399' }}>
-              {damages.length > 0 ? `${damages.length} điểm ghi nhận` : 'Không có hư hỏng'}
+          <div
+            onClick={() => {
+              enterVehicleDamageHistoryMode(vehicle.id);
+              openGaragePanel('DAMAGE', { vehicleId: vehicle.id });
+            }}
+            style={{
+              ...statusCardStyle(),
+              cursor: 'pointer',
+              border: unresolvedDamages.length > 0 ? '1px solid rgba(245, 158, 11, 0.45)' : statusCardStyle().border,
+              background: unresolvedDamages.length > 0 ? 'rgba(245, 158, 11, 0.08)' : statusCardStyle().background,
+              transition: 'all 0.2s ease',
+            }}
+            title="Nhấp để xem danh sách và lịch sử hư hỏng xe"
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={statusCardLabelStyle()}>Hư hỏng chưa xử lý</span>
+              {damages.length > 0 && (
+                <span style={{ fontSize: '9px', color: '#94a3b8' }}>Tổng: {damages.length}</span>
+              )}
+            </div>
+            <span style={{ fontSize: '11.5px', fontWeight: 800, color: unresolvedDamages.length > 0 ? '#fbbf24' : '#34d399' }}>
+              {unresolvedDamages.length > 0 ? `${unresolvedDamages.length} điểm ghi nhận` : '0 hư hỏng'}
             </span>
           </div>
 

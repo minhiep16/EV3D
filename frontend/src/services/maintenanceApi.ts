@@ -133,3 +133,23 @@ export async function cancelMaintenance(maintenanceId: string): Promise<Maintena
   });
   return safeParseResponse<MaintenanceResponse>(res);
 }
+
+/**
+ * Create a voting session for a group-initiated repair proposal.
+ */
+export async function createVoteForMaintenance(maintenanceId: string): Promise<any> {
+  const res = await authenticatedFetch(`/api/maintenance/${maintenanceId}/create-vote`, {
+    method: 'POST',
+  });
+  return safeParseResponse<any>(res);
+}
+
+/**
+ * Reconcile completed repair work with linked vehicle damage records.
+ */
+export async function reconcileCompletedDamagesApi(vehicleId: string): Promise<any> {
+  const res = await authenticatedFetch(`/api/vehicles/${vehicleId}/reconcile-damages`, {
+    method: 'POST',
+  });
+  return safeParseResponse<any>(res);
+}

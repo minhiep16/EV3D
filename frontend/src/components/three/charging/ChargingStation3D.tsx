@@ -52,12 +52,13 @@ export const ChargingStation3D: React.FC<ChargingStation3DProps> = ({
   const selectedVehiclePartCode = useWorldStore((state) => state.selectedVehiclePartCode);
   const selectedChargingStationId = useWorldStore((state) => state.selectedChargingStationId);
   const activeFeature = useWorldStore((state) => state.activeFeature);
+  const activePrimaryPanel = useWorldStore((state) => state.activePrimaryPanel);
 
   const showLabel = useMemo(() => {
     // Authoritative garage and vehicle focus state:
     const isVehicleFocused = Boolean(selectedVehicleId) || Boolean(isVehicleSelected) || selectedZone === 'VEHICLE';
     const isGarageOverview = activeFeature === 'NONE' && !isVehicleFocused;
-    const isChargingActive = activeFeature === 'CHARGING' || Boolean(vehicleChargingMode);
+    const isChargingActive = activeFeature === 'CHARGING' || Boolean(vehicleChargingMode) || activePrimaryPanel === 'CHARGING';
 
     // Positive allow-list condition for co-owners: show compact info ONLY in Garage Overview or when Charging is Active
     if (!isOperationsRole) {
@@ -113,6 +114,7 @@ export const ChargingStation3D: React.FC<ChargingStation3DProps> = ({
     selectedVehiclePartId,
     selectedVehiclePartCode,
     selectedChargingStationId,
+    activePrimaryPanel,
     isSelected,
     isHovered,
   ]);
@@ -263,32 +265,38 @@ export const ChargingStation3D: React.FC<ChargingStation3DProps> = ({
         </mesh>
       )}
 
-      {/* 9. Floating Holographic Station HUD Badge (Compact, close to kiosk) */}
-      {showLabel && (
-        <Billboard position={[0, 1.82, 0]} follow={true}>
-          <Html
-            center
-            distanceFactor={10}
-            style={{ pointerEvents: 'none', userSelect: 'none' }}
-          >
-            <div
-              style={{
-                background: 'rgba(6, 18, 30, 0.85)',
-                backdropFilter: 'blur(12px)',
-                border: `1px solid ${isSelected ? '#00f2fe' : 'rgba(56, 189, 248, 0.3)'}`,
-                borderRadius: '8px',
-                padding: '4px 8px',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: '1px',
-                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.35)',
-                transform: isHovered ? 'scale(1.05)' : 'scale(1.0)',
-                transition: 'transform 0.18s ease',
-                whiteSpace: 'nowrap',
-              }}
+      {/* 9. Floating Holographic Station HUD Badge (Staggered & Collision-Safe) */}
+      {showLabel && (() => {
+        const isCS01 = station.code === 'CS01' || station.name.includes('01') || (station.posX !== undefined && station.posX < 4.0);
+        const billboardPosition: [number, number, number] = isCS01 ? [-0.10, 2.00, 0] : [0.10, 1.72, 0];
+
+        return (
+          <Billboard position={billboardPosition} follow={true}>
+            <Html
+              center
+              distanceFactor={8.2}
+              style={{ pointerEvents: 'none', userSelect: 'none' }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <div
+                style={{
+                  background: isSelected ? 'rgba(6, 24, 48, 0.94)' : 'rgba(6, 18, 32, 0.88)',
+                  backdropFilter: 'blur(16px)',
+                  WebkitBackdropFilter: 'blur(16px)',
+                  border: isSelected ? '1.5px solid #00f2fe' : '1px solid rgba(56, 189, 248, 0.35)',
+                  borderRadius: '9999px',
+                  padding: '3px 8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  boxShadow: isSelected
+                    ? '0 4px 14px rgba(0, 0, 0, 0.5), 0 0 10px rgba(0, 242, 254, 0.4)'
+                    : '0 3px 10px rgba(0, 0, 0, 0.4)',
+                  transform: isHovered ? 'scale(1.05)' : 'scale(1.0)',
+                  transition: 'transform 0.18s ease, border-color 0.18s ease',
+                  whiteSpace: 'nowrap',
+                  pointerEvents: 'none',
+                }}
+              >
                 <div
                   style={{
                     width: '6px',
@@ -306,16 +314,23 @@ export const ChargingStation3D: React.FC<ChargingStation3DProps> = ({
                     letterSpacing: '0.03em',
                   }}
                 >
-                  {station.code} · {station.maxPowerKw} kW
+                  {station.code}
+                </span>
+                <span style={{ fontSize: '9px', color: '#64748b' }}>·</span>
+                <span
+                  style={{
+                    fontSize: '9px',
+                    fontWeight: 700,
+                    color: isSelected ? '#00f2fe' : theme.primary,
+                  }}
+                >
+                  {theme.labelVi}
                 </span>
               </div>
-              <div style={{ fontSize: '8.5px', fontWeight: 600, color: theme.primary }}>
-                {theme.labelVi}
-              </div>
-            </div>
-          </Html>
-        </Billboard>
-      )}
+            </Html>
+          </Billboard>
+        );
+      })()}
     </group>
   );
 };

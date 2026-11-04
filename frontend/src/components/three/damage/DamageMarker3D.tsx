@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { DamageSeverity, DamageStatus, DamageType, DAMAGE_SEVERITY_CONFIG, DAMAGE_STATUS_CONFIG, DAMAGE_TYPE_LABELS } from '../../../types/damage';
 import { getPartById } from '../../../data/vehicleParts';
 import { INTERACTION_CONFIG } from '../../../config/interactionConfig';
+import { useWorldStore } from '../../../store/worldStore';
 
 interface DamageMarker3DProps {
   id?: string;
@@ -20,6 +21,7 @@ interface DamageMarker3DProps {
 }
 
 export const DamageMarker3D: React.FC<DamageMarker3DProps> = ({
+  id,
   position,
   partCode,
   damageType,
@@ -29,6 +31,10 @@ export const DamageMarker3D: React.FC<DamageMarker3DProps> = ({
   isSelected = false,
   onClick,
 }) => {
+  const isDamageDetailModalOpen = useWorldStore((state) => state.isDamageDetailModalOpen);
+  const currentSelectedDamageId = useWorldStore((state) => state.selectedDamageId);
+  const isCurrentlySelected = isSelected || (!!id && id === currentSelectedDamageId);
+
   const outerRingRef = useRef<THREE.Mesh>(null);
   const secondRingRef = useRef<THREE.Mesh>(null);
   const thirdRingRef = useRef<THREE.Mesh>(null);
@@ -65,7 +71,7 @@ export const DamageMarker3D: React.FC<DamageMarker3DProps> = ({
   useFrame((state) => {
     const t = state.clock.getElapsedTime();
     const speed = markerMetrics.pulseSpeed;
-    const baseScale = isSelected ? 1.4 : isHovered ? 1.25 : 1.0;
+    const baseScale = isCurrentlySelected ? 1.4 : isHovered ? 1.25 : 1.0;
 
     if (outerRingRef.current) {
       const scale = baseScale + Math.sin(t * speed) * 0.18;
@@ -172,7 +178,7 @@ export const DamageMarker3D: React.FC<DamageMarker3DProps> = ({
         <meshStandardMaterial
           color={markerColor}
           emissive={markerColor}
-          emissiveIntensity={isSelected ? 2.2 : isHovered ? 1.6 : 1.1}
+          emissiveIntensity={isCurrentlySelected ? 2.2 : isHovered ? 1.6 : 1.1}
           roughness={0.2}
           metalness={0.8}
         />
@@ -198,22 +204,40 @@ export const DamageMarker3D: React.FC<DamageMarker3DProps> = ({
       </mesh>
 
       {/* 5. Spatial Label Tag (Interactive 3D HTML Badge) */}
-      <Html
-        position={[0, 0.14, 0]}
-        center
-        distanceFactor={6.5}
-        style={{
-          pointerEvents: 'auto',
-          userSelect: 'none',
-          whiteSpace: 'nowrap',
-          transition: 'all 0.2s ease',
-          transform: isHovered || isSelected ? 'scale(1.12)' : 'scale(1.0)',
-          cursor: 'pointer',
-        }}
-      >
+      {/* Suppressed for currently inspected record when right-side details panel is open */}
+      {!(isDamageDetailModalOpen && isCurrentlySelected) && (
+        <Html
+          position={[0, 0.14, 0]}
+          center
+          distanceFactor={6.5}
+          zIndexRange={[40, 0]}
+          style={{
+            pointerEvents: 'auto',
+            userSelect: 'none',
+            whiteSpace: 'nowrap',
+            transition: 'all 0.2s ease',
+            transform: isHovered || isCurrentlySelected ? 'scale(1.12)' : 'scale(1.0)',
+            cursor: 'pointer',
+          }}
+        >
         <div
+          role="button"
+          tabIndex={0}
+          aria-label={`${typeLabel} - ${severityLabel}`}
           onClick={handleClick}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              handleClick(e);
+            }
+          }}
+          onFocus={() => setIsHovered(true)}
+          onBlur={() => setIsHovered(false)}
           onPointerDown={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => {
+            e.stopPropagation();
+            handleClick(e);
+          }}
           onMouseEnter={() => {
             setIsHovered(true);
             document.body.style.cursor = 'pointer';
@@ -274,6 +298,7 @@ export const DamageMarker3D: React.FC<DamageMarker3DProps> = ({
           )}
         </div>
       </Html>
+      )}
     </group>
   );
 };

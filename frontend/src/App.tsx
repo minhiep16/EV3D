@@ -4,6 +4,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from './services/queryClient';
 import { AuthScene } from './scenes/AuthScene';
 import { GarageScene } from './scenes/GarageScene';
+import { OnboardingScene } from './scenes/OnboardingScene';
 import { StatusScene } from './scenes/StatusScene';
 import { ProtectedRoute } from './routes/ProtectedRoute';
 import { GarageErrorBoundary } from './components/common/GarageErrorBoundary';
@@ -30,6 +31,7 @@ export const App: React.FC = () => {
               </GarageErrorBoundary>
             }
           />
+          <Route path="/onboarding" element={<OnboardingScene />} />
         </Route>
 
         {/* Root Redirect */}

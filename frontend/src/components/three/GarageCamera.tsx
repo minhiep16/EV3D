@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { useQuery } from '@tanstack/react-query';
 import { useWorldStore, getZoneCameraPreset } from '../../store/worldStore';
 import { useAuthStore } from '../../store/authStore';
-import { getPartById } from '../../data/vehicleParts';
+import { getPartById, resolveDamagePosition } from '../../data/vehicleParts';
 import {
   resolveActiveCameraPresetKey,
   getVehicleCameraPreset,
@@ -57,6 +57,7 @@ export const GarageCamera: React.FC = () => {
   const selectedHandoverCheckpoint = useWorldStore((state) => state.selectedHandoverCheckpoint);
   const draftDamage = useWorldStore((state) => state.draftDamage);
   const selectedDamageId = useWorldStore((state) => state.selectedDamageId);
+  const isDamageDetailModalOpen = useWorldStore((state) => state.isDamageDetailModalOpen);
   const vehicleYaw = useWorldStore((state) => state.vehicleYaw);
 
   // TanStack Query: Read cached vehicles and damages to resolve vehicle code and damage coordinates
@@ -83,39 +84,58 @@ export const GarageCamera: React.FC = () => {
       return draftDamage.localPosition;
     }
     if (selectedDamageRecord) {
-      return [
-        selectedDamageRecord.localPositionX,
-        selectedDamageRecord.localPositionY,
-        selectedDamageRecord.localPositionZ,
-      ];
+      return resolveDamagePosition(
+        selectedDamageRecord,
+        resolvedVehicleCode === 'EV02' ? 'EV02' : 'EV01'
+      );
     }
     return null;
   }, [
-    draftDamage?.localPosition?.[0],
-    draftDamage?.localPosition?.[1],
-    draftDamage?.localPosition?.[2],
-    selectedDamageRecord?.localPositionX,
-    selectedDamageRecord?.localPositionY,
-    selectedDamageRecord?.localPositionZ,
+    draftDamage?.localPosition,
+    selectedDamageRecord,
+    resolvedVehicleCode,
   ]);
 
   const clearVehiclePartSelection = useWorldStore((state) => state.clearVehiclePartSelection);
 
   const activePartCode =
-    (vehicleInspectionMode || vehicleDamageMappingMode || vehicleDamageHistoryMode)
+    (vehicleInspectionMode ||
+     vehicleDamageMappingMode ||
+     vehicleDamageHistoryMode ||
+     isDamageDetailModalOpen ||
+     selectedDamageId != null ||
+     vehicleMaintenanceMode)
       ? (selectedVehiclePartCode ||
          selectedVehiclePartId ||
          draftDamage?.partCode ||
          selectedDamageRecord?.vehiclePartCode ||
-         null)
+         (activeDamagePoint ? 'BODY' : null))
       : null;
 
   // Authoritative Camera Safeguard: Stale selected part is ignored and purged in normal overview
   useEffect(() => {
-    if (!vehicleInspectionMode && !vehicleDamageMappingMode && !vehicleDamageHistoryMode && (selectedVehiclePartCode || selectedVehiclePartId)) {
+    if (
+      !vehicleInspectionMode &&
+      !vehicleDamageMappingMode &&
+      !vehicleDamageHistoryMode &&
+      !isDamageDetailModalOpen &&
+      !selectedDamageId &&
+      !vehicleMaintenanceMode &&
+      (selectedVehiclePartCode || selectedVehiclePartId)
+    ) {
       clearVehiclePartSelection();
     }
-  }, [vehicleInspectionMode, vehicleDamageMappingMode, vehicleDamageHistoryMode, selectedVehiclePartCode, selectedVehiclePartId, clearVehiclePartSelection]);
+  }, [
+    vehicleInspectionMode,
+    vehicleDamageMappingMode,
+    vehicleDamageHistoryMode,
+    isDamageDetailModalOpen,
+    selectedDamageId,
+    vehicleMaintenanceMode,
+    selectedVehiclePartCode,
+    selectedVehiclePartId,
+    clearVehiclePartSelection,
+  ]);
 
   // Initialize with OVERVIEW camera preset
   const initialPreset = getVehicleCameraPreset('OVERVIEW', role, size.width);
@@ -148,6 +168,8 @@ export const GarageCamera: React.FC = () => {
       selectedZone === 'VEHICLE' ||
       activePartCode != null ||
       activeDamagePoint != null ||
+      isDamageDetailModalOpen ||
+      selectedDamageId != null ||
       vehicleCoOwnershipMode ||
       vehicleBookingMode ||
       vehicleHandoverMode ||
@@ -189,6 +211,7 @@ export const GarageCamera: React.FC = () => {
         selectedVehiclePartId: activePartCode,
         selectedVehiclePartCode: activePartCode,
         selectedDamageId,
+        isDamageDetailModalOpen,
         vehicleCoOwnershipMode,
         vehicleBookingMode,
         vehicleHandoverMode,
@@ -208,6 +231,8 @@ export const GarageCamera: React.FC = () => {
           vehicleDamageMappingMode ||
           vehicleDamageHistoryMode ||
           vehicleMaintenanceMode ||
+          isDamageDetailModalOpen ||
+          selectedDamageId != null ||
           activeDamagePoint != null) &&
         activePartCode
       ) {
@@ -279,6 +304,7 @@ export const GarageCamera: React.FC = () => {
     activePartCode,
     activeDamagePoint,
     selectedDamageId,
+    isDamageDetailModalOpen,
     selectedHandoverCheckpoint,
     vehicleCoOwnershipMode,
     vehicleBookingMode,

@@ -21,6 +21,7 @@ export const CoOwnerQuickActionDock: React.FC<CoOwnerQuickActionDockProps> = ({ 
   const enterVehicleDamageHistoryMode = useWorldStore((state) => state.enterVehicleDamageHistoryMode);
   const enterBatteryXrayMode = useWorldStore((state) => state.enterBatteryXrayMode);
   const enterVehicleVotingMode = useWorldStore((state) => state.enterVehicleVotingMode);
+  const openGaragePanel = useWorldStore((state) => state.openGaragePanel);
 
   const isMaintenance = vehicle.status === 'MAINTENANCE';
 
@@ -91,8 +92,11 @@ export const CoOwnerQuickActionDock: React.FC<CoOwnerQuickActionDockProps> = ({ 
       {/* 4. HƯ HỎNG */}
       <button
         type="button"
-        onClick={() => enterVehicleDamageHistoryMode(vehicle.id)}
-        title="Lịch sử hư hỏng đã ghi nhận"
+        onClick={() => {
+          enterVehicleDamageHistoryMode(vehicle.id);
+          openGaragePanel('DAMAGE', { vehicleId: vehicle.id });
+        }}
+        title="Quản lý và lịch sử hư hỏng xe"
         style={dockItemButtonStyle(false)}
       >
         <div style={dockIconCircleStyle(false, false, '#ffb84d')}>

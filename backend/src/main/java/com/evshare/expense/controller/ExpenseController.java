@@ -135,6 +135,19 @@ public class ExpenseController {
     }
 
     /**
+     * Safely reconcile and generate missing cost-sharing allocations for an approved expense
+     */
+    @PostMapping("/expenses/{expenseId}/shares/reconcile")
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
+    public ResponseEntity<List<ExpenseShareResponse>> reconcileExpenseShares(
+            @PathVariable UUID expenseId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        List<ExpenseShareResponse> shares = expenseShareService.reconcileExpenseShares(expenseId, principal);
+        return ResponseEntity.ok(shares);
+    }
+
+    /**
      * Monthly cost-sharing summary for vehicle
      */
     @GetMapping("/expenses/shares/summary")

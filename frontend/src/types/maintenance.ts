@@ -21,7 +21,7 @@ export type MaintenanceType =
   | 'BODY'
   | 'OTHER';
 
-export type VoteDecision = 'APPROVE' | 'REJECT';
+export type VoteDecision = 'APPROVE' | 'REJECT' | 'ABSTAIN';
 
 export interface LinkedDamageDto {
   id: string;
@@ -48,6 +48,7 @@ export interface MaintenanceResponse {
   completedAt?: string | null;
   approvedAt?: string | null;
   approvedWeight?: number | null;
+  relatedProposalId?: string | null;
   createdById: string;
   createdByName?: string | null;
   assignedStaffId?: string | null;
@@ -100,6 +101,7 @@ export interface CreateMaintenancePayload {
   scheduledAt?: string | null;
   assignedStaffId?: string | null;
   damageRecordIds?: string[];
+  estimatedCost?: number;
 }
 
 export interface ScheduleMaintenancePayload {
@@ -109,6 +111,14 @@ export interface ScheduleMaintenancePayload {
 
 export interface CompleteMaintenancePayload {
   completionNote?: string;
+  actualCost?: number;
+  performedWork?: string;
+  replacedParts?: string;
+  finalOdometer?: number;
+  evidenceUrl?: string;
+  inspectionResult?: 'PASSED' | 'FAILED' | 'REQUIRES_REWORK';
+  useSharedFund?: boolean;
+  sharedFundDisburseAmount?: number;
 }
 
 export const MAINTENANCE_APPROVAL_THRESHOLD = 50.0;
@@ -118,7 +128,7 @@ export const MAINTENANCE_STATUS_CONFIG: Record<
   { labelVi: string; color: string; bg: string; border: string }
 > = {
   PENDING_APPROVAL: {
-    labelVi: 'Chờ phê duyệt',
+    labelVi: 'Đang biểu quyết',
     color: '#fbbf24',
     bg: 'rgba(251, 191, 36, 0.15)',
     border: 'rgba(251, 191, 36, 0.45)',
@@ -136,10 +146,10 @@ export const MAINTENANCE_STATUS_CONFIG: Record<
     border: 'rgba(239, 68, 68, 0.45)',
   },
   PENDING: {
-    labelVi: 'Chờ xử lý',
-    color: '#94a3b8',
-    bg: 'rgba(148, 163, 184, 0.15)',
-    border: 'rgba(148, 163, 184, 0.4)',
+    labelVi: 'Chờ nhóm tạo biểu quyết',
+    color: '#fbbf24',
+    bg: 'rgba(245, 158, 11, 0.15)',
+    border: 'rgba(245, 158, 11, 0.4)',
   },
   SCHEDULED: {
     labelVi: 'Đã lên lịch',

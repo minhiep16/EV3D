@@ -146,7 +146,35 @@ export const VehicleInteractionHitboxes: React.FC<VehicleInteractionHitboxesProp
       if (selectedVehiclePartId === hitbox.id) {
         clearVehiclePartSelection();
       } else {
-        selectVehiclePart(hitbox.id);
+        const v = e.point.clone();
+        let obj: THREE.Object3D | null = e.object;
+        let turntableObj: THREE.Object3D | null = null;
+        while (obj) {
+          if (obj.name && obj.name.includes('Turntable')) {
+            turntableObj = obj;
+            break;
+          }
+          obj = obj.parent;
+        }
+
+        if (turntableObj && 'worldToLocal' in turntableObj) {
+          turntableObj.worldToLocal(v);
+        } else if (e.object.parent?.parent?.parent && 'worldToLocal' in e.object.parent.parent.parent) {
+          e.object.parent.parent.parent.worldToLocal(v);
+        } else {
+          const [vx, vy, vz] = getVehicleAnchor(user?.role, vehicleCode);
+          v.sub(new THREE.Vector3(vx, vy, vz));
+          const yaw = useWorldStore.getState().vehicleYaw;
+          v.applyAxisAngle(new THREE.Vector3(0, 1, 0), -yaw);
+        }
+
+        const localPoint: [number, number, number] = [
+          Number(v.x.toFixed(3)),
+          Number(v.y.toFixed(3)),
+          Number(v.z.toFixed(3)),
+        ];
+
+        selectVehiclePartWithPoint(hitbox.id, localPoint);
       }
       return;
     }

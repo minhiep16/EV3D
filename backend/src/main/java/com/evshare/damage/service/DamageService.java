@@ -37,6 +37,9 @@ public class DamageService {
     private final UserRepository userRepository;
     private final com.evshare.vehicle.service.VehicleService vehicleService;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.evshare.notification.service.NotificationService notificationService;
+
     public DamageService(DamageRecordRepository damageRecordRepository,
                          TripRepository tripRepository,
                          VehicleRepository vehicleRepository,
@@ -118,6 +121,18 @@ public class DamageService {
         );
 
         DamageRecord saved = damageRecordRepository.save(record);
+
+        if (notificationService != null) {
+            notificationService.notifyCoOwnersOfDamageRecorded(
+                    vehicle.getId(),
+                    vehicle != null ? vehicle.getLicensePlate() : null,
+                    saved.getVehiclePartCode(),
+                    saved.getDamageType() != null ? saved.getDamageType().name() : null,
+                    saved.getSeverity() != null ? saved.getSeverity().name() : null,
+                    saved.getId()
+            );
+        }
+
         return DamageRecordResponse.fromEntity(saved);
     }
 

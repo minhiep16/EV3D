@@ -26,6 +26,7 @@ public class MaintenanceResponse {
     private Instant completedAt;
     private Instant approvedAt;
     private BigDecimal approvedWeight;
+    private UUID relatedProposalId;
     private UUID createdById;
     private String createdByName;
     private UUID assignedStaffId;
@@ -87,6 +88,7 @@ public class MaintenanceResponse {
         dto.setCompletedAt(entity.getCompletedAt());
         dto.setApprovedAt(entity.getApprovedAt());
         dto.setApprovedWeight(entity.getApprovedWeight());
+        dto.setRelatedProposalId(entity.getRelatedProposalId());
 
         if (entity.getCreatedBy() != null) {
             dto.setCreatedById(entity.getCreatedBy().getId());
@@ -183,6 +185,9 @@ public class MaintenanceResponse {
 
     public BigDecimal getApprovedWeight() { return approvedWeight; }
     public void setApprovedWeight(BigDecimal approvedWeight) { this.approvedWeight = approvedWeight; }
+
+    public UUID getRelatedProposalId() { return relatedProposalId; }
+    public void setRelatedProposalId(UUID relatedProposalId) { this.relatedProposalId = relatedProposalId; }
 
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }

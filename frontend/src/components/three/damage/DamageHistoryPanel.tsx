@@ -60,6 +60,8 @@ export const DamageHistoryPanel: React.FC<DamageHistoryPanelProps> = ({
   // Store subscriptions (unconditional hooks)
   const selectedDamageId = useWorldStore((state) => state.selectedDamageId);
   const selectDamageRecord = useWorldStore((state) => state.selectDamageRecord);
+  const selectVehiclePartCode = useWorldStore((state) => state.selectVehiclePartCode);
+  const clearVehiclePartSelection = useWorldStore((state) => state.clearVehiclePartSelection);
   const severityFilter = useWorldStore((state) => state.damageHistorySeverityFilter);
   const setSeverityFilter = useWorldStore((state) => state.setDamageHistorySeverityFilter);
   const statusFilter = useWorldStore((state) => state.damageHistoryStatusFilter);
@@ -68,6 +70,7 @@ export const DamageHistoryPanel: React.FC<DamageHistoryPanelProps> = ({
   const setPartFilter = useWorldStore((state) => state.setDamageHistoryPartFilter);
   const returnToGarageOverview = useWorldStore((state) => state.returnToGarageOverview);
   const enterVehicleMaintenanceMode = useWorldStore((state) => state.enterVehicleMaintenanceMode);
+  const openDamageDetailModal = useWorldStore((state) => state.openDamageDetailModal);
   const user = useAuthStore((state) => state.user);
   const canCreateMaintenance = hasCapability(user?.role, 'canCreateMaintenance');
 
@@ -357,8 +360,8 @@ export const DamageHistoryPanel: React.FC<DamageHistoryPanelProps> = ({
             {(
               [
                 { id: 'ALL', label: 'Tất cả', count: totalCount },
-                { id: 'OPEN', label: 'Tồn tại', count: openCount },
-                { id: 'UNDER_MAINTENANCE', label: 'Bảo dưỡng', count: underMaintenanceCount },
+                { id: 'OPEN', label: 'Chưa xử lý', count: openCount },
+                { id: 'UNDER_MAINTENANCE', label: 'Đang sửa chữa', count: underMaintenanceCount },
                 { id: 'RESOLVED', label: 'Khắc phục', count: resolvedCount },
               ] as const
             ).map((st) => {
@@ -799,38 +802,34 @@ export const DamageHistoryPanel: React.FC<DamageHistoryPanelProps> = ({
                 </span>
               </div>
 
-              {/* Requirement 14: Action to prefill and open maintenance request from damage */}
-              {canCreateMaintenance && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    enterVehicleMaintenanceMode({
-                      preselectedDamageId: selectedRecord.id,
-                      preselectedPartCode: selectedRecord.vehiclePartCode,
-                    });
-                  }}
-                  style={{
-                    marginTop: '8px',
-                    width: '100%',
-                    background: 'linear-gradient(135deg, #d97706 0%, #f59e0b 100%)',
-                    border: 'none',
-                    borderRadius: '8px',
-                    padding: '8px 12px',
-                    fontSize: '11px',
-                    fontWeight: 800,
-                    color: '#ffffff',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '6px',
-                    boxShadow: '0 4px 12px rgba(245, 158, 11, 0.3)',
-                  }}
-                >
-                  <Wrench size={13} />
-                  <span>TẠO YÊU CẦU BẢO DƯỠNG</span>
-                </button>
-              )}
+              {/* Phase 24: Action to open damage details & repair proposal modal */}
+              <button
+                type="button"
+                id={`btn-create-maintenance-damage-${selectedRecord.id}`}
+                onClick={() => {
+                  openDamageDetailModal(selectedRecord.id, selectedRecord.vehiclePartCode);
+                }}
+                style={{
+                  marginTop: '8px',
+                  width: '100%',
+                  background: 'linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  color: '#041324',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  boxShadow: '0 4px 12px rgba(0, 242, 254, 0.3)',
+                }}
+              >
+                <Wrench size={13} color="#041324" />
+                <span>CHI TIẾT / SỬA CHỮA</span>
+              </button>
             </div>
           </div>
         )}
@@ -845,9 +844,19 @@ export const DamageHistoryPanel: React.FC<DamageHistoryPanelProps> = ({
             <div
               key={item.id}
               ref={isSelected ? selectedItemRef : undefined}
+              tabIndex={0}
+              role="button"
+              aria-label={`Chi tiết hư hỏng ${partMeta?.nameVi || item.vehiclePartCode}`}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  selectDamageRecord(item.id, item.vehiclePartCode);
+                  openDamageDetailModal(item.id, item.vehiclePartCode);
+                }
+              }}
               onClick={() => {
-                // List ↔ marker synchronization (Requirements 11 & 12)
-                selectDamageRecord(isSelected ? null : item.id);
+                selectDamageRecord(item.id, item.vehiclePartCode);
+                openDamageDetailModal(item.id, item.vehiclePartCode);
               }}
               style={{
                 background: isSelected
@@ -863,6 +872,7 @@ export const DamageHistoryPanel: React.FC<DamageHistoryPanelProps> = ({
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '6px',
+                outline: 'none',
               }}
             >
               {/* Top row: Part Name & Severity */}
@@ -954,6 +964,64 @@ export const DamageHistoryPanel: React.FC<DamageHistoryPanelProps> = ({
                   "{item.note}"
                 </div>
               )}
+
+              {/* Phase 24: Direct "CHI TIẾT / SỬA CHỮA" action on item card */}
+              <div
+                style={{
+                  marginTop: '4px',
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                }}
+              >
+                <button
+                  type="button"
+                  id={`btn-card-detail-${item.id}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    selectDamageRecord(item.id, item.vehiclePartCode);
+                    openDamageDetailModal(item.id, item.vehiclePartCode);
+                  }}
+                  style={{
+                    background:
+                      item.status === 'RESOLVED'
+                        ? 'rgba(16, 185, 129, 0.14)'
+                        : 'rgba(0, 242, 254, 0.14)',
+                    border:
+                      item.status === 'RESOLVED'
+                        ? '1px solid rgba(16, 185, 129, 0.45)'
+                        : '1px solid rgba(0, 242, 254, 0.45)',
+                    borderRadius: '6px',
+                    padding: '3px 8px',
+                    fontSize: '9.5px',
+                    fontWeight: 800,
+                    color: item.status === 'RESOLVED' ? '#34d399' : '#00f2fe',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background =
+                      item.status === 'RESOLVED'
+                        ? 'rgba(16, 185, 129, 0.25)'
+                        : 'rgba(0, 242, 254, 0.25)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background =
+                      item.status === 'RESOLVED'
+                        ? 'rgba(16, 185, 129, 0.14)'
+                        : 'rgba(0, 242, 254, 0.14)';
+                  }}
+                >
+                  <Wrench size={10} />
+                  <span>
+                    {item.status === 'RESOLVED'
+                      ? 'CHI TIẾT KHẮC PHỤC'
+                      : 'CHI TIẾT / SỬA CHỮA'}
+                  </span>
+                </button>
+              </div>
             </div>
           );
         })}

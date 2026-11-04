@@ -32,4 +32,6 @@ public interface MaintenanceRequestRepository extends JpaRepository<MaintenanceR
     boolean existsByVehicleIdAndStatus(UUID vehicleId, MaintenanceStatus status);
 
     List<MaintenanceRequest> findByVehicleIdAndStatus(UUID vehicleId, MaintenanceStatus status);
+
+    Optional<MaintenanceRequest> findByRelatedProposalId(UUID relatedProposalId);
 }
