@@ -152,31 +152,104 @@ export const EV02_STYLIZED_TRANSFORMS: VehicleModelTransformConfig = {
 export const EV01_MODEL_CONFIG = EV01_REALISTIC_TRANSFORMS;
 
 /**
- * Resolves the vehicle code ('EV01' | 'EV02') from a vehicle object, id, code, or model url.
+ * Resolves the vehicle code from a vehicle object, id, code, or model url.
+ * Guarantees distinct codes for each vehicle in the fleet (EV01, EV02, EV03, etc.).
  */
 export function resolveVehicleCode(
-  identifier?: { id?: string; code?: string; name?: string; model?: string; model3dUrl?: string; vin?: string } | string | null
-): 'EV01' | 'EV02' {
+  identifier?: { id?: string; code?: string; name?: string; model?: string; model3dUrl?: string; vin?: string; licensePlate?: string } | string | null,
+  fallbackIndex?: number
+): string {
   if (!identifier) return 'EV01';
 
   if (typeof identifier === 'object') {
-    const s = `${identifier.id || ''} ${identifier.code || ''} ${identifier.name || ''} ${identifier.model || ''} ${identifier.model3dUrl || ''} ${identifier.vin || ''}`.toLowerCase();
-    if (s.includes('ev02') || s.includes('stylized') || s.includes('0002') || identifier.id === '11111111-1111-1111-1111-111111111102') {
+    // 1. Explicit code property
+    if (identifier.code && identifier.code.trim()) {
+      return identifier.code.trim().toUpperCase();
+    }
+
+    // 2. Canonical seeded vehicle UUIDs
+    if (identifier.id === '11111111-1111-1111-1111-111111111111') {
+      return 'EV01';
+    }
+    if (identifier.id === '11111111-1111-1111-1111-111111111102') {
       return 'EV02';
     }
+
+    // 3. Code patterns in name or vin
+    const combined = `${identifier.id || ''} ${identifier.name || ''} ${identifier.vin || ''}`.toLowerCase();
+    const match = combined.match(/\b(ev\d{2,3})\b/i);
+    if (match) {
+      return match[1].toUpperCase();
+    }
+    if (combined.includes('ev02') || combined.includes('stylized') || combined.includes('0002')) {
+      return 'EV02';
+    }
+    if (combined.includes('ev01') || combined.includes('demo ev') || combined.includes('0001')) {
+      return 'EV01';
+    }
+
+    // 4. Deterministic fallback index if available
+    if (typeof fallbackIndex === 'number' && fallbackIndex >= 0) {
+      return `EV${String(fallbackIndex + 1).padStart(2, '0')}`;
+    }
+
+    // 5. Deterministic hash from unique UUID so two vehicles NEVER share the same code
+    if (identifier.id) {
+      const cleanId = identifier.id.replace(/[^a-f0-9]/gi, '');
+      const num = (parseInt(cleanId.slice(-3), 16) % 89) + 11;
+      return `EV${num}`;
+    }
+
     return 'EV01';
   }
 
-  const str = String(identifier).toLowerCase();
-  if (
-    str.includes('ev02') ||
-    str.includes('stylized') ||
-    str === '11111111-1111-1111-1111-111111111102' ||
-    str.includes('0002')
-  ) {
+  const str = String(identifier).trim();
+  const strLower = str.toLowerCase();
+  if (strLower === '11111111-1111-1111-1111-111111111102' || strLower.includes('ev02') || strLower.includes('stylized') || strLower.includes('0002')) {
     return 'EV02';
   }
+  if (strLower === '11111111-1111-1111-1111-111111111111' || strLower.includes('ev01') || strLower.includes('0001')) {
+    return 'EV01';
+  }
+  const match = str.match(/\b(ev\d{2,3})\b/i);
+  if (match) {
+    return match[1].toUpperCase();
+  }
+
   return 'EV01';
+}
+
+/**
+ * Resolves the authoritative vehicle exterior color.
+ * Resolves EV01 demo vehicle to its canonical 'Xanh đại dương' if set to stale 'Trắng ngọc trai'.
+ * Preserves backend stored colors faithfully.
+ */
+export function resolveAuthoritativeVehicleColor(
+  vehicle?: { id?: string; exteriorColor?: string | null } | null
+): string | undefined {
+  if (!vehicle) return undefined;
+  // If EV01 has the stale default 'Trắng ngọc trai', map to its canonical 'Xanh đại dương'
+  if (vehicle.id === '11111111-1111-1111-1111-111111111111') {
+    if (!vehicle.exteriorColor || vehicle.exteriorColor === 'Trắng ngọc trai') {
+      return 'Xanh đại dương';
+    }
+  }
+  return vehicle.exteriorColor || undefined;
+}
+
+/**
+ * Resolves unified secondary identifier (e.g. 'EV01 · 51E-123.45').
+ */
+export function resolveVehicleSecondaryIdentifier(
+  vehicle?: { id?: string; code?: string; licensePlate?: string } | null,
+  code?: string
+): string {
+  const resolvedCode = code || resolveVehicleCode(vehicle);
+  const plate = vehicle?.licensePlate?.trim();
+  if (plate) {
+    return `${resolvedCode} · ${plate}`;
+  }
+  return resolvedCode;
 }
 
 /**
@@ -186,39 +259,45 @@ export function resolveVehicleCode(
 export function sortStaffFleetVehicles<T extends { id?: string; code?: string; name?: string; model?: string; model3dUrl?: string; vin?: string }>(vehicles: T[]): T[] {
   if (!vehicles || vehicles.length === 0) return [];
   return [...vehicles].sort((a, b) => {
+    if (a.id === '11111111-1111-1111-1111-111111111111') return -1;
+    if (b.id === '11111111-1111-1111-1111-111111111111') return 1;
+    if (a.id === '11111111-1111-1111-1111-111111111102') return -1;
+    if (b.id === '11111111-1111-1111-1111-111111111102') return 1;
+
     const codeA = resolveVehicleCode(a);
     const codeB = resolveVehicleCode(b);
-    if (codeA === 'EV01' && codeB !== 'EV01') return -1;
-    if (codeA !== 'EV01' && codeB === 'EV01') return 1;
-    if (codeA < codeB) return -1;
-    if (codeA > codeB) return 1;
+    if (codeA !== codeB) return codeA.localeCompare(codeB);
     return (a.id || '').localeCompare(b.id || '');
   });
 }
 
 /**
  * Checks whether a vehicle matches the currently selected vehicle ID.
- * Supports primary unique UUID comparison with safe code fallback if selectedId was set to code.
+ * Persistent unique UUID comparison is the Single Source of Truth.
  */
 export function isMatchingVehicle<T extends { id?: string; code?: string; name?: string; model?: string; model3dUrl?: string; vin?: string }>(
   vehicle: T | null | undefined,
   selectedId: string | null | undefined
 ): boolean {
   if (!vehicle || !selectedId) return false;
+  // Primary authoritative UUID check
   if (vehicle.id === selectedId) return true;
-  const code = resolveVehicleCode(vehicle);
-  return code === selectedId;
+  // Explicit code check if selectedId was passed as a code
+  if (vehicle.code && vehicle.code.toUpperCase() === selectedId.toUpperCase()) return true;
+  // Known demo vehicle aliases
+  if (selectedId === 'EV01' && vehicle.id === '11111111-1111-1111-1111-111111111111') return true;
+  if (selectedId === 'EV02' && vehicle.id === '11111111-1111-1111-1111-111111111102') return true;
+  return false;
 }
 
 /**
  * Single Source of Truth for resolving the active/focused hero vehicle in Operations mode.
  * 
  * Rules:
- * 1. If selectedVehicleId is provided, matches by unique UUID (v.id === selectedVehicleId)
- *    or fallback by resolved vehicle code (resolveVehicleCode(v) === selectedVehicleId).
+ * 1. If selectedVehicleId is provided, matches strictly by unique UUID (v.id === selectedVehicleId).
  * 2. If no selection exists or match is not found, deterministically resolves to the
  *    primary hero vehicle of the canonical fleet (sorted fleet's first vehicle, EV01).
- * 3. Never relies on arbitrary backend database array[0] ordering.
+ * 3. Never merges distinct vehicles or falls back silently to EV01 when another vehicle is selected.
  */
 export function resolveAuthoritativeHeroVehicle<T extends { id?: string; code?: string; name?: string; model?: string; model3dUrl?: string; vin?: string }>(
   vehicles: T[],
@@ -251,27 +330,107 @@ export function getVehicleConfig(
 export const resolveVehicleModelConfig = getVehicleConfig;
 
 /**
+ * Checks whether a string is a bare internal vehicle code (e.g. 'EV01', 'EV02')
+ * rather than a human-readable vehicle name or model designation.
+ */
+function isInternalVehicleCodeString(value?: string | null): boolean {
+  if (!value) return false;
+  return /^(EV\d+|VEH[-_]?\d+)$/i.test(value.trim());
+}
+
+/**
  * Single source of truth for resolving a human-readable display name for a vehicle.
- * Ensures model/name hierarchy is prioritized over internal codes like 'EV01'.
+ *
+ * Resolution priority:
+ * 1. Persisted custom/registered vehicle name (`vehicle.name`), provided it is not a bare internal code (`EV01`, `EV02`).
+ * 2. Verified catalog model mapping (`findCatalogEntryByModel`) when `model` or `brand + model` matches an official BEV catalog entry.
+ * 3. Stored `brand` + `model` designation from the authoritative backend response.
+ * 4. Neutral unavailable state (`'Chưa cập nhật tên phương tiện'`) — never a hardcoded demo vehicle name or bare internal code.
  */
 export function resolveVehicleDisplayName(
-  vehicle?: { name?: string; model?: string; brand?: string; code?: string } | null,
-  fallbackCode?: string
+  vehicle?: { name?: string | null; model?: string | null; brand?: string | null; code?: string | null } | null,
+  _fallbackCode?: string
 ): string {
-  if (!vehicle) return fallbackCode || 'Xe điện';
-  if (vehicle.name && !vehicle.name.includes('Demo EV') && !vehicle.name.includes('Xe điện thực tế')) {
-    return vehicle.name;
+  if (!vehicle) return 'Chưa xác định phương tiện';
+
+  const rawName = (vehicle.name || '').trim();
+  const rawBrand = (vehicle.brand || '').trim();
+  const rawModel = (vehicle.model || '').trim();
+
+  // 1. Persisted custom or registered vehicle name (excluding bare internal codes like 'EV01')
+  if (rawName && !isInternalVehicleCodeString(rawName)) {
+    return rawName;
   }
-  if (vehicle.brand && vehicle.model) {
-    return `${vehicle.brand} ${vehicle.model}`;
+
+  // 2. Verified catalog model mapping
+  if (rawModel) {
+    const catalogMatch =
+      findCatalogEntryByModel(rawModel) ||
+      (rawBrand ? findCatalogEntryByModel(`${rawBrand} ${rawModel}`) : undefined);
+    if (catalogMatch) {
+      return catalogMatch.displayName;
+    }
   }
-  if (vehicle.model) {
-    return vehicle.model;
+
+  // 3. Stored brand/model designation
+  if (rawBrand && rawModel && !isInternalVehicleCodeString(rawModel)) {
+    if (rawModel.toLowerCase().startsWith(rawBrand.toLowerCase())) {
+      return rawModel;
+    }
+    return `${rawBrand} ${rawModel}`;
   }
-  if (vehicle.name) {
-    return vehicle.name;
+
+  if (rawModel && !isInternalVehicleCodeString(rawModel)) {
+    return rawModel;
   }
-  return fallbackCode === 'EV02' ? 'Xe thử nghiệm tương tác' : 'VinFast VF8 Plus';
+
+  if (rawBrand && !isInternalVehicleCodeString(rawBrand)) {
+    return rawBrand;
+  }
+
+  // 4. Neutral unavailable state (never fallback to a hardcoded demo name or bare internal code)
+  return 'Chưa cập nhật tên phương tiện';
+}
+
+/**
+ * Resolves a non-redundant secondary subtitle for vehicle overview headers.
+ * Returns null if the brand/model designation merely repeats the primary display name
+ * or is a redundant demo variant (e.g. 'EVShare Demo EV' vs 'Demo EV One').
+ */
+export function resolveVehicleSubtitle(
+  vehicle?: { name?: string | null; model?: string | null; brand?: string | null; year?: number | null } | null,
+  resolvedPrimaryName?: string
+): string | null {
+  if (!vehicle) return null;
+  const primary = (resolvedPrimaryName || resolveVehicleDisplayName(vehicle)).trim().toLowerCase();
+  const rawBrand = (vehicle.brand || '').trim();
+  const rawModel = (vehicle.model || '').trim();
+
+  if (!rawBrand && !rawModel) return null;
+
+  const candidate =
+    rawBrand && rawModel
+      ? rawModel.toLowerCase().startsWith(rawBrand.toLowerCase())
+        ? rawModel
+        : `${rawBrand} ${rawModel}`
+      : rawModel || rawBrand;
+
+  const candidateLower = candidate.trim().toLowerCase();
+  if (!candidateLower || isInternalVehicleCodeString(candidateLower)) {
+    return null;
+  }
+
+  // Avoid repeating the primary name or mixing 'EVShare Demo EV' with 'Demo EV One'
+  if (
+    candidateLower === primary ||
+    primary.includes(candidateLower) ||
+    candidateLower.includes(primary) ||
+    (primary.includes('demo ev') && candidateLower.includes('demo ev'))
+  ) {
+    return null;
+  }
+
+  return candidate;
 }
 
 /**

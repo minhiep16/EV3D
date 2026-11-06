@@ -335,7 +335,7 @@ export const EV02_SEMANTIC_HITBOXES: SemanticHitboxDef[] = [
  * Standardized Vietnamese labels matching Section 12
  */
 export const SEMANTIC_PART_LABELS_VI: Record<string, string> = {
-  BODY: 'Thân xe',
+  BODY: 'Thân vỏ',
   DOOR_FL: 'Cửa trước trái',
   DOOR_FR: 'Cửa trước phải',
   DOOR_RL: 'Cửa sau trái',
@@ -343,15 +343,18 @@ export const SEMANTIC_PART_LABELS_VI: Record<string, string> = {
   HOOD: 'Nắp ca-pô',
   ROOF: 'Nóc xe',
   WINDSHIELD: 'Kính chắn gió',
-  WHEEL_FL: 'Bánh trước trái',
+  WHEEL_FL: 'Bánh xe / Lốp',
   WHEEL_FR: 'Bánh trước phải',
   WHEEL_RL: 'Bánh sau trái',
   WHEEL_RR: 'Bánh sau phải',
-  BATTERY: 'Pin',
+  BATTERY: 'Bộ pin',
   CHARGING_PORT: 'Cổng sạc',
-  HEADLIGHTS: 'Đèn trước',
-  TAILLIGHTS: 'Đèn sau',
+  HEADLIGHTS: 'Đèn pha',
+  TAILLIGHTS: 'Đèn hậu',
   DIFFUSER: 'Cản sau & Khuếch tán gió',
+  SIDE_MIRROR: 'Gương chiếu hậu',
+  DOOR_HANDLE: 'Tay nắm cửa',
+  INTERIOR_CABIN: 'Khoang lái',
 };
 
 /**
@@ -813,7 +816,7 @@ export const SEMANTIC_PARTS_METADATA: Record<VehiclePartId, SemanticPartMetadata
   },
   BODY: {
     id: 'BODY',
-    nameVi: 'Thân xe',
+    nameVi: 'Thân vỏ',
     categoryVi: 'Khung vỏ xe',
     status: 'NORMAL',
     descriptionVi: 'Khung gầm liền khối kết hợp thép siêu cường boron và hợp kim nhôm hấp thụ xung lực đa hướng.',
@@ -822,6 +825,42 @@ export const SEMANTIC_PARTS_METADATA: Record<VehiclePartId, SemanticPartMetadata
       { label: 'Độ cứng xoắn', value: '40.000 Nm/độ' },
       { label: 'Lớp sơn', value: 'Sơn tĩnh điện 4 lớp cao cấp' },
       { label: 'Bảo vệ ăn mòn', value: 'Mạ kẽm nhúng nóng' },
+    ],
+  },
+  SIDE_MIRROR: {
+    id: 'SIDE_MIRROR',
+    nameVi: 'Gương chiếu hậu',
+    categoryVi: 'Gương & Quan sát',
+    status: 'NORMAL',
+    descriptionVi: 'Gương chiếu hậu ngoài chỉnh điện tích hợp báo rẽ LED, sấy gương và cảnh báo điểm mù BSM.',
+    specs: [
+      { label: 'Chức năng', value: 'Quan sát phía sau & Cảnh báo điểm mù' },
+      { label: 'Điều chỉnh', value: 'Chỉnh/gập điện tự động + Sấy gương' },
+      { label: 'Thiết kế', value: 'Tối ưu khí động học giảm tiếng gió' },
+    ],
+  },
+  DOOR_HANDLE: {
+    id: 'DOOR_HANDLE',
+    nameVi: 'Tay nắm cửa',
+    categoryVi: 'Cửa & Khóa thông minh',
+    status: 'NORMAL',
+    descriptionVi: 'Tay nắm cửa thiết kế khí động học hiện đại tích hợp cảm biến mở khóa thông minh một chạm.',
+    specs: [
+      { label: 'Thiết kế', value: 'Hiện đại / Ẩn khí động học' },
+      { label: 'Chất liệu', value: 'Hợp kim mạ Satin & Nhựa ABS cao cấp' },
+      { label: 'Vai trò', value: 'Mở cửa một chạm, tăng thẩm mỹ thân xe' },
+    ],
+  },
+  INTERIOR_CABIN: {
+    id: 'INTERIOR_CABIN',
+    nameVi: 'Khoang lái',
+    categoryVi: 'Nội thất & Điều khiển',
+    status: 'NORMAL',
+    descriptionVi: 'Khoang lái thông minh trang bị màn hình cảm ứng trung tâm, vô lăng đa chức năng và ghế da công thái học.',
+    specs: [
+      { label: 'Cấu tạo', value: 'Màn hình trung tâm, vô lăng, ghế công thái học' },
+      { label: 'Chất liệu', value: 'Da sinh thái cao cấp & Hợp kim nhôm' },
+      { label: 'Vai trò', value: 'Trung tâm điều khiển & Trải nghiệm sử dụng' },
     ],
   },
 };
@@ -976,6 +1015,30 @@ export const PARTS_SPATIAL_CONFIG: Record<VehiclePartId, PartSpatialConfig> = {
       position: [-0.6, 4.4, 10.7],
     },
     panelPosition: [2.6, 1.4, 0.0],
+  },
+  SIDE_MIRROR: {
+    localCenter: [-0.94, 1.02, 0.66],
+    cameraPreset: {
+      target: [-0.94, 1.02, 0.66],
+      position: [-3.6, 1.65, 2.3],
+    },
+    panelPosition: [-2.1, 1.55, 0.7],
+  },
+  DOOR_HANDLE: {
+    localCenter: [-0.90, 0.82, 0.14],
+    cameraPreset: {
+      target: [-0.90, 0.82, 0.14],
+      position: [-3.8, 1.45, 1.6],
+    },
+    panelPosition: [-2.1, 1.35, 0.15],
+  },
+  INTERIOR_CABIN: {
+    localCenter: [0.0, 1.18, 0.12],
+    cameraPreset: {
+      target: [0.0, 1.15, 0.12],
+      position: [-2.8, 2.45, 2.8],
+    },
+    panelPosition: [1.9, 1.75, 0.2],
   },
 };
 

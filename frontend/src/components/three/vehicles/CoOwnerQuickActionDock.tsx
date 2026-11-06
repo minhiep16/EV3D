@@ -16,12 +16,16 @@ interface CoOwnerQuickActionDockProps {
 
 export const CoOwnerQuickActionDock: React.FC<CoOwnerQuickActionDockProps> = ({ vehicle }) => {
   const enterVehicleBookingMode = useWorldStore((state) => state.enterVehicleBookingMode);
-  const enterVehicleInspectionMode = useWorldStore((state) => state.enterVehicleInspectionMode);
   const enterVehicleMaintenanceMode = useWorldStore((state) => state.enterVehicleMaintenanceMode);
   const enterVehicleDamageHistoryMode = useWorldStore((state) => state.enterVehicleDamageHistoryMode);
   const enterBatteryXrayMode = useWorldStore((state) => state.enterBatteryXrayMode);
   const enterVehicleVotingMode = useWorldStore((state) => state.enterVehicleVotingMode);
   const openGaragePanel = useWorldStore((state) => state.openGaragePanel);
+  const selectedVehiclePartId = useWorldStore((state) => state.selectedVehiclePartId);
+  const selectVehiclePart = useWorldStore((state) => state.selectVehiclePart);
+  const setExploreHotspotsVisible = useWorldStore((state) => state.setExploreHotspotsVisible);
+  const isExplorationMode = useWorldStore((state) => state.isExplorationMode);
+  const enterCoOwnerExplorationMode = useWorldStore((state) => state.enterCoOwnerExplorationMode);
 
   const isMaintenance = vehicle.status === 'MAINTENANCE';
 
@@ -66,11 +70,13 @@ export const CoOwnerQuickActionDock: React.FC<CoOwnerQuickActionDockProps> = ({ 
       {/* 2. KHÁM PHÁ */}
       <button
         type="button"
-        onClick={() => enterVehicleInspectionMode(vehicle.id)}
-        title="Khám phá chi tiết các bộ phận xe 3D"
+        onClick={() => {
+          enterCoOwnerExplorationMode(vehicle.id);
+        }}
+        title="Khám phá xe 3D tương tác toàn cảnh"
         style={dockItemButtonStyle(false)}
       >
-        <div style={dockIconCircleStyle(false, false)}>
+        <div style={dockIconCircleStyle(isExplorationMode, false)}>
           <Search size={18} color="#22e6ff" />
         </div>
         <span style={dockLabelStyle(false)}>KHÁM PHÁ</span>

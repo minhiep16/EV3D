@@ -15,7 +15,10 @@ export type VehiclePartId =
   | 'TAILLIGHTS'
   | 'BATTERY'
   | 'CHARGING_PORT'
-  | 'DIFFUSER';
+  | 'DIFFUSER'
+  | 'SIDE_MIRROR'
+  | 'DOOR_HANDLE'
+  | 'INTERIOR_CABIN';
 
 export type PartStatus = 'NORMAL' | 'WARNING' | 'DAMAGED';
 

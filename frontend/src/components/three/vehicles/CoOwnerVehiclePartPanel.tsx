@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Wrench,
   CheckCircle2,
@@ -7,11 +7,17 @@ import {
   LogOut,
   X,
   Layers,
+  ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
 import { useWorldStore } from '../../../store/worldStore';
 import { useAuthStore } from '../../../store/authStore';
 import { getPartById, PART_STATUS_CONFIG } from '../../../data/vehicleParts';
+import {
+  getVehicleHotspotById,
+  resolveVehicleHotspots,
+} from '../../../data/vehicleHotspotConfig';
+import { HolographicHotspotInfoCard } from './VehicleHotspotLayer';
 import { VehiclePartId } from '../../../types/vehiclePart';
 
 const QUICK_INSPECTION_PARTS: Array<{ id: VehiclePartId; label: string }> = [
@@ -56,6 +62,18 @@ export const CoOwnerVehiclePartPanel: React.FC = () => {
 
   const activePartCode = selectedVehiclePartCode || selectedVehiclePartId;
   const part = getPartById(activePartCode);
+  const hotspot = getVehicleHotspotById(activePartCode);
+  const hotspots = resolveVehicleHotspots();
+
+  const [viewportWidth, setViewportWidth] = useState<number>(() =>
+    typeof window !== 'undefined' ? window.innerWidth : 1280
+  );
+
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   // Strict Role Guard: Staff & Admin never use CoOwnerVehiclePartPanel
   const user = useAuthStore((state) => state.user);
@@ -76,6 +94,13 @@ export const CoOwnerVehiclePartPanel: React.FC = () => {
     !activePartCode ||
     !part
   ) {
+    return null;
+  }
+
+  // Phase 26 Direct Hotspot UX:
+  // VehicleHotspotLayer renders the compact HolographicHotspotInfoCard directly via screen-space portal
+  // for all 3D vehicle hotspots across desktop, tablet, and mobile.
+  if (hotspot) {
     return null;
   }
 

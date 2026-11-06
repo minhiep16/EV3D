@@ -6,6 +6,10 @@ import { fetchVehicleBookings, createVehicleBooking } from '../../../services/bo
 import { useWorldStore } from '../../../store/worldStore';
 import { useAuthStore } from '../../../store/authStore';
 import {
+  resolveVehicleCode,
+  resolveVehicleDisplayName,
+} from '../vehicles/vehicleModelConfig';
+import {
   Calendar,
   Clock,
   Car,
@@ -49,7 +53,8 @@ export const CoOwnerBookingPanel: React.FC<CoOwnerBookingPanelProps> = ({
   const hasSelection = startHour !== null && endHour !== null;
   const durationHours = hasSelection ? Math.max(1, endHour - startHour) : 0;
 
-  const vehicleName = vehicle.name || 'EV01 - VinFast VF e34';
+  const vehicleCode = resolveVehicleCode(vehicle);
+  const vehicleName = resolveVehicleDisplayName(vehicle, vehicleCode);
 
   const { data: bookings = [] } = useQuery<Booking[]>({
     queryKey: ['bookings', vehicle.id],

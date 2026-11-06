@@ -34,6 +34,7 @@ export const EVShareWorld: React.FC = () => {
       <div style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden', background: '#d0e2f2' }}>
         <Canvas
           shadows
+          dpr={[1, 1.5]}
           camera={{ position: isCoOwner ? [-0.20, 2.25, 11.5] : [0.2, 3.2, 9.6], fov: 40 }}
           gl={{
             antialias: true,

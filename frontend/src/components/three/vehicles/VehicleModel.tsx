@@ -33,6 +33,8 @@ interface VehicleModelMeshProps {
   isBatteryXray?: boolean;
   modelUrl: string;
   exteriorColor?: string;
+  castShadow?: boolean;
+  receiveShadow?: boolean;
   onSelectVehicle?: () => void;
   onPointerDown?: (e: ThreeEvent<PointerEvent>) => void;
 }
@@ -48,6 +50,8 @@ const VehicleModelMesh: React.FC<VehicleModelMeshProps> = ({
   isBatteryXray,
   modelUrl,
   exteriorColor,
+  castShadow = true,
+  receiveShadow = true,
   onSelectVehicle,
   onPointerDown,
 }) => {
@@ -67,19 +71,19 @@ const VehicleModelMesh: React.FC<VehicleModelMeshProps> = ({
     return scene;
   }, [gltf.scene, transformConfig]);
 
-  // Cache original materials
+  // Cache original materials and configure shadow participation
   const originalMaterialsMap = useMemo(() => {
     const map = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
     clonedScene.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
         const mesh = child as THREE.Mesh;
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
+        mesh.castShadow = castShadow;
+        mesh.receiveShadow = receiveShadow;
         map.set(mesh, mesh.material);
       }
     });
     return map;
-  }, [clonedScene]);
+  }, [clonedScene, castShadow, receiveShadow]);
 
   // Visual appearance & PBR material tuning
   useEffect(() => {
@@ -160,20 +164,24 @@ const VehicleModelMesh: React.FC<VehicleModelMeshProps> = ({
 
           if (mat.name === 'Material.003') {
             // Main exterior car body shell: Luxury Automotive Metallic Paint
-            // Tuned PBR response: moderate metalness protects against diffuse washout, clearcoat gives rich gloss with contour depth
-            const paintHex = exteriorColor ? resolveVehicleColorHex(exteriorColor) : '#0284c7';
-            const bodyMat = new THREE.MeshPhysicalMaterial({
-              color: new THREE.Color(paintHex),
-              metalness: 0.42,                   // Moderate metalness eliminates chalky diffuse wash & retains body color
-              roughness: 0.30,                   // Controlled gloss rolloff preventing harsh highlight clipping
-              clearcoat: 0.85,                   // Premium automotive clearcoat layer
-              clearcoatRoughness: 0.12,          // Soft clearcoat highlight spread across curves
-              reflectivity: 0.60,                // Controlled Fresnel reflectance
-              envMapIntensity: 0.45,             // Crisp, non-scorching IBL reflection
-              emissive: new THREE.Color('#000000'),
-              emissiveIntensity: 0,
-            });
-            mesh.material = bodyMat;
+            // If color is absent: Preserve the source model paint rather than inventing a color
+            if (!exteriorColor) {
+              mesh.material = originalMat;
+            } else {
+              const paintHex = resolveVehicleColorHex(exteriorColor);
+              const bodyMat = new THREE.MeshPhysicalMaterial({
+                color: new THREE.Color(paintHex),
+                metalness: 0.42,                   // Moderate metalness eliminates chalky diffuse wash & retains body color
+                roughness: 0.30,                   // Controlled gloss rolloff preventing harsh highlight clipping
+                clearcoat: 0.85,                   // Premium automotive clearcoat layer
+                clearcoatRoughness: 0.12,          // Soft clearcoat highlight spread across curves
+                reflectivity: 0.60,                // Controlled Fresnel reflectance
+                envMapIntensity: 0.45,             // Crisp, non-scorching IBL reflection
+                emissive: new THREE.Color('#000000'),
+                emissiveIntensity: 0,
+              });
+              mesh.material = bodyMat;
+            }
           } else if (mat.name === 'Material.006') {
             // Panoramic glass & windows: Smoked luxury automotive glass with readable subtle reflection
             const glassMat = new THREE.MeshPhysicalMaterial({
@@ -261,17 +269,22 @@ const VehicleModelMesh: React.FC<VehicleModelMeshProps> = ({
               meshName.toLowerCase().includes('light');
 
             if (isGenericBodyPaint && !isGenericProtected) {
-              const paintHex = exteriorColor ? resolveVehicleColorHex(exteriorColor) : '#0284c7';
-              const bodyMat = new THREE.MeshPhysicalMaterial({
-                color: new THREE.Color(paintHex),
-                metalness: 0.42,
-                roughness: 0.30,
-                clearcoat: 0.85,
-                clearcoatRoughness: 0.12,
-                reflectivity: 0.60,
-                envMapIntensity: 0.45,
-              });
-              mesh.material = bodyMat;
+              if (!exteriorColor) {
+                // If color is absent: Preserve the source model paint rather than inventing a color
+                mesh.material = originalMat;
+              } else {
+                const paintHex = resolveVehicleColorHex(exteriorColor);
+                const bodyMat = new THREE.MeshPhysicalMaterial({
+                  color: new THREE.Color(paintHex),
+                  metalness: 0.42,
+                  roughness: 0.30,
+                  clearcoat: 0.85,
+                  clearcoatRoughness: 0.12,
+                  reflectivity: 0.60,
+                  envMapIntensity: 0.45,
+                });
+                mesh.material = bodyMat;
+              }
             } else if ('envMapIntensity' in (originalMat as any)) {
               // Generic vehicle trims: Clamp environment reflection to prevent blowout on untracked trim meshes
               const clone = (originalMat as THREE.Material).clone();
@@ -310,6 +323,7 @@ const VehicleModelMesh: React.FC<VehicleModelMeshProps> = ({
 
   // Animate door opening/closing smoothly if model supports separate door meshes
   useFrame((_, delta) => {
+    if (!doorBindings?.isSupported) return;
     updateDoorAnimation(doorBindings, activeDoorPartCode, delta);
   });
 
@@ -370,8 +384,8 @@ const VehicleModelMesh: React.FC<VehicleModelMeshProps> = ({
   return (
     <primitive
       object={clonedScene}
-      castShadow
-      receiveShadow
+      castShadow={castShadow}
+      receiveShadow={receiveShadow}
       onPointerDown={onPointerDown}
       onClick={handleClick}
     />
@@ -431,6 +445,8 @@ interface VehicleModelProps {
   isBatteryXray?: boolean;
   modelUrl?: string;
   exteriorColor?: string;
+  castShadow?: boolean;
+  receiveShadow?: boolean;
   onSelectVehicle?: () => void;
   onPointerDown?: (e: ThreeEvent<PointerEvent>) => void;
 }
@@ -449,6 +465,8 @@ export const VehicleModel: React.FC<VehicleModelProps> = ({
   isBatteryXray,
   modelUrl = EV01_REALISTIC_MODEL_URL,
   exteriorColor,
+  castShadow = true,
+  receiveShadow = true,
   onSelectVehicle,
   onPointerDown,
 }) => {
@@ -496,6 +514,8 @@ export const VehicleModel: React.FC<VehicleModelProps> = ({
           isBatteryXray={isBatteryXray}
           modelUrl={activeModelUrl}
           exteriorColor={exteriorColor}
+          castShadow={castShadow}
+          receiveShadow={receiveShadow}
           onSelectVehicle={onSelectVehicle}
           onPointerDown={onPointerDown}
         />

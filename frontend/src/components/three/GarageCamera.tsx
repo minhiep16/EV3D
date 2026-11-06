@@ -54,6 +54,7 @@ export const GarageCamera: React.FC = () => {
   const vehicleBatteryXrayMode = useWorldStore((state) => state.vehicleBatteryXrayMode);
   const vehicleChargingMode = useWorldStore((state) => state.vehicleChargingMode);
   const vehicleInspectionMode = useWorldStore((state) => state.vehicleInspectionMode);
+  const isExplorationMode = useWorldStore((state) => state.isExplorationMode);
   const selectedHandoverCheckpoint = useWorldStore((state) => state.selectedHandoverCheckpoint);
   const draftDamage = useWorldStore((state) => state.draftDamage);
   const selectedDamageId = useWorldStore((state) => state.selectedDamageId);
@@ -99,49 +100,26 @@ export const GarageCamera: React.FC = () => {
   const clearVehiclePartSelection = useWorldStore((state) => state.clearVehiclePartSelection);
 
   const activePartCode =
-    (vehicleInspectionMode ||
-     vehicleDamageMappingMode ||
-     vehicleDamageHistoryMode ||
-     isDamageDetailModalOpen ||
-     selectedDamageId != null ||
-     vehicleMaintenanceMode)
-      ? (selectedVehiclePartCode ||
-         selectedVehiclePartId ||
-         draftDamage?.partCode ||
-         selectedDamageRecord?.vehiclePartCode ||
-         (activeDamagePoint ? 'BODY' : null))
+    isExplorationMode ||
+    vehicleDamageMappingMode ||
+    vehicleDamageHistoryMode ||
+    isDamageDetailModalOpen ||
+    selectedDamageId != null ||
+    vehicleMaintenanceMode ||
+    vehicleInspectionMode
+      ? selectedVehiclePartCode ||
+        selectedVehiclePartId ||
+        draftDamage?.partCode ||
+        selectedDamageRecord?.vehiclePartCode ||
+        (activeDamagePoint ? 'BODY' : null)
       : null;
-
-  // Authoritative Camera Safeguard: Stale selected part is ignored and purged in normal overview
-  useEffect(() => {
-    if (
-      !vehicleInspectionMode &&
-      !vehicleDamageMappingMode &&
-      !vehicleDamageHistoryMode &&
-      !isDamageDetailModalOpen &&
-      !selectedDamageId &&
-      !vehicleMaintenanceMode &&
-      (selectedVehiclePartCode || selectedVehiclePartId)
-    ) {
-      clearVehiclePartSelection();
-    }
-  }, [
-    vehicleInspectionMode,
-    vehicleDamageMappingMode,
-    vehicleDamageHistoryMode,
-    isDamageDetailModalOpen,
-    selectedDamageId,
-    vehicleMaintenanceMode,
-    selectedVehiclePartCode,
-    selectedVehiclePartId,
-    clearVehiclePartSelection,
-  ]);
 
   // Initialize with OVERVIEW camera preset
   const initialPreset = getVehicleCameraPreset('OVERVIEW', role, size.width);
   const targetLookAt = useRef(new THREE.Vector3(...initialPreset.target));
   const targetCamPos = useRef<THREE.Vector3 | null>(null);
   const isTransitioning = useRef(false);
+  const lastPresetSignatureRef = useRef<string>('');
 
   // Dynamic OrbitControls constraints resolved from active camera preset
   const [controlsLimits, setControlsLimits] = useState<{
@@ -181,7 +159,8 @@ export const GarageCamera: React.FC = () => {
       vehicleMaintenanceMode ||
       vehicleBatteryXrayMode ||
       vehicleChargingMode ||
-      vehicleInspectionMode;
+      vehicleInspectionMode ||
+      isExplorationMode;
 
     let preset: VehicleCameraPreset;
     const isOperations = role === 'STAFF' || role === 'ADMIN';
@@ -224,13 +203,16 @@ export const GarageCamera: React.FC = () => {
         vehicleBatteryXrayMode,
         vehicleChargingMode,
         vehicleInspectionMode,
+        isExplorationMode,
       });
 
       if (
         (presetKey === 'VEHICLE_PART_INSPECTION' ||
+          isExplorationMode ||
           vehicleDamageMappingMode ||
           vehicleDamageHistoryMode ||
           vehicleMaintenanceMode ||
+          vehicleInspectionMode ||
           isDamageDetailModalOpen ||
           selectedDamageId != null ||
           activeDamagePoint != null) &&
@@ -244,6 +226,9 @@ export const GarageCamera: React.FC = () => {
           vehicleYaw,
           resolvedVehicleCode
         );
+      } else if (isExplorationMode) {
+        // Co-Owner Exploration Overview: centered hero view without lateral panel offset
+        preset = getVehicleCameraPreset('VEHICLE_FOCUS', role, size.width, resolvedVehicleCode);
       } else if (
         (vehicleHandoverMode || vehicleReceiptReviewMode) &&
         selectedHandoverCheckpoint
@@ -264,16 +249,20 @@ export const GarageCamera: React.FC = () => {
       preset = getVehicleCameraPreset('OVERVIEW', role, size.width);
     }
 
-    targetLookAt.current.set(...preset.target);
-    targetCamPos.current = new THREE.Vector3(...preset.position);
-    isTransitioning.current = true;
+    const nextSignature = `${preset.target.join(',')}|${preset.position.join(',')}|${preset.fov ?? 40}`;
+    if (lastPresetSignatureRef.current !== nextSignature) {
+      lastPresetSignatureRef.current = nextSignature;
+      targetLookAt.current.set(...preset.target);
+      targetCamPos.current = new THREE.Vector3(...preset.position);
+      isTransitioning.current = true;
 
-    // Synchronize FOV if preset specifies custom FOV
-    if (preset.fov && (camera as THREE.PerspectiveCamera).isPerspectiveCamera) {
-      const pCam = camera as THREE.PerspectiveCamera;
-      if (pCam.fov !== preset.fov) {
-        pCam.fov = preset.fov;
-        pCam.updateProjectionMatrix();
+      // Synchronize FOV if preset specifies custom FOV
+      if (preset.fov && (camera as THREE.PerspectiveCamera).isPerspectiveCamera) {
+        const pCam = camera as THREE.PerspectiveCamera;
+        if (pCam.fov !== preset.fov) {
+          pCam.fov = preset.fov;
+          pCam.updateProjectionMatrix();
+        }
       }
     }
 
@@ -315,7 +304,9 @@ export const GarageCamera: React.FC = () => {
     vehicleDamageMappingMode,
     vehicleDamageHistoryMode,
     vehicleMaintenanceMode,
-    vehicleInspectionMode,
+    vehicleBatteryXrayMode,
+    vehicleChargingMode,
+    isExplorationMode,
     vehicleYaw,
     role,
     size.width,

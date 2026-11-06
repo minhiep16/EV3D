@@ -12,9 +12,17 @@ public interface VehicleRepository extends JpaRepository<Vehicle, UUID> {
 
     boolean existsByLicensePlate(String licensePlate);
 
+    boolean existsByLicensePlateIgnoreCase(String licensePlate);
+
     boolean existsByVin(String vin);
+
+    boolean existsByVinIgnoreCase(String vin);
 
     Optional<Vehicle> findByLicensePlate(String licensePlate);
 
+    Optional<Vehicle> findByLicensePlateIgnoreCase(String licensePlate);
+
     Optional<Vehicle> findByVin(String vin);
+
+    Optional<Vehicle> findByVinIgnoreCase(String vin);
 }

@@ -77,7 +77,7 @@ public class OnboardingController {
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         onboardingService.deleteDraft(draftId, principal);
-        return ResponseEntity.ok(Map.of("message", "Draft deleted successfully"));
+        return ResponseEntity.ok(Map.of("message", "Đã xóa bản nháp thành công."));
     }
 
     @GetMapping("/search-users")
@@ -88,12 +88,47 @@ public class OnboardingController {
         return ResponseEntity.ok(onboardingService.searchEligibleUsers(query, principal));
     }
 
+    @GetMapping("/validate-plate")
+    public ResponseEntity<Map<String, Object>> validateLicensePlate(
+            @RequestParam String licensePlate,
+            @RequestParam(required = false) UUID draftId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(onboardingService.validateLicensePlateAvailability(licensePlate, draftId, principal));
+    }
+
     @PostMapping("/drafts/{draftId}/submit")
-    public ResponseEntity<VehicleResponse> submitRegistration(
+    public ResponseEntity<VehicleRegistrationDraftResponse> submitRegistration(
             @PathVariable UUID draftId,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         return ResponseEntity.ok(onboardingService.submitRegistration(draftId, principal));
+    }
+
+    // 2B. Staff Registration Review Workflow
+    @GetMapping("/staff/applications")
+    public ResponseEntity<List<VehicleRegistrationDraftResponse>> getStaffApplications(
+            @RequestParam(required = false) String status,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(onboardingService.getStaffApplications(status, principal));
+    }
+
+    @GetMapping("/staff/applications/{applicationId}")
+    public ResponseEntity<VehicleRegistrationDraftResponse> getStaffApplicationById(
+            @PathVariable UUID applicationId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(onboardingService.getStaffApplicationById(applicationId, principal));
+    }
+
+    @PostMapping("/staff/applications/{applicationId}/review")
+    public ResponseEntity<VehicleRegistrationDraftResponse> reviewVehicleRegistration(
+            @PathVariable UUID applicationId,
+            @RequestBody ReviewVehicleRegistrationRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(onboardingService.reviewVehicleRegistration(applicationId, request, principal));
     }
 
     // 3. Group Discovery

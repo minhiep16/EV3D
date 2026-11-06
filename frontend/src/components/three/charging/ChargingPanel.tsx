@@ -31,7 +31,10 @@ import {
 import { CHARGING_STATION_THEMES } from '../../../config/chargingVisualConfig';
 import { useWorldStore } from '../../../store/worldStore';
 import { useAuthStore } from '../../../store/authStore';
-import { resolveVehicleCode } from '../vehicles/vehicleModelConfig';
+import {
+  resolveVehicleCode,
+  resolveVehicleDisplayName,
+} from '../vehicles/vehicleModelConfig';
 
 export interface ChargingPanelProps {
   vehicle: VehicleResponse;
@@ -65,6 +68,7 @@ export const ChargingPanel: React.FC<ChargingPanelProps> = ({
   const [actionError, setActionError] = useState<string | null>(null);
 
   const vehicleCode = resolveVehicleCode(vehicle);
+  const vehicleDisplayName = resolveVehicleDisplayName(vehicle, vehicleCode);
   const currentSoc = vehicle.currentBatteryLevel ?? 80;
 
   // 1. Authoritative TanStack Query: Charging Stations in Garage
@@ -400,7 +404,7 @@ export const ChargingPanel: React.FC<ChargingPanelProps> = ({
                   textOverflow: 'ellipsis',
                 }}
               >
-                Quản lý nạp năng lượng {vehicleCode}
+                {vehicleDisplayName} ({vehicleCode}{vehicle.licensePlate ? ` | ${vehicle.licensePlate}` : ''})
               </div>
             </div>
           </div>

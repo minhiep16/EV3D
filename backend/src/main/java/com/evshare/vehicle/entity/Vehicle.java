@@ -63,7 +63,7 @@ public class Vehicle {
     private String model3dUrl;
 
     @Column(name = "exterior_color", length = 50)
-    private String exteriorColor = "Trắng ngọc trai";
+    private String exteriorColor;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
@@ -107,9 +107,6 @@ public class Vehicle {
         }
         if (this.currentBatteryLevel == null) {
             this.currentBatteryLevel = 100;
-        }
-        if (this.exteriorColor == null || this.exteriorColor.isBlank()) {
-            this.exteriorColor = "Trắng ngọc trai";
         }
     }
 
@@ -272,7 +269,7 @@ public class Vehicle {
     }
 
     public String getExteriorColor() {
-        return exteriorColor != null && !exteriorColor.isBlank() ? exteriorColor : "Trắng ngọc trai";
+        return exteriorColor != null && !exteriorColor.isBlank() ? exteriorColor : null;
     }
 
     public void setExteriorColor(String exteriorColor) {

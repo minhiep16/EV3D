@@ -43,6 +43,10 @@ import { useExpenseShares } from '../../hooks/useExpenses';
 import { AddExpenseModal } from './AddExpenseModal';
 import { ExpenseVerificationSection } from './ExpenseVerificationSection';
 import { VehicleResponse } from '../../types/vehicle';
+import {
+  resolveVehicleCode,
+  resolveVehicleDisplayName,
+} from '../three/vehicles/vehicleModelConfig';
 
 export interface FinanceZonePanelProps {
   vehicle?: VehicleResponse | null;
@@ -148,7 +152,9 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
   }, [propVehicle, selectedVehicleId, vehicles]);
 
   const activeVehicleId = activeVehicle?.id || null;
-  const activeVehicleName = activeVehicle?.name || 'Chưa chọn phương tiện';
+  const activeVehicleName = activeVehicle
+    ? `${resolveVehicleDisplayName(activeVehicle)} (${resolveVehicleCode(activeVehicle)})`
+    : 'Chưa chọn phương tiện';
 
   // Co-ownership query to resolve members
   const { data: coOwnership } = useQuery({

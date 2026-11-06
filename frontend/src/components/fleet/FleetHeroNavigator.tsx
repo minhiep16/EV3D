@@ -1,7 +1,13 @@
 import React, { useMemo } from 'react';
 import { VehicleResponse, VehicleStatus } from '../../types/vehicle';
-import { resolveVehicleCode, isMatchingVehicle } from '../three/vehicles/vehicleModelConfig';
-import { ChevronLeft, ChevronRight, Battery, BatteryCharging } from 'lucide-react';
+import {
+  resolveVehicleCode,
+  resolveVehicleDisplayName,
+  resolveVehicleSecondaryIdentifier,
+  isMatchingVehicle,
+} from '../three/vehicles/vehicleModelConfig';
+import { useWorldStore } from '../../store/worldStore';
+import { ChevronLeft, ChevronRight, BatteryCharging, Zap } from 'lucide-react';
 
 interface FleetHeroNavigatorProps {
   vehicles: VehicleResponse[];
@@ -29,6 +35,12 @@ function getStatusMeta(status?: VehicleStatus) {
   }
 }
 
+/**
+ * FleetHeroNavigator
+ * Single authoritative selected vehicle information bar:
+ * Format: EVShare Demo EV • EV01 · 51E-123.45 • 70% · Sẵn sàng
+ * Positioned cleanly near top bar to prevent blocking 3D vehicle roof/silhouette.
+ */
 export const FleetHeroNavigator: React.FC<FleetHeroNavigatorProps> = ({
   vehicles,
   selectedVehicle,
@@ -41,11 +53,15 @@ export const FleetHeroNavigator: React.FC<FleetHeroNavigatorProps> = ({
     return idx >= 0 ? idx : 0;
   }, [vehicles, selectedVehicle]);
 
-  if (!visible || !selectedVehicle || vehicles.length === 0) return null;
+  const isRegistrationReviewModalOpen = useWorldStore((state) => state.isRegistrationReviewModalOpen);
+
+  if (!visible || !selectedVehicle || vehicles.length === 0 || isRegistrationReviewModalOpen) return null;
 
   const code = resolveVehicleCode(selectedVehicle);
+  const displayName = resolveVehicleDisplayName(selectedVehicle, code);
+  const secondaryIdentifier = resolveVehicleSecondaryIdentifier(selectedVehicle, code);
   const statusMeta = getStatusMeta(selectedVehicle.status);
-  const battery = selectedVehicle.currentBatteryLevel ?? 82;
+  const battery = selectedVehicle.currentBatteryLevel ?? 0;
   const isCharging = (selectedVehicle.status || '').toUpperCase() === 'CHARGING';
 
   const handlePrev = (e: React.MouseEvent) => {
@@ -62,73 +78,69 @@ export const FleetHeroNavigator: React.FC<FleetHeroNavigatorProps> = ({
 
   return (
     <>
-      {/* Floating Status Pill Centered Above Hero Vehicle */}
+      {/* Authoritative Selected Vehicle Information Bar (Section 7) */}
       <div
         style={{
           position: 'absolute',
-          top: '38%',
-          left: '49%',
-          transform: 'translate(-50%, -50%)',
+          top: '84px',
+          left: '50%',
+          transform: 'translateX(-50%)',
           zIndex: 8,
           pointerEvents: 'none',
           display: 'flex',
           alignItems: 'center',
-          gap: '12px',
-          background: 'rgba(8, 16, 28, 0.88)',
+          gap: '10px',
+          background: 'rgba(7, 20, 38, 0.92)',
           backdropFilter: 'blur(16px)',
-          border: '1.5px solid rgba(0, 242, 254, 0.45)',
+          WebkitBackdropFilter: 'blur(16px)',
+          border: '1.2px solid rgba(0, 242, 254, 0.35)',
           borderRadius: '9999px',
           padding: '6px 18px',
-          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.35), 0 0 16px rgba(0, 242, 254, 0.2)',
+          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4), 0 0 16px rgba(0, 242, 254, 0.15)',
           color: '#ffffff',
           fontSize: '12px',
-          fontWeight: 700,
-          letterSpacing: '0.04em',
           userSelect: 'none',
+          whiteSpace: 'nowrap',
           transition: 'all 0.2s ease',
         }}
       >
-        {/* Vehicle Code Pill */}
-        <span
-          style={{
-            background: 'rgba(0, 242, 254, 0.2)',
-            border: '1px solid rgba(0, 242, 254, 0.6)',
-            color: '#00f2fe',
-            fontSize: '11px',
-            fontWeight: 800,
-            padding: '2px 8px',
-            borderRadius: '6px',
-            letterSpacing: '0.06em',
-          }}
-        >
-          {code}
+        {/* 1. Vehicle Display Name */}
+        <span style={{ color: '#ffffff', fontSize: '13px', fontWeight: 900, letterSpacing: '0.02em' }}>
+          {displayName}
         </span>
 
-        {/* Status Dot + Vietnamese Status */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span
-            style={{
-              width: '6px',
-              height: '6px',
-              borderRadius: '50%',
-              backgroundColor: statusMeta.dotColor,
-              boxShadow: `0 0 8px ${statusMeta.dotColor}`,
-            }}
-          />
-          <span style={{ color: '#e2e8f0', fontSize: '12px' }}>{statusMeta.labelVi}</span>
-        </div>
+        <span style={{ color: 'rgba(255, 255, 255, 0.25)', fontSize: '12px' }}>•</span>
 
-        {/* Battery Level */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#38bdf8' }}>
-          {isCharging ? (
-            <BatteryCharging size={14} color="#00f2fe" />
-          ) : (
-            <Battery
-              size={14}
-              color={battery >= 50 ? '#10b981' : battery >= 20 ? '#f59e0b' : '#ef4444'}
+        {/* 2. Secondary Identifier: Code · Plate */}
+        <span style={{ color: '#38bdf8', fontSize: '12px', fontWeight: 700, letterSpacing: '0.04em' }}>
+          {secondaryIdentifier}
+        </span>
+
+        <span style={{ color: 'rgba(255, 255, 255, 0.25)', fontSize: '12px' }}>•</span>
+
+        {/* 3. Real Persisted Battery % · Status */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#00f2fe', fontWeight: 800 }}>
+            {isCharging ? <BatteryCharging size={13} color="#00f2fe" /> : <Zap size={12} color="#00f2fe" />}
+            <span style={{ fontSize: '12px' }}>{battery}%</span>
+          </div>
+
+          <span style={{ color: 'rgba(255, 255, 255, 0.35)', fontSize: '11px' }}>·</span>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <span
+              style={{
+                width: '6px',
+                height: '6px',
+                borderRadius: '50%',
+                backgroundColor: statusMeta.dotColor,
+                boxShadow: `0 0 8px ${statusMeta.dotColor}`,
+              }}
             />
-          )}
-          <span style={{ fontSize: '12px', fontWeight: 800, color: '#f8fafc' }}>{battery}%</span>
+            <span style={{ color: '#e2e8f0', fontSize: '12px', fontWeight: 600 }}>
+              {statusMeta.labelVi}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -139,13 +151,13 @@ export const FleetHeroNavigator: React.FC<FleetHeroNavigatorProps> = ({
         title="Xe trước đó"
         style={{
           position: 'absolute',
-          top: '60%',
+          top: '56%',
           left: '32%',
           transform: 'translate(-50%, -50%)',
           zIndex: 8,
           pointerEvents: 'auto',
-          width: '46px',
-          height: '46px',
+          width: '44px',
+          height: '44px',
           borderRadius: '50%',
           background: 'rgba(8, 16, 28, 0.82)',
           backdropFilter: 'blur(16px)',
@@ -171,7 +183,7 @@ export const FleetHeroNavigator: React.FC<FleetHeroNavigatorProps> = ({
           e.currentTarget.style.boxShadow = '0 6px 20px rgba(0, 0, 0, 0.35), 0 0 12px rgba(0, 242, 254, 0.15)';
         }}
       >
-        <ChevronLeft size={22} />
+        <ChevronLeft size={20} />
       </button>
 
       {/* Right Circular Navigation Chevron Button (>) */}
@@ -181,13 +193,13 @@ export const FleetHeroNavigator: React.FC<FleetHeroNavigatorProps> = ({
         title="Xe tiếp theo"
         style={{
           position: 'absolute',
-          top: '60%',
+          top: '56%',
           left: '68%',
           transform: 'translate(-50%, -50%)',
           zIndex: 8,
           pointerEvents: 'auto',
-          width: '46px',
-          height: '46px',
+          width: '44px',
+          height: '44px',
           borderRadius: '50%',
           background: 'rgba(8, 16, 28, 0.82)',
           backdropFilter: 'blur(16px)',
@@ -213,7 +225,7 @@ export const FleetHeroNavigator: React.FC<FleetHeroNavigatorProps> = ({
           e.currentTarget.style.boxShadow = '0 6px 20px rgba(0, 0, 0, 0.35), 0 0 12px rgba(0, 242, 254, 0.15)';
         }}
       >
-        <ChevronRight size={22} />
+        <ChevronRight size={20} />
       </button>
     </>
   );

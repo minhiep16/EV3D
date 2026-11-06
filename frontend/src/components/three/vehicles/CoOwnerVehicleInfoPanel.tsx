@@ -1,7 +1,11 @@
 import React from 'react';
 import { VehicleResponse } from '../../../types/vehicle';
 import { useWorldStore } from '../../../store/worldStore';
-import { resolveVehicleCode } from './vehicleModelConfig';
+import {
+  resolveVehicleCode,
+  resolveVehicleDisplayName,
+  resolveVehicleSubtitle,
+} from './vehicleModelConfig';
 import {
   Car,
   Zap,
@@ -27,6 +31,8 @@ export const CoOwnerVehicleInfoPanel: React.FC<CoOwnerVehicleInfoPanelProps> = (
   const setVehicleFeatureMode = useWorldStore((state) => state.setVehicleFeatureMode);
 
   const displayCode = resolveVehicleCode(vehicle);
+  const displayName = resolveVehicleDisplayName(vehicle, displayCode);
+  const modelSubtitle = resolveVehicleSubtitle(vehicle, displayName);
   const formattedOdometer = Number(vehicle.odometer ?? 12450).toLocaleString('vi-VN');
   const estimatedRangeKm = Math.round(((vehicle.currentBatteryLevel || 82) / 100) * 450);
 
@@ -106,7 +112,7 @@ export const CoOwnerVehicleInfoPanel: React.FC<CoOwnerVehicleInfoPanelProps> = (
           color: '#ffffff',
         }}
       >
-        {displayCode} — {vehicle.brand} {vehicle.model}
+        {displayName}
       </h3>
 
       <div
@@ -117,7 +123,8 @@ export const CoOwnerVehicleInfoPanel: React.FC<CoOwnerVehicleInfoPanelProps> = (
           marginBottom: '14px',
         }}
       >
-        {vehicle.name}
+        {displayCode} | {vehicle.licensePlate || 'Chưa cập nhật biển số'}
+        {modelSubtitle ? ` • ${modelSubtitle}` : ''}
       </div>
 
       {/* Battery & Status highlight */}

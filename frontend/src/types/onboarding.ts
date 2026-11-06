@@ -1,4 +1,4 @@
-export type DraftStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED';
+export type DraftStatus = 'DRAFT' | 'SUBMITTED' | 'UNDER_REVIEW' | 'CHANGES_REQUESTED' | 'APPROVED' | 'REJECTED';
 export type JoinRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
 export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'EXPIRED';
 
@@ -34,6 +34,8 @@ export interface VehicleRegistrationDraftRequest {
   name?: string;
   plateNumber: string;
   model: string;
+  manufacturer?: string;
+  model3dUrl?: string;
   vin?: string;
   batteryCapacityKwh: number;
   exteriorColor?: string;
@@ -55,12 +57,19 @@ export interface VehicleRegistrationDraftResponse {
   id: string;
   creatorId: string;
   creatorName: string;
+  creatorEmail?: string;
   plateNumber: string;
+  licensePlate?: string;
   model: string;
+  vehicleModel?: string;
+  manufacturer?: string;
+  model3dUrl?: string;
   vin?: string;
   batteryCapacityKwh: number;
+  batteryCapacity?: number;
   exteriorColor?: string;
   manufactureYear?: number;
+  productionYear?: number;
   vehicleValue: number;
   registrationCity?: string;
   groupName: string;
@@ -75,10 +84,20 @@ export interface VehicleRegistrationDraftResponse {
   contractDraftMarkdown?: string;
   createdVehicleId?: string;
   createdGroupId?: string;
+  reviewedBy?: string;
+  reviewerName?: string;
+  reviewedAt?: string;
+  reviewDecision?: string;
+  reviewReason?: string;
   adminReviewNotes?: string;
   submittedAt?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ReviewVehicleRegistrationRequest {
+  decision: 'APPROVE' | 'REJECT' | 'REQUEST_CHANGES';
+  reason?: string;
 }
 
 export interface DiscoverableGroupResponse {

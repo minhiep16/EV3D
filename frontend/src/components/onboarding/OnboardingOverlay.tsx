@@ -11,6 +11,9 @@ import {
   ChevronRight,
   Headphones,
   Sparkles,
+  Trash2,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { onboardingApi } from '../../services/onboardingApi';
@@ -20,6 +23,7 @@ import { NewVehicleWizardModal } from './NewVehicleWizardModal';
 import { JoinGroupModal } from './JoinGroupModal';
 import { InviteCodeModal } from './InviteCodeModal';
 import { MyInvitationsModal } from './MyInvitationsModal';
+import { StaffRegistrationReviewModal } from '../fleet/StaffRegistrationReviewModal';
 
 type OnboardingModal = 'NONE' | 'WIZARD' | 'JOIN_GROUP' | 'INVITE_CODE' | 'MY_INVITATIONS';
 
@@ -50,6 +54,21 @@ export const OnboardingOverlay: React.FC<OnboardingOverlayProps> = ({
   // Single authoritative workflow modal state
   const [activeModal, setActiveModal] = useState<OnboardingModal>('NONE');
   const [activeDraftId, setActiveDraftId] = useState<string | undefined>(undefined);
+  const [isStaffReviewOpen, setIsStaffReviewOpen] = useState<boolean>(false);
+
+  // Safe draft deletion confirmation & feedback state
+  const [draftPendingDelete, setDraftPendingDelete] =
+    useState<VehicleRegistrationDraftResponse | null>(null);
+  const [isDeletingDraft, setIsDeletingDraft] = useState<boolean>(false);
+  const [hoveredDeleteDraftId, setHoveredDeleteDraftId] = useState<string | null>(
+    null
+  );
+  const [draftFeedback, setDraftFeedback] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
+
+  const isStaffOrAdmin = user?.role === 'STAFF' || user?.role === 'ADMIN';
 
   const setMode = (mode: OnboardingWorkspaceMode) => {
     if (setWorkspaceMode) {
@@ -87,16 +106,91 @@ export const OnboardingOverlay: React.FC<OnboardingOverlayProps> = ({
     loadOnboardingData();
   }, []);
 
+  useEffect(() => {
+    if (!draftFeedback) return;
+    const timer = window.setTimeout(() => {
+      setDraftFeedback(null);
+    }, 4500);
+    return () => window.clearTimeout(timer);
+  }, [draftFeedback]);
+
+  const handleConfirmDeleteDraft = async () => {
+    if (!draftPendingDelete || isDeletingDraft) return;
+    const targetDraft = draftPendingDelete;
+    setIsDeletingDraft(true);
+    setDraftFeedback(null);
+
+    try {
+      await onboardingApi.deleteDraft(targetDraft.id);
+      setDrafts((prev) => prev.filter((item) => item.id !== targetDraft.id));
+      if (activeDraftId === targetDraft.id) {
+        setActiveDraftId(undefined);
+      }
+      setDraftPendingDelete(null);
+      setDraftFeedback({
+        type: 'success',
+        message: 'Đã xóa bản nháp thành công.',
+      });
+      await loadOnboardingData();
+    } catch (err: any) {
+      const rawMessage = err?.message || '';
+      const alreadyDeleted =
+        err?.status === 404 ||
+        rawMessage.includes('không tồn tại') ||
+        rawMessage.includes('đã được xóa');
+
+      if (alreadyDeleted) {
+        // Case E: Draft was already deleted — handle gracefully without crashing
+        setDrafts((prev) => prev.filter((item) => item.id !== targetDraft.id));
+        if (activeDraftId === targetDraft.id) {
+          setActiveDraftId(undefined);
+        }
+        setDraftPendingDelete(null);
+        setDraftFeedback({
+          type: 'success',
+          message: 'Đã xóa bản nháp thành công.',
+        });
+        await loadOnboardingData();
+      } else {
+        setDraftPendingDelete(null);
+        setDraftFeedback({
+          type: 'error',
+          message:
+            rawMessage ||
+            'Không thể xóa bản nháp lúc này. Vui lòng thử lại.',
+        });
+        await loadOnboardingData();
+      }
+    } finally {
+      setIsDeletingDraft(false);
+    }
+  };
+
   const handleOpenWizard = (draftId?: string) => {
     setActiveDraftId(draftId);
     setMode('WIZARD');
   };
 
-  const handleSuccess = () => {
+  const handleWizardSuccess = () => {
     loadOnboardingData();
-    setTimeout(() => {
-      navigate('/garage');
-    }, 1500);
+  };
+
+  const handleSuccess = async () => {
+    try {
+      const [statusData, draftsData] = await Promise.all([
+        onboardingApi.getStatus(),
+        onboardingApi.getMyDrafts(),
+      ]);
+      setStatus(statusData);
+      setDrafts(draftsData);
+      if (statusData.hasActiveGroup || statusData.vehicleCount > 0) {
+        setTimeout(() => {
+          navigate('/garage');
+        }, 1200);
+      }
+    } catch {
+      loadOnboardingData();
+    }
   };
 
   return (
@@ -169,6 +263,28 @@ export const OnboardingOverlay: React.FC<OnboardingOverlayProps> = ({
 
           {/* User Controls */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            {isStaffOrAdmin && (
+              <button
+                onClick={() => setIsStaffReviewOpen(true)}
+                style={{
+                  padding: '7px 16px',
+                  borderRadius: '9999px',
+                  background: 'rgba(16, 185, 129, 0.14)',
+                  border: '1.2px solid #10b981',
+                  color: '#047857',
+                  fontWeight: 800,
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  transition: 'all 0.2s',
+                }}
+              >
+                📋 Duyệt hồ sơ đăng ký xe (Staff)
+              </button>
+            )}
+
             {status && status.vehicleCount > 0 && (
               <button
                 onClick={() => navigate('/garage')}
@@ -589,25 +705,233 @@ export const OnboardingOverlay: React.FC<OnboardingOverlayProps> = ({
                 </div>
               </div>
 
-              {/* Draft Resume Indicator */}
-              {drafts.length > 0 && (
+              {/* Draft Deletion Success / Error Feedback Banner */}
+              {draftFeedback && (
                 <div
-                  onClick={() => handleOpenWizard(drafts[0].id)}
+                  role="status"
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '7px 12px',
-                    borderRadius: '8px',
-                    background: 'rgba(245, 158, 11, 0.12)',
-                    border: '1px solid rgba(245, 158, 11, 0.4)',
-                    color: '#b45309',
-                    fontSize: '11px',
-                    cursor: 'pointer',
+                    gap: '8px',
+                    padding: '8px 12px',
+                    borderRadius: '10px',
+                    background:
+                      draftFeedback.type === 'success'
+                        ? 'rgba(16, 185, 129, 0.12)'
+                        : 'rgba(239, 68, 68, 0.10)',
+                    border:
+                      draftFeedback.type === 'success'
+                        ? '1px solid rgba(16, 185, 129, 0.4)'
+                        : '1px solid rgba(239, 68, 68, 0.38)',
+                    color:
+                      draftFeedback.type === 'success' ? '#047857' : '#b91c1c',
+                    fontSize: '11.5px',
+                    fontWeight: 700,
                   }}
                 >
-                  <span>📝 Bản nháp: {drafts[0].plateNumber || 'Chưa đặt tên'}</span>
-                  <span style={{ fontWeight: 700 }}>Tiếp tục →</span>
+                  {draftFeedback.type === 'success' ? (
+                    <CheckCircle2 size={14} style={{ flexShrink: 0 }} />
+                  ) : (
+                    <AlertCircle size={14} style={{ flexShrink: 0 }} />
+                  )}
+                  <span style={{ flex: 1 }}>{draftFeedback.message}</span>
+                </div>
+              )}
+
+              {/* Draft & Submitted Applications Status Indicator */}
+              {drafts.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {drafts.map((d) => {
+                    const isPending = d.status === 'SUBMITTED' || d.status === 'UNDER_REVIEW';
+                    const isChangesRequested = d.status === 'CHANGES_REQUESTED';
+                    const isRejected = d.status === 'REJECTED';
+                    const isApproved = d.status === 'APPROVED';
+                    const isDraft = !d.status || d.status === 'DRAFT';
+                    const isDeleteHovered = hoveredDeleteDraftId === d.id;
+                    const displayVehicleTitle =
+                      d.model || d.name || 'Xe điện EVShare';
+
+                    return (
+                      <div
+                        key={d.id}
+                        onClick={() => {
+                          if (isApproved) {
+                            navigate('/garage');
+                          } else if (!isPending) {
+                            handleOpenWizard(d.id);
+                          }
+                        }}
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '5px',
+                          padding: '9px 12px',
+                          borderRadius: '10px',
+                          background: isPending
+                            ? 'rgba(245, 158, 11, 0.12)'
+                            : isChangesRequested
+                            ? 'rgba(59, 130, 246, 0.1)'
+                            : isRejected
+                            ? 'rgba(239, 68, 68, 0.08)'
+                            : isApproved
+                            ? 'rgba(16, 185, 129, 0.1)'
+                            : 'rgba(245, 158, 11, 0.1)',
+                          border: isPending
+                            ? '1.2px solid rgba(245, 158, 11, 0.45)'
+                            : isChangesRequested
+                            ? '1.2px solid rgba(59, 130, 246, 0.4)'
+                            : isRejected
+                            ? '1.2px solid rgba(239, 68, 68, 0.35)'
+                            : isApproved
+                            ? '1.2px solid rgba(16, 185, 129, 0.4)'
+                            : '1px solid rgba(245, 158, 11, 0.35)',
+                          color: isPending
+                            ? '#b45309'
+                            : isChangesRequested
+                            ? '#1d4ed8'
+                            : isRejected
+                            ? '#b91c1c'
+                            : isApproved
+                            ? '#047857'
+                            : '#b45309',
+                          fontSize: '11.5px',
+                          cursor: isPending ? 'default' : 'pointer',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: '8px',
+                            flexWrap: 'wrap',
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '2px',
+                              minWidth: 0,
+                              flex: '1 1 180px',
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontWeight: 800,
+                                wordBreak: 'break-word',
+                                lineHeight: 1.35,
+                              }}
+                            >
+                              {isPending
+                                ? `⏳ Chờ nhân viên xét duyệt: ${displayVehicleTitle} (${d.plateNumber})`
+                                : isChangesRequested
+                                ? `⚠️ Cần bổ sung hồ sơ: ${displayVehicleTitle} (${d.plateNumber})`
+                                : isRejected
+                                ? `✕ Hồ sơ bị từ chối: ${displayVehicleTitle} (${d.plateNumber})`
+                                : isApproved
+                                ? `✓ Đã phê duyệt: ${displayVehicleTitle} (${d.plateNumber})`
+                                : `📝 Bản nháp: ${displayVehicleTitle}${
+                                    d.plateNumber ? ` (${d.plateNumber})` : ''
+                                  }`}
+                            </span>
+                            {d.groupName && (
+                              <div style={{ fontSize: '10.5px', opacity: 0.9 }}>
+                                Nhóm: <strong>{d.groupName}</strong>
+                              </div>
+                            )}
+                          </div>
+
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontWeight: 700,
+                                flexShrink: 0,
+                                padding: '4px 8px',
+                                borderRadius: '6px',
+                                background: 'rgba(255, 255, 255, 0.65)',
+                              }}
+                            >
+                              {isPending
+                                ? 'Đang thẩm định'
+                                : isChangesRequested
+                                ? 'Chỉnh sửa →'
+                                : isRejected
+                                ? 'Chỉnh sửa & Gửi lại →'
+                                : isApproved
+                                ? 'Vào Garage →'
+                                : 'Tiếp tục →'}
+                            </span>
+
+                            {isDraft && (
+                              <button
+                                type="button"
+                                aria-label={`Xóa bản nháp ${displayVehicleTitle}`}
+                                title="Xóa bản nháp này"
+                                disabled={isDeletingDraft}
+                                onMouseEnter={() => setHoveredDeleteDraftId(d.id)}
+                                onMouseLeave={() =>
+                                  setHoveredDeleteDraftId((prev) =>
+                                    prev === d.id ? null : prev
+                                  )
+                                }
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDraftFeedback(null);
+                                  setDraftPendingDelete(d);
+                                }}
+                                style={{
+                                  width: '28px',
+                                  height: '28px',
+                                  borderRadius: '7px',
+                                  background: isDeleteHovered
+                                    ? 'rgba(239, 68, 68, 0.16)'
+                                    : 'rgba(255, 255, 255, 0.72)',
+                                  border: isDeleteHovered
+                                    ? '1px solid rgba(239, 68, 68, 0.5)'
+                                    : '1px solid rgba(217, 119, 6, 0.28)',
+                                  color: isDeleteHovered ? '#dc2626' : '#9a3412',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  cursor: isDeletingDraft
+                                    ? 'not-allowed'
+                                    : 'pointer',
+                                  padding: 0,
+                                  flexShrink: 0,
+                                  transition: 'all 0.15s ease',
+                                }}
+                              >
+                                <Trash2 size={13.5} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {(isChangesRequested || isRejected) && (d.reviewReason || d.adminReviewNotes) && (
+                          <div
+                            style={{
+                              fontSize: '10.5px',
+                              marginTop: '2px',
+                              padding: '4px 8px',
+                              borderRadius: '6px',
+                              background: 'rgba(255, 255, 255, 0.75)',
+                              fontWeight: 600,
+                            }}
+                          >
+                            Phản hồi Staff: {d.reviewReason || d.adminReviewNotes}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
@@ -805,7 +1129,7 @@ export const OnboardingOverlay: React.FC<OnboardingOverlayProps> = ({
       <NewVehicleWizardModal
         isOpen={effectiveModal === 'WIZARD'}
         onClose={() => setMode('LANDING')}
-        onSuccess={handleSuccess}
+        onSuccess={handleWizardSuccess}
         initialDraftId={activeDraftId}
         selectedColor={previewColor}
         onColorChange={onColorChange}
@@ -832,6 +1156,182 @@ export const OnboardingOverlay: React.FC<OnboardingOverlayProps> = ({
         onClose={() => setMode('LANDING')}
         onSuccess={handleSuccess}
       />
+
+      {isStaffOrAdmin && (
+        <StaffRegistrationReviewModal
+          isOpen={isStaffReviewOpen}
+          onClose={() => setIsStaffReviewOpen(false)}
+          onReviewed={loadOnboardingData}
+        />
+      )}
+
+      {/* 6. COMPACT DRAFT DELETION CONFIRMATION DIALOG */}
+      {draftPendingDelete && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-draft-dialog-title"
+          onClick={() => {
+            if (!isDeletingDraft) setDraftPendingDelete(null);
+          }}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 120,
+            background: 'rgba(15, 23, 42, 0.42)',
+            backdropFilter: 'blur(6px)',
+            WebkitBackdropFilter: 'blur(6px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+            pointerEvents: 'auto',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: '400px',
+              background: '#ffffff',
+              borderRadius: '20px',
+              border: '1.5px solid rgba(0, 201, 216, 0.3)',
+              boxShadow:
+                '0 24px 60px rgba(15, 23, 42, 0.22), 0 4px 16px rgba(0, 180, 200, 0.12)',
+              padding: '22px 24px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '14px',
+              color: '#1e293b',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div
+                style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '12px',
+                  background: 'rgba(239, 68, 68, 0.10)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#dc2626',
+                  flexShrink: 0,
+                }}
+              >
+                <Trash2 size={18} />
+              </div>
+              <div>
+                <h3
+                  id="delete-draft-dialog-title"
+                  style={{
+                    margin: 0,
+                    fontSize: '16px',
+                    fontWeight: 800,
+                    color: '#0f172a',
+                  }}
+                >
+                  Xóa bản nháp đăng ký xe?
+                </h3>
+                <div
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    color: '#009e9d',
+                    marginTop: '2px',
+                  }}
+                >
+                  {draftPendingDelete.model ||
+                    draftPendingDelete.name ||
+                    'Xe điện EVShare'}
+                  {draftPendingDelete.plateNumber
+                    ? ` (${draftPendingDelete.plateNumber})`
+                    : ''}
+                </div>
+              </div>
+            </div>
+
+            <p
+              style={{
+                margin: 0,
+                fontSize: '13px',
+                lineHeight: 1.55,
+                color: '#475569',
+              }}
+            >
+              Bạn có chắc chắn muốn xóa bản nháp này? Thông tin chưa gửi sẽ
+              không thể khôi phục.
+            </p>
+
+            {draftPendingDelete.groupName && (
+              <div
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '10px',
+                  background: 'rgba(241, 245, 249, 0.85)',
+                  border: '1px solid rgba(203, 213, 225, 0.7)',
+                  fontSize: '12px',
+                  color: '#334155',
+                }}
+              >
+                Nhóm dự kiến: <strong>{draftPendingDelete.groupName}</strong>
+              </div>
+            )}
+
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                alignItems: 'center',
+                gap: '10px',
+                marginTop: '4px',
+              }}
+            >
+              <button
+                type="button"
+                disabled={isDeletingDraft}
+                onClick={() => setDraftPendingDelete(null)}
+                style={{
+                  padding: '9px 18px',
+                  borderRadius: '9999px',
+                  background: '#f8fafc',
+                  border: '1px solid rgba(148, 163, 184, 0.45)',
+                  color: '#334155',
+                  fontSize: '12.5px',
+                  fontWeight: 700,
+                  cursor: isDeletingDraft ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                Hủy
+              </button>
+
+              <button
+                type="button"
+                disabled={isDeletingDraft}
+                onClick={handleConfirmDeleteDraft}
+                style={{
+                  padding: '9px 18px',
+                  borderRadius: '9999px',
+                  background: isDeletingDraft
+                    ? 'rgba(239, 68, 68, 0.65)'
+                    : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                  border: 'none',
+                  color: '#ffffff',
+                  fontSize: '12.5px',
+                  fontWeight: 800,
+                  cursor: isDeletingDraft ? 'not-allowed' : 'pointer',
+                  boxShadow: '0 4px 14px rgba(239, 68, 68, 0.3)',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                {isDeletingDraft ? 'Đang xóa...' : 'Xóa bản nháp'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

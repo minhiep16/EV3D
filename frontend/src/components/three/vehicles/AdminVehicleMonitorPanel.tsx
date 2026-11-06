@@ -11,6 +11,11 @@ import { fetchActiveTripForVehicle } from '../../../services/tripApi';
 import { useAuthStore } from '../../../store/authStore';
 import { useWorldStore, VEHICLE_STATUS_LABELS } from '../../../store/worldStore';
 import {
+  resolveVehicleCode,
+  resolveVehicleDisplayName,
+  resolveVehicleSecondaryIdentifier,
+} from './vehicleModelConfig';
+import {
   Car,
   Zap,
   Clock,
@@ -137,7 +142,8 @@ export const AdminVehicleMonitorPanel: React.FC<AdminVehicleMonitorPanelProps> =
   const isInconsistentInUseState = isVehicleInUse && !isTripActive;
   const isOverdue = isTripActive && isTripOverdue(activeTrip.bookingEndTime);
 
-  const displayCode = 'EV01';
+  const displayCode = resolveVehicleCode(vehicle);
+  const displayName = resolveVehicleDisplayName(vehicle, displayCode);
   const formattedOdometer = Number(vehicle.odometer ?? 12450).toLocaleString('vi-VN');
   const estimatedRangeKm = Math.round(((vehicle.currentBatteryLevel || 82) / 100) * 450);
 
@@ -251,7 +257,9 @@ export const AdminVehicleMonitorPanel: React.FC<AdminVehicleMonitorPanelProps> =
         }}
       >
         <Car size={13} color={isInconsistentInUseState ? '#f87171' : '#c084fc'} />
-        <span>{displayCode} &bull; {vehicle.name || 'VinFast VF e34'}</span>
+        <span>
+          {displayName} &bull; {resolveVehicleSecondaryIdentifier(vehicle, displayCode)}
+        </span>
       </div>
 
       {/* ======================================================== */}

@@ -65,6 +65,54 @@ public class VehicleRegistrationDraft {
     @Column(name = "proposed_co_owners", columnDefinition = "TEXT")
     private String proposedCoOwners;
 
+    @Column(name = "vehicle_value", precision = 15, scale = 2)
+    private BigDecimal vehicleValue = new BigDecimal("1200000000.00");
+
+    @Column(name = "registration_city", length = 100)
+    private String registrationCity = "Hà Nội";
+
+    @Column(name = "model_3d_url", length = 255)
+    private String model3dUrl;
+
+    @Column(name = "monthly_fund_contribution", precision = 15, scale = 2)
+    private BigDecimal monthlyFundContribution = new BigDecimal("2000000.00");
+
+    @Column(name = "late_payment_fee_rate", precision = 6, scale = 4)
+    private BigDecimal latePaymentFeeRate = new BigDecimal("0.0500");
+
+    @Column(name = "maintenance_reserve_rate", precision = 6, scale = 4)
+    private BigDecimal maintenanceReserveRate = new BigDecimal("0.1500");
+
+    @Column(name = "max_consecutive_booking_days")
+    private Integer maxConsecutiveBookingDays = 7;
+
+    @Column(name = "current_step")
+    private Integer currentStep = 1;
+
+    @Column(name = "submitted_at")
+    private Instant submittedAt;
+
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "reviewed_by", length = 36, columnDefinition = "CHAR(36)")
+    private UUID reviewedBy;
+
+    @Column(name = "reviewed_at")
+    private Instant reviewedAt;
+
+    @Column(name = "review_decision", length = 30)
+    private String reviewDecision;
+
+    @Column(name = "review_reason", length = 1000)
+    private String reviewReason;
+
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "created_vehicle_id", length = 36, columnDefinition = "CHAR(36)")
+    private UUID createdVehicleId;
+
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "created_group_id", length = 36, columnDefinition = "CHAR(36)")
+    private UUID createdGroupId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", length = 30, nullable = false)
     private DraftStatus status = DraftStatus.DRAFT;
@@ -244,6 +292,134 @@ public class VehicleRegistrationDraft {
 
     public void setExteriorColor(String exteriorColor) {
         this.exteriorColor = exteriorColor;
+    }
+
+    public BigDecimal getVehicleValue() {
+        return vehicleValue;
+    }
+
+    public void setVehicleValue(BigDecimal vehicleValue) {
+        this.vehicleValue = vehicleValue;
+    }
+
+    public String getRegistrationCity() {
+        return registrationCity;
+    }
+
+    public void setRegistrationCity(String registrationCity) {
+        this.registrationCity = registrationCity;
+    }
+
+    public String getModel3dUrl() {
+        return model3dUrl;
+    }
+
+    public void setModel3dUrl(String model3dUrl) {
+        this.model3dUrl = model3dUrl;
+    }
+
+    public BigDecimal getMonthlyFundContribution() {
+        return monthlyFundContribution;
+    }
+
+    public void setMonthlyFundContribution(BigDecimal monthlyFundContribution) {
+        this.monthlyFundContribution = monthlyFundContribution;
+    }
+
+    public BigDecimal getLatePaymentFeeRate() {
+        return latePaymentFeeRate;
+    }
+
+    public void setLatePaymentFeeRate(BigDecimal latePaymentFeeRate) {
+        this.latePaymentFeeRate = latePaymentFeeRate;
+    }
+
+    public BigDecimal getMaintenanceReserveRate() {
+        return maintenanceReserveRate;
+    }
+
+    public void setMaintenanceReserveRate(BigDecimal maintenanceReserveRate) {
+        this.maintenanceReserveRate = maintenanceReserveRate;
+    }
+
+    public Integer getMaxConsecutiveBookingDays() {
+        return maxConsecutiveBookingDays;
+    }
+
+    public void setMaxConsecutiveBookingDays(Integer maxConsecutiveBookingDays) {
+        this.maxConsecutiveBookingDays = maxConsecutiveBookingDays;
+    }
+
+    public Integer getCurrentStep() {
+        return currentStep;
+    }
+
+    public void setCurrentStep(Integer currentStep) {
+        this.currentStep = currentStep;
+    }
+
+    public Instant getSubmittedAt() {
+        return submittedAt;
+    }
+
+    public void setSubmittedAt(Instant submittedAt) {
+        this.submittedAt = submittedAt;
+    }
+
+    public UUID getReviewedBy() {
+        return reviewedBy;
+    }
+
+    public void setReviewedBy(UUID reviewedBy) {
+        this.reviewedBy = reviewedBy;
+    }
+
+    public Instant getReviewedAt() {
+        return reviewedAt;
+    }
+
+    public void setReviewedAt(Instant reviewedAt) {
+        this.reviewedAt = reviewedAt;
+    }
+
+    public String getReviewDecision() {
+        return reviewDecision;
+    }
+
+    public void setReviewDecision(String reviewDecision) {
+        this.reviewDecision = reviewDecision;
+    }
+
+    public String getReviewReason() {
+        return reviewReason;
+    }
+
+    public void setReviewReason(String reviewReason) {
+        this.reviewReason = reviewReason;
+    }
+
+    public UUID getCreatedVehicleId() {
+        return createdVehicleId;
+    }
+
+    public void setCreatedVehicleId(UUID createdVehicleId) {
+        this.createdVehicleId = createdVehicleId;
+    }
+
+    public UUID getCreatedGroupId() {
+        return createdGroupId;
+    }
+
+    public void setCreatedGroupId(UUID createdGroupId) {
+        this.createdGroupId = createdGroupId;
+    }
+
+    public UUID getCreatorId() {
+        return userId;
+    }
+
+    public String getVehicleModel() {
+        return model;
     }
 }
 

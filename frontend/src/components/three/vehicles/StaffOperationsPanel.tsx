@@ -18,6 +18,11 @@ import { DamageRecordResponse } from '../../../types/damage';
 import { useAuthStore } from '../../../store/authStore';
 import { useWorldStore } from '../../../store/worldStore';
 import {
+  resolveVehicleCode,
+  resolveVehicleDisplayName,
+  resolveVehicleSecondaryIdentifier,
+} from './vehicleModelConfig';
+import {
   Car,
   Zap,
   Clock,
@@ -434,7 +439,7 @@ export const StaffOperationsPanel: React.FC<StaffOperationsPanelProps> = ({
           : 'VẬN HÀNH / BÀN GIAO'}
       </h3>
 
-      {/* Subtitle: EV01 Identity */}
+      {/* Subtitle: Vehicle Identity */}
       <div
         style={{
           fontSize: '12px',
@@ -447,7 +452,9 @@ export const StaffOperationsPanel: React.FC<StaffOperationsPanelProps> = ({
         }}
       >
         <Car size={13} color={isInconsistentInUseState ? '#f87171' : '#38bdf8'} />
-        <span>EV01 &bull; {vehicle.name || 'VinFast VF e34'}</span>
+        <span>
+          {resolveVehicleDisplayName(vehicle)} &bull; {resolveVehicleSecondaryIdentifier(vehicle)}
+        </span>
       </div>
 
       {/* Phase 20 Financial Verification Entry Point */}

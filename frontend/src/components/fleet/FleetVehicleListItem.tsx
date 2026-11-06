@@ -1,6 +1,10 @@
 import React from 'react';
 import { VehicleResponse, VehicleStatus } from '../../types/vehicle';
-import { resolveVehicleCode } from '../three/vehicles/vehicleModelConfig';
+import {
+  resolveVehicleCode,
+  resolveVehicleDisplayName,
+  resolveVehicleSecondaryIdentifier,
+} from '../three/vehicles/vehicleModelConfig';
 
 interface FleetVehicleListItemProps {
   vehicle: VehicleResponse;
@@ -34,7 +38,9 @@ export const FleetVehicleListItem: React.FC<FleetVehicleListItemProps> = ({
   isSelected,
   onSelect,
 }) => {
-  const code = resolveVehicleCode(vehicle);
+  const code = resolveVehicleCode(vehicle, index);
+  const displayName = resolveVehicleDisplayName(vehicle, code);
+  const secondaryIdentifier = resolveVehicleSecondaryIdentifier(vehicle, code);
   const statusMeta = getStatusMeta(vehicle.status);
   const indexStr = String(index + 1).padStart(2, '0');
 
@@ -135,45 +141,74 @@ export const FleetVehicleListItem: React.FC<FleetVehicleListItemProps> = ({
         </svg>
       </div>
 
-      {/* Vehicle Info: Code & Status */}
+      {/* Vehicle Info: Name, Code & Status */}
       <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
           <span
             style={{
-              fontSize: '12px',
+              fontSize: '11.5px',
               fontWeight: 800,
               color: isSelected ? '#ffffff' : '#e2e8f0',
-              letterSpacing: '0.05em',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+            title={displayName}
+          >
+            {displayName}
+          </span>
+          <span
+            style={{
+              fontSize: '9.5px',
+              fontWeight: 800,
+              color: '#00f2fe',
+              letterSpacing: '0.04em',
+              flexShrink: 0,
             }}
           >
             {code}
           </span>
         </div>
 
-        {/* Status Dot & Label */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '1px' }}>
+        {/* Secondary identifier: Code · License Plate & Status */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', marginTop: '2px' }}>
           <span
             style={{
-              width: '6px',
-              height: '6px',
-              borderRadius: '50%',
-              backgroundColor: statusMeta.dotColor,
-              boxShadow: `0 0 6px ${statusMeta.dotColor}`,
-              flexShrink: 0,
-            }}
-          />
-          <span
-            style={{
-              fontSize: '11px',
-              color: isSelected ? '#e2e8f0' : '#94a3b8',
-              fontWeight: 500,
+              fontSize: '10px',
+              color: isSelected ? '#38bdf8' : '#94a3b8',
+              fontWeight: 600,
+              letterSpacing: '0.02em',
               whiteSpace: 'nowrap',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
             }}
           >
-            {statusMeta.labelVi}
+            {vehicle.licensePlate ? `${code} · ${vehicle.licensePlate}` : code}
           </span>
+
+          {/* Status Dot & Label */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+            <span
+              style={{
+                width: '6px',
+                height: '6px',
+                borderRadius: '50%',
+                backgroundColor: statusMeta.dotColor,
+                boxShadow: `0 0 6px ${statusMeta.dotColor}`,
+                flexShrink: 0,
+              }}
+            />
+            <span
+              style={{
+                fontSize: '10px',
+                color: isSelected ? '#e2e8f0' : '#94a3b8',
+                fontWeight: 600,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {statusMeta.labelVi}
+            </span>
+          </div>
         </div>
       </div>
     </div>

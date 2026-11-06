@@ -184,7 +184,14 @@ export function resolveActiveCameraPresetKey(state: {
   vehicleMaintenanceMode?: boolean;
   vehicleBatteryXrayMode?: boolean;
   vehicleChargingMode?: boolean;
+  isExplorationMode?: boolean;
 }): VehiclePresetKey {
+  if (state.isExplorationMode) {
+    if (state.selectedVehiclePartCode || state.selectedVehiclePartId) {
+      return 'VEHICLE_PART_INSPECTION';
+    }
+    return 'VEHICLE_FOCUS';
+  }
   // Authoritative damage inspection focus: when damage details modal is open or a damage is selected
   if (state.isDamageDetailModalOpen || state.selectedDamageId) {
     return 'VEHICLE_PART_INSPECTION';
@@ -219,6 +226,12 @@ export function resolveActiveCameraPresetKey(state: {
     }
     return 'DAMAGE_MAPPING';
   }
+  if (state.vehicleInspectionMode) {
+    if (state.selectedVehiclePartCode || state.selectedVehiclePartId) {
+      return 'VEHICLE_PART_INSPECTION';
+    }
+    return 'VEHICLE_WITH_RIGHT_PANEL';
+  }
   if (state.vehicleTripVisualizationMode) {
     return 'VEHICLE_TRIP_VISUALIZATION';
   }
@@ -233,12 +246,6 @@ export function resolveActiveCameraPresetKey(state: {
   }
   if (state.vehicleCoOwnershipMode) {
     return 'VEHICLE_CO_OWNERSHIP';
-  }
-  if (state.vehicleInspectionMode) {
-    if (state.selectedVehiclePartId || state.selectedVehiclePartCode) {
-      return 'VEHICLE_PART_INSPECTION';
-    }
-    return 'VEHICLE_EXPLORE';
   }
   if (state.selectedVehicleId) {
     return 'VEHICLE_WITH_RIGHT_PANEL';
@@ -688,6 +695,18 @@ export const PART_INSPECTION_CAMERA_CONFIGS: Record<
     targetOffset: [0.0, 0.95, -1.82],
     cameraOffset: [-2.6, 1.8, -4.6],
   },
+  TAILLIGHT: {
+    targetOffset: [0.0, 0.95, -1.82],
+    cameraOffset: [-2.6, 1.8, -4.6],
+  },
+  REAR_LIGHTS: {
+    targetOffset: [0.0, 0.95, -1.82],
+    cameraOffset: [-2.6, 1.8, -4.6],
+  },
+  TRUNK: {
+    targetOffset: [0.0, 0.90, -1.65],
+    cameraOffset: [-2.4, 1.8, -4.4],
+  },
   // Diffuser: rear low view (-Z rear)
   DIFFUSER: {
     targetOffset: [0.0, 0.32, -1.80],
@@ -695,6 +714,10 @@ export const PART_INSPECTION_CAMERA_CONFIGS: Record<
   },
   // Headlights: front three-quarter view (+Z front)
   HEADLIGHTS: {
+    targetOffset: [0.0, 0.75, 1.78],
+    cameraOffset: [-2.6, 1.6, 4.6],
+  },
+  HEADLIGHT: {
     targetOffset: [0.0, 0.75, 1.78],
     cameraOffset: [-2.6, 1.6, 4.6],
   },
@@ -712,6 +735,21 @@ export const PART_INSPECTION_CAMERA_CONFIGS: Record<
   BODY: {
     targetOffset: [0.0, 0.72, 0.0],
     cameraOffset: [-4.2, 1.8, 2.6],
+  },
+  // Side Mirror: left-front side mirror gentle focus
+  SIDE_MIRROR: {
+    targetOffset: [-0.94, 1.02, 0.66],
+    cameraOffset: [-3.9, 1.75, 2.5],
+  },
+  // Door Handle: left door handle gentle side focus
+  DOOR_HANDLE: {
+    targetOffset: [-0.90, 0.82, 0.14],
+    cameraOffset: [-4.1, 1.55, 1.9],
+  },
+  // Interior Cabin: upper-front three-quarter view looking into cockpit
+  INTERIOR_CABIN: {
+    targetOffset: [0.0, 1.16, 0.12],
+    cameraOffset: [-3.1, 2.55, 2.9],
   },
 };
 
@@ -782,8 +820,24 @@ export const PART_INSPECTION_CAMERA_CONFIGS_EV02: Record<
     targetOffset: [0.0, 0.78, -2.42],
     cameraOffset: [-2.6, 1.8, -5.2],
   },
+  TAILLIGHT: {
+    targetOffset: [0.0, 0.78, -2.42],
+    cameraOffset: [-2.6, 1.8, -5.2],
+  },
+  REAR_LIGHTS: {
+    targetOffset: [0.0, 0.78, -2.42],
+    cameraOffset: [-2.6, 1.8, -5.2],
+  },
+  TRUNK: {
+    targetOffset: [0.0, 0.85, -2.15],
+    cameraOffset: [-2.4, 1.8, -4.8],
+  },
   // Headlights
   HEADLIGHTS: {
+    targetOffset: [0.0, 0.68, 2.38],
+    cameraOffset: [-2.6, 1.6, 5.2],
+  },
+  HEADLIGHT: {
     targetOffset: [0.0, 0.68, 2.38],
     cameraOffset: [-2.6, 1.6, 5.2],
   },
@@ -801,6 +855,21 @@ export const PART_INSPECTION_CAMERA_CONFIGS_EV02: Record<
   BODY: {
     targetOffset: [0.0, 0.65, 0.0],
     cameraOffset: [-4.2, 1.8, 2.6],
+  },
+  // Side Mirror (EV02 +X left side)
+  SIDE_MIRROR: {
+    targetOffset: [0.92, 0.98, 0.62],
+    cameraOffset: [3.9, 1.7, 2.4],
+  },
+  // Door Handle (EV02 +X left side)
+  DOOR_HANDLE: {
+    targetOffset: [0.88, 0.78, 0.12],
+    cameraOffset: [4.0, 1.5, 1.8],
+  },
+  // Interior Cabin
+  INTERIOR_CABIN: {
+    targetOffset: [0.0, 1.12, 0.10],
+    cameraOffset: [3.1, 2.5, 2.8],
   },
 };
 
@@ -872,9 +941,12 @@ export function getVehiclePartInspectionPreset(
   ];
 
   // 6. Camera position in vehicle-local space maintaining exterior line-of-sight
-  const relCamX = cfg.cameraOffset[0] - cfg.targetOffset[0];
-  const relCamY = cfg.cameraOffset[1] - cfg.targetOffset[1];
-  const relCamZ = cfg.cameraOffset[2] - cfg.targetOffset[2];
+  // For CO_OWNER 3D Hotspot Explore mode, pull the camera slightly farther back (1.16x)
+  // so the focus feels smooth and spacious without aggressive close-up zooming (Requirement 6).
+  const distanceScale = isOperations ? 1.0 : 1.16;
+  const relCamX = (cfg.cameraOffset[0] - cfg.targetOffset[0]) * distanceScale;
+  const relCamY = (cfg.cameraOffset[1] - cfg.targetOffset[1]) * distanceScale;
+  const relCamZ = (cfg.cameraOffset[2] - cfg.targetOffset[2]) * distanceScale;
 
   const camLocal: [number, number, number] = [
     focusLocal[0] + relCamX,
@@ -910,11 +982,9 @@ export function getVehiclePartInspectionPreset(
   }
 
   // 9. Panel-Safe Framing Offset:
-  // Both OPERATIONS and CO_OWNER use a fixed right-side detail panel (~360px wide).
-  // Shifting target and position along screen-right ensures the focused part
-  // appears in the clear center-left region (approx 38%–44% viewport width)
-  // and is NEVER hidden, occluded, or clipped under the fixed right panel.
-  const lateralFactor = 0.14;
+  // OPERATIONS uses a fixed right-side detail panel (~360px wide -> 0.14 offset).
+  // CO_OWNER 3D Hotspot Explore uses an in-scene 3D floating callout right next to the part (-> gentle 0.05 offset).
+  const lateralFactor = isOperations ? 0.14 : 0.05;
   const lateralOffset = dist * lateralFactor;
 
   const target: [number, number, number] = [

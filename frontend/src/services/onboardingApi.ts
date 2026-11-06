@@ -1,5 +1,4 @@
 import { authenticatedFetch, safeParseResponse } from './api';
-import { VehicleResponse } from '../types/vehicle';
 import {
   OnboardingStatusResponse,
   VehicleRegistrationDraftRequest,
@@ -14,6 +13,7 @@ import {
   OnboardingUserSearchResult,
   InvitationContractReviewResponse,
   InvitationConsentRequest,
+  ReviewVehicleRegistrationRequest,
 } from '../types/onboarding';
 
 function formatDraftPayload(data: VehicleRegistrationDraftRequest) {
@@ -21,13 +21,22 @@ function formatDraftPayload(data: VehicleRegistrationDraftRequest) {
     ...data,
     vehicleName: data.name || data.model || 'Xe điện EVShare',
     model: data.model,
+    manufacturer: data.manufacturer,
+    model3dUrl: data.model3dUrl,
     licensePlate: data.plateNumber,
     plateNumber: data.plateNumber,
     vin: data.vin,
     batteryCapacity: data.batteryCapacityKwh,
     batteryCapacityKwh: data.batteryCapacityKwh,
     modelYear: data.manufactureYear || 2025,
+    vehicleValue: data.vehicleValue,
+    registrationCity: data.registrationCity,
     groupName: data.groupName,
+    monthlyFundContribution: data.monthlyFundContribution,
+    latePaymentFeeRate: data.latePaymentFeeRate,
+    maintenanceReserveRate: data.maintenanceReserveRate,
+    maxConsecutiveBookingDays: data.maxConsecutiveBookingDays,
+    currentStep: data.currentStep,
     proposedCoOwners: data.coOwners
       ? JSON.stringify(
           data.coOwners.map((o) => ({
@@ -38,6 +47,7 @@ function formatDraftPayload(data: VehicleRegistrationDraftRequest) {
             phoneNumber: o.phoneNumber,
             percentage: o.sharePercentage,
             sharePercentage: o.sharePercentage,
+            contributionAmount: o.contributionAmount,
             role: o.role,
           }))
         )
@@ -93,11 +103,57 @@ export const onboardingApi = {
     return safeParseResponse<{ message: string }>(res);
   },
 
-  async submitDraft(draftId: string): Promise<VehicleResponse | VehicleRegistrationDraftResponse> {
+  async submitDraft(draftId: string): Promise<VehicleRegistrationDraftResponse> {
     const res = await authenticatedFetch(`/api/onboarding/drafts/${draftId}/submit`, {
       method: 'POST',
     });
-    return safeParseResponse<VehicleResponse | VehicleRegistrationDraftResponse>(res);
+    return safeParseResponse<VehicleRegistrationDraftResponse>(res);
+  },
+
+  async validateLicensePlate(
+    licensePlate: string,
+    draftId?: string,
+    signal?: AbortSignal
+  ): Promise<{
+    available: boolean;
+    normalizedPlate: string;
+    code: string;
+    message: string;
+    detailMessage?: string;
+    ownPendingApplication?: boolean;
+  }> {
+    const params = new URLSearchParams({ licensePlate });
+    if (draftId) {
+      params.set('draftId', draftId);
+    }
+    const res = await authenticatedFetch(`/api/onboarding/validate-plate?${params.toString()}`, {
+      method: 'GET',
+      signal,
+    });
+    return safeParseResponse(res);
+  },
+
+  // Staff Registration Review Workflow
+  async getStaffApplications(status?: string): Promise<VehicleRegistrationDraftResponse[]> {
+    const query = status ? `?status=${encodeURIComponent(status)}` : '';
+    const res = await authenticatedFetch(`/api/onboarding/staff/applications${query}`);
+    return safeParseResponse<VehicleRegistrationDraftResponse[]>(res);
+  },
+
+  async getStaffApplicationById(applicationId: string): Promise<VehicleRegistrationDraftResponse> {
+    const res = await authenticatedFetch(`/api/onboarding/staff/applications/${applicationId}`);
+    return safeParseResponse<VehicleRegistrationDraftResponse>(res);
+  },
+
+  async reviewApplication(
+    applicationId: string,
+    data: ReviewVehicleRegistrationRequest
+  ): Promise<VehicleRegistrationDraftResponse> {
+    const res = await authenticatedFetch(`/api/onboarding/staff/applications/${applicationId}/review`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return safeParseResponse<VehicleRegistrationDraftResponse>(res);
   },
 
   // Groups Discovery

@@ -1,4 +1,4 @@
-import React, { useRef, useMemo, useState, Suspense, createContext, useContext } from 'react';
+import React, { useRef, useMemo, useState, useEffect, Suspense, createContext, useContext } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { useGLTF, Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -17,15 +17,19 @@ const DEFAULT_ZOOM = 1.0;
 const MIN_ZOOM = 0.82;
 const MAX_ZOOM = 1.25;
 
+// Showroom Auto-Rotation Constants (360° revolution in 60 seconds, 3000ms idle resume)
+export const AUTO_ROTATION_SPEED = (Math.PI * 2) / 60;
+export const IDLE_RESUME_DELAY_MS = 3000;
+
 interface VehicleControlContextType {
   targetRotationY: React.MutableRefObject<number>;
   currentRotationY: React.MutableRefObject<number>;
   targetZoom: React.MutableRefObject<number>;
   currentZoom: React.MutableRefObject<number>;
   isInteracting: React.MutableRefObject<boolean>;
+  isIdleReadyRef: React.MutableRefObject<boolean>;
+  prefersReducedMotion: boolean;
   isWorkspace: boolean;
-  hasRotated: boolean;
-  setHasRotated: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 const VehicleControlContext = createContext<VehicleControlContextType | null>(null);
@@ -476,6 +480,7 @@ interface VehicleModelLoaderProps {
 const VehicleModelLoader: React.FC<VehicleModelLoaderProps> = ({ catalogEntry, exteriorColor }) => {
   const gltf = useGLTF(catalogEntry.model3dUrl);
 
+  // 1. Clone and normalize GLB geometry ONCE per model (independent of exterior paint color)
   const normalizedScene = useMemo(() => {
     if (!gltf || !gltf.scene) return null;
 
@@ -486,14 +491,12 @@ const VehicleModelLoader: React.FC<VehicleModelLoaderProps> = ({ catalogEntry, e
       return gltf.scene;
     }
 
-    const paintHex = resolveVehicleColorHex(exteriorColor || catalogEntry.defaultColorHex || '#F8F9FA');
-
-    // 1. Measure initial geometry bounds safely
+    // Measure initial geometry bounds safely
     const initialBox = new THREE.Box3().setFromObject(cloned);
     const initialSize = new THREE.Vector3();
     initialBox.getSize(initialSize);
 
-    // 2. Compute normalization scale with strict finite bounds
+    // Compute normalization scale with strict finite bounds
     const maxHoriz = Math.max(
       Number.isFinite(initialSize.x) ? initialSize.x : 0,
       Number.isFinite(initialSize.z) ? initialSize.z : 0
@@ -508,7 +511,7 @@ const VehicleModelLoader: React.FC<VehicleModelLoaderProps> = ({ catalogEntry, e
     const root = new THREE.Group();
     root.add(cloned);
 
-    // 3. Normalization rotation
+    // Normalization rotation
     if (catalogEntry.normalization?.rotationOffset) {
       cloned.rotation.x += catalogEntry.normalization.rotationOffset[0] || 0;
       cloned.rotation.y += catalogEntry.normalization.rotationOffset[1] || 0;
@@ -526,7 +529,7 @@ const VehicleModelLoader: React.FC<VehicleModelLoaderProps> = ({ catalogEntry, e
       cloned.scale.setScalar(baseScale);
     }
 
-    // 4. Center horizontally and place tires on pedestal platform at y = 0.06
+    // Center horizontally and place tires on pedestal platform at y = 0.06
     const scaledBox = new THREE.Box3().setFromObject(cloned);
     const scaledCenter = new THREE.Vector3();
     scaledBox.getCenter(scaledCenter);
@@ -537,15 +540,31 @@ const VehicleModelLoader: React.FC<VehicleModelLoaderProps> = ({ catalogEntry, e
     const minY = Number.isFinite(scaledBox.min.y) ? scaledBox.min.y : 0;
     cloned.position.y = -minY + 0.06 + groundOffset;
 
-    // 5. Per-Model Exterior Paint & Material Protection (supports single & multi-material arrays)
+    cloned.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+      }
+    });
+
+    return root;
+  }, [gltf?.scene, catalogEntry]);
+
+  // 2. Apply live exterior paint color in-place without re-cloning or resetting vehicle rotation
+  useEffect(() => {
+    if (!normalizedScene) return;
+
     const paintCustomizationSupported = catalogEntry.paintConfig?.supportsPaintCustomization ?? true;
+    if (!paintCustomizationSupported) return;
+
+    const paintHex = resolveVehicleColorHex(exteriorColor || catalogEntry.defaultColorHex || '#F8F9FA');
 
     const processSingleMaterial = (
       mat: THREE.Material | null | undefined,
       meshName: string
     ): THREE.Material | null | undefined => {
       if (!mat) return mat;
-      if (!paintCustomizationSupported) return mat;
       const matName = mat.name || '';
 
       const isBodyMat =
@@ -581,7 +600,7 @@ const VehicleModelLoader: React.FC<VehicleModelLoaderProps> = ({ catalogEntry, e
         catalogEntry.paintConfig?.bodyMeshNames?.some((m) => meshName === m) ||
         meshName.includes('body_primary') ||
         meshName.includes('boot_primary') ||
-        meshName.includes('door_') && meshName.includes('primary') ||
+        (meshName.includes('door_') && meshName.includes('primary')) ||
         meshName.includes('front_bumper_ok_primary') ||
         meshName.includes('rear_bumper_ok_primary') ||
         meshName.includes('bonnet_ok_primary') ||
@@ -615,20 +634,29 @@ const VehicleModelLoader: React.FC<VehicleModelLoaderProps> = ({ catalogEntry, e
         meshName.toLowerCase().includes('caliper');
 
       if ((isBodyMat || isBodyMesh) && !isProtectedMat) {
+        if ((mat as any).userData?.__isEvSharePaintClone && 'color' in mat && (mat as any).color) {
+          (mat as any).color.set(paintHex);
+          mat.needsUpdate = true;
+          return mat;
+        }
         try {
           const clonedMat = mat.clone();
+          clonedMat.name = matName;
+          clonedMat.userData = { ...clonedMat.userData, __isEvSharePaintClone: true };
           if ('color' in clonedMat && (clonedMat as any).color) {
             (clonedMat as any).color.set(paintHex);
             if ('metalness' in clonedMat) (clonedMat as any).metalness = 0.38;
             if ('roughness' in clonedMat) (clonedMat as any).roughness = 0.28;
             if ('clearcoat' in clonedMat) (clonedMat as any).clearcoat = 0.85;
             if ('clearcoatRoughness' in clonedMat) (clonedMat as any).clearcoatRoughness = 0.12;
+            clonedMat.needsUpdate = true;
             return clonedMat;
           }
         } catch {
           // Fallback if material clone is unsupported
         }
-        return new THREE.MeshPhysicalMaterial({
+        const fallbackMat = new THREE.MeshPhysicalMaterial({
+          name: matName,
           color: new THREE.Color(paintHex),
           metalness: 0.38,
           roughness: 0.28,
@@ -637,16 +665,15 @@ const VehicleModelLoader: React.FC<VehicleModelLoaderProps> = ({ catalogEntry, e
           reflectivity: 0.65,
           envMapIntensity: 0.45,
         });
+        fallbackMat.userData = { __isEvSharePaintClone: true };
+        return fallbackMat;
       }
       return mat;
     };
 
-    cloned.traverse((child) => {
+    normalizedScene.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
         const mesh = child as THREE.Mesh;
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-
         if (mesh.material) {
           const meshName = mesh.name || '';
           if (Array.isArray(mesh.material)) {
@@ -660,16 +687,14 @@ const VehicleModelLoader: React.FC<VehicleModelLoaderProps> = ({ catalogEntry, e
         }
       }
     });
-
-    return root;
-  }, [gltf?.scene, catalogEntry, exteriorColor]);
+  }, [normalizedScene, catalogEntry, exteriorColor]);
 
   if (!normalizedScene) return null;
 
   return <primitive object={normalizedScene} position={[0, 0, 0]} />;
 };
 
-// Showcase Vehicle Coordinator with Dynamic Catalog Resolution & Interactive 360-Degree Rotation
+// Showcase Vehicle Coordinator with Dynamic Catalog Resolution & Showroom 360-Degree Auto-Rotation
 const ShowcaseVehicle: React.FC<{
   selectedModel?: string;
   exteriorColor?: string;
@@ -685,28 +710,34 @@ const ShowcaseVehicle: React.FC<{
     );
   }, [selectedModel]);
 
-  useFrame((state, delta) => {
+  useFrame((_, delta) => {
     if (!groupRef.current || !control) return;
+
+    const dt = Math.min(delta, 0.1);
 
     // Smooth horizontal position interpolation between landing (x = -0.5) and workspace (x = 0)
     const targetX = control.isWorkspace ? 0 : -0.5;
-    groupRef.current.position.x += (targetX - groupRef.current.position.x) * Math.min(1, delta * 8);
+    groupRef.current.position.x += (targetX - groupRef.current.position.x) * Math.min(1, dt * 8);
+
+    // Continuous slow showroom auto-rotation around vertical Y axis when not interacting and idle timer ready
+    if (
+      !control.isInteracting.current &&
+      !control.prefersReducedMotion &&
+      control.isIdleReadyRef.current
+    ) {
+      control.targetRotationY.current += AUTO_ROTATION_SPEED * dt;
+    }
 
     // Smooth inertia / damping for 360° rotation and zoom
     control.currentRotationY.current +=
       (control.targetRotationY.current - control.currentRotationY.current) *
-      Math.min(1, delta * 12);
+      Math.min(1, dt * 12);
 
     control.currentZoom.current +=
       (control.targetZoom.current - control.currentZoom.current) *
-      Math.min(1, delta * 10);
+      Math.min(1, dt * 10);
 
-    // Subtle idle float when user is not interacting
-    const idleOffset = control.isInteracting.current
-      ? 0
-      : Math.sin(state.clock.elapsedTime * 0.4) * 0.012;
-
-    groupRef.current.rotation.y = control.currentRotationY.current + idleOffset;
+    groupRef.current.rotation.y = control.currentRotationY.current;
     groupRef.current.scale.setScalar(0.82 * control.currentZoom.current);
   });
 
@@ -760,16 +791,60 @@ export const OnboardingWorld: React.FC<OnboardingWorldProps> = ({
   const targetZoom = useRef<number>(DEFAULT_ZOOM);
   const currentZoom = useRef<number>(DEFAULT_ZOOM);
   const isInteracting = useRef<boolean>(false);
+  const isIdleReadyRef = useRef<boolean>(true);
+  const idleResumeTimerRef = useRef<number | null>(null);
 
   const [isDragging, setIsDragging] = useState<boolean>(false);
-  const [hasRotated, setHasRotated] = useState<boolean>(false);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState<boolean>(() => {
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    }
+    return false;
+  });
   const lastPointerX = useRef<number>(0);
 
+  // Detect OS prefers-reduced-motion preference changes
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const handleChange = (e: MediaQueryListEvent) => {
+      setPrefersReducedMotion(e.matches);
+    };
+    mediaQuery.addEventListener('change', handleChange);
+    return () => {
+      mediaQuery.removeEventListener('change', handleChange);
+    };
+  }, []);
+
+  // Clean up any active drag or pending timer when switching vehicle models or unmounting
+  useEffect(() => {
+    isInteracting.current = false;
+    setIsDragging(false);
+    if (idleResumeTimerRef.current !== null) {
+      window.clearTimeout(idleResumeTimerRef.current);
+      idleResumeTimerRef.current = null;
+    }
+    isIdleReadyRef.current = true;
+  }, [selectedModel]);
+
+  useEffect(() => {
+    return () => {
+      if (idleResumeTimerRef.current !== null) {
+        window.clearTimeout(idleResumeTimerRef.current);
+        idleResumeTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const handlePointerDown = (e: React.PointerEvent) => {
+    if (idleResumeTimerRef.current !== null) {
+      window.clearTimeout(idleResumeTimerRef.current);
+      idleResumeTimerRef.current = null;
+    }
+    isIdleReadyRef.current = false;
     e.currentTarget.setPointerCapture(e.pointerId);
     isInteracting.current = true;
     setIsDragging(true);
-    setHasRotated(true);
     lastPointerX.current = e.clientX;
   };
 
@@ -791,6 +866,15 @@ export const OnboardingWorld: React.FC<OnboardingWorldProps> = ({
     }
     isInteracting.current = false;
     setIsDragging(false);
+
+    if (idleResumeTimerRef.current !== null) {
+      window.clearTimeout(idleResumeTimerRef.current);
+    }
+    // Resume slow showroom auto-rotation from current orientation after 3000ms of inactivity
+    idleResumeTimerRef.current = window.setTimeout(() => {
+      isIdleReadyRef.current = true;
+      idleResumeTimerRef.current = null;
+    }, IDLE_RESUME_DELAY_MS);
   };
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -810,11 +894,11 @@ export const OnboardingWorld: React.FC<OnboardingWorldProps> = ({
       targetZoom,
       currentZoom,
       isInteracting,
+      isIdleReadyRef,
+      prefersReducedMotion,
       isWorkspace,
-      hasRotated,
-      setHasRotated,
     }),
-    [isWorkspace, hasRotated]
+    [isWorkspace, prefersReducedMotion]
   );
 
   return (
@@ -858,7 +942,7 @@ export const OnboardingWorld: React.FC<OnboardingWorldProps> = ({
         </Canvas>
       </ThreeCanvasErrorBoundary>
 
-      {/* Dedicated Interactive 360-Degree Rotation Overlay Zone */}
+      {/* Dedicated Interactive 360-Degree Rotation Overlay Zone (No visible buttons or toolbar) */}
       <div
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -874,36 +958,8 @@ export const OnboardingWorld: React.FC<OnboardingWorldProps> = ({
           zIndex: 3,
           cursor: isDragging ? 'grabbing' : 'grab',
           touchAction: 'none',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'flex-end',
-          alignItems: 'center',
-          paddingBottom: '24px',
         }}
-      >
-        {/* Subtle Rotation Guidance Hint (Fades once user begins rotating) */}
-        {!hasRotated && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '6px 16px',
-              borderRadius: '9999px',
-              background: 'rgba(255, 255, 255, 0.88)',
-              border: '1.2px solid rgba(0, 201, 216, 0.35)',
-              boxShadow: '0 2px 10px rgba(0, 180, 200, 0.12)',
-              color: '#40566f',
-              fontSize: '11px',
-              fontWeight: 600,
-              pointerEvents: 'none',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            <span>⟵ Kéo để xoay 360° ⟶</span>
-          </div>
-        )}
-      </div>
+      />
     </div>
   );
 };

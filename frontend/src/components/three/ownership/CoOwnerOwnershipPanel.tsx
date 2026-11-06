@@ -37,7 +37,10 @@ import {
 import { useTransferAppendix } from '../../../hooks/useContract';
 import { useAuthStore } from '../../../store/authStore';
 import { useWorldStore } from '../../../store/worldStore';
-import { resolveVehicleCode } from '../vehicles/vehicleModelConfig';
+import {
+  resolveVehicleCode,
+  resolveVehicleDisplayName,
+} from '../vehicles/vehicleModelConfig';
 import {
   Users,
   Car,
@@ -4081,7 +4084,8 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
               QUẢN LÝ ĐỒNG SỞ HỮU
             </div>
             <div style={{ fontSize: '10.5px', color: '#94a3b8', marginTop: '1px' }}>
-              {vehicleCode} • {vehicle.licensePlate || 'Xe số hóa'}
+              {resolveVehicleDisplayName(vehicle, vehicleCode)} • {vehicleCode}
+              {vehicle.licensePlate ? ` | ${vehicle.licensePlate}` : ''}
             </div>
           </div>
         </div>

@@ -11,7 +11,11 @@ import {
   MAINTENANCE_TYPE_CONFIG,
   MAINTENANCE_PRIORITY_CONFIG,
 } from '../../../types/maintenance';
-import { resolveVehicleCode } from './vehicleModelConfig';
+import {
+  resolveVehicleCode,
+  resolveVehicleDisplayName,
+  resolveVehicleSubtitle,
+} from './vehicleModelConfig';
 import { fetchActiveVehicleHandovers, fetchHandoverHistory } from '../../../services/handoverApi';
 import { fetchVehicleBookings } from '../../../services/bookingApi';
 import { fetchActiveTripForVehicle, requestTripReturnApi } from '../../../services/tripApi';
@@ -315,7 +319,7 @@ const CoOwnerHandoverHistoryView: React.FC<CoOwnerHandoverHistoryViewProps> = ({
           LỊCH SỬ BÀN GIAO & TRẢ XE
         </h4>
         <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-          Phương tiện: <strong style={{ color: '#00f2fe' }}>{displayCode}</strong> ({vehicle.licensePlate})
+          Phương tiện: <strong style={{ color: '#00f2fe' }}>{resolveVehicleDisplayName(vehicle, displayCode)}</strong> ({displayCode} • {vehicle.licensePlate || 'Chưa cập nhật'})
         </div>
       </div>
 
@@ -813,7 +817,10 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
     );
   }, [bookingHandover, candidateBooking, user, isTripActive, isVehicleInUse]);
 
-  const displayCode = resolveVehicleCode(vehicle) || 'EV01';
+  const displayCode = resolveVehicleCode(vehicle);
+  const displayName = resolveVehicleDisplayName(vehicle, displayCode);
+  const modelSubtitle = resolveVehicleSubtitle(vehicle, displayName);
+  const licensePlateLabel = vehicle.licensePlate || 'Chưa cập nhật biển số';
   const statusConfig = isTripActive
     ? { label: 'Đang sử dụng', color: '#00f2fe' }
     : VEHICLE_STATUS_LABELS[vehicle.status] || {
@@ -961,15 +968,15 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
                   color: '#ffffff',
                 }}
               >
-                {vehicle.name || 'VinFast VF8 Plus'}
+                {displayName}
               </h3>
               <div style={{ fontSize: '11.5px', color: '#00f2fe', fontWeight: 800, whiteSpace: 'nowrap' }}>
-                {vehicle.licensePlate || '51K-888.88'}
+                {licensePlateLabel}
               </div>
             </div>
 
             <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-              {vehicle.brand || 'VinFast'} {vehicle.model || 'VF8'} • Chế độ đồng sở hữu
+              {modelSubtitle ? `${modelSubtitle} • Chế độ đồng sở hữu` : `Mã xe ${displayCode} • Chế độ đồng sở hữu`}
             </div>
           </div>
 
@@ -1601,7 +1608,7 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ color: '#94a3b8' }}>Phương tiện:</span>
               <span style={{ color: '#00f2fe', fontWeight: 700 }}>
-                {vehicle.name} ({vehicle.licensePlate})
+                {displayName} ({licensePlateLabel})
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -1740,7 +1747,7 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
           >
             <div>Mã lịch đặt: <strong style={{ color: '#ffffff', fontFamily: 'monospace' }}>{candidateBooking.id.slice(0, 8)}...</strong></div>
             <div>Lịch đặt: <strong style={{ color: '#ffffff' }}>{formatDate(candidateBooking.startTime)} ({formatTimeRange(candidateBooking.startTime, candidateBooking.endTime)})</strong></div>
-            <div>Phương tiện: <strong style={{ color: '#00f2fe' }}>{vehicle.name} ({vehicle.licensePlate})</strong></div>
+            <div>Phương tiện: <strong style={{ color: '#00f2fe' }}>{displayName} ({licensePlateLabel})</strong></div>
           </div>
         </div>
       ) : (
@@ -1805,7 +1812,7 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ color: '#94a3b8' }}>Phương tiện:</span>
-              <strong style={{ color: '#00f2fe' }}>{vehicle.name} ({vehicle.licensePlate})</strong>
+              <strong style={{ color: '#00f2fe' }}>{displayName} ({licensePlateLabel})</strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ color: '#94a3b8' }}>Người đặt xe:</span>

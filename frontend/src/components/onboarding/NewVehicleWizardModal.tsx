@@ -18,6 +18,7 @@ import {
   Loader2,
   ShieldCheck,
   UserCheck,
+  BookOpen,
 } from 'lucide-react';
 import {
   VehicleRegistrationDraftRequest,
@@ -35,6 +36,116 @@ import {
   getPreview3DModels,
   getRegistrableEVModels,
 } from '../../data/vehicleCatalog';
+import { ContractBookReaderModal } from './ContractBookReaderModal';
+
+interface WizardStepErrorBoundaryProps {
+  stepKey: number;
+  onBack: () => void;
+  children: React.ReactNode;
+}
+
+interface WizardStepErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+export class WizardStepErrorBoundary extends React.Component<
+  WizardStepErrorBoundaryProps,
+  WizardStepErrorBoundaryState
+> {
+  constructor(props: WizardStepErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): WizardStepErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
+    console.error('[WizardStepErrorBoundary] Step rendering error:', error, errorInfo);
+  }
+
+  componentDidUpdate(prevProps: WizardStepErrorBoundaryProps): void {
+    if (prevProps.stepKey !== this.props.stepKey && this.state.hasError) {
+      this.setState({ hasError: false, error: null });
+    }
+  }
+
+  render(): React.ReactNode {
+    if (this.state.hasError) {
+      return (
+        <div
+          role="alert"
+          style={{
+            background: '#ffffff',
+            borderRadius: '14px',
+            padding: '20px 22px',
+            border: '1.5px solid rgba(239, 68, 68, 0.45)',
+            boxShadow: '0 6px 20px rgba(239, 68, 68, 0.08)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+            color: '#1e293b',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#dc2626' }}>
+            <AlertCircle size={20} style={{ flexShrink: 0 }} />
+            <div style={{ fontSize: '14px', fontWeight: 800 }}>
+              Không thể hiển thị bước hợp đồng. Vui lòng quay lại hoặc thử lại.
+            </div>
+          </div>
+          <div style={{ fontSize: '12px', color: '#64748b', lineHeight: 1.5 }}>
+            Dữ liệu bạn đã nhập ở các bước trước vẫn được giữ nguyên. Bạn có thể quay lại bước phân bổ cổ phần để kiểm tra hoặc thử tải lại bước hợp đồng.
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={() => {
+                this.setState({ hasError: false, error: null });
+                this.props.onBack();
+              }}
+              style={{
+                padding: '8px 16px',
+                borderRadius: '9999px',
+                background: '#ffffff',
+                border: '1.2px solid rgba(148, 163, 184, 0.5)',
+                color: '#334155',
+                fontWeight: 700,
+                fontSize: '12px',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              <ArrowLeft size={14} />
+              <span>Quay lại bước 3</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => this.setState({ hasError: false, error: null })}
+              style={{
+                padding: '8px 16px',
+                borderRadius: '9999px',
+                background: 'linear-gradient(90deg, #00c9d8 0%, #009e9d 100%)',
+                border: 'none',
+                color: '#ffffff',
+                fontWeight: 800,
+                fontSize: '12px',
+                cursor: 'pointer',
+              }}
+            >
+              Thử lại
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 interface UserAutocompleteSelectorProps {
   owner: CoOwnerInviteDraft;
@@ -86,7 +197,7 @@ const UserAutocompleteSelector: React.FC<UserAutocompleteSelectorProps> = ({
       setLoading(true);
       try {
         const data = await onboardingApi.searchUsers(searchTerm.trim());
-        setResults(data);
+        setResults(Array.isArray(data) ? data : []);
         setShowDropdown(true);
       } catch (err) {
         console.error('Failed to search users:', err);
@@ -99,8 +210,11 @@ const UserAutocompleteSelector: React.FC<UserAutocompleteSelectorProps> = ({
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
+  const ownerFullName = String(owner?.fullName || '').trim();
+  const ownerEmail = String(owner?.email || '').trim();
+
   // If already selected / populated
-  if (owner.fullName && owner.email) {
+  if (ownerFullName && ownerEmail) {
     return (
       <div
         style={{
@@ -132,7 +246,7 @@ const UserAutocompleteSelector: React.FC<UserAutocompleteSelectorProps> = ({
               flexShrink: 0,
             }}
           >
-            {owner.fullName.charAt(0).toUpperCase()}
+            {ownerFullName.charAt(0).toUpperCase()}
           </div>
           <div style={{ minWidth: 0 }}>
             <div
@@ -145,7 +259,7 @@ const UserAutocompleteSelector: React.FC<UserAutocompleteSelectorProps> = ({
                 textOverflow: 'ellipsis',
               }}
             >
-              {owner.fullName}
+              {ownerFullName}
             </div>
             <div
               style={{
@@ -156,7 +270,7 @@ const UserAutocompleteSelector: React.FC<UserAutocompleteSelectorProps> = ({
                 textOverflow: 'ellipsis',
               }}
             >
-              {owner.email}
+              {ownerEmail}
             </div>
           </div>
         </div>
@@ -459,6 +573,20 @@ const CITIES = ['Hà Nội', 'TP. Hồ Chí Minh', 'Đà Nẵng', 'Hải Phòng'
 
 const MEMBER_COLORS = ['#00c9d8', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
 
+export function getSuggestedGroupName(modelName?: string): string {
+  const entry = modelName ? findCatalogEntryByModel(modelName) : undefined;
+  const resolvedDisplayName = (entry?.displayName || modelName || 'VinFast VF8 Plus').trim();
+  return `Nhóm Đồng Sở Hữu ${resolvedDisplayName}`;
+}
+
+function isAutoGeneratedGroupName(name: string): boolean {
+  const trimmed = name.trim();
+  if (!trimmed) return true;
+  if (trimmed === 'Nhóm Đồng Sở Hữu VF8') return true;
+  return VEHICLE_CATALOG.some((c) => trimmed === `Nhóm Đồng Sở Hữu ${c.displayName}`) ||
+    EV_MODELS.some((m) => trimmed === `Nhóm Đồng Sở Hữu ${m.name}`);
+}
+
 export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
   isOpen,
   onClose,
@@ -470,29 +598,205 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
   onModelChange,
 }) => {
   const { user } = useAuthStore();
+  const initialModelName = selectedModel || 'VinFast VF8 Plus';
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [draftId, setDraftId] = useState<string | undefined>(initialDraftId);
   const [loading, setLoading] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState<boolean>(false);
+  const submittingRef = useRef<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorActionStep, setErrorActionStep] = useState<number | null>(null);
   const [agreementAccepted, setAgreementAccepted] = useState<boolean>(false);
+  const [isContractBookOpen, setIsContractBookOpen] = useState<boolean>(false);
+  const [hasReviewedContractBook, setHasReviewedContractBook] = useState<boolean>(false);
+  const [submittedApplication, setSubmittedApplication] = useState<VehicleRegistrationDraftResponse | null>(null);
+  const [userExistingApplications, setUserExistingApplications] = useState<VehicleRegistrationDraftResponse[]>([]);
+  const [loadedDraftStatus, setLoadedDraftStatus] = useState<string | undefined>(undefined);
+  const [staffReviewFeedback, setStaffReviewFeedback] = useState<string | undefined>(undefined);
 
   // Form State - Step 1: Thông tin xe
   const [plateNumber, setPlateNumber] = useState('30A-999.88');
-  const [model, setModel] = useState(selectedModel || 'VinFast VF8 Plus');
+  const [plateValidationStatus, setPlateValidationStatus] = useState<'IDLE' | 'CHECKING' | 'AVAILABLE' | 'DUPLICATE'>('IDLE');
+  const [plateValidationError, setPlateValidationError] = useState<string | null>(null);
+  const [vinValidationError, setVinValidationError] = useState<string | null>(null);
+  const plateCheckRequestIdRef = useRef<number>(0);
+  const latestPlateNumberRef = useRef<string>('30A-999.88');
+  const [model, setModel] = useState(initialModelName);
   const [exteriorColor, setExteriorColor] = useState<string>('Trắng ngọc trai');
   const [vin, setVin] = useState('VF8VN2026888999');
+  const [isVinCustomized, setIsVinCustomized] = useState<boolean>(false);
   const [batteryCapacityKwh, setBatteryCapacityKwh] = useState(87.7);
   const [manufactureYear, setManufactureYear] = useState(2025);
   const [vehicleValue, setVehicleValue] = useState(1200000000);
   const [registrationCity, setRegistrationCity] = useState('Hà Nội');
 
+  const deriveSuggestedVin = (modelName: string, plate: string): string => {
+    const lower = (modelName || '').toLowerCase();
+    let prefix = 'EVS';
+    if (lower.includes('hyundai') || lower.includes('mistra') || lower.includes('kona')) {
+      prefix = 'HYU';
+    } else if (lower.includes('tesla')) {
+      prefix = 'TSL';
+    } else if (lower.includes('vinfast') || lower.includes('vf')) {
+      prefix = 'VFS';
+    }
+    const cleanPlate = (plate || '30A99988').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    return `${prefix}VN2026${cleanPlate}99999999`.slice(0, 17);
+  };
+
+  // Keep latestPlateNumberRef synchronized
+  useEffect(() => {
+    latestPlateNumberRef.current = plateNumber;
+  }, [plateNumber]);
+
+  // Auto-sync default VIN when model or plate changes (unless manually customized by user)
+  useEffect(() => {
+    if (!isVinCustomized) {
+      setVin(deriveSuggestedVin(model, plateNumber));
+    }
+  }, [model, plateNumber, isVinCustomized]);
+
+  // Debounced live license plate uniqueness validation with request-ID + AbortController + normalized comparison
+  useEffect(() => {
+    if (!isOpen) return;
+    const normalizedInputPlate = (plateNumber || '').trim().toUpperCase().replace(/\s+/g, '');
+    if (!normalizedInputPlate || normalizedInputPlate.length < 5) {
+      plateCheckRequestIdRef.current += 1;
+      setPlateValidationStatus('IDLE');
+      setPlateValidationError(null);
+      return;
+    }
+
+    const requestId = ++plateCheckRequestIdRef.current;
+    const abortController = new AbortController();
+    setPlateValidationStatus('CHECKING');
+
+    const debounceTimer = window.setTimeout(async () => {
+      try {
+        const res = await onboardingApi.validateLicensePlate(
+          normalizedInputPlate,
+          draftId,
+          abortController.signal
+        );
+        if (abortController.signal.aborted || requestId !== plateCheckRequestIdRef.current) {
+          return;
+        }
+        const latestNormalized = (latestPlateNumberRef.current || '')
+          .trim()
+          .toUpperCase()
+          .replace(/\s+/g, '');
+        if (latestNormalized !== normalizedInputPlate) {
+          return;
+        }
+
+        if (res.available) {
+          setPlateValidationStatus('AVAILABLE');
+          setPlateValidationError(null);
+        } else if (res.code === 'LICENSE_PLATE_EXISTS') {
+          setPlateValidationStatus('DUPLICATE');
+          setPlateValidationError(res.message || 'Biển số xe đã được đăng ký trong hệ thống.');
+        } else {
+          setPlateValidationStatus('IDLE');
+          setPlateValidationError(null);
+        }
+      } catch (err: any) {
+        if (abortController.signal.aborted || requestId !== plateCheckRequestIdRef.current) {
+          return;
+        }
+        setPlateValidationStatus('IDLE');
+      }
+    }, 320);
+
+    return () => {
+      window.clearTimeout(debounceTimer);
+      abortController.abort();
+    };
+  }, [plateNumber, draftId, isOpen]);
+
+  const handlePlateNumberChange = (nextPlateValue: string) => {
+    latestPlateNumberRef.current = nextPlateValue;
+    setPlateNumber(nextPlateValue);
+    setPlateValidationError(null);
+    setPlateValidationStatus('IDLE');
+    if (!isVinCustomized) {
+      setVin(deriveSuggestedVin(model, nextPlateValue));
+    }
+    if (error) {
+      const lowerErr = error.toLowerCase();
+      if (
+        errorActionStep === 1 ||
+        lowerErr.includes('biển số') ||
+        lowerErr.includes('license_plate') ||
+        lowerErr.includes('trùng lặp')
+      ) {
+        setError(null);
+        setErrorActionStep(null);
+      }
+    }
+  };
+
+  const handleVinChange = (nextVinValue: string) => {
+    setVin(nextVinValue);
+    setIsVinCustomized(true);
+    setVinValidationError(null);
+    if (error) {
+      const lowerErr = error.toLowerCase();
+      if (lowerErr.includes('vin') || lowerErr.includes('số khung') || lowerErr.includes('trùng lặp')) {
+        setError(null);
+        setErrorActionStep(null);
+      }
+    }
+  };
+
+  // Fetch user's existing drafts/pending applications so we can detect if entered plate already belongs to their own pending application
+  useEffect(() => {
+    if (!isOpen) return;
+    onboardingApi
+      .getMyDrafts()
+      .then((list) => {
+        if (Array.isArray(list)) {
+          setUserExistingApplications(list);
+        }
+      })
+      .catch(() => {
+        // Ignore background lookup failure
+      });
+  }, [isOpen]);
+
+  const matchingOwnPendingApplication = useMemo(() => {
+    const normalizedInputPlate = (plateNumber || '').trim().toUpperCase().replace(/\s+/g, '');
+    if (!normalizedInputPlate) return null;
+    return (
+      userExistingApplications.find((app) => {
+        const appPlate = String(app.plateNumber || app.licensePlate || '')
+          .trim()
+          .toUpperCase()
+          .replace(/\s+/g, '');
+        return (
+          appPlate === normalizedInputPlate &&
+          (app.status === 'SUBMITTED' || app.status === 'UNDER_REVIEW')
+        );
+      }) || null
+    );
+  }, [plateNumber, userExistingApplications]);
+
+  // Form State - Step 2: Cấu hình nhóm
+  const [groupName, setGroupName] = useState(() => getSuggestedGroupName(initialModelName));
+  const [isGroupNameCustomized, setIsGroupNameCustomized] = useState<boolean>(false);
+  const [monthlyFundContribution, setMonthlyFundContribution] = useState(2000000);
+  const [latePaymentFeeRate, setLatePaymentFeeRate] = useState(0.05);
+  const [maintenanceReserveRate, setMaintenanceReserveRate] = useState(0.15);
+  const [maxConsecutiveBookingDays, setMaxConsecutiveBookingDays] = useState(7);
+
   // Synchronize incoming selectedModel if changed externally
   useEffect(() => {
     if (selectedModel && selectedModel !== model) {
       setModel(selectedModel);
+      if (!isGroupNameCustomized) {
+        setGroupName(getSuggestedGroupName(selectedModel));
+      }
     }
-  }, [selectedModel]);
+  }, [selectedModel, model, isGroupNameCustomized]);
 
   // Catalog inspection for currently selected vehicle
   const currentCatalogEntry = useMemo(() => findCatalogEntryByModel(model), [model]);
@@ -511,13 +815,6 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
       }
     }
   }, [selectedColor]);
-
-  // Form State - Step 2: Cấu hình nhóm
-  const [groupName, setGroupName] = useState('Nhóm Đồng Sở Hữu VF8');
-  const [monthlyFundContribution, setMonthlyFundContribution] = useState(2000000);
-  const [latePaymentFeeRate, setLatePaymentFeeRate] = useState(0.05);
-  const [maintenanceReserveRate, setMaintenanceReserveRate] = useState(0.15);
-  const [maxConsecutiveBookingDays, setMaxConsecutiveBookingDays] = useState(7);
 
   // Form State - Step 3: Phân bổ cổ phần
   const [coOwners, setCoOwners] = useState<CoOwnerInviteDraft[]>([
@@ -575,24 +872,55 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
         .getDraftById(initialDraftId)
         .then((draft) => {
           setDraftId(draft.id);
-          setPlateNumber(draft.plateNumber);
-          setModel(draft.model);
+          setLoadedDraftStatus(draft.status);
+          setStaffReviewFeedback(draft.reviewReason || draft.adminReviewNotes || undefined);
+          setPlateNumber(draft.plateNumber || draft.licensePlate || '');
+          const loadedModel = draft.model || draft.vehicleModel || 'VinFast VF8 Plus';
+          setModel(loadedModel);
+          onModelChange?.(loadedModel);
           if (draft.exteriorColor) {
             setExteriorColor(draft.exteriorColor);
             onColorChange?.(resolveVehicleColorHex(draft.exteriorColor));
           }
           setVin(draft.vin || '');
-          setBatteryCapacityKwh(draft.batteryCapacityKwh);
-          setManufactureYear(draft.manufactureYear || 2025);
-          setVehicleValue(draft.vehicleValue);
+          setBatteryCapacityKwh(draft.batteryCapacityKwh || draft.batteryCapacity || 87.7);
+          setManufactureYear(draft.manufactureYear || draft.productionYear || 2025);
+          setVehicleValue(draft.vehicleValue || 1200000000);
           setRegistrationCity(draft.registrationCity || 'Hà Nội');
-          setGroupName(draft.groupName);
-          setMonthlyFundContribution(draft.monthlyFundContribution);
-          setLatePaymentFeeRate(draft.latePaymentFeeRate);
-          setMaintenanceReserveRate(draft.maintenanceReserveRate);
-          setMaxConsecutiveBookingDays(draft.maxConsecutiveBookingDays);
+
+          const suggested = getSuggestedGroupName(loadedModel);
+          const draftGroup = (draft.groupName || '').trim();
+          const isStaleVf8Default =
+            draftGroup === 'Nhóm Đồng Sở Hữu VF8' && !loadedModel.toLowerCase().includes('vf8');
+          if (!draftGroup || isStaleVf8Default) {
+            setGroupName(suggested);
+            setIsGroupNameCustomized(false);
+          } else {
+            setGroupName(draftGroup);
+            setIsGroupNameCustomized(draftGroup !== suggested && !isAutoGeneratedGroupName(draftGroup));
+          }
+
+          setMonthlyFundContribution(draft.monthlyFundContribution ?? 2000000);
+          setLatePaymentFeeRate(draft.latePaymentFeeRate ?? 0.05);
+          setMaintenanceReserveRate(draft.maintenanceReserveRate ?? 0.15);
+          setMaxConsecutiveBookingDays(draft.maxConsecutiveBookingDays ?? 7);
           if (draft.coOwners && draft.coOwners.length > 0) {
-            setCoOwners(draft.coOwners);
+            const val = draft.vehicleValue || 1200000000;
+            setCoOwners(
+              draft.coOwners.map((o: any, idx: number) => {
+                const pct = Number(o.sharePercentage ?? o.percentage ?? 0);
+                return {
+                  userId: o.userId,
+                  fullName: o.fullName || o.name || '',
+                  email: o.email || '',
+                  phoneNumber: o.phoneNumber || '',
+                  sharePercentage: pct,
+                  contributionAmount: o.contributionAmount || Math.round((val * pct) / 100),
+                  role: idx === 0 ? 'REPRESENTATIVE' : (o.role || 'CO_OWNER'),
+                  isVerifiedAccount: Boolean(o.userId || idx === 0),
+                };
+              })
+            );
           }
           setCurrentStep(draft.currentStep || 1);
         })
@@ -605,27 +933,61 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
 
   // Autofocus first input on step 1 open
   useEffect(() => {
-    if (isOpen && currentStep === 1) {
+    if (isOpen && currentStep === 1 && !submittedApplication) {
       const timer = setTimeout(() => {
         firstInputRef.current?.focus();
       }, 60);
       return () => clearTimeout(timer);
     }
-  }, [isOpen, currentStep]);
+  }, [isOpen, currentStep, submittedApplication]);
 
-  // Escape key handler
+  // Escape key handler (only close wizard if contract book reader is not open)
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || isContractBookOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, isContractBookOpen, onClose]);
 
   if (!isOpen) return null;
 
-  const totalSharePercentage = coOwners.reduce(
+  const safeVehicleValue = Number.isFinite(Number(vehicleValue)) ? Number(vehicleValue) : 0;
+  const safeBatteryKwh = Number.isFinite(Number(batteryCapacityKwh)) ? Number(batteryCapacityKwh) : 0;
+  const safeMonthlyFund = Number.isFinite(Number(monthlyFundContribution)) ? Number(monthlyFundContribution) : 0;
+  const safeMaintenanceReserveRate = Number.isFinite(Number(maintenanceReserveRate))
+    ? Number(maintenanceReserveRate)
+    : 0.15;
+  const safeMaintenanceReservePercent = Math.round(safeMaintenanceReserveRate * 100);
+  const safeMaintenanceReserveAmount = Math.round(safeMonthlyFund * safeMaintenanceReserveRate);
+  const safeLatePaymentFeeRate = Number.isFinite(Number(latePaymentFeeRate)) ? Number(latePaymentFeeRate) : 0.05;
+  const safeLatePaymentFeePercent = Math.round(safeLatePaymentFeeRate * 100);
+  const safeMaxConsecutiveDays = Math.max(
+    1,
+    Number.isFinite(Number(maxConsecutiveBookingDays)) ? Number(maxConsecutiveBookingDays) : 7
+  );
+
+  const normalizedCoOwners: CoOwnerInviteDraft[] = (Array.isArray(coOwners) ? coOwners : []).map((o, idx) => {
+    const pct = Number.isFinite(Number(o?.sharePercentage)) ? Number(o.sharePercentage) : 0;
+    const rawContrib = Number(o?.contributionAmount);
+    const computedContrib =
+      Number.isFinite(rawContrib) && rawContrib >= 0
+        ? rawContrib
+        : Math.round((safeVehicleValue * pct) / 100);
+    return {
+      userId: o?.userId,
+      fullName: String(o?.fullName ?? (idx === 0 ? user?.fullName || '' : '')).trim(),
+      email: String(o?.email ?? (idx === 0 ? user?.email || '' : '')).trim(),
+      phoneNumber: String(o?.phoneNumber ?? '').trim(),
+      sharePercentage: pct,
+      contributionAmount: computedContrib,
+      role: idx === 0 ? 'REPRESENTATIVE' : (o?.role || 'CO_OWNER'),
+      isVerifiedAccount: Boolean(o?.isVerifiedAccount || o?.userId || idx === 0),
+    };
+  });
+
+  const totalSharePercentage = normalizedCoOwners.reduce(
     (sum, o) => sum + (Number(o.sharePercentage) || 0),
     0
   );
@@ -635,12 +997,12 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
   const duplicateErrors = (() => {
     const userIds = new Set<string>();
     const emails = new Set<string>();
-    for (const o of coOwners) {
+    for (const o of normalizedCoOwners) {
       if (o.userId) {
         if (userIds.has(o.userId)) return true;
         userIds.add(o.userId);
       }
-      const em = o.email?.trim().toLowerCase();
+      const em = o.email.toLowerCase();
       if (em) {
         if (emails.has(em)) return true;
         emails.add(em);
@@ -649,13 +1011,13 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
     return false;
   })();
 
-  const hasIncompleteRow = coOwners.some(
-    (o) => !o.fullName.trim() || !o.email.trim() || Number(o.sharePercentage) <= 0
+  const hasIncompleteRow = normalizedCoOwners.some(
+    (o) => !o.fullName || !o.email || Number(o.sharePercentage) <= 0
   );
 
   const isStep3Valid =
     isShares100Percent &&
-    coOwners.length >= 2 &&
+    normalizedCoOwners.length >= 2 &&
     !hasIncompleteRow &&
     !duplicateErrors;
 
@@ -664,6 +1026,12 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
   const handleModelChange = (selectedModelName: string) => {
     setModel(selectedModelName);
     onModelChange?.(selectedModelName);
+
+    // Dynamically update group name unless user customized it
+    if (!isGroupNameCustomized || isAutoGeneratedGroupName(groupName)) {
+      setGroupName(getSuggestedGroupName(selectedModelName));
+      setIsGroupNameCustomized(false);
+    }
 
     // 1. Resolve in central vehicle catalog
     const entry = findCatalogEntryByModel(selectedModelName);
@@ -721,7 +1089,7 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
         email: '',
         phoneNumber: '',
         sharePercentage: remainingPct,
-        contributionAmount: Math.round((vehicleValue * remainingPct) / 100),
+        contributionAmount: Math.round((safeVehicleValue * remainingPct) / 100),
         role: 'CO_OWNER',
         isVerifiedAccount: false,
       },
@@ -738,41 +1106,148 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
     updated[index] = { ...updated[index], [field]: value };
     if (field === 'sharePercentage') {
       const pct = Number(value) || 0;
-      updated[index].contributionAmount = Math.round((vehicleValue * pct) / 100);
+      updated[index].contributionAmount = Math.round((safeVehicleValue * pct) / 100);
     }
     setCoOwners(updated);
   };
 
+  const resolvedGroupName = (groupName || '').trim() || getSuggestedGroupName(model);
+
+  const buildContractMarkdown = (): string => {
+    const ownerLines = normalizedCoOwners
+      .map(
+        (o, idx) =>
+          `- Thành viên #${idx + 1}: ${o.fullName} (${o.email}) — ${o.sharePercentage}% (${(o.contributionAmount / 1e6).toLocaleString()} triệu VNĐ) [${idx === 0 ? 'Đại diện nhóm' : 'Đồng sở hữu'}]`
+      )
+      .join('\n');
+    return [
+      `# HỢP ĐỒNG ĐỒNG SỞ HỮU XE ĐIỆN EVSHARE 3D`,
+      `- Nhóm đồng sở hữu: ${resolvedGroupName}`,
+      `- Phương tiện: ${model} (${currentCatalogEntry?.brand || 'EVShare'})`,
+      `- Biển số đăng ký: ${(plateNumber || '').trim().toUpperCase()}`,
+      `- Số khung (VIN): ${(vin || '').trim().toUpperCase()}`,
+      `- Dung lượng pin: ${safeBatteryKwh} kWh | Màu ngoại thất: ${exteriorColor} | Năm SX: ${manufactureYear}`,
+      `- Định giá phương tiện: ${safeVehicleValue.toLocaleString()} VNĐ | Khu vực: ${registrationCity}`,
+      `- Quỹ bảo dưỡng hàng tháng: ${safeMonthlyFund.toLocaleString()} VNĐ/tháng | Đặt xe liên tiếp tối đa: ${safeMaxConsecutiveDays} ngày`,
+      `## Cơ cấu cổ phần (Tổng 100%):`,
+      ownerLines,
+    ].join('\n');
+  };
+
   const buildPayload = (): VehicleRegistrationDraftRequest => ({
-    plateNumber,
+    name: model,
+    plateNumber: (plateNumber || '').trim().toUpperCase(),
     model,
+    manufacturer: currentCatalogEntry?.brand || undefined,
+    model3dUrl: currentCatalogEntry?.publicUrl || undefined,
     exteriorColor,
-    vin,
-    batteryCapacityKwh,
+    vin: (vin || '').trim().toUpperCase(),
+    batteryCapacityKwh: safeBatteryKwh,
     manufactureYear,
-    vehicleValue,
+    vehicleValue: safeVehicleValue,
     registrationCity,
-    groupName,
-    monthlyFundContribution,
-    latePaymentFeeRate,
-    maintenanceReserveRate,
-    maxConsecutiveBookingDays,
-    coOwners,
+    groupName: resolvedGroupName,
+    monthlyFundContribution: safeMonthlyFund,
+    latePaymentFeeRate: safeLatePaymentFeeRate,
+    maintenanceReserveRate: safeMaintenanceReserveRate,
+    maxConsecutiveBookingDays: safeMaxConsecutiveDays,
+    coOwners: normalizedCoOwners,
+    contractDraftMarkdown: buildContractMarkdown(),
     currentStep,
   });
 
+  const resolveFriendlyWizardError = (
+    err: any,
+    currentPlate: string,
+    currentVin: string
+  ): { message: string; targetStep: number | null } => {
+    const rawMsg = String(err?.data?.message || err?.message || '');
+    const lower = rawMsg.toLowerCase();
+    const code = String(err?.data?.code || '');
+    const normalizedPlate = (currentPlate || '').trim().toUpperCase();
+    const normalizedVin = (currentVin || '').trim().toUpperCase();
+
+    if (
+      code === 'LICENSE_PLATE_EXISTS' ||
+      lower.includes('license_plate') ||
+      lower.includes('biển số')
+    ) {
+      const cleanMessage = 'Biển số xe đã được đăng ký trong hệ thống.';
+      setPlateValidationStatus('DUPLICATE');
+      setPlateValidationError(cleanMessage);
+      return {
+        message: cleanMessage,
+        targetStep: 1,
+      };
+    }
+
+    if (
+      code === 'VIN_EXISTS' ||
+      lower.includes('vehicles.vin') ||
+      lower.includes("for key 'vin'") ||
+      lower.includes('số khung') ||
+      lower.includes('số vin')
+    ) {
+      const cleanVinMessage =
+        rawMsg && (rawMsg.toLowerCase().includes('vin') || rawMsg.toLowerCase().includes('số khung'))
+          ? rawMsg
+          : normalizedVin
+          ? `Số khung (VIN) ${normalizedVin} đã được đăng ký cho một phương tiện hoặc hồ sơ khác. Vui lòng kiểm tra lại thông tin xe ở Bước 1.`
+          : 'Số khung (VIN) đã được đăng ký trong hệ thống. Vui lòng kiểm tra lại thông tin xe ở Bước 1.';
+      setVinValidationError(cleanVinMessage);
+      return {
+        message: cleanVinMessage,
+        targetStep: 1,
+      };
+    }
+
+    const isTechnical =
+      lower.includes('could not execute statement') ||
+      lower.includes('duplicate entry') ||
+      lower.includes('sql [') ||
+      lower.includes('insert into ') ||
+      lower.includes('constraintviolationexception') ||
+      lower.includes('dataintegrityviolationexception') ||
+      lower.includes('hibernate');
+
+    if (isTechnical) {
+      return {
+        message: 'Thông tin đăng ký xe bị trùng lặp hoặc không hợp lệ. Vui lòng kiểm tra lại thông tin xe.',
+        targetStep: 1,
+      };
+    }
+
+    return {
+      message: rawMsg || 'Không thể xử lý yêu cầu đăng ký xe. Vui lòng thử lại.',
+      targetStep: null,
+    };
+  };
+
   const validateCurrentStep = (): boolean => {
     setError(null);
+    setErrorActionStep(null);
     if (currentStep === 1) {
-      if (!plateNumber.trim()) {
+      if (!(plateNumber || '').trim()) {
         setError('Vui lòng nhập biển số xe.');
         return false;
       }
-      if (!model.trim()) {
+      if (plateValidationStatus === 'DUPLICATE' || plateValidationError) {
+        setError(plateValidationError || 'Biển số xe đã được đăng ký trong hệ thống.');
+        return false;
+      }
+      if (!(vin || '').trim() || (vin || '').trim().length < 6) {
+        setError('Vui lòng nhập số khung (VIN) hợp lệ (tối thiểu 6 ký tự).');
+        return false;
+      }
+      if (vinValidationError) {
+        setError(vinValidationError);
+        return false;
+      }
+      if (!(model || '').trim()) {
         setError('Vui lòng chọn dòng xe điện.');
         return false;
       }
-      if (!vehicleValue || vehicleValue <= 0) {
+      if (!safeVehicleValue || safeVehicleValue <= 0) {
         setError('Định giá xe phải lớn hơn 0 VNĐ.');
         return false;
       }
@@ -780,20 +1255,20 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
         setError('Mô hình này là xe động cơ đốt trong (ICE) chỉ dùng để xem trước 3D. Vui lòng chọn dòng xe thuần điện (BEV) để tiếp tục đăng ký.');
         return false;
       }
-      if (!batteryCapacityKwh || batteryCapacityKwh <= 0) {
+      if (!safeBatteryKwh || safeBatteryKwh <= 0) {
         setError('Dung lượng pin phải lớn hơn 0 kWh.');
         return false;
       }
     } else if (currentStep === 2) {
-      if (!groupName.trim()) {
+      if (!(groupName || '').trim()) {
         setError('Vui lòng nhập tên nhóm đồng sở hữu.');
         return false;
       }
-      if (monthlyFundContribution < 0) {
+      if (safeMonthlyFund < 0) {
         setError('Mức đóng quỹ không thể âm.');
         return false;
       }
-      if (maxConsecutiveBookingDays < 1) {
+      if (safeMaxConsecutiveDays < 1) {
         setError('Số ngày đặt xe liên tiếp tối thiểu là 1 ngày.');
         return false;
       }
@@ -804,7 +1279,7 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
         );
         return false;
       }
-      if (coOwners.length < 2) {
+      if (normalizedCoOwners.length < 2) {
         setError('Cần tối thiểu 2 thành viên để thành lập nhóm đồng sở hữu xe.');
         return false;
       }
@@ -812,8 +1287,8 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
         setError('Có thành viên bị trùng lặp trong danh sách. Vui lòng kiểm tra lại.');
         return false;
       }
-      const invalidOwner = coOwners.find(
-        (o) => !o.fullName.trim() || !o.email.trim() || Number(o.sharePercentage) <= 0
+      const invalidOwner = normalizedCoOwners.find(
+        (o) => !o.fullName || !o.email || Number(o.sharePercentage) <= 0
       );
       if (invalidOwner) {
         setError('Vui lòng chọn tài khoản hoặc điền đầy đủ họ tên, email và tỷ lệ cổ phần (> 0%) cho mọi thành viên.');
@@ -830,8 +1305,10 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
   };
 
   const handleStepClick = (targetStep: number) => {
+    if (submittedApplication || submittingRef.current) return;
     if (targetStep < currentStep) {
       setError(null);
+      setErrorActionStep(null);
       setCurrentStep(targetStep);
     } else if (targetStep > currentStep) {
       if (validateCurrentStep()) {
@@ -841,8 +1318,9 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
   };
 
   const handleSaveDraft = async () => {
-    if (loading) return;
+    if (loading || submitting || submittingRef.current) return;
     setError(null);
+    setErrorActionStep(null);
     setLoading(true);
     try {
       const payload = buildPayload();
@@ -853,15 +1331,20 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
         res = await onboardingApi.saveDraft(payload);
         setDraftId(res.id);
       }
+      onSuccess();
       alert('Đã lưu bản nháp đăng ký xe thành công!');
     } catch (err: any) {
-      setError(err?.message || 'Lỗi khi lưu bản nháp.');
+      const resolved = resolveFriendlyWizardError(err, plateNumber, vin);
+      setError(resolved.message);
+      setErrorActionStep(resolved.targetStep);
     } finally {
       setLoading(false);
     }
   };
 
   const handleSubmit = async () => {
+    if (submitting || submittingRef.current) return;
+    if (!validateCurrentStep()) return;
     if (!isStep3Valid) {
       setError('Vui lòng hoàn thành hợp lệ phân bổ cổ phần (tổng 100%, tối thiểu 2 thành viên không trùng lặp và cổ phần > 0%).');
       return;
@@ -870,25 +1353,29 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
       setError('Vui lòng đọc và xác nhận đồng ý với điều khoản hợp đồng đồng sở hữu.');
       return;
     }
-    if (submitting) return;
     setError(null);
+    setErrorActionStep(null);
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       let currentDraftId = draftId;
+      const payload = buildPayload();
       if (!currentDraftId) {
-        const draftRes = await onboardingApi.saveDraft(buildPayload());
+        const draftRes = await onboardingApi.saveDraft(payload);
         currentDraftId = draftRes.id;
         setDraftId(currentDraftId);
       } else {
-        await onboardingApi.updateDraft(currentDraftId, buildPayload());
+        await onboardingApi.updateDraft(currentDraftId, payload);
       }
-      await onboardingApi.submitDraft(currentDraftId);
-      alert('Đăng ký xe và thành lập nhóm đồng sở hữu thành công!');
+      const submittedRes = await onboardingApi.submitDraft(currentDraftId);
+      setSubmittedApplication(submittedRes);
       onSuccess();
-      onClose();
     } catch (err: any) {
-      setError(err?.message || 'Lỗi khi nộp hồ sơ đăng ký.');
+      const resolved = resolveFriendlyWizardError(err, plateNumber, vin);
+      setError(resolved.message);
+      setErrorActionStep(resolved.targetStep);
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
@@ -919,13 +1406,13 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
         fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
       }}
     >
-      {/* LEFT 42% REGION: 3D VEHICLE METADATA OVERLAY (3D SCENE UNDERNEATH IS INTERACTIVE) */}
+      {/* LEFT 42% REGION: 3D VEHICLE METADATA OVERLAY (HIDDEN IN EXCLUSIVE CONTRACT READING MODE) */}
       <div
         style={{
           flex: '1 1 auto',
           position: 'relative',
           pointerEvents: 'none',
-          display: 'flex',
+          display: isContractBookOpen ? 'none' : 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between',
           padding: '24px 32px',
@@ -1024,7 +1511,7 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
         </div>
       </div>
 
-      {/* RIGHT 58% REGION: FROSTED WHITE GLASS REGISTRATION WORKSPACE */}
+      {/* RIGHT 58% REGION: FROSTED WHITE GLASS REGISTRATION WORKSPACE (HIDDEN IN EXCLUSIVE CONTRACT READING MODE) */}
       <div
         onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
@@ -1038,7 +1525,7 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
           WebkitBackdropFilter: 'blur(28px)',
           borderLeft: '1.5px solid rgba(0, 201, 216, 0.45)',
           boxShadow: '-12px 0 45px rgba(0, 180, 200, 0.12), -2px 0 12px rgba(0, 0, 0, 0.03)',
-          display: 'flex',
+          display: isContractBookOpen ? 'none' : 'flex',
           flexDirection: 'column',
           pointerEvents: 'auto',
           color: '#24374c',
@@ -1173,38 +1660,237 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
 
         {/* WORKSPACE SCROLLABLE CONTENT BODY */}
         <div
+          onWheel={(e) => e.stopPropagation()}
           style={{
             flex: '1 1 auto',
             minHeight: 0,
+            minWidth: 0,
+            maxWidth: '100%',
+            boxSizing: 'border-box',
             overflowY: 'auto',
-            padding: '22px 32px',
+            overflowX: 'hidden',
+            padding: '18px 32px',
             display: 'flex',
             flexDirection: 'column',
-            gap: '18px',
+            gap: '14px',
           }}
         >
-          {error && (
+          {staffReviewFeedback && !submittedApplication && (
             <div
               style={{
+                flex: '0 0 auto',
                 display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
+                alignItems: 'flex-start',
+                gap: '10px',
                 padding: '10px 14px',
                 borderRadius: '10px',
-                background: 'rgba(239, 68, 68, 0.1)',
-                border: '1px solid rgba(239, 68, 68, 0.35)',
-                color: '#dc2626',
+                background:
+                  loadedDraftStatus === 'REJECTED'
+                    ? 'rgba(239, 68, 68, 0.08)'
+                    : 'rgba(245, 158, 11, 0.1)',
+                border:
+                  loadedDraftStatus === 'REJECTED'
+                    ? '1.2px solid rgba(239, 68, 68, 0.35)'
+                    : '1.2px solid rgba(245, 158, 11, 0.4)',
+                color: loadedDraftStatus === 'REJECTED' ? '#b91c1c' : '#92400e',
                 fontSize: '12px',
-                fontWeight: 600,
+                lineHeight: 1.5,
+                minWidth: 0,
+                maxWidth: '100%',
+                boxSizing: 'border-box',
+                wordBreak: 'break-word',
+                overflowWrap: 'anywhere',
               }}
             >
-              <AlertCircle size={15} color="#dc2626" />
-              <span>{error}</span>
+              <AlertCircle
+                size={16}
+                color={loadedDraftStatus === 'REJECTED' ? '#dc2626' : '#d97706'}
+                style={{ flexShrink: 0, marginTop: '2px' }}
+              />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 800, marginBottom: '2px' }}>
+                  {loadedDraftStatus === 'REJECTED'
+                    ? 'Phản hồi từ Nhân viên vận hành (Hồ sơ bị từ chối):'
+                    : 'Yêu cầu chỉnh sửa / bổ sung từ Nhân viên vận hành:'}
+                </div>
+                <div>{staffReviewFeedback}</div>
+              </div>
             </div>
           )}
 
+          {error && (
+            <div
+              style={{
+                flex: '0 0 auto',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '10px',
+                padding: '10px 14px',
+                borderRadius: '10px',
+                background: 'rgba(239, 68, 68, 0.1)',
+                border: '1.2px solid rgba(239, 68, 68, 0.38)',
+                color: '#dc2626',
+                fontSize: '12px',
+                fontWeight: 600,
+                minWidth: 0,
+                maxWidth: '100%',
+                boxSizing: 'border-box',
+                wordBreak: 'break-word',
+                overflowWrap: 'anywhere',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: '1 1 240px' }}>
+                <AlertCircle size={15} color="#dc2626" style={{ flexShrink: 0 }} />
+                <span style={{ minWidth: 0 }}>{error}</span>
+              </div>
+              {errorActionStep === 1 && currentStep !== 1 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCurrentStep(1);
+                  }}
+                  style={{
+                    flexShrink: 0,
+                    padding: '5px 12px',
+                    borderRadius: '9999px',
+                    background: '#ffffff',
+                    border: '1.2px solid rgba(239, 68, 68, 0.45)',
+                    color: '#dc2626',
+                    fontSize: '11.5px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    boxShadow: '0 1px 4px rgba(239, 68, 68, 0.12)',
+                  }}
+                >
+                  <ArrowLeft size={13} />
+                  <span>Quay lại thông tin xe</span>
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* PENDING STAFF REVIEW CONFIRMATION STATE */}
+          {submittedApplication ? (
+            <div
+              style={{
+                flex: '0 0 auto',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '16px',
+                background: '#ffffff',
+                borderRadius: '16px',
+                padding: '22px 24px',
+                border: '1.5px solid rgba(0, 201, 216, 0.45)',
+                boxShadow: '0 8px 28px rgba(0, 180, 200, 0.1)',
+                minWidth: 0,
+                maxWidth: '100%',
+                boxSizing: 'border-box',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div
+                  style={{
+                    width: '44px',
+                    height: '44px',
+                    borderRadius: '12px',
+                    background: 'rgba(245, 158, 11, 0.14)',
+                    border: '1.2px solid rgba(245, 158, 11, 0.4)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#d97706',
+                    fontSize: '20px',
+                    flexShrink: 0,
+                  }}
+                >
+                  ⏳
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      fontSize: '10.5px',
+                      fontWeight: 800,
+                      color: '#b45309',
+                      background: 'rgba(245, 158, 11, 0.14)',
+                      padding: '3px 9px',
+                      borderRadius: '9999px',
+                      marginBottom: '4px',
+                    }}
+                  >
+                    TRẠNG THÁI HỒ SƠ: {submittedApplication.status || 'SUBMITTED'} (ĐANG CHỜ NHÂN VIÊN XÉT DUYỆT)
+                  </div>
+                  <h2 style={{ margin: 0, fontSize: '16.5px', fontWeight: 900, color: '#1e293b' }}>
+                    Đăng ký xe thành công. Hồ sơ của bạn đang chờ nhân viên xét duyệt.
+                  </h2>
+                </div>
+              </div>
+
+              <p style={{ margin: 0, fontSize: '12.5px', color: '#475569', lineHeight: 1.6 }}>
+                Hồ sơ đăng ký xe và thành lập nhóm đồng sở hữu của bạn đã được chuyển tới bộ phận{' '}
+                <strong>Nhân viên vận hành (STAFF)</strong> để thẩm định thông tin phương tiện, biển số, số VIN
+                và cơ cấu cổ phần. Phương tiện và lời mời thành viên sẽ được kích hoạt ngay sau khi hồ sơ được
+                phê duyệt.
+              </p>
+
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+                  gap: '12px',
+                  background: '#f8fafc',
+                  padding: '14px 16px',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(148, 163, 184, 0.25)',
+                  minWidth: 0,
+                }}
+              >
+                <div style={{ minWidth: 0, wordBreak: 'break-word' }}>
+                  <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748b' }}>MÃ HỒ SƠ ĐĂNG KÝ</div>
+                  <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#0f172a', marginTop: '2px' }}>
+                    {submittedApplication.id}
+                  </div>
+                </div>
+                <div style={{ minWidth: 0, wordBreak: 'break-word' }}>
+                  <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748b' }}>THỜI GIAN GỬI HỒ SƠ</div>
+                  <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#0f172a', marginTop: '2px' }}>
+                    {new Date(
+                      submittedApplication.submittedAt || submittedApplication.updatedAt || Date.now()
+                    ).toLocaleString('vi-VN')}
+                  </div>
+                </div>
+                <div style={{ minWidth: 0, wordBreak: 'break-word' }}>
+                  <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748b' }}>PHƯƠNG TIỆN ĐĂNG KÝ</div>
+                  <div style={{ fontSize: '13px', fontWeight: 800, color: '#009e9d', marginTop: '2px' }}>
+                    {submittedApplication.model || model}
+                  </div>
+                  <div style={{ fontSize: '11.5px', color: '#475569' }}>
+                    Biển số: <strong>{submittedApplication.plateNumber || plateNumber}</strong> • VIN:{' '}
+                    {submittedApplication.vin || vin}
+                  </div>
+                </div>
+                <div style={{ minWidth: 0, wordBreak: 'break-word' }}>
+                  <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748b' }}>NHÓM ĐỒNG SỞ HỮU ĐỀ XUẤT</div>
+                  <div style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', marginTop: '2px' }}>
+                    {submittedApplication.groupName || resolvedGroupName}
+                  </div>
+                  <div style={{ fontSize: '11.5px', color: '#475569' }}>
+                    {coOwners.length} thành viên • Định giá: {(vehicleValue / 1e6).toLocaleString()} triệu VNĐ
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           {/* STEP 1: THÔNG TIN XE */}
-          {currentStep === 1 && (
+          {!submittedApplication && currentStep === 1 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                 {/* Dòng xe điện */}
@@ -1379,20 +2065,61 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
                     ref={firstInputRef}
                     type="text"
                     value={plateNumber}
-                    onChange={(e) => setPlateNumber(e.target.value)}
+                    onChange={(e) => handlePlateNumberChange(e.target.value)}
                     placeholder="VD: 30A-999.88"
                     style={{
                       width: '100%',
                       padding: '10px 14px',
                       borderRadius: '10px',
                       background: '#ffffff',
-                      border: '1.2px solid rgba(148, 163, 184, 0.4)',
+                      border:
+                        plateValidationStatus === 'DUPLICATE' || plateValidationError
+                          ? '1.5px solid #ef4444'
+                          : plateValidationStatus === 'AVAILABLE'
+                          ? '1.5px solid #10b981'
+                          : '1.2px solid rgba(148, 163, 184, 0.4)',
                       color: '#1e293b',
                       fontSize: '13.5px',
                       fontWeight: 700,
                       outline: 'none',
                     }}
                   />
+                  {plateValidationStatus === 'CHECKING' && (
+                    <div
+                      style={{
+                        marginTop: '4px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        color: '#009e9d',
+                      }}
+                    >
+                      Đang kiểm tra biển số...
+                    </div>
+                  )}
+                  {(plateValidationStatus === 'DUPLICATE' || plateValidationError) && (
+                    <div
+                      style={{
+                        marginTop: '4px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        color: '#dc2626',
+                      }}
+                    >
+                      {plateValidationError || 'Biển số xe đã được đăng ký trong hệ thống.'}
+                    </div>
+                  )}
+                  {plateValidationStatus === 'AVAILABLE' && !plateValidationError && (
+                    <div
+                      style={{
+                        marginTop: '4px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        color: '#059669',
+                      }}
+                    >
+                      Biển số hợp lệ để tiếp tục.
+                    </div>
+                  )}
                 </div>
 
                 {/* Số khung VIN */}
@@ -1403,19 +2130,33 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
                   <input
                     type="text"
                     value={vin}
-                    onChange={(e) => setVin(e.target.value)}
+                    onChange={(e) => handleVinChange(e.target.value)}
                     placeholder="VD: VF8VN2026888999"
                     style={{
                       width: '100%',
                       padding: '10px 14px',
                       borderRadius: '10px',
                       background: '#ffffff',
-                      border: '1.2px solid rgba(148, 163, 184, 0.4)',
+                      border: vinValidationError
+                        ? '1.5px solid #ef4444'
+                        : '1.2px solid rgba(148, 163, 184, 0.4)',
                       color: '#1e293b',
                       fontSize: '13px',
                       outline: 'none',
                     }}
                   />
+                  {vinValidationError && (
+                    <div
+                      style={{
+                        marginTop: '4px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        color: '#dc2626',
+                      }}
+                    >
+                      {vinValidationError}
+                    </div>
+                  )}
                 </div>
 
                 {/* Dung lượng pin */}
@@ -1530,19 +2271,83 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
           )}
 
           {/* STEP 2: CẤU HÌNH NHÓM */}
-          {currentStep === 2 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div>
-                <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'block' }}>
-                  Tên nhóm đồng sở hữu <span style={{ color: '#ef4444' }}>*</span>
-                </label>
+          {!submittedApplication && currentStep === 2 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', minWidth: 0 }}>
+              <div style={{ minWidth: 0 }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '6px',
+                    gap: '8px',
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                    Tên nhóm đồng sở hữu <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span
+                      style={{
+                        fontSize: '10.5px',
+                        fontWeight: 700,
+                        padding: '2px 7px',
+                        borderRadius: '4px',
+                        background: isGroupNameCustomized
+                          ? 'rgba(59, 130, 246, 0.1)'
+                          : 'rgba(0, 201, 216, 0.12)',
+                        color: isGroupNameCustomized ? '#2563eb' : '#009e9d',
+                      }}
+                    >
+                      {isGroupNameCustomized ? 'Tên tùy chỉnh' : `Tự động theo xe (${model})`}
+                    </span>
+                    {(isGroupNameCustomized || groupName.trim() !== getSuggestedGroupName(model)) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setGroupName(getSuggestedGroupName(model));
+                          setIsGroupNameCustomized(false);
+                        }}
+                        style={{
+                          padding: '2px 8px',
+                          fontSize: '10.5px',
+                          fontWeight: 700,
+                          borderRadius: '5px',
+                          border: '1px solid rgba(0, 201, 216, 0.45)',
+                          background: '#ffffff',
+                          color: '#009e9d',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Đặt lại theo tên xe
+                      </button>
+                    )}
+                  </div>
+                </div>
                 <input
                   type="text"
                   value={groupName}
-                  onChange={(e) => setGroupName(e.target.value)}
-                  placeholder="VD: Nhóm Đồng Sở Hữu VF8 Plus - Hà Nội"
+                  onChange={(e) => {
+                    const nextVal = e.target.value;
+                    setGroupName(nextVal);
+                    const suggested = getSuggestedGroupName(model);
+                    if (!nextVal.trim() || nextVal.trim() === suggested) {
+                      setIsGroupNameCustomized(false);
+                    } else {
+                      setIsGroupNameCustomized(true);
+                    }
+                  }}
+                  onBlur={() => {
+                    if (!groupName.trim()) {
+                      setGroupName(getSuggestedGroupName(model));
+                      setIsGroupNameCustomized(false);
+                    }
+                  }}
+                  placeholder={`VD: ${getSuggestedGroupName(model)}`}
                   style={{
                     width: '100%',
+                    boxSizing: 'border-box',
                     padding: '10px 14px',
                     borderRadius: '10px',
                     background: '#ffffff',
@@ -1555,7 +2360,7 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '14px' }}>
                 <div>
                   <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'block' }}>
                     Mức đóng quỹ bảo dưỡng (VNĐ/tháng)
@@ -1567,6 +2372,7 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
                     step="100000"
                     style={{
                       width: '100%',
+                      boxSizing: 'border-box',
                       padding: '10px 14px',
                       borderRadius: '10px',
                       background: '#ffffff',
@@ -1593,6 +2399,7 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
                     max="30"
                     style={{
                       width: '100%',
+                      boxSizing: 'border-box',
                       padding: '10px 14px',
                       borderRadius: '10px',
                       background: '#ffffff',
@@ -1619,6 +2426,7 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
                     max="100"
                     style={{
                       width: '100%',
+                      boxSizing: 'border-box',
                       padding: '10px 14px',
                       borderRadius: '10px',
                       background: '#ffffff',
@@ -1642,6 +2450,7 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
                     max="100"
                     style={{
                       width: '100%',
+                      boxSizing: 'border-box',
                       padding: '10px 14px',
                       borderRadius: '10px',
                       background: '#ffffff',
@@ -1657,8 +2466,8 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
           )}
 
           {/* STEP 3: PHÂN BỔ CỔ PHẦN */}
-          {currentStep === 3 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {!submittedApplication && currentStep === 3 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', minWidth: 0 }}>
               {/* Visual Segmented Ownership Bar */}
               <div
                 style={{
@@ -1732,13 +2541,13 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
                           borderRadius: '12px',
                           padding: '12px 16px',
                           display: 'grid',
-                          gridTemplateColumns: '3.5fr 1.2fr 1.5fr 28px',
+                          gridTemplateColumns: 'minmax(0, 3.5fr) minmax(0, 1.2fr) minmax(0, 1.5fr) 28px',
                           gap: '12px',
                           alignItems: 'center',
                         }}
                       >
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px', flexWrap: 'wrap' }}>
                             <label style={{ fontSize: '11px', color: '#009e9d', fontWeight: 800, textTransform: 'uppercase' }}>
                               Người đại diện (Bạn)
                             </label>
@@ -1755,7 +2564,7 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
                               Chủ xe / Sáng lập
                             </span>
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                             <div style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>
                               {owner.fullName || user?.fullName || 'Người đại diện'}
                             </div>
@@ -1779,6 +2588,7 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
                             max="100"
                             style={{
                               width: '100%',
+                              boxSizing: 'border-box',
                               padding: '7px 10px',
                               borderRadius: '8px',
                               border: '1.2px solid rgba(0, 201, 216, 0.5)',
@@ -1817,12 +2627,12 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
                         borderRadius: '12px',
                         padding: '12px 16px',
                         display: 'grid',
-                        gridTemplateColumns: '3.5fr 1.2fr 1.5fr 28px',
+                        gridTemplateColumns: 'minmax(0, 3.5fr) minmax(0, 1.2fr) minmax(0, 1.5fr) 28px',
                         gap: '12px',
                         alignItems: 'center',
                       }}
                     >
-                      <div>
+                      <div style={{ minWidth: 0 }}>
                         <label style={{ fontSize: '10.5px', color: '#60748c', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
                           Thành viên đồng sở hữu #{idx + 1}
                         </label>
@@ -1882,6 +2692,7 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
                           max="100"
                           style={{
                             width: '100%',
+                            boxSizing: 'border-box',
                             padding: '7px 10px',
                             borderRadius: '8px',
                             border: '1.2px solid rgba(0, 201, 216, 0.5)',
@@ -1952,109 +2763,438 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
           )}
 
           {/* STEP 4: ĐIỀU KHOẢN HỢP ĐỒNG */}
-          {currentStep === 4 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              {/* Summary Cards */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div
-                  style={{
-                    background: '#ffffff',
-                    borderRadius: '12px',
-                    padding: '12px 16px',
-                    border: '1px solid rgba(0, 201, 216, 0.3)',
-                  }}
-                >
-                  <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#009e9d', textTransform: 'uppercase' }}>
-                    Phương tiện
-                  </span>
-                  <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b', marginTop: '2px' }}>
-                    {model}
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#60748c' }}>
-                    Biển số: {plateNumber} • VIN: {vin}
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#60748c' }}>
-                    Pin: {batteryCapacityKwh} kWh • {registrationCity}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    background: '#ffffff',
-                    borderRadius: '12px',
-                    padding: '12px 16px',
-                    border: '1px solid rgba(0, 201, 216, 0.3)',
-                  }}
-                >
-                  <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#009e9d', textTransform: 'uppercase' }}>
-                    Nhóm đồng sở hữu
-                  </span>
-                  <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b', marginTop: '2px' }}>
-                    {groupName}
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#60748c' }}>
-                    Số thành viên: {coOwners.length} người
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#60748c' }}>
-                    Quỹ tháng: {monthlyFundContribution.toLocaleString()} đ/người
-                  </div>
-                </div>
-              </div>
-
-              {/* Agreement Terms Box */}
+          {!submittedApplication && currentStep === 4 && (
+            <WizardStepErrorBoundary
+              stepKey={currentStep}
+              onBack={() => setCurrentStep(3)}
+            >
               <div
                 style={{
-                  background: '#ffffff',
-                  borderRadius: '12px',
-                  padding: '14px 18px',
-                  border: '1px solid rgba(148, 163, 184, 0.3)',
-                  maxHeight: '160px',
-                  overflowY: 'auto',
-                  fontSize: '12px',
-                  lineHeight: 1.6,
-                  color: '#475569',
-                }}
-              >
-                <h4 style={{ margin: '0 0 6px 0', fontSize: '12.5px', fontWeight: 800, color: '#1e293b' }}>
-                  ĐIỀU KHOẢN THỎA THUẬN ĐỒNG SỞ HỮU EVSHARE 3D
-                </h4>
-                <p style={{ margin: '0 0 6px 0' }}>
-                  1. <strong>Quyền sở hữu và tỷ lệ biểu quyết:</strong> Mỗi thành viên có quyền sở hữu
-                  và quyền biểu quyết các đề xuất bảo trì, nâng cấp tương ứng với tỷ lệ cổ phần đã đăng ký.
-                </p>
-                <p style={{ margin: '0 0 6px 0' }}>
-                  2. <strong>Quy chế đặt xe và sử dụng:</strong> Thành viên được đặt xe tối đa {maxConsecutiveBookingDays} ngày
-                  liên tiếp. Chi phí sạc xe tự thanh toán dựa trên lượng điện nạp thực tế.
-                </p>
-                <p style={{ margin: '0 0 6px 0' }}>
-                  3. <strong>Quỹ vận hành và bảo dưỡng:</strong> Khoản đóng quỹ {monthlyFundContribution.toLocaleString()} VNĐ/tháng
-                  được quản lý tự động và minh bạch thông qua hệ thống quỹ chung EVShare 3D.
-                </p>
-              </div>
-
-              {/* Acceptance Checkbox */}
-              <label
-                style={{
                   display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  cursor: 'pointer',
-                  fontSize: '12.5px',
-                  fontWeight: 600,
-                  color: '#1e293b',
+                  flexDirection: 'column',
+                  flex: '0 0 auto',
+                  gap: '12px',
+                  minWidth: 0,
+                  maxWidth: '100%',
+                  boxSizing: 'border-box',
                 }}
               >
-                <input
-                  type="checkbox"
-                  checked={agreementAccepted}
-                  onChange={(e) => setAgreementAccepted(e.target.checked)}
-                  style={{ width: '16px', height: '16px', accentColor: '#00c9d8' }}
-                />
-                <span>
-                  Tôi đã đọc, hiểu rõ và đồng ý với các điều khoản thỏa thuận đồng sở hữu EVShare 3D.
-                </span>
-              </label>
-            </div>
+                {(!(model || '').trim() ||
+                  !(plateNumber || '').trim() ||
+                  !(vin || '').trim() ||
+                  safeVehicleValue <= 0 ||
+                  !isStep3Valid) && (
+                  <div
+                    role="alert"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '10px',
+                      padding: '10px 14px',
+                      borderRadius: '10px',
+                      background: 'rgba(245, 158, 11, 0.12)',
+                      border: '1.2px solid rgba(245, 158, 11, 0.45)',
+                      color: '#b45309',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      flexShrink: 0,
+                    }}
+                  >
+                    <span>
+                      Một số thông tin phương tiện hoặc phân bổ cổ phần chưa hoàn tất. Vui lòng kiểm tra lại trước khi đăng ký xe.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCurrentStep(
+                          !(model || '').trim() || !(plateNumber || '').trim() || !(vin || '').trim()
+                            ? 1
+                            : 3
+                        )
+                      }
+                      style={{
+                        padding: '5px 12px',
+                        borderRadius: '9999px',
+                        background: '#ffffff',
+                        border: '1px solid rgba(245, 158, 11, 0.5)',
+                        color: '#b45309',
+                        fontSize: '11.5px',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Quay lại kiểm tra
+                    </button>
+                  </div>
+                )}
+
+                {/* Summary Cards */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+                    gap: '10px',
+                    flexShrink: 0,
+                    minWidth: 0,
+                    maxWidth: '100%',
+                  }}
+                >
+                  <div
+                    style={{
+                      background: '#ffffff',
+                      borderRadius: '12px',
+                      padding: '10px 14px',
+                      border: '1px solid rgba(0, 201, 216, 0.3)',
+                      minWidth: 0,
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
+                      wordBreak: 'break-word',
+                      overflowWrap: 'anywhere',
+                    }}
+                  >
+                    <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#009e9d', textTransform: 'uppercase' }}>
+                      Phương tiện
+                    </span>
+                    <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#1e293b', marginTop: '2px' }}>
+                      {model || 'Chưa chọn dòng xe'}
+                    </div>
+                    <div style={{ fontSize: '11.5px', color: '#60748c' }}>
+                      Biển số: <strong>{plateNumber || '—'}</strong> • VIN: {vin || '—'}
+                    </div>
+                    <div style={{ fontSize: '11.5px', color: '#60748c' }}>
+                      Pin: {safeBatteryKwh} kWh • Màu: {exteriorColor || '—'} • {registrationCity || '—'}
+                    </div>
+                    <div style={{ fontSize: '11.5px', color: '#009e9d', fontWeight: 700, marginTop: '2px' }}>
+                      Định giá: {(safeVehicleValue / 1e6).toLocaleString()} triệu VNĐ
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      background: '#ffffff',
+                      borderRadius: '12px',
+                      padding: '10px 14px',
+                      border: '1px solid rgba(0, 201, 216, 0.3)',
+                      minWidth: 0,
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
+                      wordBreak: 'break-word',
+                      overflowWrap: 'anywhere',
+                    }}
+                  >
+                    <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#009e9d', textTransform: 'uppercase' }}>
+                      Nhóm đồng sở hữu
+                    </span>
+                    <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#1e293b', marginTop: '2px' }}>
+                      {resolvedGroupName}
+                    </div>
+                    <div style={{ fontSize: '11.5px', color: '#60748c' }}>
+                      Đại diện: <strong>{normalizedCoOwners[0]?.fullName || user?.fullName || 'Chủ xe'}</strong>
+                    </div>
+                    <div style={{ fontSize: '11.5px', color: '#60748c' }}>
+                      Số thành viên: {normalizedCoOwners.length} người • Quỹ tháng: {safeMonthlyFund.toLocaleString()} đ/người
+                    </div>
+                  </div>
+                </div>
+
+                {/* Co-Owner Share Table Summary */}
+                <div
+                  style={{
+                    background: '#ffffff',
+                    borderRadius: '12px',
+                    padding: '9px 14px',
+                    border: '1px solid rgba(148, 163, 184, 0.28)',
+                    flexShrink: 0,
+                    minWidth: 0,
+                    maxWidth: '100%',
+                    boxSizing: 'border-box',
+                  }}
+                >
+                  <div style={{ fontSize: '11px', fontWeight: 800, color: '#334155', marginBottom: '5px' }}>
+                    DANH SÁCH ĐỒNG SỞ HỮU TRONG HỒ SƠ ({normalizedCoOwners.length} THÀNH VIÊN — TỔNG {totalSharePercentage}%)
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {normalizedCoOwners.map((o, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          fontSize: '11.5px',
+                          padding: '4px 8px',
+                          borderRadius: '6px',
+                          background: idx === 0 ? 'rgba(0, 201, 216, 0.08)' : '#f8fafc',
+                          gap: '8px',
+                          minWidth: 0,
+                        }}
+                      >
+                        <span
+                          style={{
+                            minWidth: 0,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            color: '#1e293b',
+                            fontWeight: idx === 0 ? 700 : 600,
+                          }}
+                        >
+                          {idx + 1}. {o.fullName || 'Chưa nhập tên'} ({o.email || 'Chưa nhập email'}){' '}
+                          {idx === 0 ? '— Đại diện' : ''}
+                        </span>
+                        <span style={{ flexShrink: 0, fontWeight: 800, color: '#009e9d' }}>
+                          {o.sharePercentage}% ({(o.contributionAmount / 1e6).toLocaleString()} tr đ)
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {matchingOwnPendingApplication && (
+                  <div
+                    role="status"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '10px',
+                      padding: '10px 14px',
+                      borderRadius: '12px',
+                      background: 'rgba(0, 201, 216, 0.1)',
+                      border: '1.2px solid rgba(0, 201, 216, 0.45)',
+                      color: '#0f172a',
+                      fontSize: '12px',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+                      <div style={{ fontWeight: 800, color: '#007a78', marginBottom: '2px' }}>
+                        Bạn đã có hồ sơ chờ xét duyệt cho biển số {plateNumber}
+                      </div>
+                      <div style={{ color: '#334155', fontSize: '11.5px' }}>
+                        Nếu nhấn &ldquo;ĐĂNG KÝ XE&rdquo;, hệ thống sẽ tự động cập nhật hồ sơ chờ duyệt hiện tại của bạn mà không báo lỗi trùng biển số.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSubmittedApplication(matchingOwnPendingApplication)}
+                      style={{
+                        flexShrink: 0,
+                        padding: '6px 12px',
+                        borderRadius: '9999px',
+                        background: '#009e9d',
+                        border: 'none',
+                        color: '#ffffff',
+                        fontSize: '11.5px',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Xem trạng thái hồ sơ đang chờ duyệt
+                    </button>
+                  </div>
+                )}
+
+                {/* Compact Contract Book Card (Replaces Large Inline Scrollable Box) */}
+                <div
+                  role="region"
+                  aria-label="Hợp đồng đồng sở hữu xe"
+                  style={{
+                    background: 'linear-gradient(135deg, #ffffff 0%, #f4fbfb 100%)',
+                    borderRadius: '16px',
+                    padding: '18px 20px',
+                    border: '1.5px solid rgba(0, 201, 216, 0.45)',
+                    boxShadow: '0 8px 24px rgba(0, 158, 157, 0.08)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '14px',
+                    flexShrink: 0,
+                    minWidth: 0,
+                    maxWidth: '100%',
+                    boxSizing: 'border-box',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      justifyContent: 'space-between',
+                      gap: '14px',
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', minWidth: 0, flex: '1 1 280px' }}>
+                      <div
+                        style={{
+                          width: '48px',
+                          height: '48px',
+                          borderRadius: '14px',
+                          background: 'linear-gradient(135deg, #0f2942 0%, #0a192f 100%)',
+                          border: '1.5px solid rgba(0, 201, 216, 0.5)',
+                          boxShadow: '0 6px 16px rgba(15, 41, 66, 0.22)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                          color: '#00c9d8',
+                        }}
+                      >
+                        <FileText size={24} />
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          <h4
+                            style={{
+                              margin: 0,
+                              fontSize: '15px',
+                              fontWeight: 900,
+                              color: '#0f172a',
+                              letterSpacing: '0.2px',
+                            }}
+                          >
+                            HỢP ĐỒNG ĐỒNG SỞ HỮU XE
+                          </h4>
+                          <span
+                            style={{
+                              fontSize: '10.5px',
+                              fontWeight: 800,
+                              padding: '2px 9px',
+                              borderRadius: '9999px',
+                              background: hasReviewedContractBook
+                                ? 'rgba(16, 185, 129, 0.14)'
+                                : 'rgba(0, 201, 216, 0.14)',
+                              color: hasReviewedContractBook ? '#059669' : '#007a78',
+                              border: hasReviewedContractBook
+                                ? '1px solid rgba(16, 185, 129, 0.35)'
+                                : '1px solid rgba(0, 201, 216, 0.35)',
+                            }}
+                          >
+                            {hasReviewedContractBook ? '✓ Đã xem chi tiết hợp đồng' : 'Chi tiết hợp đồng (4 trang)'}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#009e9d', marginTop: '3px' }}>
+                          {model || 'Chưa chọn dòng xe'}
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#475569', marginTop: '4px', lineHeight: 1.5 }}>
+                           Văn kiện pháp lý điện tử gồm 6 điều khoản quy định quyền sở hữu, lịch đặt xe, quỹ vận hành và quy trình phê duyệt của Nhân viên vận hành.
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsContractBookOpen(true)}
+                      style={{
+                        flexShrink: 0,
+                        padding: '11px 20px',
+                        borderRadius: '12px',
+                        background: 'linear-gradient(135deg, #0f2942 0%, #007a78 100%)',
+                        border: '1.2px solid rgba(0, 201, 216, 0.55)',
+                        color: '#ffffff',
+                        fontWeight: 800,
+                        fontSize: '12.5px',
+                        letterSpacing: '0.4px',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        boxShadow: '0 6px 18px rgba(0, 122, 120, 0.28)',
+                        transition: 'all 0.2s ease',
+                      }}
+                    >
+                      <FileText size={16} color="#00c9d8" />
+                      <span>XEM CHI TIẾT HỢP ĐỒNG</span>
+                    </button>
+                  </div>
+
+                  {/* Supporting Contract Metadata Pills */}
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                      gap: '8px',
+                      paddingTop: '10px',
+                      borderTop: '1px solid rgba(0, 201, 216, 0.2)',
+                    }}
+                  >
+                    <div
+                      style={{
+                        background: 'rgba(248, 250, 252, 0.9)',
+                        borderRadius: '10px',
+                        padding: '7px 10px',
+                        border: '1px solid rgba(148, 163, 184, 0.25)',
+                      }}
+                    >
+                      <div style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+                        Số thành viên
+                      </div>
+                      <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#0f172a', marginTop: '1px' }}>
+                        {normalizedCoOwners.length} đồng sở hữu
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        background: 'rgba(248, 250, 252, 0.9)',
+                        borderRadius: '10px',
+                        padding: '7px 10px',
+                        border: '1px solid rgba(148, 163, 184, 0.25)',
+                      }}
+                    >
+                      <div style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+                        Tổng tỷ lệ sở hữu
+                      </div>
+                      <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#009e9d', marginTop: '1px' }}>
+                        {totalSharePercentage}% cổ phần
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        background: 'rgba(248, 250, 252, 0.9)',
+                        borderRadius: '10px',
+                        padding: '7px 10px',
+                        border: '1px solid rgba(148, 163, 184, 0.25)',
+                      }}
+                    >
+                      <div style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+                        Trạng thái văn kiện
+                      </div>
+                      <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#0f172a', marginTop: '1px' }}>
+                        {hasReviewedContractBook ? 'Đã đọc điều khoản' : 'Sẵn sàng mở đọc'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Acceptance Checkbox */}
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '8px',
+                    flexShrink: 0,
+                    cursor: 'pointer',
+                    fontSize: '12.5px',
+                    fontWeight: 600,
+                    color: '#1e293b',
+                    minWidth: 0,
+                    wordBreak: 'break-word',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={agreementAccepted}
+                    onChange={(e) => setAgreementAccepted(e.target.checked)}
+                    style={{ width: '16px', height: '16px', accentColor: '#00c9d8', marginTop: '2px', flexShrink: 0 }}
+                  />
+                  <span>
+                    Tôi đã đọc, hiểu rõ và đồng ý với các điều khoản thỏa thuận đồng sở hữu EVShare 3D và gửi hồ sơ đăng ký xe chờ nhân viên xét duyệt.
+                  </span>
+                </label>
+              </div>
+            </WizardStepErrorBoundary>
           )}
         </div>
 
@@ -2070,120 +3210,185 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
             alignItems: 'center',
           }}
         >
-          <div>
-            {currentStep > 1 && (
+          {submittedApplication ? (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
               <button
                 type="button"
-                onClick={() => setCurrentStep((prev) => Math.max(1, prev - 1))}
+                onClick={onClose}
                 style={{
-                  padding: '9px 18px',
+                  padding: '10px 26px',
                   borderRadius: '9999px',
-                  background: 'rgba(255, 255, 255, 0.9)',
-                  border: '1px solid rgba(148, 163, 184, 0.4)',
-                  color: '#475569',
-                  fontWeight: 700,
-                  fontSize: '12.5px',
+                  background: 'linear-gradient(90deg, #00c9d8 0%, #009e9d 100%)',
+                  border: 'none',
+                  color: '#ffffff',
+                  fontWeight: 800,
+                  fontSize: '13px',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
-                }}
-              >
-                <ArrowLeft size={14} />
-                <span>Quay lại</span>
-              </button>
-            )}
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <button
-              type="button"
-              onClick={handleSaveDraft}
-              disabled={loading}
-              style={{
-                padding: '9px 18px',
-                borderRadius: '9999px',
-                background: 'rgba(0, 201, 216, 0.1)',
-                border: '1px solid rgba(0, 201, 216, 0.35)',
-                color: '#009e9d',
-                fontWeight: 700,
-                fontSize: '12.5px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-              }}
-            >
-              <Save size={14} />
-              <span>{loading ? 'Đang lưu...' : 'Lưu bản nháp'}</span>
-            </button>
-
-            {currentStep < 4 ? (
-              <button
-                type="button"
-                onClick={handleNext}
-                disabled={currentStep === 1 && !isCurrentModelRegistrable}
-                style={{
-                  padding: '9px 24px',
-                  borderRadius: '9999px',
-                  background:
-                    currentStep === 1 && !isCurrentModelRegistrable
-                      ? 'rgba(148, 163, 184, 0.4)'
-                      : 'linear-gradient(90deg, #00c9d8 0%, #009e9d 100%)',
-                  border: 'none',
-                  color: '#ffffff',
-                  fontWeight: 800,
-                  fontSize: '13px',
-                  cursor: currentStep === 1 && !isCurrentModelRegistrable ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  boxShadow:
-                    currentStep === 1 && !isCurrentModelRegistrable
-                      ? 'none'
-                      : '0 4px 14px rgba(0, 180, 200, 0.35)',
-                }}
-              >
-                <span>
-                  {currentStep === 1 && !isCurrentModelRegistrable
-                    ? 'Chỉ xem trước 3D — Chọn dòng xe điện để tiếp tục'
-                    : 'Tiếp tục'}
-                </span>
-                <ArrowRight size={14} />
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleSubmit}
-                disabled={submitting || !agreementAccepted || !isSharesValid}
-                style={{
-                  padding: '10px 24px',
-                  borderRadius: '9999px',
-                  background:
-                    agreementAccepted && isSharesValid
-                      ? 'linear-gradient(90deg, #10b981 0%, #059669 100%)'
-                      : 'rgba(148, 163, 184, 0.3)',
-                  border: 'none',
-                  color: '#ffffff',
-                  fontWeight: 800,
-                  fontSize: '13px',
-                  cursor: agreementAccepted && isSharesValid ? 'pointer' : 'not-allowed',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  boxShadow:
-                    agreementAccepted && isSharesValid
-                      ? '0 4px 16px rgba(16, 185, 129, 0.4)'
-                      : 'none',
+                  boxShadow: '0 4px 14px rgba(0, 180, 200, 0.35)',
                 }}
               >
                 <CheckCircle2 size={16} />
-                <span>{submitting ? 'Đang nộp hồ sơ...' : 'GỬI ĐĂNG KÝ XE'}</span>
+                <span>Đóng & Theo dõi trạng thái hồ sơ</span>
               </button>
-            )}
-          </div>
+            </div>
+          ) : (
+            <>
+              <div>
+                {currentStep > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setCurrentStep((prev) => Math.max(1, prev - 1))}
+                    style={{
+                      padding: '9px 18px',
+                      borderRadius: '9999px',
+                      background: 'rgba(255, 255, 255, 0.9)',
+                      border: '1px solid rgba(148, 163, 184, 0.4)',
+                      color: '#475569',
+                      fontWeight: 700,
+                      fontSize: '12.5px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <ArrowLeft size={14} />
+                    <span>Quay lại</span>
+                  </button>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={handleSaveDraft}
+                  disabled={loading}
+                  style={{
+                    padding: '9px 18px',
+                    borderRadius: '9999px',
+                    background: 'rgba(0, 201, 216, 0.1)',
+                    border: '1px solid rgba(0, 201, 216, 0.35)',
+                    color: '#009e9d',
+                    fontWeight: 700,
+                    fontSize: '12.5px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <Save size={14} />
+                  <span>{loading ? 'Đang lưu...' : 'Lưu bản nháp'}</span>
+                </button>
+
+                {currentStep < 4 ? (
+                  <button
+                    type="button"
+                    onClick={handleNext}
+                    disabled={currentStep === 1 && !isCurrentModelRegistrable}
+                    style={{
+                      padding: '9px 24px',
+                      borderRadius: '9999px',
+                      background:
+                        currentStep === 1 && !isCurrentModelRegistrable
+                          ? 'rgba(148, 163, 184, 0.4)'
+                          : 'linear-gradient(90deg, #00c9d8 0%, #009e9d 100%)',
+                      border: 'none',
+                      color: '#ffffff',
+                      fontWeight: 800,
+                      fontSize: '13px',
+                      cursor: currentStep === 1 && !isCurrentModelRegistrable ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      boxShadow:
+                        currentStep === 1 && !isCurrentModelRegistrable
+                          ? 'none'
+                          : '0 4px 14px rgba(0, 180, 200, 0.35)',
+                    }}
+                  >
+                    <span>
+                      {currentStep === 1 && !isCurrentModelRegistrable
+                        ? 'Chỉ xem trước 3D — Chọn dòng xe điện để tiếp tục'
+                        : 'Tiếp tục'}
+                    </span>
+                    <ArrowRight size={14} />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleSubmit}
+                    disabled={submitting || !agreementAccepted || !isSharesValid}
+                    style={{
+                      padding: '10px 24px',
+                      borderRadius: '9999px',
+                      background:
+                        agreementAccepted && isSharesValid
+                          ? 'linear-gradient(90deg, #10b981 0%, #059669 100%)'
+                          : 'rgba(148, 163, 184, 0.3)',
+                      border: 'none',
+                      color: '#ffffff',
+                      fontWeight: 800,
+                      fontSize: '13px',
+                      cursor: agreementAccepted && isSharesValid ? 'pointer' : 'not-allowed',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      boxShadow:
+                        agreementAccepted && isSharesValid
+                          ? '0 4px 16px rgba(16, 185, 129, 0.4)'
+                          : 'none',
+                    }}
+                  >
+                    <CheckCircle2 size={16} />
+                    <span>{submitting ? 'Đang đăng ký...' : 'ĐĂNG KÝ XE'}</span>
+                  </button>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
+
+      {/* DEDICATED 3D CONTRACT BOOK READER (EXCLUSIVE READING MODE) */}
+      {isContractBookOpen && (
+        <div style={{ pointerEvents: 'auto' }}>
+          <ContractBookReaderModal
+            isOpen={isContractBookOpen}
+            onClose={() => setIsContractBookOpen(false)}
+            onCompleteReview={() => {
+              setHasReviewedContractBook(true);
+              setIsContractBookOpen(false);
+            }}
+            model={model || 'Xe điện EVShare 3D'}
+            brand={currentCatalogEntry?.brand}
+            plateNumber={plateNumber || '—'}
+            vin={vin || '—'}
+            batteryKwh={safeBatteryKwh}
+            exteriorColor={exteriorColor || '—'}
+            manufactureYear={manufactureYear}
+            vehicleValue={safeVehicleValue}
+            registrationCity={registrationCity || 'Hà Nội'}
+            groupName={resolvedGroupName}
+            coOwners={normalizedCoOwners.map((o, idx) => ({
+              name: o.fullName || `Thành viên #${idx + 1}`,
+              email: o.email || '',
+              sharePercentage: Number(o.sharePercentage) || 0,
+              isRepresentative: idx === 0 || o.role === 'REPRESENTATIVE',
+            }))}
+            totalSharePercentage={totalSharePercentage}
+            maxConsecutiveDays={safeMaxConsecutiveDays}
+            monthlyFund={safeMonthlyFund}
+            maintenanceReservePercent={safeMaintenanceReservePercent}
+            maintenanceReserveAmount={safeMaintenanceReserveAmount}
+            latePaymentFeePercent={safeLatePaymentFeePercent}
+            votingRuleLabel="Biểu quyết theo tỷ lệ cổ phần sở hữu (Ngưỡng thông qua ≥ 65%)"
+          />
+        </div>
+      )}
     </div>,
     document.body
   );

@@ -17,13 +17,17 @@ import {
   resolveAuthoritativeHeroVehicle,
   isMatchingVehicle,
   resolveVehicleDisplayName,
+  resolveAuthoritativeVehicleColor,
 } from './vehicleModelConfig';
+import { StaffVehicleControlLayer } from './StaffVehicleControlLayer';
 import { resolveVehicleSlot, GarageSlotDef, DEFAULT_GARAGE_SLOT } from '../../../config/garageSlotConfig';
 import { STAFF_GARAGE_LAYOUT } from '../../../config/staffGarageLayout';
 import { FleetPreviewRow3D } from '../../fleet/FleetPreviewRow3D';
 import { VehicleStatusLabel } from './VehicleStatusLabel';
 import { VehicleSelectionEffect } from './VehicleSelectionEffect';
 import { VehicleInspectionGuide } from './VehicleInspectionGuide';
+import { VehicleHotspotLayer, CoOwnerVehicleExploration3D } from './VehicleHotspotLayer';
+import { StaffVehicleInspectionHotspotLayer } from './StaffVehicleInspectionHotspotLayer';
 import { SpatialDataLink } from '../SpatialDataLink';
 import { HolographicPanelFrame3D } from '../HolographicPanelFrame3D';
 import { VehicleCoOwnershipWorld } from '../ownership/VehicleCoOwnershipWorld';
@@ -215,6 +219,9 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
   const vehicleBatteryXrayMode = useWorldStore((state) => state.vehicleBatteryXrayMode);
   const vehicleYaw = useWorldStore((state) => state.vehicleYaw);
   const setVehicleYaw = useWorldStore((state) => state.setVehicleYaw);
+  const visibleVehicleLabelId = useWorldStore((state) => state.visibleVehicleLabelId);
+  const isRegistrationReviewModalOpen = useWorldStore((state) => state.isRegistrationReviewModalOpen);
+  const isExplorationMode = useWorldStore((state) => state.isExplorationMode);
 
   // Authoritative TanStack Query for technical battery health in X-Ray mode
   const { data: batteryHealth } = useQuery<BatteryHealthResponse | null>({
@@ -350,7 +357,8 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
     (shouldRenderCoOwnerPanel ||
       shouldRenderStaffPanel ||
       shouldRenderAdminPanel) &&
-    !isBusinessModeActive;
+    !isBusinessModeActive &&
+    !isExplorationMode;
 
   const displayName = resolveVehicleDisplayName(vehicle, vehicleCode);
   const vehicleStatusConfig = VEHICLE_STATUS_LABELS[vehicle.status] || {
@@ -386,7 +394,7 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
             isDeEmphasized={isDeEmphasized}
             isBatteryXray={isSelected && vehicleBatteryXrayMode}
             modelUrl={getVehicleModelUrl(vehicle.model3dUrl, vehicle)}
-            exteriorColor={vehicle.exteriorColor}
+            exteriorColor={resolveAuthoritativeVehicleColor(vehicle)}
             onSelectVehicle={() => onSelect(vehicle)}
             onPointerDown={handleTurntablePointerDown}
           />
@@ -408,12 +416,28 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
           isCharging={vehicle.status === 'CHARGING'}
         />
 
-        {/* Semantic Interaction Hitboxes (rotates with car) - Active ONLY during explore/inspection, damage mapping, or handover */}
-        {(vehicleInspectionMode || vehicleDamageMappingMode || vehicleHandoverMode || vehicleReceiptReviewMode) && (
+        {/* Semantic Interaction Hitboxes (rotates with car) - Active ONLY during damage mapping or handover */}
+        {(vehicleDamageMappingMode || vehicleHandoverMode || vehicleReceiptReviewMode) && (
           <VehicleInteractionHitboxes
             vehicleCode={vehicleCode}
             onSelectVehicle={() => onSelect(vehicle)}
             onPointerDown={handleTurntablePointerDown}
+          />
+        )}
+
+        {/* CO-OWNER ONLY: Direct Interactive 3D Educational Exploration Layer (rotates with car) */}
+        {isSelected && isCoOwner && !isBusinessModeActive && (
+          <CoOwnerVehicleExploration3D
+            vehicle={vehicle}
+            vehicleCode={vehicleCode as any}
+          />
+        )}
+
+        {/* STAFF / ADMIN ONLY: Operational 3D Vehicle Component Inspection Points (rotates with car) */}
+        {isSelected && !isCoOwner && vehicleInspectionMode && (
+          <StaffVehicleInspectionHotspotLayer
+            vehicle={vehicle}
+            vehicleCode={vehicleCode as any}
           />
         )}
       </group>
@@ -507,14 +531,14 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
                       {displayName}
                     </div>
 
-                    {/* Secondary Line: Vehicle Code • License Plate */}
+                    {/* Secondary Line: Vehicle Code | License Plate */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <span style={{ fontSize: '10px', fontWeight: 800, color: '#00e0c7', letterSpacing: '0.04em' }}>
                         {vehicleCode}
                       </span>
-                      <span style={{ fontSize: '9px', color: '#64748b' }}>•</span>
+                      <span style={{ fontSize: '9px', color: '#64748b' }}>|</span>
                       <span style={{ fontSize: '10px', color: '#cbd5e1', fontWeight: 600 }}>
-                        {vehicle.licensePlate || '51E-123.45'}
+                        {vehicle.licensePlate || 'Chưa cập nhật biển số'}
                       </span>
                     </div>
 
@@ -541,12 +565,16 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
                         <span>{vehicleStatusConfig.label}</span>
                       </div>
 
-                      <div style={{ width: '1px', height: '12px', background: 'rgba(34, 230, 255, 0.25)' }} />
+                      {vehicle.currentBatteryLevel != null && (
+                        <>
+                          <div style={{ width: '1px', height: '12px', background: 'rgba(34, 230, 255, 0.25)' }} />
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px', fontWeight: 800, color: '#22e6ff' }}>
-                        <Zap size={11} color="#22e6ff" />
-                        <span>{vehicle.currentBatteryLevel ?? 100}%</span>
-                      </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px', fontWeight: 800, color: '#22e6ff' }}>
+                            <Zap size={11} color="#22e6ff" />
+                            <span>{vehicle.currentBatteryLevel}%</span>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -570,8 +598,8 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
       )}
 
       {/* Sub-Worlds rendered ONLY for the selected vehicle (Spatial HTML cards only for CO_OWNER) */}
-      {isSelected && vehicleInspectionMode && !selectedVehiclePartId && isCoOwner && (
-        <VehicleInspectionGuide />
+      {isSelected && isCoOwner && (!isBusinessModeActive || vehicleInspectionMode) && (
+        <VehicleInspectionGuide vehicle={vehicle} vehicleCode={vehicleCode} />
       )}
 
       {isSelected && vehicleCoOwnershipMode && (
@@ -598,7 +626,7 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
         <TripVisualizationWorld vehicle={vehicle} />
       )}
 
-      {isSelected && (vehicleDamageMappingMode || vehicleInspectionMode) && (
+      {isSelected && vehicleDamageMappingMode && (
         <VehicleDamageWorld vehicle={vehicle} />
       )}
 
@@ -606,8 +634,8 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
         <VehicleDamageHistoryWorld vehicle={vehicle} />
       )}
 
-      {/* Subtle 3D Maintenance Status Badge on Turntable Platform (Requirement 15) */}
-      {isSelected && vehicle.status === 'MAINTENANCE' && (
+      {/* Subtle 3D Maintenance Status Badge on Turntable Platform (Co-Owner Garage Only) */}
+      {isSelected && isCoOwner && vehicle.status === 'MAINTENANCE' && (
         <group position={[0, 0.28, 2.35]}>
           <Billboard follow={true}>
             <Html center distanceFactor={10} style={{ pointerEvents: 'none', userSelect: 'none' }}>
@@ -664,6 +692,7 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
   const hoveredVehicleId = useWorldStore((state) => state.hoveredVehicleId);
   const vehicleInspectionMode = useWorldStore((state) => state.vehicleInspectionMode);
   const vehicleCoOwnershipMode = useWorldStore((state) => state.vehicleCoOwnershipMode);
+  const isRegistrationReviewModalOpen = useWorldStore((state) => state.isRegistrationReviewModalOpen);
   const user = useAuthStore((state) => state.user);
   const role = user?.role || 'CO_OWNER';
   const isStaff = user?.role === 'STAFF';
@@ -687,6 +716,7 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
   const vehicleChargingMode = useWorldStore((state) => state.vehicleChargingMode);
   const selectedVehiclePartId = useWorldStore((state) => state.selectedVehiclePartId);
   const selectVehicle = useWorldStore((state) => state.selectVehicle);
+  const setVisibleVehicleLabelId = useWorldStore((state) => state.setVisibleVehicleLabelId);
   const openVehicleDetail = useWorldStore((state) => state.openVehicleDetail);
   const hoverVehicle = useWorldStore((state) => state.hoverVehicle);
   const clearSelection = useWorldStore((state) => state.clearSelection);
@@ -931,7 +961,7 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
           vehicles={effectiveVehicles}
           selectedVehicleId={heroVehicle.id}
           onSelectVehicle={handleVehicleSelect}
-          visible={!isBusinessModeActive}
+          visible={!isBusinessModeActive && !isRegistrationReviewModalOpen}
         />
 
         {/* Large Foreground Hero Vehicle (Interactive Turntable, Full Detail) */}

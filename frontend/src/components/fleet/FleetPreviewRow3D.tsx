@@ -1,9 +1,15 @@
 import React, { Suspense, useMemo, useState } from 'react';
-import { Html } from '@react-three/drei';
 import { VehicleResponse } from '../../types/vehicle';
-import { resolveVehicleCode, getVehicleModelUrl, isMatchingVehicle } from '../three/vehicles/vehicleModelConfig';
+import {
+  resolveVehicleCode,
+  getVehicleModelUrl,
+  isMatchingVehicle,
+  resolveAuthoritativeVehicleColor,
+  resolveVehicleDisplayName,
+} from '../three/vehicles/vehicleModelConfig';
 import { VehicleModel } from '../three/vehicles/VehicleModel';
 import { STAFF_GARAGE_LAYOUT } from '../../config/staffGarageLayout';
+import { useWorldStore } from '../../store/worldStore';
 
 interface FleetPreviewRow3DProps {
   vehicles: VehicleResponse[];
@@ -85,6 +91,7 @@ export const FleetPreviewRow3D: React.FC<FleetPreviewRow3DProps> = ({
       {/* Render each secondary preview vehicle */}
       {previewItems.map(({ vehicle, posX }) => {
         const code = resolveVehicleCode(vehicle);
+        const displayName = resolveVehicleDisplayName(vehicle, code);
         const isSelected = isMatchingVehicle(vehicle, selectedVehicleId);
 
         const isHovered = hoveredId === (vehicle.id || code);
@@ -123,64 +130,7 @@ export const FleetPreviewRow3D: React.FC<FleetPreviewRow3DProps> = ({
               />
             </mesh>
 
-            {/* Floating Pill Above Preview Vehicle: [ • EV01 ] */}
-            <Html position={[0, 1.6, 0]} center distanceFactor={14} style={{ pointerEvents: 'none' }}>
-              <div
-                style={{
-                  background: isSelected
-                    ? 'rgba(0, 242, 254, 0.95)'
-                    : isHovered
-                    ? 'rgba(15, 23, 42, 0.92)'
-                    : 'rgba(13, 27, 42, 0.82)',
-                  backdropFilter: 'blur(12px)',
-                  border: isSelected
-                    ? '1.5px solid #ffffff'
-                    : `1px solid ${isHovered ? '#38bdf8' : 'rgba(56, 189, 248, 0.35)'}`,
-                  boxShadow: isSelected
-                    ? '0 0 16px rgba(0, 242, 254, 0.65)'
-                    : '0 4px 12px rgba(0, 0, 0, 0.25)',
-                  borderRadius: '9999px',
-                  padding: '3px 10px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  color: isSelected ? '#08101c' : '#ffffff',
-                  fontSize: '11px',
-                  fontWeight: 800,
-                  letterSpacing: '0.06em',
-                  whiteSpace: 'nowrap',
-                  transform: isSelected || isHovered ? 'scale(1.08)' : 'scale(1.0)',
-                  transition: 'all 0.18s ease',
-                  cursor: 'pointer',
-                  pointerEvents: 'auto',
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSelectVehicle(vehicle);
-                }}
-              >
-                <span
-                  style={{
-                    width: '6px',
-                    height: '6px',
-                    borderRadius: '50%',
-                    backgroundColor:
-                      vehicle.status === 'AVAILABLE'
-                        ? isSelected
-                          ? '#064e3b'
-                          : '#10b981'
-                        : vehicle.status === 'CHARGING'
-                        ? '#00f2fe'
-                        : vehicle.status === 'MAINTENANCE'
-                        ? '#ef4444'
-                        : '#f59e0b',
-                  }}
-                />
-                <span>{code}</span>
-              </div>
-            </Html>
-
-            {/* Scaled Visual Model (Lightweight, No Semantic Hitboxes) */}
+            {/* Scaled Visual Model (Lightweight, Simplified Shadow, No Semantic Hitboxes) */}
             <group scale={[previewScale, previewScale, previewScale]}>
               <Suspense fallback={null}>
                 <VehicleModel
@@ -188,7 +138,10 @@ export const FleetPreviewRow3D: React.FC<FleetPreviewRow3DProps> = ({
                   isHovered={isHovered}
                   isDeEmphasized={!isSelected}
                   modelUrl={getVehicleModelUrl(vehicle.model3dUrl, vehicle)}
+                  exteriorColor={resolveAuthoritativeVehicleColor(vehicle)}
                   onSelectVehicle={() => onSelectVehicle(vehicle)}
+                  castShadow={false}
+                  receiveShadow={true}
                 />
               </Suspense>
             </group>

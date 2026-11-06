@@ -48,29 +48,71 @@ export async function safeParseResponse<T = any>(response: Response): Promise<T>
     }
 
     if (!response.ok) {
-      const errorMsg = data?.message || '';
+      const errorMsg = String(data?.message || '');
+      const errorLower = errorMsg.toLowerCase();
+      const errorCode = String(data?.code || '');
+
+      // Intercept any raw SQL / Hibernate constraint violation messages so they never leak to the UI
+      if (
+        errorCode === 'LICENSE_PLATE_EXISTS' ||
+        errorLower.includes('license_plate') ||
+        errorLower.includes('biển số')
+      ) {
+        throw new ApiError(409, 'Biển số xe đã được đăng ký trong hệ thống.', {
+          ...data,
+          code: 'LICENSE_PLATE_EXISTS',
+          message: 'Biển số xe đã được đăng ký trong hệ thống.',
+        });
+      }
+      if (
+        errorCode === 'VIN_EXISTS' ||
+        errorLower.includes('vehicles.vin') ||
+        errorLower.includes("for key 'vin'") ||
+        errorLower.includes('số khung') ||
+        errorLower.includes('số vin')
+      ) {
+        throw new ApiError(409, 'Số khung (VIN) đã được đăng ký trong hệ thống.', {
+          ...data,
+          code: 'VIN_EXISTS',
+          message: 'Số khung (VIN) đã được đăng ký trong hệ thống.',
+        });
+      }
+
+      const isRawTechnicalException =
+        errorLower.includes('could not execute statement') ||
+        errorLower.includes('duplicate entry') ||
+        errorLower.includes('sql [') ||
+        errorLower.includes('insert into ') ||
+        errorLower.includes('constraintviolationexception') ||
+        errorLower.includes('dataintegrityviolationexception') ||
+        errorLower.includes('hibernate');
+
+      const safeMessage = isRawTechnicalException
+        ? 'Dữ liệu không hợp lệ hoặc đã tồn tại trong hệ thống. Vui lòng kiểm tra lại thông tin.'
+        : errorMsg;
+
       if (response.status === 401) {
         throw new ApiError(401, 'Phiên đăng nhập đã hết hạn.', data);
       }
       if (response.status === 403) {
-        throw new ApiError(403, errorMsg || 'Bạn không có quyền thực hiện thao tác này.', data);
+        throw new ApiError(403, safeMessage || 'Bạn không có quyền thực hiện thao tác này.', data);
       }
       if (response.status === 409) {
-        if (errorMsg.includes('email') || errorMsg.includes('Email')) {
+        if (errorLower.includes('email')) {
           throw new ApiError(409, 'Email này đã được đăng ký trong hệ thống.', data);
         }
-        if (errorMsg.includes('license') || errorMsg.includes('biển số')) {
-          throw new ApiError(409, 'Biển số xe đã tồn tại trong hệ thống.', data);
-        }
-        if (errorMsg.includes('vin') || errorMsg.includes('VIN')) {
-          throw new ApiError(409, 'Số khung VIN đã tồn tại trong hệ thống.', data);
-        }
-        throw new ApiError(409, errorMsg || 'Dữ liệu đã tồn tại trong hệ thống.', data);
+        throw new ApiError(409, safeMessage || 'Dữ liệu đã tồn tại trong hệ thống.', data);
       }
       if (response.status >= 500) {
-        throw new ApiError(response.status, errorMsg || 'Máy chủ đang gặp sự cố. Vui lòng thử lại sau.', data);
+        throw new ApiError(
+          response.status,
+          isRawTechnicalException
+            ? safeMessage
+            : safeMessage || 'Máy chủ đang gặp sự cố. Vui lòng thử lại sau.',
+          data
+        );
       }
-      throw new ApiError(response.status, errorMsg || 'Không thể xử lý yêu cầu. Vui lòng thử lại sau.', data);
+      throw new ApiError(response.status, safeMessage || 'Không thể xử lý yêu cầu. Vui lòng thử lại sau.', data);
     }
     return data as T;
   }

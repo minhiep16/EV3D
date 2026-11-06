@@ -32,9 +32,11 @@ export const VehicleStatusLabel: React.FC<VehicleStatusLabelProps> = ({
   const vehicleTripVisualizationMode = useWorldStore((state) => state.vehicleTripVisualizationMode);
   const vehicleDamageMappingMode = useWorldStore((state) => state.vehicleDamageMappingMode);
   const vehicleInspectionMode = useWorldStore((state) => state.vehicleInspectionMode);
+  const isRegistrationReviewModalOpen = useWorldStore((state) => state.isRegistrationReviewModalOpen);
 
-  // When vehicle or any other zone is focused, hide this status pill completely
+  // When review modal is active, vehicle is selected, or any zone is focused, hide this status pill completely
   if (
+    isRegistrationReviewModalOpen ||
     isSelected ||
     isGarageZoneFocused({
       selectedZone,
@@ -101,10 +103,10 @@ export const VehicleStatusLabel: React.FC<VehicleStatusLabelProps> = ({
           }}
         />
 
-        {/* Vehicle ID & Name */}
-        <span style={{ color: '#f8fafc', letterSpacing: '0.04em' }}>{id}</span>
-        <span style={{ color: '#64748b' }}>|</span>
-        <span style={{ color: '#94a3b8', fontWeight: 600 }}>{name}</span>
+        {/* Primary: Real vehicle name, Secondary: Code */}
+        <span style={{ color: '#ffffff', fontWeight: 800 }}>{name}</span>
+        <span style={{ color: '#64748b' }}>•</span>
+        <span style={{ color: '#38bdf8', fontSize: '10px', fontWeight: 700 }}>{id}</span>
 
         {/* Status Tag */}
         <span

@@ -2,6 +2,7 @@ package com.evshare.common.exception;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -40,6 +41,7 @@ public class GlobalExceptionHandler {
         response.put("timestamp", Instant.now());
         response.put("status", HttpStatus.CONFLICT.value());
         response.put("error", "Conflict");
+        response.put("code", ex.getCode() != null ? ex.getCode() : "DUPLICATE_RESOURCE");
         response.put("message", ex.getMessage());
         return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
     }
@@ -94,14 +96,62 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, Object>> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
+        log.error("Database constraint violation: ", ex);
+        String rawMsg = ex.getMostSpecificCause() != null && ex.getMostSpecificCause().getMessage() != null
+                ? ex.getMostSpecificCause().getMessage()
+                : (ex.getMessage() != null ? ex.getMessage() : "");
+        String lower = rawMsg.toLowerCase();
+
+        String errorCode = "DATA_INTEGRITY_CONFLICT";
+        String userMessage = "Dữ liệu bị trùng lặp hoặc không hợp lệ theo quy tắc hệ thống. Vui lòng kiểm tra lại thông tin đã nhập.";
+        if (lower.contains("license_plate")) {
+            errorCode = "LICENSE_PLATE_EXISTS";
+            userMessage = "Biển số xe đã được đăng ký trong hệ thống.";
+        } else if (lower.contains("vehicles.vin") || lower.contains("'vin'") || lower.contains("for key 'vin'")) {
+            errorCode = "VIN_EXISTS";
+            userMessage = "Số khung (VIN) đã được đăng ký trong hệ thống.";
+        }
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("timestamp", Instant.now());
+        response.put("status", HttpStatus.CONFLICT.value());
+        response.put("error", "Conflict");
+        response.put("code", errorCode);
+        response.put("message", userMessage);
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGeneralException(Exception ex) {
         log.error("Unhandled exception: ", ex);
+        String msg = ex.getMessage();
+        if (msg == null || msg.isBlank()
+                || msg.contains("could not execute statement")
+                || msg.contains("SQL [")
+                || msg.contains("insert into ")
+                || msg.contains("ConstraintViolationException")) {
+            msg = "Đã xảy ra lỗi xử lý hệ thống. Vui lòng kiểm tra lại thông tin hoặc thử lại sau.";
+        }
         Map<String, Object> response = new HashMap<>();
         response.put("timestamp", Instant.now());
         response.put("status", HttpStatus.INTERNAL_SERVER_ERROR.value());
         response.put("error", "Internal Server Error");
-        response.put("message", ex.getMessage());
+        response.put("message", msg);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+    }
+
+    private String extractDuplicateValue(String rawMessage) {
+        if (rawMessage == null) return null;
+        int idx = rawMessage.indexOf("Duplicate entry '");
+        if (idx >= 0) {
+            int start = idx + "Duplicate entry '".length();
+            int end = rawMessage.indexOf("'", start);
+            if (end > start) {
+                return rawMessage.substring(start, end);
+            }
+        }
+        return null;
     }
 }

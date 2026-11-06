@@ -7,7 +7,12 @@ import { useWorldStore } from '../store/worldStore';
 import { logoutApi } from '../services/authApi';
 import { fetchVehicles } from '../services/vehicleApi';
 import { VehicleResponse } from '../types/vehicle';
-import { resolveVehicleCode, sortStaffFleetVehicles, resolveAuthoritativeHeroVehicle } from '../components/three/vehicles/vehicleModelConfig';
+import {
+  resolveVehicleCode,
+  resolveVehicleDisplayName,
+  sortStaffFleetVehicles,
+  resolveAuthoritativeHeroVehicle,
+} from '../components/three/vehicles/vehicleModelConfig';
 import {
   LogOut,
   Warehouse,
@@ -22,6 +27,7 @@ import {
 } from 'lucide-react';
 import { StaffGarageFleetSidebar } from '../components/fleet/StaffGarageFleetSidebar';
 import { StaffVehicleDetailPanel } from '../components/fleet/StaffVehicleDetailPanel';
+import { StaffRegistrationReviewModal } from '../components/fleet/StaffRegistrationReviewModal';
 import { PanelErrorBoundary } from '../components/common/PanelErrorBoundary';
 import { NotificationBell } from '../components/common/NotificationBell';
 import { FleetHeroNavigator } from '../components/fleet/FleetHeroNavigator';
@@ -36,6 +42,7 @@ import { ChargingPanel } from '../components/three/charging/ChargingPanel';
 import { CoOwnerVotingPanel } from '../components/three/voting/CoOwnerVotingPanel';
 import { CoOwnerVehiclePanel } from '../components/three/vehicles/CoOwnerVehiclePanel';
 import { CoOwnerQuickActionDock } from '../components/three/vehicles/CoOwnerQuickActionDock';
+import { CoOwnerExplorationToolbar } from '../components/three/vehicles/CoOwnerExplorationToolbar';
 import { CoOwnerVehicleInfoPanel } from '../components/three/vehicles/CoOwnerVehicleInfoPanel';
 import { MyBookingsPanel } from '../components/three/vehicles/MyBookingsPanel';
 import { LobbyOwnershipSummaryBoard } from '../components/three/ownership/LobbyOwnershipSummaryBoard';
@@ -64,12 +71,14 @@ export const GarageScene: React.FC = () => {
   const selectedVehicleId = useWorldStore((state) => state.selectedVehicleId);
   const isVehicleDetailOpen = useWorldStore((state) => state.isVehicleDetailOpen);
   const closeVehicleDetail = useWorldStore((state) => state.closeVehicleDetail);
+  const exitStaffInspection = useWorldStore((state) => state.exitStaffInspection);
   const selectedZone = useWorldStore((state) => state.selectedZone);
   const activeFeature = useWorldStore((state) => state.activeFeature);
   const selectZone = useWorldStore((state) => state.selectZone);
   const clearSelection = useWorldStore((state) => state.clearSelection);
   const returnToGarageOverview = useWorldStore((state) => state.returnToGarageOverview);
   const selectVehicle = useWorldStore((state) => state.selectVehicle);
+  const setVisibleVehicleLabelId = useWorldStore((state) => state.setVisibleVehicleLabelId);
   const returnToVehicleOverview = useWorldStore((state) => state.returnToVehicleOverview);
   const vehicleCoOwnershipMode = useWorldStore((state) => state.vehicleCoOwnershipMode);
   const vehicleBookingMode = useWorldStore((state) => state.vehicleBookingMode);
@@ -81,6 +90,7 @@ export const GarageScene: React.FC = () => {
   const vehicleDamageHistoryMode = useWorldStore((state) => state.vehicleDamageHistoryMode);
   const vehicleMaintenanceMode = useWorldStore((state) => state.vehicleMaintenanceMode);
   const vehicleInspectionMode = useWorldStore((state) => state.vehicleInspectionMode);
+  const isExplorationMode = useWorldStore((state) => state.isExplorationMode);
   const isDamageDetailModalOpen = useWorldStore((state) => state.isDamageDetailModalOpen);
   const activePrimaryPanel = useWorldStore((state) => state.activePrimaryPanel);
   const closeGaragePanel = useWorldStore((state) => state.closeGaragePanel);
@@ -92,6 +102,8 @@ export const GarageScene: React.FC = () => {
   const selectedVehiclePartId = useWorldStore((state) => state.selectedVehiclePartId);
   const selectedVehiclePartCode = useWorldStore((state) => state.selectedVehiclePartCode);
   const clearVehiclePartSelection = useWorldStore((state) => state.clearVehiclePartSelection);
+  const isRegistrationReviewModalOpen = useWorldStore((state) => state.isRegistrationReviewModalOpen);
+  const setRegistrationReviewModalOpen = useWorldStore((state) => state.setRegistrationReviewModalOpen);
 
   // Authoritative TanStack Query for vehicles (scoped per role and user)
   const { data: vehicles = [], isLoading } = useQuery<VehicleResponse[]>({
@@ -159,14 +171,14 @@ export const GarageScene: React.FC = () => {
     }
   }, [isOperationsRole, vehicles, selectedVehicleId, clearSelection]);
 
-  // Ensure stale selected part state does not survive in normal vehicle overview
+  // Ensure stale selected part state does not survive when no vehicle is selected
   useEffect(() => {
-    if (!vehicleInspectionMode && !vehicleDamageMappingMode && !vehicleDamageHistoryMode) {
+    if (!selectedVehicleId && !vehicleInspectionMode && !vehicleDamageMappingMode && !vehicleDamageHistoryMode) {
       if (selectedVehiclePartId || selectedVehiclePartCode) {
         clearVehiclePartSelection();
       }
     }
-  }, [vehicleInspectionMode, vehicleDamageMappingMode, vehicleDamageHistoryMode, selectedVehiclePartId, selectedVehiclePartCode, clearVehiclePartSelection]);
+  }, [selectedVehicleId, vehicleInspectionMode, vehicleDamageMappingMode, vehicleDamageHistoryMode, selectedVehiclePartId, selectedVehiclePartCode, clearVehiclePartSelection]);
 
   const initialOperationsSelectDone = useRef(false);
   // For STAFF / ADMIN, auto-select hero vehicle on initial load using Single Source of Truth
@@ -390,12 +402,12 @@ export const GarageScene: React.FC = () => {
                   }}
                 >
                   <ArrowLeft size={12} color="#c084fc" />
-                  <span>QUAY LẠI XE</span>
+                  <span>{vehicleInspectionMode ? 'QUAY LẠI TRUNG TÂM' : 'QUAY LẠI XE'}</span>
                 </button>
               )}
 
-              {/* Show Back to Garage Overview button when vehicle or zone is selected */}
-              {showBackToGarageOverview && (
+              {/* Show Back to Garage Overview button when vehicle or zone is selected (Co-Owner view only; removed for Staff per Section 1) */}
+              {showBackToGarageOverview && !isOperationsRole && (
                 <button
                   type="button"
                   onClick={() => clearSelection()}
@@ -535,7 +547,10 @@ export const GarageScene: React.FC = () => {
             {heroVehicle && activePrimaryPanel !== 'NOTIFICATIONS' && (isVehicleDetailOpen || vehicleInspectionMode || vehicleDamageMappingMode || vehicleHandoverMode) && !vehicleDamageHistoryMode && !vehicleMaintenanceMode && !vehicleBatteryXrayMode && !vehicleChargingMode && (
               <StaffVehicleDetailPanel
                 vehicle={heroVehicle}
-                onClose={() => closeVehicleDetail()}
+                onClose={() => {
+                  exitStaffInspection();
+                  closeVehicleDetail();
+                }}
               />
             )}
           </PanelErrorBoundary>
@@ -571,6 +586,16 @@ export const GarageScene: React.FC = () => {
               onClose={returnToVehicleOverview}
             />
           )}
+
+          {/* Authoritative Staff Vehicle Registration Review Modal Layer (outside Canvas and sidebars) */}
+          <StaffRegistrationReviewModal
+            isOpen={isRegistrationReviewModalOpen}
+            onClose={() => setRegistrationReviewModalOpen(false)}
+            onReviewed={() => {
+              queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+              queryClient.invalidateQueries({ queryKey: ['staffPendingApplications'] });
+            }}
+          />
         </>
       ) : (
         /* ======================================================== */
@@ -749,7 +774,7 @@ export const GarageScene: React.FC = () => {
                   >
                     {vehicles.map((v) => (
                       <option key={v.id} value={v.id} style={{ background: '#0a1628', color: '#fff' }}>
-                        🚗 {v.plateNumber} ({v.model})
+                        🚗 {resolveVehicleDisplayName(v)} ({v.licensePlate || resolveVehicleCode(v)})
                       </option>
                     ))}
                   </select>
@@ -1088,7 +1113,7 @@ export const GarageScene: React.FC = () => {
           )}
 
           {/* Authoritative Screen-Space CO_OWNER Right Vehicle Information Panel */}
-          {currentCoOwnerVehicle && activePrimaryPanel === 'VEHICLE_DETAIL' && isVehicleDetailOpen && !showBackToVehicle && (!selectedZone || selectedZone === 'VEHICLE') && (
+          {currentCoOwnerVehicle && activePrimaryPanel === 'VEHICLE_DETAIL' && isVehicleDetailOpen && !showBackToVehicle && (!selectedZone || selectedZone === 'VEHICLE') && !isExplorationMode && (
             <PanelErrorBoundary key={`${currentCoOwnerVehicle.id}-co-owner-overview`}>
               <CoOwnerVehiclePanel
                 vehicle={currentCoOwnerVehicle}
@@ -1102,10 +1127,15 @@ export const GarageScene: React.FC = () => {
           )}
 
           {/* Authoritative Screen-Space CO_OWNER Bottom Quick Action Dock */}
-          {currentCoOwnerVehicle && activePrimaryPanel === 'VEHICLE_DETAIL' && isVehicleDetailOpen && !showBackToVehicle && (!selectedZone || selectedZone === 'VEHICLE') && (
+          {currentCoOwnerVehicle && activePrimaryPanel === 'VEHICLE_DETAIL' && isVehicleDetailOpen && !showBackToVehicle && (!selectedZone || selectedZone === 'VEHICLE') && !isExplorationMode && (
             <CoOwnerQuickActionDock
               vehicle={currentCoOwnerVehicle}
             />
+          )}
+
+          {/* Authoritative Screen-Space CO_OWNER Immersive 3D Exploration Toolbar */}
+          {isExplorationMode && (
+            <CoOwnerExplorationToolbar />
           )}
         </div>
       )}

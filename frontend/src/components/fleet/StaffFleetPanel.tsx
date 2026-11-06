@@ -30,6 +30,7 @@ export const StaffFleetPanel: React.FC = () => {
   const vehicleInspectionMode = useWorldStore((state) => state.vehicleInspectionMode);
   const vehicleDamageMappingMode = useWorldStore((state) => state.vehicleDamageMappingMode);
   const selectVehicle = useWorldStore((state) => state.selectVehicle);
+  const setVisibleVehicleLabelId = useWorldStore((state) => state.setVisibleVehicleLabelId);
   const clearSelection = useWorldStore((state) => state.clearSelection);
 
   const [searchQuery, setSearchQuery] = useState('');
