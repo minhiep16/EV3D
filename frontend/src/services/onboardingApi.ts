@@ -11,9 +11,48 @@ import {
   GroupInvitationResponse,
   RedeemInviteCodeRequest,
   ReviewJoinRequestDto,
+  OnboardingUserSearchResult,
+  InvitationContractReviewResponse,
+  InvitationConsentRequest,
 } from '../types/onboarding';
 
+function formatDraftPayload(data: VehicleRegistrationDraftRequest) {
+  return {
+    ...data,
+    vehicleName: data.name || data.model || 'Xe điện EVShare',
+    model: data.model,
+    licensePlate: data.plateNumber,
+    plateNumber: data.plateNumber,
+    vin: data.vin,
+    batteryCapacity: data.batteryCapacityKwh,
+    batteryCapacityKwh: data.batteryCapacityKwh,
+    modelYear: data.manufactureYear || 2025,
+    groupName: data.groupName,
+    proposedCoOwners: data.coOwners
+      ? JSON.stringify(
+          data.coOwners.map((o) => ({
+            userId: o.userId,
+            fullName: o.fullName,
+            name: o.fullName,
+            email: o.email,
+            phoneNumber: o.phoneNumber,
+            percentage: o.sharePercentage,
+            sharePercentage: o.sharePercentage,
+            role: o.role,
+          }))
+        )
+      : undefined,
+  };
+}
+
 export const onboardingApi = {
+  // Search eligible registered users for co-ownership
+  async searchUsers(query: string): Promise<OnboardingUserSearchResult[]> {
+    if (!query || query.trim().length < 3) return [];
+    const res = await authenticatedFetch(`/api/onboarding/search-users?query=${encodeURIComponent(query.trim())}`);
+    return safeParseResponse<OnboardingUserSearchResult[]>(res);
+  },
+
   // Status
   async getStatus(): Promise<OnboardingStatusResponse> {
     const res = await authenticatedFetch('/api/onboarding/status');
@@ -34,7 +73,7 @@ export const onboardingApi = {
   async saveDraft(data: VehicleRegistrationDraftRequest): Promise<VehicleRegistrationDraftResponse> {
     const res = await authenticatedFetch('/api/onboarding/drafts', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(formatDraftPayload(data)),
     });
     return safeParseResponse<VehicleRegistrationDraftResponse>(res);
   },
@@ -42,7 +81,7 @@ export const onboardingApi = {
   async updateDraft(draftId: string, data: VehicleRegistrationDraftRequest): Promise<VehicleRegistrationDraftResponse> {
     const res = await authenticatedFetch(`/api/onboarding/drafts/${draftId}`, {
       method: 'PUT',
-      body: JSON.stringify(data),
+      body: JSON.stringify(formatDraftPayload(data)),
     });
     return safeParseResponse<VehicleRegistrationDraftResponse>(res);
   },
@@ -117,6 +156,33 @@ export const onboardingApi = {
   async respondToInvitation(invitationId: string, accept: boolean): Promise<GroupInvitationResponse> {
     const res = await authenticatedFetch(`/api/onboarding/invitations/${invitationId}/respond?accept=${accept}`, {
       method: 'POST',
+    });
+    return safeParseResponse<GroupInvitationResponse>(res);
+  },
+
+  async getInvitationContract(invitationId: string): Promise<InvitationContractReviewResponse> {
+    const res = await authenticatedFetch(`/api/onboarding/invitations/${invitationId}/contract`);
+    return safeParseResponse<InvitationContractReviewResponse>(res);
+  },
+
+  async recordInvitationConsent(
+    invitationId: string,
+    data: InvitationConsentRequest
+  ): Promise<GroupInvitationResponse> {
+    const res = await authenticatedFetch(`/api/onboarding/invitations/${invitationId}/consent`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return safeParseResponse<GroupInvitationResponse>(res);
+  },
+
+  async signAndAcceptInvitation(
+    invitationId: string,
+    data: InvitationConsentRequest
+  ): Promise<GroupInvitationResponse> {
+    const res = await authenticatedFetch(`/api/onboarding/invitations/${invitationId}/sign-and-accept`, {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
     return safeParseResponse<GroupInvitationResponse>(res);
   },

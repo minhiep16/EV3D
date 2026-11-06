@@ -44,6 +44,8 @@ public class CreateVehicleRequest {
 
     private String model3dUrl = "/models/ev-car.glb";
 
+    private String exteriorColor = "Trắng ngọc trai";
+
     public CreateVehicleRequest() {
     }
 
@@ -133,5 +135,13 @@ public class CreateVehicleRequest {
 
     public void setModel3dUrl(String model3dUrl) {
         this.model3dUrl = model3dUrl;
+    }
+
+    public String getExteriorColor() {
+        return exteriorColor;
+    }
+
+    public void setExteriorColor(String exteriorColor) {
+        this.exteriorColor = exteriorColor;
     }
 }

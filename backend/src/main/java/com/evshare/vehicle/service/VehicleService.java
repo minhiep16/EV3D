@@ -215,6 +215,10 @@ public class VehicleService {
                         : "/models/ev-car.glb"
         );
 
+        if (request.getExteriorColor() != null && !request.getExteriorColor().isBlank()) {
+            vehicle.setExteriorColor(request.getExteriorColor().trim());
+        }
+
         Vehicle saved = vehicleRepository.save(vehicle);
         return VehicleResponse.fromEntity(saved);
     }
@@ -286,6 +290,10 @@ public class VehicleService {
 
         if (request.getModel3dUrl() != null && !request.getModel3dUrl().isBlank()) {
             vehicle.setModel3dUrl(request.getModel3dUrl().trim());
+        }
+
+        if (request.getExteriorColor() != null && !request.getExteriorColor().isBlank()) {
+            vehicle.setExteriorColor(request.getExteriorColor().trim());
         }
 
         Vehicle updated = vehicleRepository.save(vehicle);

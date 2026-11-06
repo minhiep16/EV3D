@@ -62,6 +62,9 @@ public class Vehicle {
     @Column(name = "model_3d_url", length = 255, nullable = false)
     private String model3dUrl;
 
+    @Column(name = "exterior_color", length = 50)
+    private String exteriorColor = "Trắng ngọc trai";
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;
@@ -104,6 +107,9 @@ public class Vehicle {
         }
         if (this.currentBatteryLevel == null) {
             this.currentBatteryLevel = 100;
+        }
+        if (this.exteriorColor == null || this.exteriorColor.isBlank()) {
+            this.exteriorColor = "Trắng ngọc trai";
         }
     }
 
@@ -263,5 +269,13 @@ public class Vehicle {
 
     public void setEnergyConsumptionKwhPer100Km(BigDecimal energyConsumptionKwhPer100Km) {
         this.energyConsumptionKwhPer100Km = energyConsumptionKwhPer100Km;
+    }
+
+    public String getExteriorColor() {
+        return exteriorColor != null && !exteriorColor.isBlank() ? exteriorColor : "Trắng ngọc trai";
+    }
+
+    public void setExteriorColor(String exteriorColor) {
+        this.exteriorColor = exteriorColor;
     }
 }

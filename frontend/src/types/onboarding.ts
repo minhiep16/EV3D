@@ -3,12 +3,21 @@ export type JoinRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED
 export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'EXPIRED';
 
 export interface CoOwnerInviteDraft {
+  userId?: string;
   fullName: string;
   email: string;
   phoneNumber?: string;
   sharePercentage: number;
   contributionAmount: number;
   role: 'REPRESENTATIVE' | 'CO_OWNER';
+  isVerifiedAccount?: boolean;
+}
+
+export interface OnboardingUserSearchResult {
+  id: string;
+  fullName: string;
+  email: string;
+  maskedEmail: string;
 }
 
 export interface OnboardingStatusResponse {
@@ -27,6 +36,7 @@ export interface VehicleRegistrationDraftRequest {
   model: string;
   vin?: string;
   batteryCapacityKwh: number;
+  exteriorColor?: string;
   manufactureYear?: number;
   vehicleValue: number;
   registrationCity?: string;
@@ -49,6 +59,7 @@ export interface VehicleRegistrationDraftResponse {
   model: string;
   vin?: string;
   batteryCapacityKwh: number;
+  exteriorColor?: string;
   manufactureYear?: number;
   vehicleValue: number;
   registrationCity?: string;
@@ -125,16 +136,65 @@ export interface GroupInvitationResponse {
   id: string;
   groupId: string;
   groupName: string;
-  vehicleModel?: string;
+  inviterId?: string;
   inviterName: string;
-  email: string;
+  inviteeEmail?: string;
+  inviteeUserId?: string;
+  email?: string;
   phoneNumber?: string;
+  proposedPercentage?: number;
   intendedSharePercentage?: number;
+  proposedContributionAmount?: number;
+  vehicleModel?: string;
+  vehiclePlateNumber?: string;
+  contractId?: string;
+  contractVersionId?: string;
+  contentHash?: string;
+  consentedAt?: string;
+  signerFullName?: string;
   inviteCode: string;
   status: InvitationStatus;
   message?: string;
   expiresAt: string;
   createdAt: string;
+}
+
+export interface InvitationContractReviewResponse {
+  invitationId: string;
+  groupId: string;
+  groupName: string;
+  vehicleId: string;
+  vehicleName: string;
+  vehicleModel: string;
+  vehiclePlateNumber: string;
+  vehicleValue: number;
+  inviterId: string;
+  inviterName: string;
+  inviteeEmail: string;
+  inviteeName: string;
+  proposedPercentage: number;
+  proposedContributionAmount: number;
+  contractId: string;
+  contractCode: string;
+  versionId: string;
+  versionNumber: number;
+  versionNumberFormatted: string;
+  title: string;
+  contentSnapshot: string;
+  contentHash: string;
+  votingRule: string;
+  quorumPercentage: number;
+  approvalThresholdPercentage: number;
+  alreadyConsented: boolean;
+  consentedAt?: string;
+  signerFullName?: string;
+}
+
+export interface InvitationConsentRequest {
+  contractVersionId: string;
+  contentHash: string;
+  signerFullName: string;
+  confirmReadAndAgreed: boolean;
 }
 
 export interface RedeemInviteCodeRequest {

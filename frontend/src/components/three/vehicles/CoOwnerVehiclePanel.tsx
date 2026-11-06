@@ -832,23 +832,24 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
         position: 'fixed',
         top: '76px',
         right: '24px',
-        width: '380px',
+        width: '420px',
+        maxWidth: 'calc(100vw - 48px)',
         maxHeight: 'calc(100vh - 96px)',
         overflowY: 'auto',
-        background: 'rgba(7, 20, 38, 0.90)',
+        background: 'rgba(7, 20, 38, 0.92)',
         backdropFilter: 'blur(24px)',
         WebkitBackdropFilter: 'blur(24px)',
         border: '1.5px solid rgba(34, 230, 255, 0.35)',
         boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65), 0 0 25px rgba(34, 230, 255, 0.18)',
         borderRadius: '24px',
-        padding: '20px',
+        padding: '18px 20px',
         color: '#ffffff',
         fontFamily: 'var(--font-family, sans-serif)',
         zIndex: 40,
         pointerEvents: 'auto',
         display: 'flex',
         flexDirection: 'column',
-        gap: '14px',
+        gap: '12px',
       }}
     >
       {/* Close button: Top-Right */}
@@ -901,232 +902,203 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
       ) : (
         <>
           {/* =================================================== */}
-          {/* SECTION 1: THÔNG TIN XE                             */}
+          {/* SECTION 1: COMPACT VEHICLE HEADER                   */}
           {/* =================================================== */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {/* Cyan Badge */}
-          <div
-            style={{
-              background: 'linear-gradient(135deg, rgba(0, 242, 254, 0.35), rgba(8, 20, 36, 0.95))',
-              border: '1.5px solid #00f2fe',
-              boxShadow: '0 0 12px rgba(0, 242, 254, 0.4)',
-              borderRadius: '8px',
-              padding: '2px 8px',
-              fontSize: '12px',
-              fontWeight: 900,
-              color: '#00f2fe',
-              letterSpacing: '0.04em',
-            }}
-          >
-            {displayCode}
-          </div>
-
-          <div
-            style={{
-              background: 'rgba(16, 185, 129, 0.15)',
-              border: '1px solid rgba(16, 185, 129, 0.4)',
-              borderRadius: '9999px',
-              padding: '2px 8px',
-              fontSize: '9.5px',
-              fontWeight: 800,
-              color: '#34d399',
-              letterSpacing: '0.05em',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              textTransform: 'uppercase',
-            }}
-          >
-            <Sparkles size={10} color="#34d399" />
-            <span>ĐỒNG SỞ HỮU</span>
-          </div>
-        </div>
-
-        <h3
-          style={{
-            fontSize: '18px',
-            fontWeight: 800,
-            letterSpacing: '-0.01em',
-            margin: '4px 0 0 0',
-            color: '#ffffff',
-          }}
-        >
-          {vehicle.name || 'VinFast VF8 / EVShare Hero'}
-        </h3>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: '#94a3b8' }}>
-          <span style={{ color: '#00f2fe', fontWeight: 700 }}>
-            {vehicle.licensePlate || '51K-888.88'}
-          </span>
-          <span>•</span>
-          <span>{vehicle.brand || 'VinFast'} {vehicle.model || 'VF8'}</span>
-          <span>•</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: statusConfig.color, fontWeight: 700 }}>
-            <span
-              style={{
-                width: '6px',
-                height: '6px',
-                borderRadius: '50%',
-                background: statusConfig.color,
-                boxShadow: `0 0 6px ${statusConfig.color}`,
-              }}
-            />
-            {statusConfig.label}
-          </div>
-        </div>
-      </div>
-
-      {/* =================================================== */}
-      {/* SECTION 2: PIN & TẦM HOẠT ĐỘNG                     */}
-      {/* =================================================== */}
-      <div
-        style={{
-          background: 'rgba(255, 255, 255, 0.03)',
-          border: '1px solid rgba(0, 242, 254, 0.22)',
-          borderRadius: '16px',
-          padding: '14px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '8px',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10.5px', fontWeight: 800, color: '#38bdf8', letterSpacing: '0.04em' }}>
-            <Zap size={14} color="#00f2fe" />
-            <span>PIN & TẦM HOẠT ĐỘNG</span>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => enterBatteryXrayMode(vehicle.id)}
-            title="Xem X-Ray Pin 3D"
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#00f2fe',
-              fontSize: '10px',
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '2px',
-              padding: 0,
-            }}
-          >
-            <span>X-Ray 3D</span>
-            <ChevronRight size={12} />
-          </button>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-            <span style={{ fontSize: '26px', fontWeight: 900, color: '#ffffff', letterSpacing: '-0.02em' }}>
-              {vehicle.currentBatteryLevel}%
-            </span>
-            <span style={{ fontSize: '11px', color: '#94a3b8' }}>Dung lượng khả dụng</span>
-          </div>
-          <div style={{ fontSize: '12px', fontWeight: 800, color: '#38bdf8' }}>
-            ~{estimatedRangeKm} km
-          </div>
-        </div>
-
-        {/* Gradient Progress Bar */}
-        <div
-          style={{
-            width: '100%',
-            height: '6px',
-            background: 'rgba(255, 255, 255, 0.08)',
-            borderRadius: '9999px',
-            overflow: 'hidden',
-          }}
-        >
-          <div
-            style={{
-              width: `${vehicle.currentBatteryLevel}%`,
-              height: '100%',
-              background: 'linear-gradient(90deg, #06b6d4 0%, #00f2fe 100%)',
-              borderRadius: '9999px',
-              boxShadow: '0 0 10px rgba(0, 242, 254, 0.7)',
-              transition: 'width 0.4s ease',
-            }}
-          />
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '10px', color: '#94a3b8' }}>
-          <span>Tình trạng pin: <strong style={{ color: '#34d399' }}>Tối ưu</strong></span>
-          <span>Dung lượng: <strong style={{ color: '#f8fafc' }}>{vehicle.batteryCapacity || 87.7} kWh</strong></span>
-        </div>
-      </div>
-
-      {/* =================================================== */}
-      {/* SECTION 3: TRẠNG THÁI TỔNG QUAN                     */}
-      {/* =================================================== */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <div style={{ fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-          TRẠNG THÁI TỔNG QUAN
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-          {/* Card 1: Khả dụng */}
-          <div style={statusCardStyle()}>
-            <span style={statusCardLabelStyle()}>Vận hành</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11.5px', fontWeight: 800, color: statusConfig.color }}>
-              <span
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingRight: '28px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div
                 style={{
-                  width: '6px',
-                  height: '6px',
-                  borderRadius: '50%',
-                  background: statusConfig.color,
+                  background: 'linear-gradient(135deg, rgba(0, 242, 254, 0.35), rgba(8, 20, 36, 0.95))',
+                  border: '1.2px solid #00f2fe',
+                  boxShadow: '0 0 10px rgba(0, 242, 254, 0.35)',
+                  borderRadius: '7px',
+                  padding: '2px 8px',
+                  fontSize: '11px',
+                  fontWeight: 900,
+                  color: '#00f2fe',
+                  letterSpacing: '0.04em',
+                }}
+              >
+                {displayCode}
+              </div>
+
+              <div
+                style={{
+                  background: statusConfig.bg || 'rgba(16, 185, 129, 0.15)',
+                  border: `1px solid ${statusConfig.color}`,
+                  borderRadius: '9999px',
+                  padding: '2px 9px',
+                  fontSize: '10px',
+                  fontWeight: 800,
+                  color: statusConfig.color,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  letterSpacing: '0.03em',
+                  textTransform: 'uppercase',
+                }}
+              >
+                <span
+                  style={{
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '50%',
+                    background: statusConfig.color,
+                    boxShadow: `0 0 6px ${statusConfig.color}`,
+                  }}
+                />
+                <span>{statusConfig.label}</span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '8px' }}>
+              <h3
+                style={{
+                  fontSize: '17px',
+                  fontWeight: 800,
+                  letterSpacing: '-0.01em',
+                  margin: 0,
+                  color: '#ffffff',
+                }}
+              >
+                {vehicle.name || 'VinFast VF8 Plus'}
+              </h3>
+              <div style={{ fontSize: '11.5px', color: '#00f2fe', fontWeight: 800, whiteSpace: 'nowrap' }}>
+                {vehicle.licensePlate || '51K-888.88'}
+              </div>
+            </div>
+
+            <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+              {vehicle.brand || 'VinFast'} {vehicle.model || 'VF8'} • Chế độ đồng sở hữu
+            </div>
+          </div>
+
+          {/* =================================================== */}
+          {/* SECTION 2: PIN & TẦM HOẠT ĐỘNG (COMPACT)           */}
+          {/* =================================================== */}
+          <div
+            style={{
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid rgba(0, 242, 254, 0.22)',
+              borderRadius: '14px',
+              padding: '12px 14px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10.5px', fontWeight: 800, color: '#38bdf8', letterSpacing: '0.04em' }}>
+                <Zap size={13} color="#00f2fe" />
+                <span>PIN & TẦM HOẠT ĐỘNG</span>
+              </div>
+              <span style={{ fontSize: '10px', color: '#94a3b8' }}>
+                {vehicle.batteryCapacity || 87.7} kWh
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                <span style={{ fontSize: '24px', fontWeight: 900, color: '#ffffff', letterSpacing: '-0.02em' }}>
+                  {vehicle.currentBatteryLevel ?? 82}%
+                </span>
+                <span style={{ fontSize: '10.5px', color: '#94a3b8' }}>Dung lượng</span>
+              </div>
+              <div style={{ fontSize: '12px', fontWeight: 800, color: '#00f2fe' }}>
+                ~{estimatedRangeKm} km
+              </div>
+            </div>
+
+            {/* Gradient Progress Bar */}
+            <div
+              style={{
+                width: '100%',
+                height: '6px',
+                background: 'rgba(255, 255, 255, 0.08)',
+                borderRadius: '9999px',
+                overflow: 'hidden',
+              }}
+            >
+              <div
+                style={{
+                  width: `${vehicle.currentBatteryLevel ?? 82}%`,
+                  height: '100%',
+                  background: 'linear-gradient(90deg, #06b6d4 0%, #00f2fe 100%)',
+                  borderRadius: '9999px',
+                  boxShadow: '0 0 8px rgba(0, 242, 254, 0.6)',
+                  transition: 'width 0.4s ease',
                 }}
               />
-              <span>{statusConfig.label}</span>
             </div>
           </div>
 
-          {/* Card 2: Bảo dưỡng */}
-          <div style={statusCardStyle()}>
-            <span style={statusCardLabelStyle()}>Bảo dưỡng</span>
-            <span style={{ fontSize: '11.5px', fontWeight: 800, color: pendingApprovalMaintenance ? '#fbbf24' : vehicle.status === 'MAINTENANCE' ? '#f59e0b' : '#34d399' }}>
-              {pendingApprovalMaintenance ? 'Chờ phê duyệt' : vehicle.status === 'MAINTENANCE' ? 'Đang bảo dưỡng' : 'Định kỳ ổn định'}
-            </span>
-          </div>
-
-          {/* Card 3: Hư hỏng */}
+          {/* =================================================== */}
+          {/* SECTION 3: TRẠNG THÁI TỔNG QUAN (COMPACT)          */}
+          {/* =================================================== */}
           <div
-            onClick={() => {
-              enterVehicleDamageHistoryMode(vehicle.id);
-              openGaragePanel('DAMAGE', { vehicleId: vehicle.id });
-            }}
             style={{
-              ...statusCardStyle(),
-              cursor: 'pointer',
-              border: unresolvedDamages.length > 0 ? '1px solid rgba(245, 158, 11, 0.45)' : statusCardStyle().border,
-              background: unresolvedDamages.length > 0 ? 'rgba(245, 158, 11, 0.08)' : statusCardStyle().background,
-              transition: 'all 0.2s ease',
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr 1fr',
+              gap: '6px',
             }}
-            title="Nhấp để xem danh sách và lịch sử hư hỏng xe"
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={statusCardLabelStyle()}>Hư hỏng chưa xử lý</span>
-              {damages.length > 0 && (
-                <span style={{ fontSize: '9px', color: '#94a3b8' }}>Tổng: {damages.length}</span>
-              )}
+            {/* Status 1: Vận hành */}
+            <div style={compactStatusCellStyle()}>
+              <span style={compactStatusLabelStyle()}>Vận hành</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 800, color: statusConfig.color }}>
+                <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: statusConfig.color }} />
+                <span>{statusConfig.label}</span>
+              </div>
             </div>
-            <span style={{ fontSize: '11.5px', fontWeight: 800, color: unresolvedDamages.length > 0 ? '#fbbf24' : '#34d399' }}>
-              {unresolvedDamages.length > 0 ? `${unresolvedDamages.length} điểm ghi nhận` : '0 hư hỏng'}
-            </span>
+
+            {/* Status 2: Bảo dưỡng */}
+            <div style={compactStatusCellStyle()}>
+              <span style={compactStatusLabelStyle()}>Bảo dưỡng</span>
+              <span style={{ fontSize: '11px', fontWeight: 800, color: pendingApprovalMaintenance ? '#fbbf24' : vehicle.status === 'MAINTENANCE' ? '#f59e0b' : '#34d399' }}>
+                {pendingApprovalMaintenance ? 'Chờ duyệt' : vehicle.status === 'MAINTENANCE' ? 'Đang bảo dưỡng' : 'Ổn định'}
+              </span>
+            </div>
+
+            {/* Status 3: Cổng sạc */}
+            <div style={compactStatusCellStyle()}>
+              <span style={compactStatusLabelStyle()}>Cổng sạc</span>
+              <span style={{ fontSize: '11px', fontWeight: 800, color: vehicle.status === 'CHARGING' ? '#00f2fe' : '#38bdf8' }}>
+                {vehicle.status === 'CHARGING' ? 'Đang sạc' : 'Sẵn sàng'}
+              </span>
+            </div>
           </div>
 
-          {/* Card 4: Sạc xe */}
-          <div style={statusCardStyle()}>
-            <span style={statusCardLabelStyle()}>Cổng sạc</span>
-            <span style={{ fontSize: '11.5px', fontWeight: 800, color: vehicle.status === 'CHARGING' ? '#00f2fe' : '#38bdf8' }}>
-              {vehicle.status === 'CHARGING' ? 'Đang sạc' : 'Sẵn sàng kết nối'}
-            </span>
-          </div>
-        </div>
-      </div>
+          {/* DAMAGE WARNING: ONLY DISPLAYED WHEN UNRESOLVED DAMAGE EXISTS */}
+          {unresolvedDamages.length > 0 && (
+            <div
+              onClick={() => {
+                enterVehicleDamageHistoryMode(vehicle.id);
+                openGaragePanel('DAMAGE', { vehicleId: vehicle.id });
+              }}
+              style={{
+                background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.14) 0%, rgba(180, 83, 9, 0.12) 100%)',
+                border: '1px solid rgba(245, 158, 11, 0.5)',
+                borderRadius: '12px',
+                padding: '9px 12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+              title="Xem danh sách và chi tiết các hư hỏng chưa khắc phục"
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                <AlertTriangle size={14} color="#fbbf24" />
+                <span style={{ fontSize: '11px', fontWeight: 800, color: '#fbbf24' }}>
+                  {unresolvedDamages.length} hư hỏng chưa xử lý
+                </span>
+              </div>
+              <span style={{ fontSize: '10.5px', color: '#fcd34d', fontWeight: 700 }}>
+                Chi tiết →
+              </span>
+            </div>
+          )}
 
       {/* =================================================== */}
       {/* SECTION 4: THÔNG TIN VẬN HÀNH / CHUYẾN ĐI / LỊCH ĐẶT */}
@@ -1412,66 +1384,34 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
         <div
           style={{
             background: 'rgba(255, 255, 255, 0.03)',
-            border: '1px solid rgba(0, 242, 254, 0.22)',
-            borderRadius: '16px',
-            padding: '14px',
+            border: '1px solid rgba(0, 242, 254, 0.18)',
+            borderRadius: '14px',
+            padding: '11px 14px',
             display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
+            alignItems: 'center',
+            justifyContent: 'space-between',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10.5px', fontWeight: 800, color: '#38bdf8', letterSpacing: '0.04em' }}>
-              <Clock size={13} color="#00f2fe" />
-              <span>LỊCH SỬ DỤNG GẦN NHẤT</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setVehicleFeatureMode('CO_OWNER_MY_BOOKINGS')}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#94a3b8',
-                fontSize: '10px',
-                fontWeight: 700,
-                cursor: 'pointer',
-                padding: 0,
-              }}
-            >
-              Lịch của tôi
-            </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '11px', color: '#94a3b8' }}>
+            <Clock size={13} color="#00f2fe" />
+            <span>Chưa có lịch đặt sắp tới</span>
           </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <span style={{ fontSize: '11.5px', color: '#94a3b8' }}>
-              Chưa có lịch sử dụng sắp tới.
-            </span>
-            <button
-              type="button"
-              disabled={vehicle.status === 'MAINTENANCE'}
-              onClick={() => {
-                if (vehicle.status !== 'MAINTENANCE') setVehicleFeatureMode('BOOKING');
-              }}
-              style={{
-                background: 'linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '7px 12px',
-                color: '#ffffff',
-                fontSize: '11px',
-                fontWeight: 800,
-                cursor: vehicle.status === 'MAINTENANCE' ? 'not-allowed' : 'pointer',
-                opacity: vehicle.status === 'MAINTENANCE' ? 0.5 : 1,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-              }}
-            >
-              <Calendar size={13} />
-              <span>ĐẶT LỊCH</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => openGaragePanel('MY_BOOKINGS', { vehicleId: vehicle.id })}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#38bdf8',
+              fontSize: '11px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              padding: 0,
+              textDecoration: 'underline',
+            }}
+          >
+            Lịch của tôi
+          </button>
         </div>
       ) : isPrereqLoading ? (
         /* LOADING STATE */
@@ -1573,26 +1513,20 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
           </div>
           <button
             type="button"
-            onClick={() => setVehicleFeatureMode('BOOKING')}
+            onClick={() => openGaragePanel('MY_BOOKINGS', { vehicleId: vehicle.id })}
             style={{
-              width: '100%',
-              marginTop: '4px',
-              background: 'linear-gradient(135deg, #0284c7 0%, #00f2fe 100%)',
+              background: 'none',
               border: 'none',
-              borderRadius: '8px',
-              padding: '8px',
-              color: '#ffffff',
+              color: '#38bdf8',
               fontSize: '11px',
-              fontWeight: 800,
+              fontWeight: 700,
               cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
+              padding: '4px 0',
+              textAlign: 'left',
+              textDecoration: 'underline',
             }}
           >
-            <Calendar size={13} />
-            <span>ĐẶT LỊCH CHUYẾN ĐI MỚI</span>
+            Xem lịch sử chuyến đi của tôi →
           </button>
         </div>
       ) : completedHandover ? (
@@ -1967,99 +1901,94 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
       )}
 
       {/* =================================================== */}
-      {/* SECTION 6: CÁC TÍNH NĂNG PHỤ TRỢ (QUICK CHIPS)      */}
+      {/* SECTION 5: THÔNG TIN CHI TIẾT & HỒ SƠ PHÁP LÝ       */}
       {/* =================================================== */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
         <div style={{ fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-          TÍNH NĂNG NHANH
+          HỒ SƠ & PHÁP LÝ XE
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
           <button
             type="button"
-            onClick={() => setVehicleFeatureMode('CO_OWNERSHIP')}
+            onClick={() => openGaragePanel('CO_OWNERSHIP', { vehicleId: vehicle.id })}
             style={secondaryChipButtonStyle()}
+            title="Xem chi tiết nhóm đồng sở hữu và tỷ lệ cổ phần"
           >
             <Users size={13} color="#34d399" />
-            <span>Đồng sở hữu</span>
+            <span>Nhóm sở hữu</span>
           </button>
           <button
             type="button"
-            onClick={() => setVehicleFeatureMode('CO_OWNER_CONTRACT')}
+            onClick={() => openGaragePanel('CONTRACT', { vehicleId: vehicle.id })}
             style={secondaryChipButtonStyle()}
+            title="Xem hợp đồng đồng sở hữu điện tử và điều khoản"
           >
             <FileText size={13} color="#00f2fe" />
             <span>Hợp đồng</span>
           </button>
-          <button
-            type="button"
-            onClick={() => enterChargingMode(vehicle.id)}
-            style={secondaryChipButtonStyle()}
-          >
-            <BatteryCharging size={13} color="#00f2fe" />
-            <span>Sạc xe</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setVehicleFeatureMode('VEHICLE_EXPLORE')}
-            style={secondaryChipButtonStyle()}
-          >
-            <Search size={13} color="#38bdf8" />
-            <span>Khám phá 3D</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => enterVehicleMaintenanceMode()}
-            style={{
-              ...secondaryChipButtonStyle(),
-              gridColumn: '1 / -1',
-            }}
-          >
-            <Wrench size={13} color="#fbbf24" />
-            <span>Lịch sử bảo dưỡng</span>
-          </button>
         </div>
-      </div>
 
-      {/* =================================================== */}
-      {/* SECTION 7: XEM LỊCH SỬ BÀN GIAO                     */}
-      {/* =================================================== */}
-      <button
-        type="button"
-        onClick={() => setShowHandoverHistory(true)}
-        style={{
-          width: '100%',
-          background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.12) 0%, rgba(8, 20, 36, 0.9) 100%)',
-          border: '1px solid rgba(56, 189, 248, 0.35)',
-          borderRadius: '12px',
-          padding: '10px 14px',
-          color: '#38bdf8',
-          fontSize: '11px',
-          fontWeight: 800,
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '7px',
-          boxShadow: '0 0 14px rgba(56, 189, 248, 0.15)',
-          transition: 'all 0.15s ease',
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.borderColor = '#00f2fe';
-          e.currentTarget.style.color = '#00f2fe';
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.35)';
-          e.currentTarget.style.color = '#38bdf8';
-        }}
-      >
-        <History size={14} color="#00f2fe" />
-        <span>LỊCH SỬ BÀN GIAO & TRẢ XE ({handoverHistory.length})</span>
-      </button>
+        <button
+          type="button"
+          onClick={() => setShowHandoverHistory(true)}
+          style={{
+            width: '100%',
+            background: 'rgba(56, 189, 248, 0.08)',
+            border: '1px solid rgba(56, 189, 248, 0.25)',
+            borderRadius: '10px',
+            padding: '8px 12px',
+            color: '#38bdf8',
+            fontSize: '11px',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+            transition: 'all 0.15s ease',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = '#00f2fe';
+            e.currentTarget.style.color = '#00f2fe';
+            e.currentTarget.style.background = 'rgba(56, 189, 248, 0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.25)';
+            e.currentTarget.style.color = '#38bdf8';
+            e.currentTarget.style.background = 'rgba(56, 189, 248, 0.08)';
+          }}
+        >
+          <History size={13} color="#00f2fe" />
+          <span>LỊCH SỬ BÀN GIAO & TRẢ XE ({handoverHistory.length})</span>
+        </button>
+      </div>
         </>
       )}
     </div>
   );
 };
+
+function compactStatusCellStyle(): React.CSSProperties {
+  return {
+    background: 'rgba(255, 255, 255, 0.03)',
+    border: '1px solid rgba(255, 255, 255, 0.08)',
+    borderRadius: '10px',
+    padding: '7px 9px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '3px',
+  };
+}
+
+function compactStatusLabelStyle(): React.CSSProperties {
+  return {
+    fontSize: '9px',
+    color: '#94a3b8',
+    textTransform: 'uppercase',
+    fontWeight: 600,
+    letterSpacing: '0.03em',
+  };
+}
 
 function statusCardStyle(): React.CSSProperties {
   return {

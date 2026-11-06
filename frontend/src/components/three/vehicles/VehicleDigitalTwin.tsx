@@ -16,6 +16,7 @@ import {
   sortStaffFleetVehicles,
   resolveAuthoritativeHeroVehicle,
   isMatchingVehicle,
+  resolveVehicleDisplayName,
 } from './vehicleModelConfig';
 import { resolveVehicleSlot, GarageSlotDef, DEFAULT_GARAGE_SLOT } from '../../../config/garageSlotConfig';
 import { STAFF_GARAGE_LAYOUT } from '../../../config/staffGarageLayout';
@@ -351,7 +352,7 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
       shouldRenderAdminPanel) &&
     !isBusinessModeActive;
 
-  const displayName = vehicleCode === 'EV01' ? 'Xe điện thực tế' : 'Xe thử nghiệm tương tác';
+  const displayName = resolveVehicleDisplayName(vehicle, vehicleCode);
   const vehicleStatusConfig = VEHICLE_STATUS_LABELS[vehicle.status] || {
     label: 'Sẵn sàng',
     color: '#10b981',
@@ -385,6 +386,7 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
             isDeEmphasized={isDeEmphasized}
             isBatteryXray={isSelected && vehicleBatteryXrayMode}
             modelUrl={getVehicleModelUrl(vehicle.model3dUrl, vehicle)}
+            exteriorColor={vehicle.exteriorColor}
             onSelectVehicle={() => onSelect(vehicle)}
             onPointerDown={handleTurntablePointerDown}
           />
@@ -499,13 +501,20 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
                   </div>
 
                   {/* Right Details */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-                      <span style={{ fontSize: '13px', fontWeight: 900, color: '#ffffff', letterSpacing: '0.04em', lineHeight: 1.1 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    {/* Primary Heading: Authoritative Vehicle Model / Name */}
+                    <div style={{ fontSize: '13px', fontWeight: 900, color: '#ffffff', letterSpacing: '0.02em', lineHeight: 1.2 }}>
+                      {displayName}
+                    </div>
+
+                    {/* Secondary Line: Vehicle Code • License Plate */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '10px', fontWeight: 800, color: '#00e0c7', letterSpacing: '0.04em' }}>
                         {vehicleCode}
                       </span>
-                      <span style={{ fontSize: '9.5px', color: '#9bb3c9', fontWeight: 600 }}>
-                        {displayName}
+                      <span style={{ fontSize: '9px', color: '#64748b' }}>•</span>
+                      <span style={{ fontSize: '10px', color: '#cbd5e1', fontWeight: 600 }}>
+                        {vehicle.licensePlate || '51E-123.45'}
                       </span>
                     </div>
 

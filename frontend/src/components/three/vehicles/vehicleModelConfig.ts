@@ -13,6 +13,7 @@ import {
   EV02_SEMANTIC_HITBOXES,
   SemanticHitboxDef,
 } from '../../../data/vehicleParts';
+import { findCatalogEntryByModel } from '../../../data/vehicleCatalog';
 
 export const EV01_ARTICULATED_MODEL_URL = '/models/ev01-articulated.glb';
 export const EV01_REALISTIC_MODEL_URL = '/models/ev01-realistic.glb';
@@ -54,7 +55,7 @@ export interface VehicleModelDefinition {
 export const VEHICLE_MODEL_CONFIGS: Record<'EV01' | 'EV02', VehicleModelDefinition> = {
   EV01: {
     vehicleCode: 'EV01',
-    nameVi: 'Xe điện thực tế',
+    nameVi: 'VinFast VF8 Plus',
     modelPath: EV01_REALISTIC_MODEL_URL,
     articulatedModelPath: EV01_ARTICULATED_MODEL_URL,
     fallbackModelPath: EV01_FALLBACK_MODEL_URL,
@@ -250,6 +251,30 @@ export function getVehicleConfig(
 export const resolveVehicleModelConfig = getVehicleConfig;
 
 /**
+ * Single source of truth for resolving a human-readable display name for a vehicle.
+ * Ensures model/name hierarchy is prioritized over internal codes like 'EV01'.
+ */
+export function resolveVehicleDisplayName(
+  vehicle?: { name?: string; model?: string; brand?: string; code?: string } | null,
+  fallbackCode?: string
+): string {
+  if (!vehicle) return fallbackCode || 'Xe điện';
+  if (vehicle.name && !vehicle.name.includes('Demo EV') && !vehicle.name.includes('Xe điện thực tế')) {
+    return vehicle.name;
+  }
+  if (vehicle.brand && vehicle.model) {
+    return `${vehicle.brand} ${vehicle.model}`;
+  }
+  if (vehicle.model) {
+    return vehicle.model;
+  }
+  if (vehicle.name) {
+    return vehicle.name;
+  }
+  return fallbackCode === 'EV02' ? 'Xe thử nghiệm tương tác' : 'VinFast VF8 Plus';
+}
+
+/**
  * Returns the appropriate transform configuration for a given model URL
  */
 export function getModelTransformConfig(modelUrl: string): VehicleModelTransformConfig {
@@ -258,6 +283,48 @@ export function getModelTransformConfig(modelUrl: string): VehicleModelTransform
   }
   if (modelUrl.includes('ev-car.glb')) {
     return EV01_FALLBACK_TRANSFORMS;
+  }
+  if (modelUrl.includes('vinfast_vf3')) {
+    return {
+      scale: [1, 1, 1],
+      rotation: [0, 0, 0],
+      offset: [0, 0.013, 0.17],
+    };
+  }
+  if (modelUrl.includes('cybertruck')) {
+    return {
+      scale: [0.92, 0.92, 0.92],
+      rotation: [0, 0, 0],
+      offset: [0, 0.013, 0.17],
+    };
+  }
+  if (modelUrl.includes('tesla_2018_model_3')) {
+    return {
+      scale: [1, 1, 1],
+      rotation: [0, 0, 0],
+      offset: [0, 0.013, 0.17],
+    };
+  }
+  if (modelUrl.includes('2008_tesla_roadster')) {
+    return {
+      scale: [1, 1, 1],
+      rotation: [0, 0, 0],
+      offset: [0, 0.013, 0.17],
+    };
+  }
+  if (modelUrl.includes('2021_hyundai_mistra_ev')) {
+    return {
+      scale: [1, 1, 1],
+      rotation: [0, 0, 0],
+      offset: [0, 0.013, 0.17],
+    };
+  }
+  if (modelUrl.includes('2024_hyundai_kona_electric')) {
+    return {
+      scale: [1, 1, 1],
+      rotation: [0, 0, 0],
+      offset: [0, 0.013, 0.17],
+    };
   }
   return EV01_REALISTIC_TRANSFORMS;
 }
@@ -278,7 +345,18 @@ export function getVehicleModelUrl(
     return EV02_STYLIZED_MODEL_URL;
   }
 
-  // EV01 Authoritative Model Resolution:
+  // 1. Resolve registered vehicle from central multi-vehicle catalog by model/name
+  if (typeof identifier === 'object' && identifier !== null) {
+    const candidateName = identifier.model || identifier.name;
+    if (candidateName) {
+      const entry = findCatalogEntryByModel(candidateName);
+      if (entry && entry.model3dUrl && entry.id !== 'VF8_PLUS') {
+        return entry.model3dUrl;
+      }
+    }
+  }
+
+  // 2. EV01 Authoritative Model Resolution:
   if (backendModelUrl) {
     if (backendModelUrl.includes('ev02') || backendModelUrl.includes('stylized')) {
       return EV02_STYLIZED_MODEL_URL;

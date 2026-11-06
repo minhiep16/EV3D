@@ -37,6 +37,8 @@ public class UpdateVehicleRequest {
 
     private String model3dUrl;
 
+    private String exteriorColor;
+
     public UpdateVehicleRequest() {
     }
 
@@ -126,5 +128,13 @@ public class UpdateVehicleRequest {
 
     public void setModel3dUrl(String model3dUrl) {
         this.model3dUrl = model3dUrl;
+    }
+
+    public String getExteriorColor() {
+        return exteriorColor;
+    }
+
+    public void setExteriorColor(String exteriorColor) {
+        this.exteriorColor = exteriorColor;
     }
 }

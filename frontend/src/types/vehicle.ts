@@ -22,6 +22,7 @@ export interface VehicleResponse {
   odometer: number;
   status: VehicleStatus;
   model3dUrl: string;
+  exteriorColor?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -38,4 +39,5 @@ export interface UpdateVehiclePayload {
   odometer?: number;
   status?: VehicleStatus;
   model3dUrl?: string;
+  exteriorColor?: string;
 }

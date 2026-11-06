@@ -32,6 +32,7 @@ import java.util.stream.Collectors;
 
 import com.evshare.fund.config.FinancialModeConfig;
 import com.evshare.fund.entity.FinancialMode;
+import com.evshare.expense.service.ExpenseShareService;
 
 @Service
 public class PersonalPaymentService {
@@ -40,17 +41,20 @@ public class PersonalPaymentService {
     private final ExpenseRepository expenseRepository;
     private final ExpenseShareRepository expenseShareRepository;
     private final FinancialModeConfig financialModeConfig;
+    private final ExpenseShareService expenseShareService;
 
     public PersonalPaymentService(
             PersonalExpensePaymentRepository paymentRepository,
             ExpenseRepository expenseRepository,
             ExpenseShareRepository expenseShareRepository,
-            FinancialModeConfig financialModeConfig
+            FinancialModeConfig financialModeConfig,
+            ExpenseShareService expenseShareService
     ) {
         this.paymentRepository = paymentRepository;
         this.expenseRepository = expenseRepository;
         this.expenseShareRepository = expenseShareRepository;
         this.financialModeConfig = financialModeConfig;
+        this.expenseShareService = expenseShareService;
     }
 
     /**
@@ -63,12 +67,19 @@ public class PersonalPaymentService {
             PersonalPaymentSubmitRequest request,
             UserPrincipal principal
     ) {
+        if (principal == null || principal.getUser() == null) {
+            throw new AccessDeniedException("Vui lòng đăng nhập để tiếp tục.");
+        }
+
         Expense expense = expenseRepository.findById(expenseId)
                 .orElseThrow(() -> new ResourceNotFoundException("Khoản chi không tồn tại: " + expenseId));
 
         if (expense.getStatus() != ExpenseStatus.APPROVED) {
             throw new IllegalStateException("Khoản chi chưa được duyệt hợp lệ. Chưa thể thực hiện thanh toán cá nhân.");
         }
+
+        // Validate vehicle membership authorization for authenticated payer
+        expenseShareService.validateVehicleAccess(expense.getVehicle().getId(), principal);
 
         User payer = principal.getUser();
 
@@ -82,6 +93,11 @@ public class PersonalPaymentService {
             }
         } else {
             share = expenseShareRepository.findByExpenseIdAndUserId(expenseId, payer.getId()).orElse(null);
+        }
+
+        // For CO_OWNER, payment can only be submitted against a verified personal share obligation
+        if (payer.getRole() == Role.CO_OWNER && share == null) {
+            throw new AccessDeniedException("Bạn không có nghĩa vụ chi phí cá nhân nào đối với khoản chi này.");
         }
 
         if (share != null && share.getStatus() == ExpenseShareStatus.SETTLED) {
@@ -225,6 +241,11 @@ public class PersonalPaymentService {
      */
     @Transactional(readOnly = true)
     public List<PersonalExpensePaymentResponse> getPaymentsForExpense(UUID expenseId, UserPrincipal principal) {
+        Expense expense = expenseRepository.findById(expenseId)
+                .orElseThrow(() -> new ResourceNotFoundException("Khoản chi không tồn tại: " + expenseId));
+        if (principal != null) {
+            expenseShareService.validateVehicleAccess(expense.getVehicle().getId(), principal);
+        }
         return paymentRepository.findByExpenseIdOrderByCreatedAtDesc(expenseId).stream()
                 .map(this::mapToPaymentResponse)
                 .collect(Collectors.toList());

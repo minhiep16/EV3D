@@ -47,6 +47,9 @@ public class VehicleRegistrationDraft {
     @Column(name = "battery_type", length = 50)
     private String batteryType;
 
+    @Column(name = "exterior_color", length = 50)
+    private String exteriorColor = "Trắng ngọc trai";
+
     @Column(name = "group_name", length = 100)
     private String groupName;
 
@@ -233,6 +236,14 @@ public class VehicleRegistrationDraft {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public String getExteriorColor() {
+        return exteriorColor != null && !exteriorColor.isBlank() ? exteriorColor : "Trắng ngọc trai";
+    }
+
+    public void setExteriorColor(String exteriorColor) {
+        this.exteriorColor = exteriorColor;
     }
 }
 

@@ -132,8 +132,7 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
         (v) =>
           v.id === selectedVehicleId ||
           v.vin === selectedVehicleId ||
-          v.name?.toUpperCase() === selectedVehicleId.toUpperCase() ||
-          (selectedVehicleId.toUpperCase() === 'EV01' && (v.name?.toUpperCase().includes('EV') || v.id === '11111111-1111-1111-1111-111111111111'))
+          v.name?.toUpperCase() === selectedVehicleId.toUpperCase()
       );
       if (match) return match;
     }
@@ -143,8 +142,7 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
   const activeVehicleId = useMemo(() => {
     if (activeVehicle?.id) return activeVehicle.id;
     if (selectedVehicleId && selectedVehicleId.length === 36) return selectedVehicleId;
-    if (selectedVehicleId?.toUpperCase() === 'EV01') return '11111111-1111-1111-1111-111111111111';
-    return vehicles[0]?.id || '11111111-1111-1111-1111-111111111111';
+    return vehicles[0]?.id || null;
   }, [activeVehicle, selectedVehicleId, vehicles]);
 
   const targetVehicleId = activeVehicleId;
@@ -152,7 +150,7 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
   // Authoritative co-ownership group members for payer selection
   const { data: coOwnership } = useQuery({
     queryKey: ['co-ownership', activeVehicleId],
-    queryFn: () => fetchVehicleCoOwnership(activeVehicleId),
+    queryFn: () => (activeVehicleId ? fetchVehicleCoOwnership(activeVehicleId) : Promise.resolve(null)),
     enabled: !!activeVehicleId,
   });
   const coOwners = coOwnership?.members || [];
@@ -310,12 +308,9 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
     if (currentUserMember?.share?.percentage != null) {
       return Number(currentUserMember.share.percentage);
     }
-    // 3. Fallback based on authenticated user identity
-    if (user?.id === '00000000-0000-0000-0000-000000000012' || user?.fullName?.includes('Tran Thi B')) return 30;
-    if (user?.id === '00000000-0000-0000-0000-000000000013' || user?.fullName?.includes('Le Van C')) return 30;
-    if (user?.id === 'cbd7b894-a6c6-4b51-81d0-9a344715755b' || user?.fullName?.includes('Nguyen Van A')) return 40;
-    return 30;
-  }, [costSharingSummary?.userOwnershipPercentage, currentUserMember?.share?.percentage, user?.id, user?.fullName]);
+    // 3. User is not an active co-owner in this vehicle group
+    return 0;
+  }, [costSharingSummary?.userOwnershipPercentage, currentUserMember?.share?.percentage]);
 
   const formattedMonthlyExpense = useMemo(() => {
     if (isSummaryLoading) return 'Đang tải...';
@@ -1195,7 +1190,7 @@ const FinanceControlHologram3DContent: React.FC<FinanceControlHologram3DProps> =
                               whiteSpace: 'nowrap',
                             }}
                           >
-                            {activeVehicle?.name || 'EV01'} — CHẾ ĐỘ TÀI CHÍNH DEMO
+                            {activeVehicle?.name || 'EVSHARE'} — CHẾ ĐỘ TÀI CHÍNH DEMO
                           </span>
                         </div>
                       </div>

@@ -80,6 +80,14 @@ public class OnboardingController {
         return ResponseEntity.ok(Map.of("message", "Draft deleted successfully"));
     }
 
+    @GetMapping("/search-users")
+    public ResponseEntity<List<OnboardingUserSearchResponse>> searchUsers(
+            @RequestParam(required = false) String query,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(onboardingService.searchEligibleUsers(query, principal));
+    }
+
     @PostMapping("/drafts/{draftId}/submit")
     public ResponseEntity<VehicleResponse> submitRegistration(
             @PathVariable UUID draftId,
@@ -154,6 +162,36 @@ public class OnboardingController {
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         return ResponseEntity.ok(onboardingService.getMyInvitations(principal));
+    }
+
+    @GetMapping("/invitations/{invitationId}/contract")
+    public ResponseEntity<InvitationContractReviewResponse> getInvitationContractReview(
+            @PathVariable UUID invitationId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(onboardingService.getInvitationContractReview(invitationId, principal));
+    }
+
+    @PostMapping("/invitations/{invitationId}/consent")
+    public ResponseEntity<GroupInvitationResponse> recordInvitationConsent(
+            @PathVariable UUID invitationId,
+            @Valid @RequestBody InvitationConsentRequest request,
+            @AuthenticationPrincipal UserPrincipal principal,
+            jakarta.servlet.http.HttpServletRequest servletRequest
+    ) {
+        String ipAddress = servletRequest != null ? servletRequest.getRemoteAddr() : "127.0.0.1";
+        return ResponseEntity.ok(onboardingService.recordInvitationConsent(invitationId, request, principal, ipAddress));
+    }
+
+    @PostMapping("/invitations/{invitationId}/sign-and-accept")
+    public ResponseEntity<GroupInvitationResponse> signAndAcceptInvitation(
+            @PathVariable UUID invitationId,
+            @Valid @RequestBody InvitationConsentRequest request,
+            @AuthenticationPrincipal UserPrincipal principal,
+            jakarta.servlet.http.HttpServletRequest servletRequest
+    ) {
+        String ipAddress = servletRequest != null ? servletRequest.getRemoteAddr() : "127.0.0.1";
+        return ResponseEntity.ok(onboardingService.signAndAcceptInvitation(invitationId, request, principal, ipAddress));
     }
 
     @PostMapping("/invitations/{invitationId}/respond")

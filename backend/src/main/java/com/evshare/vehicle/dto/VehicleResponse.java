@@ -24,6 +24,7 @@ public class VehicleResponse {
     private BigDecimal odometer;
     private VehicleStatus status;
     private String model3dUrl;
+    private String exteriorColor;
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -47,6 +48,7 @@ public class VehicleResponse {
         response.setOdometer(vehicle.getOdometer());
         response.setStatus(vehicle.getStatus());
         response.setModel3dUrl(vehicle.getModel3dUrl());
+        response.setExteriorColor(vehicle.getExteriorColor());
         response.setCreatedAt(vehicle.getCreatedAt());
         response.setUpdatedAt(vehicle.getUpdatedAt());
         return response;
@@ -186,5 +188,13 @@ public class VehicleResponse {
 
     public void setEnergyConsumptionKwhPer100Km(BigDecimal energyConsumptionKwhPer100Km) {
         this.energyConsumptionKwhPer100Km = energyConsumptionKwhPer100Km;
+    }
+
+    public String getExteriorColor() {
+        return exteriorColor;
+    }
+
+    public void setExteriorColor(String exteriorColor) {
+        this.exteriorColor = exteriorColor;
     }
 }

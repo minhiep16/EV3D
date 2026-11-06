@@ -2222,7 +2222,7 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
     top: '90px',
     right: '20px',
     bottom: '20px',
-    width: 'min(520px, calc(100vw - 32px))',
+    width: 'min(480px, calc(100vw - 32px))',
     height: 'calc(100vh - 110px)',
     maxHeight: 'calc(100vh - 110px)',
     zIndex: 1000,
@@ -2233,7 +2233,7 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
     backdropFilter: 'blur(24px)',
     WebkitBackdropFilter: 'blur(24px)',
     border: '1.5px solid rgba(34, 230, 255, 0.35)',
-    borderRadius: '20px',
+    borderRadius: '16px',
     boxShadow: '0 20px 50px rgba(0, 0, 0, 0.75), 0 0 30px rgba(34, 230, 255, 0.14)',
     color: '#ffffff',
     overflow: 'hidden',
@@ -4039,10 +4039,10 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
       onPointerDown={(e) => e.stopPropagation()}
       style={panelStyle}
     >
-      {/* 1. HEADER BAR */}
+      {/* 1. COMPACT FIXED HEADER */}
       <div
         style={{
-          padding: '16px 18px',
+          padding: '12px 16px',
           borderBottom: '1px solid rgba(34, 230, 255, 0.18)',
           background: 'linear-gradient(90deg, rgba(34, 230, 255, 0.08) 0%, transparent 100%)',
           display: 'flex',
@@ -4051,27 +4051,27 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
           flexShrink: 0,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
           <div
             style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '10px',
+              width: '28px',
+              height: '28px',
+              borderRadius: '8px',
               background: 'linear-gradient(135deg, rgba(34, 230, 255, 0.25), rgba(8, 16, 30, 0.9))',
               border: '1px solid #22e6ff',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               color: '#22e6ff',
-              boxShadow: '0 0 12px rgba(34, 230, 255, 0.3)',
+              boxShadow: '0 0 10px rgba(34, 230, 255, 0.3)',
             }}
           >
-            <Users size={16} />
+            <Users size={14} />
           </div>
           <div>
             <div
               style={{
-                fontSize: '14px',
+                fontSize: '13.5px',
                 fontWeight: 800,
                 color: '#ffffff',
                 letterSpacing: '0.02em',
@@ -4080,7 +4080,7 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
             >
               QUẢN LÝ ĐỒNG SỞ HỮU
             </div>
-            <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '1px' }}>
+            <div style={{ fontSize: '10.5px', color: '#94a3b8', marginTop: '1px' }}>
               {vehicleCode} • {vehicle.licensePlate || 'Xe số hóa'}
             </div>
           </div>
@@ -4092,14 +4092,14 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
               display: 'inline-flex',
               alignItems: 'center',
               gap: '4px',
-              padding: '3px 8px',
+              padding: '2px 7px',
               borderRadius: '9999px',
-              background: 'rgba(16, 185, 129, 0.15)',
-              border: '1px solid rgba(16, 185, 129, 0.45)',
-              color: '#10b981',
-              fontSize: '10px',
+              background: isComplete ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+              border: isComplete ? '1px solid rgba(16, 185, 129, 0.45)' : '1px solid rgba(245, 158, 11, 0.45)',
+              color: isComplete ? '#10b981' : '#fbbf24',
+              fontSize: '9.5px',
               fontWeight: 800,
-              letterSpacing: '0.04em',
+              letterSpacing: '0.03em',
             }}
           >
             <span
@@ -4107,8 +4107,8 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
                 width: '5px',
                 height: '5px',
                 borderRadius: '50%',
-                background: '#10b981',
-                boxShadow: '0 0 6px #10b981',
+                background: isComplete ? '#10b981' : '#f59e0b',
+                boxShadow: `0 0 6px ${isComplete ? '#10b981' : '#f59e0b'}`,
               }}
             />
             {statusLabel}
@@ -4121,9 +4121,9 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
             style={{
               background: 'rgba(255, 255, 255, 0.06)',
               border: '1px solid rgba(255, 255, 255, 0.15)',
-              borderRadius: '8px',
-              width: '28px',
-              height: '28px',
+              borderRadius: '7px',
+              width: '26px',
+              height: '26px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -4132,7 +4132,7 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
               transition: 'all 0.2s ease',
             }}
           >
-            <X size={15} />
+            <X size={14} />
           </button>
         </div>
       </div>
@@ -4142,8 +4142,8 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: '6px',
-          padding: '10px 16px',
+          gap: '5px',
+          padding: '8px 14px',
           background: 'rgba(8, 16, 30, 0.95)',
           borderBottom: '1px solid rgba(34, 230, 255, 0.15)',
           flexShrink: 0,
@@ -4157,16 +4157,16 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
             setSelectedHistoryDetail(null);
           }}
           style={{
-            padding: '8px 4px',
-            borderRadius: '8px',
-            fontSize: '12px',
+            padding: '6px 4px',
+            borderRadius: '7px',
+            fontSize: '11px',
             fontWeight: 800,
             background: managementTab === 'OVERVIEW' ? 'rgba(34, 230, 255, 0.20)' : 'rgba(255, 255, 255, 0.04)',
-            border: managementTab === 'OVERVIEW' ? '1.5px solid #22e6ff' : '1px solid rgba(255, 255, 255, 0.12)',
+            border: managementTab === 'OVERVIEW' ? '1.2px solid #22e6ff' : '1px solid rgba(255, 255, 255, 0.10)',
             color: managementTab === 'OVERVIEW' ? '#22e6ff' : '#94a3b8',
             cursor: 'pointer',
             transition: 'all 0.2s',
-            boxShadow: managementTab === 'OVERVIEW' ? '0 0 14px rgba(34, 230, 255, 0.35)' : 'none',
+            boxShadow: managementTab === 'OVERVIEW' ? '0 0 12px rgba(34, 230, 255, 0.3)' : 'none',
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -4186,16 +4186,16 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
             setSelectedHistoryDetail(null);
           }}
           style={{
-            padding: '8px 4px',
-            borderRadius: '8px',
-            fontSize: '12px',
+            padding: '6px 4px',
+            borderRadius: '7px',
+            fontSize: '11px',
             fontWeight: 800,
             background: managementTab === 'PENDING' ? 'rgba(34, 230, 255, 0.20)' : 'rgba(255, 255, 255, 0.04)',
-            border: managementTab === 'PENDING' ? '1.5px solid #22e6ff' : '1px solid rgba(255, 255, 255, 0.12)',
+            border: managementTab === 'PENDING' ? '1.2px solid #22e6ff' : '1px solid rgba(255, 255, 255, 0.10)',
             color: managementTab === 'PENDING' ? '#22e6ff' : '#94a3b8',
             cursor: 'pointer',
             transition: 'all 0.2s',
-            boxShadow: managementTab === 'PENDING' ? '0 0 14px rgba(34, 230, 255, 0.35)' : 'none',
+            boxShadow: managementTab === 'PENDING' ? '0 0 12px rgba(34, 230, 255, 0.3)' : 'none',
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -4215,16 +4215,16 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
             setSelectedHistoryDetail(null);
           }}
           style={{
-            padding: '8px 4px',
-            borderRadius: '8px',
-            fontSize: '12px',
+            padding: '6px 4px',
+            borderRadius: '7px',
+            fontSize: '11px',
             fontWeight: 800,
             background: managementTab === 'HISTORY' ? 'rgba(34, 230, 255, 0.20)' : 'rgba(255, 255, 255, 0.04)',
-            border: managementTab === 'HISTORY' ? '1.5px solid #22e6ff' : '1px solid rgba(255, 255, 255, 0.12)',
+            border: managementTab === 'HISTORY' ? '1.2px solid #22e6ff' : '1px solid rgba(255, 255, 255, 0.10)',
             color: managementTab === 'HISTORY' ? '#22e6ff' : '#94a3b8',
             cursor: 'pointer',
             transition: 'all 0.2s',
-            boxShadow: managementTab === 'HISTORY' ? '0 0 14px rgba(34, 230, 255, 0.35)' : 'none',
+            boxShadow: managementTab === 'HISTORY' ? '0 0 12px rgba(34, 230, 255, 0.3)' : 'none',
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -4241,12 +4241,12 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
       {/* 3. CONTENT BODY */}
       <div
         style={{
-          padding: '16px',
+          padding: '12px 14px',
           overflowY: 'auto',
           overflowX: 'hidden',
           display: 'flex',
           flexDirection: 'column',
-          gap: '12px',
+          gap: '9px',
           flex: 1,
           minHeight: 0,
         }}
@@ -4288,670 +4288,492 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
           </div>
         )}
 
-        {/* TAB 1: TỔNG QUAN */}
+        {/* TAB 1: TỔNG QUAN (PREMIUM COMPACT REDESIGN) */}
         {managementTab === 'OVERVIEW' && (
           <>
-            {/* Overview Pending Action Summaries */}
-            {actionNeededTransfers.length === 0 ? (
+            {/* 1. Pending Action Alert Strip (Only rendered if pending actions exist, otherwise clean) */}
+            {actionNeededTransfers.length > 0 && (
               <div
+                id="alert-strip-pending-actions"
+                onClick={() => setManagementTab('PENDING')}
                 style={{
-                  background: 'rgba(7, 20, 38, 0.50)',
-                  border: '1px dashed rgba(255, 255, 255, 0.12)',
+                  background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.16), rgba(217, 119, 6, 0.22))',
+                  border: '1.2px solid #f59e0b',
                   borderRadius: '10px',
-                  padding: '18px 14px',
-                  textAlign: 'center',
-                  color: '#94a3b8',
-                  fontSize: '11px',
-                }}
-              >
-                Không có giao dịch nào cần bạn xử lý lúc này.
-              </div>
-            ) : (
-              actionNeededTransfers.map((t) => {
-                const currentId = String(currentUser?.id || '').toLowerCase();
-                const isTransferor = currentId === String(t.fromUserId ?? t.transferorUserId ?? '').toLowerCase();
-                const isRecipient = currentId === String(t.toUserId ?? t.recipientUserId ?? '').toLowerCase();
-                const isTransferorAccepted = Boolean(t.transferorAccepted ?? t.isTransferorAccepted);
-                const isRecipientAccepted = Boolean(t.recipientAccepted ?? t.isRecipientAccepted);
-                const bothAccepted = isTransferorAccepted && isRecipientAccepted;
-                const isCompleted = t.status === 'COMPLETED';
-                const hasFinBlocker = Boolean(
-                  t.hasOutstandingFinancialObligations ||
-                  (t.finalizationBlockers && t.finalizationBlockers.some((b) => b.includes('tài chính') || b.includes('nghĩa vụ')))
-                );
-                const currentUserMustConfirm =
-                  !isCompleted &&
-                  ((isTransferor && !isTransferorAccepted) || (isRecipient && !isRecipientAccepted));
-
-                let badgeText = '';
-                let badgeColor = '';
-                let badgeBg = '';
-                let badgeBorder = '';
-                let cardDesc = '';
-
-                if (isCompleted) {
-                  badgeText = 'CHUYỂN NHƯỢNG THÀNH CÔNG';
-                  badgeColor = '#10b981';
-                  badgeBg = 'rgba(16, 185, 129, 0.15)';
-                  badgeBorder = '#10b981';
-                  cardDesc = `Giao dịch chuyển nhượng ${t.transferPercentage}% từ ${t.fromUserName} sang ${t.toUserName} đã hoàn tất.`;
-                } else if (currentUserMustConfirm) {
-                  badgeText = 'CẦN BẠN XÁC NHẬN';
-                  badgeColor = '#fbbf24';
-                  badgeBg = 'rgba(245, 158, 11, 0.2)';
-                  badgeBorder = '#f59e0b';
-                  cardDesc = isTransferor
-                    ? `Bạn cần xác nhận phụ lục để tiếp tục giao dịch ${t.transferPercentage}%.`
-                    : `Bạn cần đồng ý nhận chuyển nhượng ${t.transferPercentage}% từ ${t.fromUserName}.`;
-                } else if (hasFinBlocker) {
-                  badgeText = 'CHỜ HOÀN TẤT NGHĨA VỤ TÀI CHÍNH';
-                  badgeColor = '#f87171';
-                  badgeBg = 'rgba(239, 68, 68, 0.15)';
-                  badgeBorder = '#ef4444';
-                  cardDesc = `Tiến độ: ${(isTransferorAccepted ? 1 : 0) + (isRecipientAccepted ? 1 : 0)}/2 • Người chuyển nhượng (${t.fromUserName}) còn nghĩa vụ tài chính chưa thanh toán.`;
-                } else if (!bothAccepted) {
-                  badgeText = 'CHỜ BÊN CÒN LẠI XÁC NHẬN';
-                  badgeColor = '#38bdf8';
-                  badgeBg = 'rgba(56, 189, 248, 0.15)';
-                  badgeBorder = '#38bdf8';
-                  cardDesc = isTransferor
-                    ? `Bạn đã ký • Chờ bên nhận (${t.toUserName}) ký xác nhận phụ lục.`
-                    : isRecipient
-                    ? `Bạn đã ký • Chờ bên chuyển (${t.fromUserName}) ký xác nhận phụ lục.`
-                    : `Chờ các bên liên quan ký xác nhận phụ lục chuyển nhượng.`;
-                } else {
-                  badgeText = 'ĐỦ ĐIỀU KIỆN HOÀN TẤT';
-                  badgeColor = '#10b981';
-                  badgeBg = 'rgba(16, 185, 129, 0.15)';
-                  badgeBorder = '#10b981';
-                  cardDesc = 'Cả hai bên đã xác nhận (2/2) và không còn nghĩa vụ nợ. Sẵn sàng hoàn tất!';
-                }
-
-                const handleCardClick = () => {
-                  if (isCompleted) {
-                    setSelectedHistoryDetail(t);
-                    setManagementTab('HISTORY');
-                  } else {
-                    handleOpenTransferDetail(t.id);
-                  }
-                };
-
-                return (
-                  <div
-                    key={`coowner-card-${t.id}`}
-                    id={`card-transfer-coowner-${t.id}`}
-                    onClick={handleCardClick}
-                    style={{
-                      background: isCompleted
-                        ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.2))'
-                        : currentUserMustConfirm
-                        ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(217, 119, 6, 0.25))'
-                        : hasFinBlocker
-                        ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(185, 28, 28, 0.2))'
-                        : 'linear-gradient(135deg, rgba(56, 189, 248, 0.15), rgba(3, 105, 161, 0.2))',
-                      border: `1.5px solid ${badgeBorder}`,
-                      borderRadius: '12px',
-                      padding: '12px 14px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '6px',
-                      cursor: 'pointer',
-                      boxShadow: `0 0 16px ${badgeBorder}30`,
-                      transition: 'all 0.2s ease',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {isCompleted ? (
-                          <CheckCircle2 size={16} color="#10b981" />
-                        ) : currentUserMustConfirm ? (
-                          <AlertCircle size={16} color="#fbbf24" />
-                        ) : (
-                          <Clock size={16} color="#38bdf8" />
-                        )}
-                        <span style={{ fontSize: '12px', fontWeight: 800, color: '#ffffff' }}>
-                          {t.fromUserName} ➔ {t.toUserName} ({t.transferPercentage}%)
-                        </span>
-                      </div>
-                      <span
-                        style={{
-                          fontSize: '9.5px',
-                          fontWeight: 800,
-                          padding: '3px 8px',
-                          borderRadius: '9999px',
-                          background: badgeBg,
-                          border: `1px solid ${badgeBorder}`,
-                          color: badgeColor,
-                        }}
-                      >
-                        {badgeText}
-                      </span>
-                    </div>
-
-                    <div style={{ fontSize: '10.5px', color: '#cbd5e1', lineHeight: 1.4 }}>
-                      {cardDesc}
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px', fontSize: '9.5px', color: '#94a3b8' }}>
-                      <span>Xác nhận: {(isTransferorAccepted ? 1 : 0) + (isRecipientAccepted ? 1 : 0)}/2 bên</span>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: badgeColor, fontWeight: 700 }}>
-                        {isCompleted ? 'Xem lịch sử' : 'Chi tiết giao dịch'} <ArrowRight size={11} />
-                      </span>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-
-        {/* 4 CORE METRICS */}
-        <div
-          style={{
-            background: 'rgba(255, 255, 255, 0.03)',
-            border: '1px solid rgba(34, 230, 255, 0.18)',
-            borderRadius: '14px',
-            padding: '12px 14px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: '10px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-              TỔNG QUAN NHÓM
-            </span>
-            <span style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff' }}>
-              {coOwnership?.name || `${vehicleCode} Co-ownership`}
-            </span>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-            <div
-              style={{
-                background: 'rgba(7, 20, 38, 0.65)',
-                border: '1px solid rgba(255, 255, 255, 0.06)',
-                borderRadius: '8px',
-                padding: '6px 8px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <span style={{ fontSize: '10.5px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <Users size={12} color="#94a3b8" />
-                Thành viên:
-              </span>
-              <span style={{ fontSize: '12px', fontWeight: 700, color: '#f8fafc' }}>
-                {memberCount}
-              </span>
-            </div>
-
-            <div
-              style={{
-                background: 'rgba(7, 20, 38, 0.65)',
-                border: '1px solid rgba(255, 255, 255, 0.06)',
-                borderRadius: '8px',
-                padding: '6px 8px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <span style={{ fontSize: '10.5px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <Car size={12} color="#94a3b8" />
-                Xe nhóm:
-              </span>
-              <span style={{ fontSize: '12px', fontWeight: 700, color: '#f8fafc' }}>
-                {vehicleCount}
-              </span>
-            </div>
-
-            <div
-              style={{
-                background: 'rgba(7, 20, 38, 0.65)',
-                border: '1px solid rgba(255, 255, 255, 0.06)',
-                borderRadius: '8px',
-                padding: '6px 8px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <span style={{ fontSize: '10.5px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <PieChart size={12} color="#22e6ff" />
-                Tổng tỷ lệ:
-              </span>
-              <span style={{ fontSize: '12px', fontWeight: 800, color: '#22e6ff' }}>
-                {totalPercentage}%
-              </span>
-            </div>
-
-            <div
-              style={{
-                background: 'rgba(7, 20, 38, 0.65)',
-                border: '1px solid rgba(255, 255, 255, 0.06)',
-                borderRadius: '8px',
-                padding: '6px 8px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <span style={{ fontSize: '10.5px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <ShieldCheck size={12} color="#10b981" />
-                Trạng thái:
-              </span>
-              <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#10b981' }}>
-                {statusLabel}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* ACTION BUTTONS BAR: 4 Core Phase 23 Actions */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-          <button
-            type="button"
-            onClick={() => setCurrentView('TRANSFER_FORM')}
-            disabled={currentUserShare <= 0}
-            style={{
-              padding: '8px 10px',
-              background:
-                currentUserShare > 0
-                  ? 'linear-gradient(135deg, rgba(34, 230, 255, 0.18), rgba(14, 165, 233, 0.25))'
-                  : 'rgba(255, 255, 255, 0.04)',
-              border: currentUserShare > 0 ? '1px solid #22e6ff' : '1px solid rgba(255, 255, 255, 0.1)',
-              borderRadius: '8px',
-              color: currentUserShare > 0 ? '#22e6ff' : '#64748b',
-              fontSize: '11px',
-              fontWeight: 750,
-              cursor: currentUserShare > 0 ? 'pointer' : 'not-allowed',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-            }}
-          >
-            <Send size={12} />
-            <span>CHUYỂN NHƯỢNG SỞ HỮU</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setFocusedTransferId(null);
-              setCurrentView('INCOMING_TRANSFERS');
-            }}
-            style={{
-              padding: '8px 10px',
-              background:
-                (pendingIncomingCount > 0 || outgoingTransfers.some((t) => t.status !== 'COMPLETED'))
-                  ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.22), rgba(217, 119, 6, 0.25))'
-                  : 'rgba(255, 255, 255, 0.05)',
-              border:
-                (pendingIncomingCount > 0 || outgoingTransfers.some((t) => t.status !== 'COMPLETED'))
-                  ? '1px solid #f59e0b'
-                  : '1px solid rgba(255, 255, 255, 0.12)',
-              borderRadius: '8px',
-              color:
-                (pendingIncomingCount > 0 || outgoingTransfers.some((t) => t.status !== 'COMPLETED'))
-                  ? '#fbbf24'
-                  : '#cbd5e1',
-              fontSize: '11px',
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-            }}
-          >
-            <Clock size={12} />
-            <span>
-              YÊU CẦU CHUYỂN NHƯỢNG{' '}
-              {pendingIncomingCount > 0 || outgoingTransfers.some((t) => t.status !== 'COMPLETED')
-                ? `(${pendingIncomingCount + outgoingTransfers.filter((t) => t.status !== 'COMPLETED').length})`
-                : ''}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setCurrentView('WITHDRAWAL_FORM')}
-            style={{
-              padding: '8px 10px',
-              background: 'rgba(239, 68, 68, 0.1)',
-              border: '1px solid rgba(239, 68, 68, 0.3)',
-              borderRadius: '8px',
-              color: '#f87171',
-              fontSize: '11px',
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-            }}
-          >
-            <LogOut size={12} />
-            <span>YÊU CẦU RÚT KHỎI NHÓM</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedHistoryDetail(null);
-              setManagementTab('HISTORY');
-            }}
-            style={{
-              padding: '8px 10px',
-              background: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
-              borderRadius: '8px',
-              color: '#94a3b8',
-              fontSize: '11px',
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-            }}
-          >
-            <History size={12} />
-            <span>LỊCH SỬ SỞ HỮU</span>
-          </button>
-        </div>
-
-        {/* SECTION: THÀNH VIÊN ĐỒNG SỞ HỮU (Main list) */}
-        <div
-          style={{
-            background: 'rgba(7, 20, 38, 0.75)',
-            border: '1px solid rgba(34, 230, 255, 0.25)',
-            borderRadius: '14px',
-            padding: '12px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '6px', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
-            <span style={{ fontSize: '11px', fontWeight: 800, color: '#22e6ff', letterSpacing: '0.04em' }}>
-              THÀNH VIÊN ĐỒNG SỞ HỮU
-            </span>
-            <span style={{ fontSize: '10px', color: '#94a3b8' }}>
-              {(Array.isArray(activeMembers) ? activeMembers : []).length} thành viên
-            </span>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            {(Array.isArray(activeMembers) ? activeMembers : []).map((m, index) => {
-              const orbColor = OWNER_ORB_COLORS[index % OWNER_ORB_COLORS.length];
-              const isCurrentUser = m.userId === currentUser?.id;
-              const isRep = m.memberRole === 'REPRESENTATIVE';
-              const sharePct = m.share?.percentage ?? 0;
-
-              return (
-                <div
-                  key={m.id}
-                  style={{
-                    background: isCurrentUser ? 'rgba(34, 230, 255, 0.08)' : 'rgba(255, 255, 255, 0.03)',
-                    border: isCurrentUser ? '1px solid rgba(34, 230, 255, 0.4)' : '1px solid rgba(255, 255, 255, 0.06)',
-                    borderRadius: '10px',
-                    padding: '8px 10px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                    <div
-                      style={{
-                        width: '10px',
-                        height: '10px',
-                        borderRadius: '50%',
-                        background: orbColor,
-                        boxShadow: `0 0 8px ${orbColor}`,
-                        flexShrink: 0,
-                      }}
-                    />
-                    <div style={{ minWidth: 0 }}>
-                      <div
-                        style={{
-                          fontSize: '11.5px',
-                          fontWeight: 700,
-                          color: '#ffffff',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                        }}
-                      >
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {m.fullName}
-                        </span>
-                        {isCurrentUser && (
-                          <span style={{ fontSize: '9px', padding: '1px 5px', borderRadius: '4px', background: '#22e6ff20', color: '#22e6ff', fontWeight: 800 }}>
-                            Bạn
-                          </span>
-                        )}
-                      </div>
-                      <div style={{ fontSize: '9.5px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '1px' }}>
-                        <span>{isRep ? 'Đại diện nhóm' : 'Đồng sở hữu'}</span>
-                        <span>•</span>
-                        <span style={{ color: '#10b981' }}>Hiệu lực hợp đồng</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                    <div
-                      style={{
-                        fontSize: '13px',
-                        fontWeight: 800,
-                        color: orbColor,
-                        fontFamily: 'monospace',
-                      }}
-                    >
-                      {sharePct}%
-                    </div>
-                    <div style={{ fontSize: '9px', color: '#64748b' }}>Cổ phần</div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* CONTRACT VIEW LINK */}
-        <button
-          type="button"
-          onClick={() => openGaragePanel('CONTRACT', { vehicleId: vehicle.id })}
-          style={{
-            width: '100%',
-            height: '32px',
-            background: 'rgba(0, 242, 254, 0.10)',
-            border: '1px solid rgba(0, 242, 254, 0.35)',
-            borderRadius: '8px',
-            color: '#00f2fe',
-            fontSize: '11px',
-            fontWeight: 750,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '6px',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-          }}
-        >
-          <FileText size={13} color="#00f2fe" />
-          <span>XEM HỢP ĐỒNG ĐỒNG SỞ HỮU & QUY CHẾ</span>
-        </button>
-
-        {/* REPRESENTATIVE: ADD MEMBER SECTION */}
-        {canManage && (
-          <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {!isAddMemberOpen ? (
-              <button
-                type="button"
-                onClick={() => setIsAddMemberOpen(true)}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  background: 'linear-gradient(135deg, rgba(34, 230, 255, 0.18), rgba(8, 16, 30, 0.95))',
-                  border: '1px solid #22e6ff',
-                  borderRadius: '10px',
-                  color: '#ffffff',
-                  fontSize: '11.5px',
-                  fontWeight: 800,
-                  cursor: 'pointer',
+                  padding: '9px 12px',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer',
+                  boxShadow: '0 0 12px rgba(245, 158, 11, 0.2)',
+                  transition: 'all 0.2s ease',
+                  flexShrink: 0,
                 }}
               >
-                <UserPlus size={14} color="#22e6ff" />
-                <span>+ THÊM THÀNH VIÊN VÀO NHÓM</span>
-              </button>
-            ) : (
-              <div
-                style={{
-                  background: 'rgba(7, 20, 38, 0.92)',
-                  border: '1.5px solid rgba(34, 230, 255, 0.4)',
-                  borderRadius: '12px',
-                  padding: '12px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '8px',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: '11px', fontWeight: 800, color: '#22e6ff' }}>
-                    TÌM KIẾM & THÊM THÀNH VIÊN
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsAddMemberOpen(false);
-                      setSelectedUserToAdd(null);
-                      setAddError(null);
-                    }}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <AlertCircle size={15} color="#fbbf24" style={{ flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontSize: '11.5px', fontWeight: 800, color: '#ffffff' }}>
+                      Có {actionNeededTransfers.length} giao dịch cần xử lý
+                    </div>
+                    <div style={{ fontSize: '10px', color: '#fde68a' }}>
+                      Chuyển nhượng hoặc ký phụ lục hợp đồng
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10.5px', color: '#fbbf24', fontWeight: 700 }}>
+                  <span>Xem ({actionNeededTransfers.length})</span>
+                  <ArrowRight size={12} />
+                </div>
+              </div>
+            )}
+
+            {/* 2. Compact Group Identity & Validity Summary */}
+            <div
+              style={{
+                background: 'rgba(7, 20, 38, 0.70)',
+                border: '1px solid rgba(34, 230, 255, 0.22)',
+                borderRadius: '12px',
+                padding: '10px 14px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                flexShrink: 0,
+              }}
+            >
+              {/* Group Name & Status */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ minWidth: 0 }}>
+                  <div
                     style={{
-                      background: 'none',
-                      border: 'none',
-                      color: '#94a3b8',
-                      cursor: 'pointer',
-                      padding: '2px',
+                      fontSize: '12.5px',
+                      fontWeight: 800,
+                      color: '#ffffff',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
                     }}
                   >
-                    <X size={14} />
-                  </button>
+                    {coOwnership?.name || `${vehicleCode} Co-ownership`}
+                  </div>
+                  <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '1px' }}>
+                    {memberCount} thành viên • {vehicleCount} xe điện
+                  </div>
                 </div>
 
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#22e6ff', fontFamily: 'monospace' }}>
+                    {totalPercentage}%
+                  </div>
+                  <div style={{ fontSize: '9.5px', color: isComplete ? '#10b981' : '#f59e0b', fontWeight: 700 }}>
+                    {statusLabel}
+                  </div>
+                </div>
+              </div>
+
+              {/* Slim Segmented Ownership Bar */}
+              <div>
                 <div
                   style={{
+                    height: '8px',
+                    borderRadius: '9999px',
+                    background: 'rgba(255, 255, 255, 0.08)',
                     display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    background: 'rgba(255, 255, 255, 0.05)',
-                    border: '1px solid rgba(255, 255, 255, 0.15)',
-                    borderRadius: '8px',
-                    padding: '6px 10px',
+                    overflow: 'hidden',
+                    width: '100%',
                   }}
                 >
-                  <Search size={13} color="#94a3b8" />
-                  <input
-                    type="text"
-                    placeholder="Tìm theo tên hoặc email..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: '#ffffff',
-                      fontSize: '11px',
-                      outline: 'none',
-                      width: '100%',
-                    }}
-                  />
+                  {activeMembers.map((m, index) => {
+                    const orbColor = OWNER_ORB_COLORS[index % OWNER_ORB_COLORS.length];
+                    const pct = Math.max(0, m.share?.percentage ?? 0);
+                    if (pct <= 0) return null;
+                    return (
+                      <div
+                        key={m.id || index}
+                        style={{
+                          width: `${pct}%`,
+                          height: '100%',
+                          background: orbColor,
+                          boxShadow: `0 0 6px ${orbColor}60`,
+                          transition: 'width 0.3s ease',
+                        }}
+                        title={`${m.fullName}: ${pct}%`}
+                      />
+                    );
+                  })}
                 </div>
+              </div>
+            </div>
 
-                <div style={{ maxHeight: '110px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  {isSearchingUsers ? (
-                    <div style={{ fontSize: '10.5px', color: '#94a3b8', textAlign: 'center', padding: '6px' }}>
-                      Đang tìm kiếm...
-                    </div>
-                  ) : !Array.isArray(availableUsers) || availableUsers.length === 0 ? (
-                    <div style={{ fontSize: '10.5px', color: '#64748b', textAlign: 'center', padding: '6px' }}>
-                      Không có người dùng khả dụng.
-                    </div>
-                  ) : (
-                    (Array.isArray(availableUsers) ? availableUsers : []).map((u) => {
-                      const isChosen = selectedUserToAdd?.id === u.id;
-                      return (
+            {/* 3. Active Members List (Positioned immediately below summary) */}
+            <div
+              style={{
+                background: 'rgba(7, 20, 38, 0.75)',
+                border: '1px solid rgba(34, 230, 255, 0.22)',
+                borderRadius: '12px',
+                padding: '10px 12px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  paddingBottom: '4px',
+                  borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+                }}
+              >
+                <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#22e6ff', letterSpacing: '0.04em' }}>
+                  DANH SÁCH ĐỒNG SỞ HỮU ({activeMembers.length})
+                </span>
+                <span style={{ fontSize: '9px', color: '#94a3b8' }}>
+                  Bấm để xem hồ sơ
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                {activeMembers.map((m, index) => {
+                  const orbColor = OWNER_ORB_COLORS[index % OWNER_ORB_COLORS.length];
+                  const isCurrentUser = m.userId === currentUser?.id;
+                  const isRep = m.memberRole === 'REPRESENTATIVE';
+                  const sharePct = m.share?.percentage ?? 0;
+
+                  return (
+                    <div
+                      key={m.id}
+                      onClick={() => {
+                        useWorldStore.getState().selectOwner(m.id);
+                      }}
+                      style={{
+                        background: isCurrentUser ? 'rgba(34, 230, 255, 0.08)' : 'rgba(255, 255, 255, 0.03)',
+                        border: isCurrentUser ? '1px solid rgba(34, 230, 255, 0.4)' : '1px solid rgba(255, 255, 255, 0.06)',
+                        borderRadius: '8px',
+                        padding: '7px 10px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = isCurrentUser
+                          ? 'rgba(34, 230, 255, 0.14)'
+                          : 'rgba(255, 255, 255, 0.06)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = isCurrentUser
+                          ? 'rgba(34, 230, 255, 0.08)'
+                          : 'rgba(255, 255, 255, 0.03)';
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
                         <div
-                          key={u.id}
-                          onClick={() => setSelectedUserToAdd(u)}
                           style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: '5px 8px',
-                            borderRadius: '6px',
-                            background: isChosen ? 'rgba(34, 230, 255, 0.15)' : 'rgba(255, 255, 255, 0.03)',
-                            border: isChosen ? '1px solid #22e6ff' : '1px solid transparent',
-                            cursor: 'pointer',
+                            width: '8px',
+                            height: '8px',
+                            borderRadius: '50%',
+                            background: orbColor,
+                            boxShadow: `0 0 6px ${orbColor}`,
+                            flexShrink: 0,
+                          }}
+                        />
+                        <div style={{ minWidth: 0 }}>
+                          <div
+                            style={{
+                              fontSize: '11.5px',
+                              fontWeight: 700,
+                              color: '#ffffff',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                            }}
+                          >
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {m.fullName}
+                            </span>
+                            {isCurrentUser && (
+                              <span style={{ fontSize: '8.5px', padding: '1px 4px', borderRadius: '4px', background: '#22e6ff20', color: '#22e6ff', fontWeight: 800 }}>
+                                Bạn
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: '9px', color: '#94a3b8', marginTop: '1px' }}>
+                            {isRep ? 'Đại diện nhóm' : 'Đồng sở hữu'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                        <div
+                          style={{
+                            fontSize: '12.5px',
+                            fontWeight: 800,
+                            color: orbColor,
+                            fontFamily: 'monospace',
                           }}
                         >
-                          <div>
-                            <div style={{ fontSize: '11px', fontWeight: 600, color: '#f8fafc' }}>
-                              {u.displayName}
-                            </div>
-                            <div style={{ fontSize: '9px', color: '#94a3b8' }}>
-                              {u.email}
-                            </div>
-                          </div>
-                          {isChosen && <CheckCircle2 size={13} color="#22e6ff" />}
+                          {sharePct}%
                         </div>
-                      );
-                    })
-                  )}
-                </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
 
-                {addError && (
-                  <div style={{ color: '#f87171', fontSize: '10px' }}>
-                    {addError}
-                  </div>
-                )}
-
+            {/* 4. Action Controls: Primary Actions + Secondary Row */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '2px' }}>
+              {/* Primary Actions Row */}
+              <div style={{ display: 'grid', gridTemplateColumns: canManage ? '1fr 1fr' : '1fr', gap: '6px' }}>
                 <button
                   type="button"
-                  disabled={!selectedUserToAdd || addMutation.isPending}
-                  onClick={() => {
-                    if (selectedUserToAdd) addMutation.mutate(selectedUserToAdd.id);
-                  }}
+                  id="btn-primary-transfer-ownership"
+                  onClick={() => setCurrentView('TRANSFER_FORM')}
+                  disabled={currentUserShare <= 0}
                   style={{
-                    padding: '7px 12px',
-                    background: selectedUserToAdd
-                      ? 'linear-gradient(135deg, #0284c7, #06b6d4)'
-                      : 'rgba(255, 255, 255, 0.08)',
-                    border: 'none',
+                    padding: '8px 12px',
+                    background:
+                      currentUserShare > 0
+                        ? 'linear-gradient(135deg, rgba(34, 230, 255, 0.20), rgba(14, 165, 233, 0.30))'
+                        : 'rgba(255, 255, 255, 0.04)',
+                    border: currentUserShare > 0 ? '1.2px solid #22e6ff' : '1px solid rgba(255, 255, 255, 0.1)',
                     borderRadius: '8px',
-                    color: selectedUserToAdd ? '#ffffff' : '#64748b',
+                    color: currentUserShare > 0 ? '#22e6ff' : '#64748b',
                     fontSize: '11px',
-                    fontWeight: 700,
-                    cursor: selectedUserToAdd ? 'pointer' : 'not-allowed',
+                    fontWeight: 800,
+                    cursor: currentUserShare > 0 ? 'pointer' : 'not-allowed',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '6px',
+                    boxShadow: currentUserShare > 0 ? '0 2px 10px rgba(34, 230, 255, 0.2)' : 'none',
+                    transition: 'all 0.15s ease',
                   }}
                 >
-                  {addMutation.isPending ? 'Đang thêm...' : 'Xác nhận thêm thành viên'}
+                  <Send size={12} />
+                  <span>CHUYỂN NHƯỢNG CỔ PHẦN</span>
+                </button>
+
+                {canManage && (
+                  <button
+                    type="button"
+                    id="btn-primary-add-member"
+                    onClick={() => setIsAddMemberOpen((prev) => !prev)}
+                    style={{
+                      padding: '8px 12px',
+                      background: isAddMemberOpen
+                        ? 'rgba(34, 230, 255, 0.15)'
+                        : 'linear-gradient(135deg, rgba(16, 185, 129, 0.20), rgba(5, 150, 105, 0.30))',
+                      border: isAddMemberOpen ? '1px solid #22e6ff' : '1.2px solid #10b981',
+                      borderRadius: '8px',
+                      color: isAddMemberOpen ? '#22e6ff' : '#6ee7b7',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      boxShadow: '0 2px 10px rgba(16, 185, 129, 0.15)',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <UserPlus size={13} />
+                    <span>{isAddMemberOpen ? 'ĐÓNG FORM THÊM' : '+ THÊM THÀNH VIÊN'}</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Inline Add Member Panel when toggled by representative */}
+              {canManage && isAddMemberOpen && (
+                <div
+                  style={{
+                    background: 'rgba(7, 20, 38, 0.95)',
+                    border: '1.2px solid rgba(34, 230, 255, 0.4)',
+                    borderRadius: '10px',
+                    padding: '10px 12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#22e6ff' }}>
+                      MỜI THÀNH VIÊN VÀO NHÓM
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAddMemberOpen(false);
+                        setSelectedUserToAdd(null);
+                        setAddError(null);
+                      }}
+                      style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '2px' }}
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: '1px solid rgba(255, 255, 255, 0.15)',
+                      borderRadius: '6px',
+                      padding: '5px 8px',
+                    }}
+                  >
+                    <Search size={12} color="#94a3b8" />
+                    <input
+                      type="text"
+                      placeholder="Tìm theo tên hoặc email EVShare..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#ffffff',
+                        fontSize: '11px',
+                        outline: 'none',
+                        width: '100%',
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ maxHeight: '90px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    {isSearchingUsers ? (
+                      <div style={{ fontSize: '10px', color: '#94a3b8', textAlign: 'center', padding: '4px' }}>
+                        Đang tìm kiếm...
+                      </div>
+                    ) : !Array.isArray(availableUsers) || availableUsers.length === 0 ? (
+                      <div style={{ fontSize: '10px', color: '#64748b', textAlign: 'center', padding: '4px' }}>
+                        Không có người dùng khả dụng.
+                      </div>
+                    ) : (
+                      (Array.isArray(availableUsers) ? availableUsers : []).map((u) => {
+                        const isChosen = selectedUserToAdd?.id === u.id;
+                        return (
+                          <div
+                            key={u.id}
+                            onClick={() => setSelectedUserToAdd(u)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '4px 6px',
+                              borderRadius: '4px',
+                              background: isChosen ? 'rgba(34, 230, 255, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                              border: isChosen ? '1px solid #22e6ff' : '1px solid transparent',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <div>
+                              <div style={{ fontSize: '10.5px', fontWeight: 600, color: '#f8fafc' }}>
+                                {u.displayName}
+                              </div>
+                              <div style={{ fontSize: '8.5px', color: '#94a3b8' }}>
+                                {u.email}
+                              </div>
+                            </div>
+                            {isChosen && <CheckCircle2 size={12} color="#22e6ff" />}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {addError && (
+                    <div style={{ color: '#f87171', fontSize: '9.5px' }}>
+                      {addError}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    disabled={!selectedUserToAdd || addMutation.isPending}
+                    onClick={() => {
+                      if (selectedUserToAdd) addMutation.mutate(selectedUserToAdd.id);
+                    }}
+                    style={{
+                      padding: '6px 10px',
+                      background: selectedUserToAdd
+                        ? 'linear-gradient(135deg, #0284c7, #06b6d4)'
+                        : 'rgba(255, 255, 255, 0.08)',
+                      border: 'none',
+                      borderRadius: '6px',
+                      color: selectedUserToAdd ? '#ffffff' : '#64748b',
+                      fontSize: '10.5px',
+                      fontWeight: 700,
+                      cursor: selectedUserToAdd ? 'pointer' : 'not-allowed',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '5px',
+                    }}
+                  >
+                    {addMutation.isPending ? 'Đang gửi lời mời...' : 'Gửi lời mời tham gia nhóm'}
+                  </button>
+                </div>
+              )}
+
+              {/* Secondary Actions Row */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '6px' }}>
+                {/* Contract Entry */}
+                <button
+                  type="button"
+                  id="btn-coowner-view-contract"
+                  onClick={() => openGaragePanel('CONTRACT', { vehicleId: vehicle.id })}
+                  style={{
+                    padding: '7px 10px',
+                    background: 'rgba(0, 242, 254, 0.08)',
+                    border: '1px solid rgba(0, 242, 254, 0.30)',
+                    borderRadius: '8px',
+                    color: '#00f2fe',
+                    fontSize: '10.5px',
+                    fontWeight: 700,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '5px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <FileText size={12} color="#00f2fe" />
+                  <span>HỢP ĐỒNG & QUY CHẾ</span>
+                </button>
+
+                {/* Secondary: Leave Group Request */}
+                <button
+                  type="button"
+                  id="btn-coowner-withdrawal"
+                  onClick={() => setCurrentView('WITHDRAWAL_FORM')}
+                  style={{
+                    padding: '7px 8px',
+                    background: 'rgba(239, 68, 68, 0.06)',
+                    border: '1px solid rgba(239, 68, 68, 0.22)',
+                    borderRadius: '8px',
+                    color: '#f87171',
+                    fontSize: '10px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <LogOut size={11} />
+                  <span>RÚT KHỎI NHÓM</span>
                 </button>
               </div>
-            )}
-          </div>
-        )}
+            </div>
           </>
         )}
 

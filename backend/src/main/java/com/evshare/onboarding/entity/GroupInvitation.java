@@ -47,6 +47,25 @@ public class GroupInvitation {
     @Column(name = "expires_at")
     private Instant expiresAt;
 
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "contract_version_id", length = 36, columnDefinition = "CHAR(36)")
+    private UUID contractVersionId;
+
+    @Column(name = "consent_content_hash", length = 64)
+    private String consentContentHash;
+
+    @Column(name = "consented_at")
+    private Instant consentedAt;
+
+    @Column(name = "signer_full_name", length = 100)
+    private String signerFullName;
+
+    @Column(name = "consent_method", length = 50)
+    private String consentMethod = "AUTHENTICATED_ELECTRONIC_CONSENT";
+
+    @Column(name = "consent_ip_address", length = 50)
+    private String consentIpAddress;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;
@@ -163,6 +182,54 @@ public class GroupInvitation {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public UUID getContractVersionId() {
+        return contractVersionId;
+    }
+
+    public void setContractVersionId(UUID contractVersionId) {
+        this.contractVersionId = contractVersionId;
+    }
+
+    public String getConsentContentHash() {
+        return consentContentHash;
+    }
+
+    public void setConsentContentHash(String consentContentHash) {
+        this.consentContentHash = consentContentHash;
+    }
+
+    public Instant getConsentedAt() {
+        return consentedAt;
+    }
+
+    public void setConsentedAt(Instant consentedAt) {
+        this.consentedAt = consentedAt;
+    }
+
+    public String getSignerFullName() {
+        return signerFullName;
+    }
+
+    public void setSignerFullName(String signerFullName) {
+        this.signerFullName = signerFullName;
+    }
+
+    public String getConsentMethod() {
+        return consentMethod;
+    }
+
+    public void setConsentMethod(String consentMethod) {
+        this.consentMethod = consentMethod;
+    }
+
+    public String getConsentIpAddress() {
+        return consentIpAddress;
+    }
+
+    public void setConsentIpAddress(String consentIpAddress) {
+        this.consentIpAddress = consentIpAddress;
     }
 }
 

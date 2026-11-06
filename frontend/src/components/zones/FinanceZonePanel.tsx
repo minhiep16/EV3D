@@ -147,13 +147,13 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
     return vehicles[0] || null;
   }, [propVehicle, selectedVehicleId, vehicles]);
 
-  const activeVehicleId = activeVehicle?.id || '11111111-1111-1111-1111-111111111111';
-  const activeVehicleName = activeVehicle?.name || 'EVShare Demo EV';
+  const activeVehicleId = activeVehicle?.id || null;
+  const activeVehicleName = activeVehicle?.name || 'Chưa chọn phương tiện';
 
   // Co-ownership query to resolve members
   const { data: coOwnership } = useQuery({
     queryKey: ['co-ownership', activeVehicleId],
-    queryFn: () => fetchVehicleCoOwnership(activeVehicleId),
+    queryFn: () => (activeVehicleId ? fetchVehicleCoOwnership(activeVehicleId) : Promise.resolve(null)),
     enabled: !!activeVehicleId,
   });
 
@@ -166,6 +166,19 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
 
   // Shared Fund query
   const { data: fundSummary } = useFundSummary(activeVehicleId);
+
+  // Authoritative Cost Sharing Summary for current user & selected vehicle
+  const { data: costSharingSummary } = useCostSharingSummary(
+    activeVehicleId,
+    undefined,
+    { enabled: !!activeVehicleId && !!user?.id }
+  );
+
+  // Group-wide expense summary
+  const { data: expenseSummary } = useExpenseSummary(
+    activeVehicleId,
+    undefined
+  );
 
   // Personal Payments query (my submissions)
   const { data: myPayments = [], refetch: refetchMyPayments } = useQuery({
@@ -308,27 +321,36 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
       .reduce((sum, e) => sum + Number(e.amount || 0), 0);
   }, [expenses, selectedMonth]);
 
-  // KPI 3: QUỸ CHUNG
-  const sharedFundBalance = fundSummary?.availableBalance ?? 7500000;
+  // KPI 3: QUỸ CHUNG (Authoritative available balance; 0 if no fund or not loaded)
+  const sharedFundBalance = fundSummary?.availableBalance ?? 0;
 
-  // KPI 4: KHOẢN CHỜ THANH TOÁN (Authoritative pending liabilities)
-  const pendingLiabilitiesTotal = useMemo(() => {
-    // If expense has pending approval/vote status, or has unpaid member shares
-    let total = 0;
-    expenses.forEach((e) => {
-      if (e.status === 'PENDING_APPROVAL' || e.status === 'PENDING_VERIFICATION' || e.status === 'PENDING_VOTE') {
-        total += Number(e.amount || 0);
-      } else {
-        // Check if there is an unverified personal payment or unpaid share
-        const hasPendingPay = myPayments.some((p) => p.expenseId === e.id && p.status === 'PAYMENT_SUBMITTED');
-        const isSettled = myPayments.some((p) => p.expenseId === e.id && p.status === 'PAYMENT_VERIFIED');
-        if (hasPendingPay || !isSettled) {
-          total += Number(e.amount || 0);
-        }
+  // KPI 4: KHOẢN CHỜ THANH TOÁN (Isolated Personal Obligation vs. Group Liabilities)
+  const myPendingObligationTotal = useMemo(() => {
+    if (!activeVehicleId || !user?.id) return 0;
+
+    // 1. Authoritative Cost Sharing Summary: outstanding net negative balance
+    if (costSharingSummary && costSharingSummary.userNetPosition != null) {
+      if (costSharingSummary.userNetPosition < 0) {
+        return Math.abs(costSharingSummary.userNetPosition);
       }
-    });
-    return total > 0 ? total : 20000000;
-  }, [expenses, myPayments]);
+      return 0;
+    }
+
+    return 0;
+  }, [activeVehicleId, user?.id, costSharingSummary]);
+
+  const groupPendingLiabilitiesTotal = useMemo(() => {
+    if (!activeVehicleId) return 0;
+    if (expenseSummary?.pendingAmount != null && expenseSummary.pendingAmount > 0) {
+      return expenseSummary.pendingAmount;
+    }
+    return expenses
+      .filter((e) => e.status === 'PENDING_APPROVAL' || e.status === 'PENDING_VERIFICATION' || e.status === 'PENDING_VOTE')
+      .reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  }, [activeVehicleId, expenseSummary, expenses]);
+
+  const pendingLiabilitiesTotal = isStaff ? groupPendingLiabilitiesTotal : myPendingObligationTotal;
+  const pendingLiabilitiesLabel = isStaff ? 'Chờ thanh toán toàn nhóm' : 'Chờ thanh toán của tôi';
 
   // Drag-to-scroll handler
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -760,7 +782,7 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <Clock size={12} color="#fbbf24" />
             <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>
-              Chờ thanh toán
+              {pendingLiabilitiesLabel}
             </span>
           </div>
           <div
@@ -978,6 +1000,28 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
             <Loader2 size={24} className="animate-spin" color="#00f2fe" />
             <span style={{ fontSize: '13px', fontWeight: 600 }}>Đang tải danh sách chi phí...</span>
           </div>
+        ) : !activeVehicleId ? (
+          <div
+            style={{
+              padding: '40px 20px',
+              background: 'rgba(10, 30, 56, 0.4)',
+              border: '1px dashed rgba(0, 242, 254, 0.25)',
+              borderRadius: '16px',
+              textAlign: 'center',
+              color: '#94a3b8',
+              fontSize: '13px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '8px',
+            }}
+          >
+            <AlertTriangle size={24} color="#f59e0b" />
+            <span style={{ color: '#cbd5e1', fontWeight: 650 }}>Chưa chọn phương tiện hoặc chưa tham gia nhóm</span>
+            <span style={{ fontSize: '12px', color: '#64748b', maxWidth: '340px', lineHeight: 1.5 }}>
+              Tài khoản hiện tại chưa tham gia nhóm đồng sở hữu hoặc chưa có phương tiện nào được chọn.
+            </span>
+          </div>
         ) : isExpensesError ? (
           <div
             style={{
@@ -990,7 +1034,7 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
               fontSize: '12.5px',
             }}
           >
-            Không thể tải dữ liệu chi phí. Vui lòng kiểm tra kết nối máy chủ.
+            Không thể tải dữ liệu chi phí hoặc bạn không có quyền truy cập phương tiện này.
           </div>
         ) : filteredExpenses.length === 0 ? (
           <div

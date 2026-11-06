@@ -139,23 +139,25 @@ export const GarageScene: React.FC = () => {
 
   // Stale selectedVehicleId Validation & Purge for CO_OWNER:
   // - If no active vehicle: clear selectedVehicleId / ownership context
-  // - If vehicles present: ensure selected vehicle is valid, default to first if invalid
+  // - If selectedVehicleId is set but no longer matches any vehicle: clearSelection()
+  // NOTE: When selectedVehicleId is null, CO_OWNER is in Garage Overview mode.
+  // Do NOT force-select vehicles[0], which would trigger VEHICLE_WITH_RIGHT_PANEL zoom.
   useEffect(() => {
     if (!isOperationsRole) {
       if (vehicles.length === 0) {
         if (selectedVehicleId) {
           clearSelection();
         }
-      } else {
+      } else if (selectedVehicleId) {
         const hasMatch = vehicles.some(
           (v) => v.id === selectedVehicleId || resolveVehicleCode(v) === selectedVehicleId
         );
         if (!hasMatch) {
-          selectVehicle(vehicles[0].id, user?.role);
+          clearSelection();
         }
       }
     }
-  }, [isOperationsRole, vehicles, selectedVehicleId, clearSelection, selectVehicle, user?.role]);
+  }, [isOperationsRole, vehicles, selectedVehicleId, clearSelection]);
 
   // Ensure stale selected part state does not survive in normal vehicle overview
   useEffect(() => {
@@ -754,8 +756,8 @@ export const GarageScene: React.FC = () => {
                 </div>
               )}
 
-              {/* Onboarding / Add Vehicle link */}
-              {isCoOwner && (
+              {/* Onboarding / Add Vehicle link - only shown when user has no active vehicle groups */}
+              {isCoOwner && vehicles.length === 0 && (
                 <button
                   type="button"
                   onClick={() => navigate('/onboarding')}

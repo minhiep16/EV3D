@@ -173,36 +173,36 @@ export const ChargingControlHologram3D: React.FC<ChargingControlHologram3DProps>
     <FeatureHologramPanel3D
       position={position}
       rotation={rotation}
-      panelW={3.45}
-      panelH={4.45}
+      panelW={3.35}
+      panelH={3.95}
       distanceFactor={3.25}
-      contentWidth="min(440px, calc(100vw - 24px))"
+      contentWidth="min(420px, calc(100vw - 24px))"
       title="KHU VỰC SẠC"
       subtitle={`Quản lý sạc xe ${vehicleCode}`}
-      icon={<Zap size={26} color="#00f2fe" />}
+      icon={<Zap size={22} color="#00f2fe" />}
       statusBadge={
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
             gap: '5px',
-            fontSize: '11px',
+            fontSize: '10.5px',
             fontWeight: 800,
             color: isCharging ? '#00f2fe' : '#10b981',
             background: isCharging ? 'rgba(0, 242, 254, 0.16)' : 'rgba(16, 185, 129, 0.16)',
             border: `1px solid ${isCharging ? '#00f2fe' : '#10b981'}`,
-            padding: '2px 8px',
+            padding: '2px 7px',
             borderRadius: '9999px',
             whiteSpace: 'nowrap',
           }}
         >
           <div
             style={{
-              width: '6px',
-              height: '6px',
+              width: '5px',
+              height: '5px',
               borderRadius: '50%',
               background: isCharging ? '#00f2fe' : '#10b981',
-              boxShadow: `0 0 8px ${isCharging ? '#00f2fe' : '#10b981'}`,
+              boxShadow: `0 0 6px ${isCharging ? '#00f2fe' : '#10b981'}`,
             }}
           />
           <span>{isCharging ? 'Đang sạc DC' : 'Sẵn sàng sạc'}</span>
@@ -211,57 +211,57 @@ export const ChargingControlHologram3D: React.FC<ChargingControlHologram3DProps>
       onClose={handleClose}
       testId="charging-3d-control-panel"
     >
-      {/* 1. Unified Primary Battery Summary Card (Non-duplicated SOC) */}
+      {/* 1. Unified Primary Battery Summary Card */}
       <div
         style={{
           background: 'rgba(10, 30, 56, 0.75)',
           border: '1.2px solid rgba(0, 242, 254, 0.35)',
-          borderRadius: '18px',
-          padding: '14px 16px',
+          borderRadius: '14px',
+          padding: '10px 14px',
           display: 'flex',
           flexDirection: 'column',
-          gap: '10px',
-          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.35)',
+          gap: '8px',
+          boxShadow: '0 4px 16px rgba(0, 0, 0, 0.35)',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div
               style={{
-                width: '46px',
-                height: '46px',
-                borderRadius: '14px',
+                width: '38px',
+                height: '38px',
+                borderRadius: '10px',
                 background: isCharging ? 'rgba(0, 242, 254, 0.16)' : 'rgba(16, 185, 129, 0.16)',
                 border: `1.5px solid ${isCharging ? '#00f2fe' : '#10b981'}`,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 flexShrink: 0,
-                boxShadow: `0 0 14px ${isCharging ? 'rgba(0, 242, 254, 0.35)' : 'rgba(16, 185, 129, 0.3)'}`,
+                boxShadow: `0 0 10px ${isCharging ? 'rgba(0, 242, 254, 0.35)' : 'rgba(16, 185, 129, 0.3)'}`,
               }}
             >
               {isCharging ? (
-                <BatteryCharging size={24} color="#00f2fe" />
+                <BatteryCharging size={20} color="#00f2fe" />
               ) : (
-                <BatteryMedium size={24} color="#10b981" />
+                <BatteryMedium size={20} color="#10b981" />
               )}
             </div>
             <div>
-              <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 Dung lượng pin (SOC)
               </div>
               <div
                 style={{
-                  fontSize: '26px',
+                  fontSize: '20px',
                   fontWeight: 900,
                   color: '#ffffff',
                   letterSpacing: '-0.01em',
-                  lineHeight: 1.15,
-                  marginTop: '2px',
+                  lineHeight: 1.1,
+                  marginTop: '1px',
                 }}
               >
                 {currentSoc}%
-                <span style={{ fontSize: '13px', fontWeight: 600, color: '#38bdf8', marginLeft: '6px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 600, color: '#38bdf8', marginLeft: '5px' }}>
                   (~{estimatedRangeKm} km)
                 </span>
               </div>
@@ -269,18 +269,18 @@ export const ChargingControlHologram3D: React.FC<ChargingControlHologram3DProps>
           </div>
 
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '10.5px', color: '#94a3b8', fontWeight: 500 }}>Công suất nạp</div>
-            <div style={{ fontSize: '15px', fontWeight: 800, color: '#00f2fe', marginTop: '2px' }}>
+            <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 500 }}>Công suất nạp</div>
+            <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#00f2fe', marginTop: '1px' }}>
               {activePowerText}
             </div>
           </div>
         </div>
 
         {/* Integrated Progress Bar & Energy Metadata Row */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <div
             style={{
-              height: '8px',
+              height: '6px',
               borderRadius: '9999px',
               background: 'rgba(255, 255, 255, 0.08)',
               overflow: 'hidden',
@@ -293,27 +293,27 @@ export const ChargingControlHologram3D: React.FC<ChargingControlHologram3DProps>
                 height: '100%',
                 background: 'linear-gradient(90deg, #10b981 0%, #00f2fe 100%)',
                 borderRadius: '9999px',
-                boxShadow: '0 0 10px rgba(0, 242, 254, 0.5)',
+                boxShadow: '0 0 8px rgba(0, 242, 254, 0.5)',
                 transition: 'width 0.4s ease',
               }}
             />
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px' }}>
-            <span style={{ color: '#94a3b8' }}>Năng lượng khả dụng / Danh định</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9.5px' }}>
+            <span style={{ color: '#94a3b8' }}>Khả dụng / Danh định</span>
             <span style={{ color: '#ffffff', fontWeight: 700 }}>
-              {availableKwh} kWh / {totalCapacityKwh} kWh
+              {availableKwh} / {totalCapacityKwh} kWh
             </span>
           </div>
         </div>
       </div>
 
       {/* 2. Station Selection: Two Compact, Balanced Station Cards */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <div style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+        <div style={{ fontSize: '10.5px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
           Chọn trụ sạc tại Garage:
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
           {effectiveStations.map((st) => {
             const isStSelected = selectedStation.id === st.id;
             const isAvail = st.status === 'AVAILABLE';
@@ -329,42 +329,42 @@ export const ChargingControlHologram3D: React.FC<ChargingControlHologram3DProps>
                 style={{
                   background: isStSelected ? 'rgba(0, 242, 254, 0.16)' : 'rgba(10, 30, 56, 0.65)',
                   border: isStSelected ? '1.5px solid #00f2fe' : '1px solid rgba(56, 189, 248, 0.25)',
-                  borderRadius: '14px',
-                  padding: '10px 12px',
+                  borderRadius: '12px',
+                  padding: '8px 10px',
                   cursor: isAvail ? 'pointer' : 'not-allowed',
                   opacity: isAvail ? 1.0 : 0.6,
-                  boxShadow: isStSelected ? '0 0 16px rgba(0, 242, 254, 0.28)' : 'none',
+                  boxShadow: isStSelected ? '0 0 14px rgba(0, 242, 254, 0.25)' : 'none',
                   transition: 'all 0.18s ease',
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'space-between',
-                  gap: '6px',
+                  gap: '4px',
                 }}
               >
                 {/* Header: Code & Status */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                     <div
                       style={{
-                        width: '7px',
-                        height: '7px',
+                        width: '6px',
+                        height: '6px',
                         borderRadius: '50%',
                         background: isStSelected ? '#00f2fe' : (isAvail ? '#10b981' : '#f59e0b'),
                         boxShadow: `0 0 6px ${isStSelected ? '#00f2fe' : (isAvail ? '#10b981' : '#f59e0b')}`,
                       }}
                     />
-                    <span style={{ fontSize: '13px', fontWeight: 900, color: '#ffffff' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 900, color: '#ffffff' }}>
                       {st.code}
                     </span>
                   </div>
                   <span
                     style={{
-                      fontSize: '9px',
+                      fontSize: '8.5px',
                       fontWeight: 700,
                       color: isAvail ? '#10b981' : '#f59e0b',
                       background: isAvail ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
                       border: `1px solid ${isAvail ? 'rgba(16, 185, 129, 0.35)' : 'rgba(245, 158, 11, 0.35)'}`,
-                      padding: '1px 5px',
+                      padding: '1px 4px',
                       borderRadius: '4px',
                     }}
                   >
@@ -374,10 +374,10 @@ export const ChargingControlHologram3D: React.FC<ChargingControlHologram3DProps>
 
                 {/* Power & Type */}
                 <div>
-                  <div style={{ fontSize: '16px', fontWeight: 900, color: '#ffffff', letterSpacing: '-0.01em' }}>
+                  <div style={{ fontSize: '14.5px', fontWeight: 900, color: '#ffffff', letterSpacing: '-0.01em' }}>
                     {st.maxPowerKw} kW
                   </div>
-                  <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '1px' }}>
+                  <div style={{ fontSize: '9px', color: '#94a3b8', marginTop: '1px' }}>
                     {st.connectorType} · {st.maxPowerKw >= 100 ? 'Siêu tốc' : 'Tiêu chuẩn'}
                   </div>
                 </div>
@@ -385,9 +385,9 @@ export const ChargingControlHologram3D: React.FC<ChargingControlHologram3DProps>
                 {/* Selection State Indicator */}
                 <div
                   style={{
-                    paddingTop: '6px',
+                    paddingTop: '4px',
                     borderTop: isStSelected ? '1px solid rgba(0, 242, 254, 0.3)' : '1px solid rgba(255, 255, 255, 0.06)',
-                    fontSize: '9.5px',
+                    fontSize: '9px',
                     fontWeight: isStSelected ? 800 : 500,
                     color: isStSelected ? '#00f2fe' : '#64748b',
                   }}
@@ -407,19 +407,19 @@ export const ChargingControlHologram3D: React.FC<ChargingControlHologram3DProps>
           alignItems: 'center',
           justifyContent: 'space-between',
           background: 'rgba(10, 30, 56, 0.65)',
-          borderRadius: '12px',
-          padding: '9px 14px',
+          borderRadius: '10px',
+          padding: '7px 12px',
           border: '1px solid rgba(0, 242, 254, 0.2)',
-          fontSize: '11px',
+          fontSize: '10.5px',
           color: '#cbd5e1',
         }}
       >
-        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <Clock size={13} color="#00f2fe" />
+        <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <Clock size={12} color="#00f2fe" />
           <span>Thời gian dự kiến (đến {targetSoc}%):</span>
         </span>
         <span style={{ color: '#00f2fe', fontWeight: 800 }}>
-          {estimatedRemainingMinutes > 0 ? `~${estimatedRemainingMinutes} phút` : 'Đã đạt mức pin mục tiêu'}
+          {estimatedRemainingMinutes > 0 ? `~${estimatedRemainingMinutes} phút` : 'Đã đạt mục tiêu'}
         </span>
       </div>
 
@@ -432,10 +432,10 @@ export const ChargingControlHologram3D: React.FC<ChargingControlHologram3DProps>
             ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'
             : 'linear-gradient(135deg, #00f2fe 0%, #00c6ff 100%)',
           border: 'none',
-          borderRadius: '14px',
-          padding: '12px 18px',
+          borderRadius: '12px',
+          padding: '10px 16px',
           color: isCharging ? '#ffffff' : '#041628',
-          fontSize: '13.5px',
+          fontSize: '12.5px',
           fontWeight: 900,
           display: 'flex',
           flexDirection: 'column',
@@ -444,10 +444,10 @@ export const ChargingControlHologram3D: React.FC<ChargingControlHologram3DProps>
           gap: '2px',
           cursor: 'pointer',
           boxShadow: isCharging
-            ? '0 6px 20px rgba(239, 68, 68, 0.35)'
-            : '0 6px 20px rgba(0, 242, 254, 0.35)',
+            ? '0 4px 16px rgba(239, 68, 68, 0.35)'
+            : '0 4px 16px rgba(0, 242, 254, 0.35)',
           transition: 'all 0.18s ease',
-          marginTop: '2px',
+          marginTop: '1px',
         }}
         onMouseEnter={(e) => {
           e.currentTarget.style.transform = 'translateY(-1px)';
@@ -456,15 +456,15 @@ export const ChargingControlHologram3D: React.FC<ChargingControlHologram3DProps>
           e.currentTarget.style.transform = 'translateY(0)';
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-          <Power size={16} color={isCharging ? '#ffffff' : '#041628'} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <Power size={15} color={isCharging ? '#ffffff' : '#041628'} />
           <span>
             {isCharging
               ? `DỪNG PHIÊN SẠC — ${selectedStation.code}`
               : `BẮT ĐẦU SẠC — ${selectedStation.code}`}
           </span>
         </div>
-        <div style={{ fontSize: '10px', fontWeight: 600, opacity: 0.85 }}>
+        <div style={{ fontSize: '9.5px', fontWeight: 600, opacity: 0.85 }}>
           {selectedStation.maxPowerKw} kW Max · {selectedStation.connectorType}
         </div>
       </button>

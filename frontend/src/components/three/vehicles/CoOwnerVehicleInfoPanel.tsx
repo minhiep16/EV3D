@@ -1,6 +1,7 @@
 import React from 'react';
 import { VehicleResponse } from '../../../types/vehicle';
 import { useWorldStore } from '../../../store/worldStore';
+import { resolveVehicleCode } from './vehicleModelConfig';
 import {
   Car,
   Zap,
@@ -25,7 +26,7 @@ export const CoOwnerVehicleInfoPanel: React.FC<CoOwnerVehicleInfoPanelProps> = (
   const returnToVehicleOverview = useWorldStore((state) => state.returnToVehicleOverview);
   const setVehicleFeatureMode = useWorldStore((state) => state.setVehicleFeatureMode);
 
-  const displayCode = 'EV01';
+  const displayCode = resolveVehicleCode(vehicle);
   const formattedOdometer = Number(vehicle.odometer ?? 12450).toLocaleString('vi-VN');
   const estimatedRangeKm = Math.round(((vehicle.currentBatteryLevel || 82) / 100) * 450);
 
