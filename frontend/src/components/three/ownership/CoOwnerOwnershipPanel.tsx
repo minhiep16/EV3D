@@ -230,6 +230,13 @@ const TransferCardItem: React.FC<TransferCardItemProps> = ({
   const [isVerifyingFinancialDemo, setIsVerifyingFinancialDemo] = useState(false);
   const [pendingDemoPaymentId, setPendingDemoPaymentId] = useState<string | null>(null);
 
+  const paymentStatus = req.financialObligationPaymentStatus || (pendingDemoPaymentId ? 'PAYMENT_SUBMITTED' : 'UNPAID');
+  const isPaymentPending = paymentStatus === 'PAYMENT_SUBMITTED' || Boolean(pendingDemoPaymentId);
+  const isPaymentRejected = paymentStatus === 'PAYMENT_REJECTED';
+  const isPaymentVerified = paymentStatus === 'PAYMENT_VERIFIED';
+  const effectivePaymentId = pendingDemoPaymentId || req.financialObligationPaymentId;
+  const effectiveRefCode = req.financialObligationPaymentReference || (req.id ? `DEMO-PAY-XFER-${req.id.slice(0, 6)}` : 'DEMO-PAY');
+
   const contentSnapshot = appendixData?.contentSnapshot || req.contentSnapshot || null;
   const contentHash = appendixData?.contentHash || req.contentHash || null;
   const versionTitle = appendixData?.versionTitle || req.contractVersionTitle || (req.contractVersionFormatted ? `PHỤ LỤC HỢP ĐỒNG ${req.contractVersionFormatted}` : 'PHỤ LỤC HỢP ĐỒNG V2.0');
@@ -378,18 +385,22 @@ const TransferCardItem: React.FC<TransferCardItemProps> = ({
         }}
       >
         <div style={{ color: type === 'outgoing' ? '#c084fc' : '#00f2fe', fontWeight: 700, fontSize: '10px', marginBottom: '5px', textTransform: 'uppercase' }}>
-          Điều chỉnh tỷ lệ cổ phần dự kiến:
+          {req.status === 'COMPLETED' ? 'Tỷ lệ sở hữu hiện tại (Đã hoàn tất):' : 'Điều chỉnh tỷ lệ cổ phần dự kiến:'}
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
           <span style={{ color: '#94a3b8' }}>Bên chuyển ({req.fromUserName}):</span>
           <span style={{ color: '#ffffff', fontFamily: 'monospace' }}>
-            {Number(req.fromUserCurrentPercentage ?? 0).toFixed(2)}% ➔ {Math.max(0, Number(req.fromUserCurrentPercentage ?? 0) - Number(req.transferPercentage)).toFixed(2)}%
+            {req.status === 'COMPLETED'
+              ? `${Number(req.fromUserCurrentPercentage ?? 0).toFixed(2)}%`
+              : `${Number(req.fromUserCurrentPercentage ?? 0).toFixed(2)}% ➔ ${Math.max(0, Number(req.fromUserCurrentPercentage ?? 0) - Number(req.transferPercentage)).toFixed(2)}%`}
           </span>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
           <span style={{ color: '#94a3b8' }}>Bên nhận ({req.toUserName}):</span>
           <span style={{ color: '#10b981', fontWeight: 700, fontFamily: 'monospace' }}>
-            {Number(req.toUserCurrentPercentage ?? 0).toFixed(2)}% ➔ {(Number(req.toUserCurrentPercentage ?? 0) + Number(req.transferPercentage)).toFixed(2)}%
+            {req.status === 'COMPLETED'
+              ? `${Number(req.toUserCurrentPercentage ?? 0).toFixed(2)}%`
+              : `${Number(req.toUserCurrentPercentage ?? 0).toFixed(2)}% ➔ ${(Number(req.toUserCurrentPercentage ?? 0) + Number(req.transferPercentage)).toFixed(2)}%`}
           </span>
         </div>
       </div>
@@ -502,12 +513,20 @@ const TransferCardItem: React.FC<TransferCardItemProps> = ({
                   fontWeight: 800,
                   padding: '2px 6px',
                   borderRadius: '4px',
-                  background: 'rgba(245, 158, 11, 0.2)',
-                  border: '1px solid rgba(245, 158, 11, 0.5)',
-                  color: '#fbbf24',
+                  background: isPaymentPending
+                    ? 'rgba(56, 189, 248, 0.2)'
+                    : isPaymentRejected
+                    ? 'rgba(239, 68, 68, 0.2)'
+                    : 'rgba(245, 158, 11, 0.2)',
+                  border: isPaymentPending
+                    ? '1px solid rgba(56, 189, 248, 0.5)'
+                    : isPaymentRejected
+                    ? '1px solid rgba(239, 68, 68, 0.5)'
+                    : '1px solid rgba(245, 158, 11, 0.5)',
+                  color: isPaymentPending ? '#38bdf8' : isPaymentRejected ? '#fca5a5' : '#fbbf24',
                 }}
               >
-                CHƯA THANH TOÁN
+                {isPaymentPending ? 'CHỜ XÁC MINH' : isPaymentRejected ? 'BỊ TỪ CHỐI' : 'CHƯA THANH TOÁN'}
               </span>
             </div>
 
@@ -542,8 +561,15 @@ const TransferCardItem: React.FC<TransferCardItemProps> = ({
                 <span style={{ color: '#38bdf8', fontWeight: 700 }}>{req.financialMode || 'DEMO (MÔ PHỎNG)'}</span>
               </div>
               <div>
-                <span style={{ color: '#94a3b8' }}>Trạng thái giao dịch: </span>
-                <span style={{ color: '#fbbf24', fontWeight: 700 }}>Khóa hoàn tất</span>
+                <span style={{ color: '#94a3b8' }}>Trạng thái thanh toán: </span>
+                <span
+                  style={{
+                    color: isPaymentPending ? '#38bdf8' : isPaymentRejected ? '#fca5a5' : '#fbbf24',
+                    fontWeight: 700,
+                  }}
+                >
+                  {isPaymentPending ? 'Chờ nhân viên xác nhận' : isPaymentRejected ? 'Bị từ chối' : 'Chưa thanh toán'}
+                </span>
               </div>
             </div>
 
@@ -621,7 +647,7 @@ const TransferCardItem: React.FC<TransferCardItemProps> = ({
                   <div style={{ fontSize: '10px', fontWeight: 700, color: '#e2e8f0' }}>
                     1. Bên chuyển nhượng nộp thanh toán demo:
                   </div>
-                  {pendingDemoPaymentId ? (
+                  {isPaymentPending ? (
                     <div
                       style={{
                         background: 'rgba(56, 189, 248, 0.12)',
@@ -640,8 +666,94 @@ const TransferCardItem: React.FC<TransferCardItemProps> = ({
                         <span>ĐÃ GỬI YÊU CẦU THANH TOÁN (DEMO)</span>
                       </div>
                       <div style={{ color: '#cbd5e1' }}>
-                        Số tiền: <strong style={{ color: '#ffffff' }}>{Number(req.outstandingObligationAmount ?? 0).toLocaleString('vi-VN')} ₫</strong> • Trạng thái: <strong style={{ color: '#fbbf24' }}>CHỜ NHÂN VIÊN XÁC NHẬN</strong>
+                        Số tiền: <strong style={{ color: '#ffffff' }}>{Number(req.financialObligationPaymentAmount ?? req.outstandingObligationAmount ?? 0).toLocaleString('vi-VN')} ₫</strong> • Trạng thái: <strong style={{ color: '#fbbf24' }}>CHỜ NHÂN VIÊN XÁC NHẬN</strong>
                       </div>
+                      <div style={{ fontSize: '9px', color: '#94a3b8', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        <span>Mã tham chiếu: <strong style={{ color: '#38bdf8', fontFamily: 'monospace' }}>{effectiveRefCode}</strong></span>
+                        {req.financialObligationPaymentSubmittedAt && (
+                          <span>• Nộp lúc: {new Date(req.financialObligationPaymentSubmittedAt).toLocaleString('vi-VN')}</span>
+                        )}
+                      </div>
+                    </div>
+                  ) : isPaymentRejected ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <div
+                        style={{
+                          background: 'rgba(239, 68, 68, 0.12)',
+                          border: '1px solid rgba(239, 68, 68, 0.40)',
+                          borderRadius: '6px',
+                          padding: '8px 10px',
+                          color: '#fca5a5',
+                          fontSize: '10px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '3px',
+                        }}
+                      >
+                        <div style={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: '6px', color: '#ef4444' }}>
+                          <AlertCircle size={13} />
+                          <span>THANH TOÁN BỊ TỪ CHỐI</span>
+                        </div>
+                        <div style={{ color: '#cbd5e1' }}>
+                          {req.financialObligationRejectionReason || 'Nhân viên vận hành đã từ chối yêu cầu thanh toán trước đó. Vui lòng nộp lại.'}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        id={`btn-resubmit-financial-demo-${req.id}`}
+                        disabled={isSubmittingFinancialDemo}
+                        onClick={async () => {
+                          setIsSubmittingFinancialDemo(true);
+                          setFinancialPaymentFeedback(null);
+                          try {
+                            const targetExpenseId = req.financialObligationExpenseId;
+                            const targetAmount = req.outstandingObligationAmount != null ? Number(req.outstandingObligationAmount) : 0;
+                            const refCode = `DEMO-PAY-XFER-${req.id ? req.id.slice(0, 6) : Date.now().toString().slice(-6)}`;
+
+                            if (targetExpenseId) {
+                              const res = await submitPersonalPayment(targetExpenseId, {
+                                amount: targetAmount,
+                                paymentMethod: 'DEMO_PAYMENT',
+                                paymentReference: refCode,
+                                expenseShareId: req.financialObligationExpenseShareId || undefined,
+                                note: 'Nộp lại thanh toán hoàn tất nghĩa vụ tài chính trước khi chuyển nhượng cổ phần',
+                              });
+                              if (res && res.id) {
+                                setPendingDemoPaymentId(res.id);
+                              }
+                            }
+                            setFinancialPaymentFeedback({
+                              text: `Đã nộp lại thành công yêu cầu thanh toán demo mã ${refCode}! CHỜ NHÂN VIÊN XÁC NHẬN.`,
+                              isError: false,
+                            });
+                            onSettlementSuccess?.();
+                          } catch (err: any) {
+                            setFinancialPaymentFeedback({
+                              text: err?.response?.data?.message || err?.message || 'Lỗi khi gửi thanh toán demo. Vui lòng thử lại.',
+                              isError: true,
+                            });
+                          } finally {
+                            setIsSubmittingFinancialDemo(false);
+                          }
+                        }}
+                        style={{
+                          padding: '7px 10px',
+                          background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                          border: 'none',
+                          borderRadius: '6px',
+                          color: '#ffffff',
+                          fontSize: '10px',
+                          fontWeight: 800,
+                          cursor: isSubmittingFinancialDemo ? 'not-allowed' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '5px',
+                        }}
+                      >
+                        {isSubmittingFinancialDemo ? <Loader2 size={12} className="animate-spin" /> : <CreditCard size={12} />}
+                        <span>NỘP LẠI THANH TOÁN DEMO ({req.outstandingObligationAmount != null ? `${Number(req.outstandingObligationAmount).toLocaleString('vi-VN')} ₫` : '0 ₫'})</span>
+                      </button>
                     </div>
                   ) : (
                     <button
@@ -672,6 +784,7 @@ const TransferCardItem: React.FC<TransferCardItemProps> = ({
                             text: `Đã nộp thành công yêu cầu thanh toán demo mã ${refCode}! CHỜ NHÂN VIÊN XÁC NHẬN.`,
                             isError: false,
                           });
+                          onSettlementSuccess?.();
                         } catch (err: any) {
                           setFinancialPaymentFeedback({
                             text: err?.response?.data?.message || err?.message || 'Lỗi khi gửi thanh toán demo. Vui lòng thử lại.',
@@ -711,13 +824,13 @@ const TransferCardItem: React.FC<TransferCardItemProps> = ({
                     <button
                       type="button"
                       id={`btn-verify-financial-demo-${req.id}`}
-                      disabled={isVerifyingFinancialDemo}
+                      disabled={isVerifyingFinancialDemo || !effectivePaymentId || !isPaymentPending}
                       onClick={async () => {
                         setIsVerifyingFinancialDemo(true);
                         setFinancialPaymentFeedback(null);
                         try {
-                          if (pendingDemoPaymentId) {
-                            await verifyPersonalPayment(pendingDemoPaymentId, {
+                          if (effectivePaymentId) {
+                            await verifyPersonalPayment(effectivePaymentId, {
                               confirmed: true,
                               note: 'Nhân viên vận hành xác nhận đối soát thanh toán demo thành công',
                             });
@@ -740,13 +853,16 @@ const TransferCardItem: React.FC<TransferCardItemProps> = ({
                       }}
                       style={{
                         padding: '7px 10px',
-                        background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                        background: isPaymentPending
+                          ? 'linear-gradient(135deg, #059669 0%, #10b981 100%)'
+                          : 'rgba(255, 255, 255, 0.08)',
                         border: 'none',
                         borderRadius: '6px',
                         color: '#ffffff',
                         fontSize: '10px',
                         fontWeight: 800,
-                        cursor: 'pointer',
+                        cursor: (isVerifyingFinancialDemo || !effectivePaymentId || !isPaymentPending) ? 'not-allowed' : 'pointer',
+                        opacity: (isVerifyingFinancialDemo || !effectivePaymentId || !isPaymentPending) ? 0.6 : 1,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -772,8 +888,16 @@ const TransferCardItem: React.FC<TransferCardItemProps> = ({
                     >
                       <Clock size={14} color="#38bdf8" style={{ flexShrink: 0 }} />
                       <div>
-                        <span style={{ color: '#38bdf8', fontWeight: 700 }}>CHỜ NHÂN VIÊN XÁC NHẬN: </span>
-                        <span style={{ color: '#cbd5e1' }}>Nhân viên vận hành hoặc Quản trị viên sẽ xác minh và quyết toán trên hệ thống.</span>
+                        <span style={{ color: '#38bdf8', fontWeight: 700 }}>
+                          {isPaymentPending ? 'CHỜ NHÂN VIÊN XÁC NHẬN: ' : isPaymentRejected ? 'THANH TOÁN BỊ TỪ CHỐI: ' : 'CHƯA NỘP THANH TOÁN: '}
+                        </span>
+                        <span style={{ color: '#cbd5e1' }}>
+                          {isPaymentPending
+                            ? 'Bản ghi thanh toán đã được lưu trên hệ thống. Nhân viên vận hành sẽ kiểm tra và đối soát sổ cái.'
+                            : isPaymentRejected
+                            ? 'Vui lòng thực hiện nộp lại thanh toán để tiếp tục quy trình chuyển nhượng.'
+                            : 'Bên chuyển nhượng cần nộp thanh toán demo trước khi nhân viên có thể xác minh.'}
+                        </span>
                       </div>
                     </div>
                   )}
@@ -2208,9 +2332,9 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
     },
   });
 
-  const memberCount = activeMembers.length || 3;
+  const memberCount = activeMembers.length;
   const vehicleCount = coOwnership?.vehicles && coOwnership.vehicles.length > 0 ? coOwnership.vehicles.length : 1;
-  const totalPercentage = coOwnership?.totalOwnershipPercentage ?? 100;
+  const totalPercentage = coOwnership?.totalOwnershipPercentage ?? activeMembers.reduce((sum, m) => sum + (m.share?.percentage ?? 0), 0);
   const isComplete = totalPercentage === 100;
   const statusLabel = coOwnership?.statusLabel || (isComplete ? 'Hoàn chỉnh' : 'Chưa phân bổ đủ');
 

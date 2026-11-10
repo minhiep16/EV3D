@@ -171,3 +171,16 @@ export async function fetchPendingPersonalPayments(vehicleId?: string): Promise<
     throw err;
   }
 }
+
+export async function fetchStaffPaymentHistory(vehicleId?: string): Promise<PersonalExpensePaymentResponse[]> {
+  try {
+    const query = vehicleId ? `?vehicleId=${encodeURIComponent(vehicleId)}` : '';
+    const res = await authenticatedFetch(`/api/expenses/personal-payments/history${query}`);
+    return await safeParseResponse<PersonalExpensePaymentResponse[]>(res);
+  } catch (err) {
+    if (err instanceof TypeError || (err instanceof Error && err.message.includes('fetch'))) {
+      throw new Error('Không thể kết nối lịch sử thanh toán toàn hệ thống.');
+    }
+    throw err;
+  }
+}

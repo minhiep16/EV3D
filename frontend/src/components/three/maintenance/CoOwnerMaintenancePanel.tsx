@@ -44,7 +44,7 @@ import {
   createVoteForMaintenance,
 } from '../../../services/maintenanceApi';
 import { fetchVehicleDamages } from '../../../services/damageApi';
-import { DamageRecordResponse, DAMAGE_TYPE_LABELS, DAMAGE_SEVERITY_CONFIG } from '../../../types/damage';
+import { DamageRecordResponse, DAMAGE_TYPE_LABELS, DAMAGE_SEVERITY_CONFIG, DAMAGE_STATUS_CONFIG } from '../../../types/damage';
 import { useWorldStore } from '../../../store/worldStore';
 import { getPartById } from '../../../data/vehicleParts';
 
@@ -199,11 +199,12 @@ const CoOwnerMaintenanceProposalCard: React.FC<CoOwnerMaintenanceProposalCardPro
   const [comment, setComment] = useState('');
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Authoritative TanStack Query: Fetch voting progress and current user voting rights
+  // Authoritative TanStack Query: Fetch voting progress and current user voting rights (polls only during active voting)
   const { data: approvalData, isLoading: isApprovalLoading } = useQuery<MaintenanceApprovalResponse>({
     queryKey: ['maintenanceApproval', item.id],
     queryFn: () => fetchMaintenanceApproval(item.id),
-    refetchInterval: 3000,
+    staleTime: 5000,
+    refetchInterval: item.status === 'PENDING_APPROVAL' ? 6000 : false,
   });
 
   const voteMutation = useMutation({
@@ -1415,35 +1416,110 @@ export const CoOwnerMaintenancePanel: React.FC<CoOwnerMaintenancePanelProps> = (
               </div>
 
               {unresolvedDamages.length === 0 ? (
-                <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>
-                  Không có điểm hư hỏng nào chưa được xử lý.
+                <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic', padding: '6px 0' }}>
+                  Không có hư hỏng nào chưa xử lý.
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  {unresolvedDamages.slice(0, 3).map((dmg) => (
-                    <div
-                      key={dmg.id}
-                      style={{
-                        fontSize: '10.5px',
-                        color: '#e2e8f0',
-                        background: 'rgba(0, 0, 0, 0.25)',
-                        padding: '6px 8px',
-                        borderRadius: '6px',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                      }}
-                    >
-                      <span>• {getPartById(dmg.vehiclePartCode)?.nameVi || dmg.vehiclePartCode}</span>
-                      <span style={{ color: dmg.status === 'UNDER_MAINTENANCE' ? '#38bdf8' : dmg.severity === 'SEVERE' ? '#ef4444' : '#f59e0b', fontWeight: 700 }}>
-                        {dmg.status === 'UNDER_MAINTENANCE' ? 'Đang sửa chữa' : dmg.severity === 'SEVERE' ? 'Nghiêm trọng' : 'Nhẹ'}
-                      </span>
-                    </div>
-                  ))}
-                  {unresolvedDamages.length > 3 && (
-                    <div style={{ fontSize: '9.5px', color: '#64748b', textAlign: 'right' }}>
-                      và {unresolvedDamages.length - 3} điểm khác...
-                    </div>
-                  )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {unresolvedDamages.map((dmg) => {
+                    const partName = getPartById(dmg.vehiclePartCode)?.nameVi || dmg.vehiclePartCode;
+                    const typeLabel = (DAMAGE_TYPE_LABELS as Record<string, string>)[dmg.damageType] || dmg.damageType;
+                    const sevCfg = DAMAGE_SEVERITY_CONFIG[dmg.severity];
+                    const statCfg = DAMAGE_STATUS_CONFIG[dmg.status];
+                    const linkedProposal = maintenanceList.find(
+                      (m) => m.damageRecordIds?.includes(dmg.id) || m.id === dmg.resolvedByMaintenanceRequestId
+                    );
+
+                    return (
+                      <div
+                        key={dmg.id}
+                        style={{
+                          background: 'rgba(0, 0, 0, 0.3)',
+                          border: '1px solid rgba(255, 255, 255, 0.08)',
+                          borderRadius: '8px',
+                          padding: '9px 11px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '5px',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '12px', fontWeight: 700, color: '#f8fafc' }}>
+                            {partName}
+                          </span>
+                          <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                            <span
+                              style={{
+                                fontSize: '9.5px',
+                                fontWeight: 700,
+                                padding: '1px 6px',
+                                borderRadius: '4px',
+                                background: 'rgba(255, 255, 255, 0.08)',
+                                color: '#e2e8f0',
+                              }}
+                            >
+                              {typeLabel}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: '9.5px',
+                                fontWeight: 700,
+                                padding: '1px 6px',
+                                borderRadius: '4px',
+                                background: sevCfg?.bg || 'rgba(245, 158, 11, 0.2)',
+                                color: sevCfg?.color || '#fbbf24',
+                                border: `1px solid ${sevCfg?.borderColor || '#f59e0b'}`,
+                              }}
+                            >
+                              {sevCfg?.labelVi || dmg.severity}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10px' }}>
+                          <span style={{ color: '#94a3b8' }}>
+                            Ngày ghi nhận: <strong style={{ color: '#cbd5e1' }}>{formatDateTime(dmg.createdAt)}</strong>
+                          </span>
+                          <span
+                            style={{
+                              fontWeight: 700,
+                              color: statCfg?.color || '#f59e0b',
+                            }}
+                          >
+                            {statCfg?.labelVi || dmg.status}
+                          </span>
+                        </div>
+
+                        {/* Linked Proposal Info */}
+                        {linkedProposal ? (
+                          <div
+                            style={{
+                              marginTop: '2px',
+                              padding: '4px 8px',
+                              background: 'rgba(56, 189, 248, 0.08)',
+                              borderRadius: '4px',
+                              border: '1px solid rgba(56, 189, 248, 0.2)',
+                              fontSize: '10px',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                            }}
+                          >
+                            <span style={{ color: '#38bdf8', fontWeight: 600 }}>
+                              🔗 Đề xuất: {linkedProposal.title}
+                            </span>
+                            <span style={{ color: '#94a3b8' }}>
+                              ({MAINTENANCE_STATUS_CONFIG[linkedProposal.status]?.labelVi || linkedProposal.status})
+                            </span>
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: '9.5px', color: '#64748b', fontStyle: 'italic' }}>
+                            Chưa có đề xuất sửa chữa liên kết
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

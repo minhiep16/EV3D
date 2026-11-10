@@ -358,6 +358,73 @@ export const SEMANTIC_PART_LABELS_VI: Record<string, string> = {
 };
 
 /**
+ * Normalizes legacy, trip-based, or non-canonical component identifiers
+ * (e.g., 'FRONT_LEFT_DOOR' -> 'DOOR_FL', 'FRONT_LEFT_WHEEL' -> 'WHEEL_FL')
+ * into canonical VehiclePartId codes for consistent 3D hotspot and inspection mapping.
+ */
+export function normalizeCanonicalPartCode(rawCode?: string | null): string {
+  if (!rawCode) return '';
+  const upper = rawCode.trim().toUpperCase();
+  const mapping: Record<string, string> = {
+    // Doors
+    FRONT_LEFT_DOOR: 'DOOR_FL',
+    DOOR_FL: 'DOOR_FL',
+    DOOR_FRONT_LEFT: 'DOOR_FL',
+    FRONT_RIGHT_DOOR: 'DOOR_FR',
+    DOOR_FR: 'DOOR_FR',
+    DOOR_FRONT_RIGHT: 'DOOR_FR',
+    REAR_LEFT_DOOR: 'DOOR_RL',
+    DOOR_RL: 'DOOR_RL',
+    DOOR_REAR_LEFT: 'DOOR_RL',
+    REAR_RIGHT_DOOR: 'DOOR_RR',
+    DOOR_RR: 'DOOR_RR',
+    DOOR_REAR_RIGHT: 'DOOR_RR',
+    // Wheels
+    FRONT_LEFT_WHEEL: 'WHEEL_FL',
+    WHEEL_FL: 'WHEEL_FL',
+    WHEEL_FRONT_LEFT: 'WHEEL_FL',
+    FRONT_RIGHT_WHEEL: 'WHEEL_FR',
+    WHEEL_FR: 'WHEEL_FR',
+    WHEEL_FRONT_RIGHT: 'WHEEL_FR',
+    REAR_LEFT_WHEEL: 'WHEEL_RL',
+    WHEEL_RL: 'WHEEL_RL',
+    WHEEL_REAR_LEFT: 'WHEEL_RL',
+    REAR_RIGHT_WHEEL: 'WHEEL_RR',
+    WHEEL_RR: 'WHEEL_RR',
+    WHEEL_REAR_RIGHT: 'WHEEL_RR',
+    // Hood & Glass
+    HOOD: 'HOOD',
+    FRONT_HOOD: 'HOOD',
+    BONNET: 'HOOD',
+    ROOF: 'ROOF',
+    WINDSHIELD: 'WINDSHIELD',
+    WINDSHIELD_F: 'WINDSHIELD',
+    FRONT_WINDSHIELD: 'WINDSHIELD',
+    // Lights
+    HEADLIGHT: 'HEADLIGHTS',
+    HEADLIGHTS: 'HEADLIGHTS',
+    FRONT_HEADLIGHT: 'HEADLIGHTS',
+    TAILLIGHT: 'TAILLIGHTS',
+    TAILLIGHTS: 'TAILLIGHTS',
+    REAR_LIGHT: 'TAILLIGHTS',
+    // Power & Charging
+    BATTERY: 'BATTERY',
+    BATTERY_PACK: 'BATTERY',
+    CHARGING_PORT: 'CHARGING_PORT',
+    CHARGER: 'CHARGING_PORT',
+    // Body & Diffuser
+    DIFFUSER: 'DIFFUSER',
+    BUMPER_F: 'BODY',
+    BUMPER_R: 'DIFFUSER',
+    BODY: 'BODY',
+    SIDE_MIRROR: 'SIDE_MIRROR',
+    DOOR_HANDLE: 'DOOR_HANDLE',
+    INTERIOR_CABIN: 'INTERIOR_CABIN',
+  };
+  return mapping[upper] || upper;
+}
+
+/**
  * Checks whether a vehicle-local 3D point belongs to the specified semantic part.
  * Supports vehicle-specific calibrations for EV01 and EV02.
  */

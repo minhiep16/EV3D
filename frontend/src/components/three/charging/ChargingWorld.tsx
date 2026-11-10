@@ -31,8 +31,7 @@ export const ChargingWorld: React.FC = () => {
   const { data: stations = [] } = useQuery<ChargingStationResponse[]>({
     queryKey: ['chargingStations'],
     queryFn: fetchChargingStations,
-    staleTime: 6000,
-    refetchInterval: 6000,
+    staleTime: 60000,
   });
 
   // Query vehicles to resolve active vehicle
@@ -55,12 +54,17 @@ export const ChargingWorld: React.FC = () => {
     return vehicles[0];
   }, [vehicles, selectedVehicleId]);
 
-  // Query active charging session for active vehicle
+  // Query active charging session for active vehicle (polls every 3s only when actively charging)
   const { data: activeSession = null } = useQuery<ChargingSessionResponse | null>({
     queryKey: ['activeChargingSession', activeVehicle?.id],
     queryFn: () => (activeVehicle?.id ? fetchActiveChargingSession(activeVehicle.id) : Promise.resolve(null)),
     enabled: Boolean(activeVehicle?.id),
-    refetchInterval: 3000,
+    staleTime: 3000,
+    refetchInterval: (query) => {
+      const session = query.state.data;
+      const isCharging = session?.status === 'CHARGING' || activeVehicle?.status === 'CHARGING' || vehicleChargingMode;
+      return isCharging ? 3000 : false;
+    },
   });
 
   // Synchronize 3D world state when session finishes

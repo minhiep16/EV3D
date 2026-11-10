@@ -9,7 +9,6 @@ import { fetchVehicles } from '../services/vehicleApi';
 import { VehicleResponse } from '../types/vehicle';
 import {
   resolveVehicleCode,
-  resolveVehicleDisplayName,
   sortStaffFleetVehicles,
   resolveAuthoritativeHeroVehicle,
 } from '../components/three/vehicles/vehicleModelConfig';
@@ -26,30 +25,126 @@ import {
   Zap,
 } from 'lucide-react';
 import { StaffGarageFleetSidebar } from '../components/fleet/StaffGarageFleetSidebar';
-import { StaffVehicleDetailPanel } from '../components/fleet/StaffVehicleDetailPanel';
-import { StaffRegistrationReviewModal } from '../components/fleet/StaffRegistrationReviewModal';
 import { PanelErrorBoundary } from '../components/common/PanelErrorBoundary';
 import { NotificationBell } from '../components/common/NotificationBell';
 import { FleetHeroNavigator } from '../components/fleet/FleetHeroNavigator';
-import { CoOwnerVehiclePartPanel } from '../components/three/vehicles/CoOwnerVehiclePartPanel';
-import { DamageHistoryPanel } from '../components/three/damage/DamageHistoryPanel';
-import { DamageDetailModal } from '../components/three/damage/DamageDetailModal';
-import { CoOwnerBookingPanel } from '../components/three/booking/CoOwnerBookingPanel';
-import { StaffMaintenancePanel } from '../components/three/maintenance/StaffMaintenancePanel';
-import { CoOwnerMaintenancePanel } from '../components/three/maintenance/CoOwnerMaintenancePanel';
-import { BatteryHealthPanel } from '../components/three/battery/BatteryHealthPanel';
-import { ChargingPanel } from '../components/three/charging/ChargingPanel';
-import { CoOwnerVotingPanel } from '../components/three/voting/CoOwnerVotingPanel';
-import { CoOwnerVehiclePanel } from '../components/three/vehicles/CoOwnerVehiclePanel';
 import { CoOwnerQuickActionDock } from '../components/three/vehicles/CoOwnerQuickActionDock';
 import { CoOwnerExplorationToolbar } from '../components/three/vehicles/CoOwnerExplorationToolbar';
-import { CoOwnerVehicleInfoPanel } from '../components/three/vehicles/CoOwnerVehicleInfoPanel';
-import { MyBookingsPanel } from '../components/three/vehicles/MyBookingsPanel';
 import { LobbyOwnershipSummaryBoard } from '../components/three/ownership/LobbyOwnershipSummaryBoard';
-import { CoOwnerOwnershipPanel } from '../components/three/ownership/CoOwnerOwnershipPanel';
-import { CoOwnerContractPanel } from '../components/three/contracts/CoOwnerContractPanel';
-import { ZoneInfoPanel } from '../components/zones/ZoneInfoPanel';
-import { FinanceZonePanel } from '../components/zones/FinanceZonePanel';
+
+// Code-split heavy business panels (loaded on-demand when active panel opens)
+const StaffVehicleDetailPanel = React.lazy(() =>
+  import('../components/fleet/StaffVehicleDetailPanel').then((m) => ({ default: m.StaffVehicleDetailPanel }))
+);
+const StaffRegistrationReviewModal = React.lazy(() =>
+  import('../components/fleet/StaffRegistrationReviewModal').then((m) => ({ default: m.StaffRegistrationReviewModal }))
+);
+const StaffPaymentVerificationModal = React.lazy(() =>
+  import('../components/fleet/StaffPaymentVerificationModal').then((m) => ({ default: m.StaffPaymentVerificationModal }))
+);
+const StaffMaintenancePanel = React.lazy(() =>
+  import('../components/three/maintenance/StaffMaintenancePanel').then((m) => ({ default: m.StaffMaintenancePanel }))
+);
+const DamageHistoryPanel = React.lazy(() =>
+  import('../components/three/damage/DamageHistoryPanel').then((m) => ({ default: m.DamageHistoryPanel }))
+);
+const DamageDetailModal = React.lazy(() =>
+  import('../components/three/damage/DamageDetailModal').then((m) => ({ default: m.DamageDetailModal }))
+);
+const BatteryHealthPanel = React.lazy(() =>
+  import('../components/three/battery/BatteryHealthPanel').then((m) => ({ default: m.BatteryHealthPanel }))
+);
+const ChargingPanel = React.lazy(() =>
+  import('../components/three/charging/ChargingPanel').then((m) => ({ default: m.ChargingPanel }))
+);
+const CoOwnerVehiclePartPanel = React.lazy(() =>
+  import('../components/three/vehicles/CoOwnerVehiclePartPanel').then((m) => ({ default: m.CoOwnerVehiclePartPanel }))
+);
+const CoOwnerBookingPanel = React.lazy(() =>
+  import('../components/three/booking/CoOwnerBookingPanel').then((m) => ({ default: m.CoOwnerBookingPanel }))
+);
+const CoOwnerMaintenancePanel = React.lazy(() =>
+  import('../components/three/maintenance/CoOwnerMaintenancePanel').then((m) => ({ default: m.CoOwnerMaintenancePanel }))
+);
+const CoOwnerVotingPanel = React.lazy(() =>
+  import('../components/three/voting/CoOwnerVotingPanel').then((m) => ({ default: m.CoOwnerVotingPanel }))
+);
+const CoOwnerVehiclePanel = React.lazy(() =>
+  import('../components/three/vehicles/CoOwnerVehiclePanel').then((m) => ({ default: m.CoOwnerVehiclePanel }))
+);
+const CoOwnerVehicleInfoPanel = React.lazy(() =>
+  import('../components/three/vehicles/CoOwnerVehicleInfoPanel').then((m) => ({ default: m.CoOwnerVehicleInfoPanel }))
+);
+const MyBookingsPanel = React.lazy(() =>
+  import('../components/three/vehicles/MyBookingsPanel').then((m) => ({ default: m.MyBookingsPanel }))
+);
+const CoOwnerOwnershipPanel = React.lazy(() =>
+  import('../components/three/ownership/CoOwnerOwnershipPanel').then((m) => ({ default: m.CoOwnerOwnershipPanel }))
+);
+const CoOwnerContractPanel = React.lazy(() =>
+  import('../components/three/contracts/CoOwnerContractPanel').then((m) => ({ default: m.CoOwnerContractPanel }))
+);
+const ZoneInfoPanel = React.lazy(() =>
+  import('../components/zones/ZoneInfoPanel').then((m) => ({ default: m.ZoneInfoPanel }))
+);
+const FinanceZonePanel = React.lazy(() =>
+  import('../components/zones/FinanceZonePanel').then((m) => ({ default: m.FinanceZonePanel }))
+);
+const ActiveTripDetailPanel = React.lazy(() =>
+  import('../components/three/trip/ActiveTripDetailPanel').then((m) => ({ default: m.ActiveTripDetailPanel }))
+);
+const CoOwnerHandoverReviewPanel = React.lazy(() =>
+  import('../components/three/handover/CoOwnerHandoverReviewPanel').then((m) => ({ default: m.CoOwnerHandoverReviewPanel }))
+);
+const CoOwnerTripStartPanel = React.lazy(() =>
+  import('../components/three/trip/CoOwnerTripStartPanel').then((m) => ({ default: m.CoOwnerTripStartPanel }))
+);
+const AnalyticsPanel = React.lazy(() =>
+  import('../components/three/analytics/AnalyticsPanel').then((m) => ({ default: m.AnalyticsPanel }))
+);
+
+const PanelLoadingFallback: React.FC<{ title?: string }> = ({ title = 'ĐANG TẢI DỮ LIỆU...' }) => (
+  <aside
+    role="complementary"
+    aria-label="Panel Loading"
+    style={{
+      position: 'absolute',
+      top: '72px',
+      right: '20px',
+      bottom: '20px',
+      width: '380px',
+      maxWidth: 'calc(100vw - 40px)',
+      background: 'rgba(8, 14, 26, 0.90)',
+      backdropFilter: 'blur(20px)',
+      border: '1.5px solid rgba(56, 189, 248, 0.3)',
+      borderRadius: '16px',
+      zIndex: 30,
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '12px',
+      color: '#38bdf8',
+      fontSize: '11px',
+      fontWeight: 700,
+      letterSpacing: '0.08em',
+      boxShadow: '0 16px 40px rgba(0, 0, 0, 0.6), 0 0 20px rgba(56, 189, 248, 0.15)',
+    }}
+  >
+    <div
+      style={{
+        width: '28px',
+        height: '28px',
+        border: '2.5px solid rgba(56, 189, 248, 0.2)',
+        borderTopColor: '#38bdf8',
+        borderRadius: '50%',
+        animation: 'spinPanel 1s linear infinite',
+      }}
+    />
+    <span>{title}</span>
+    <style>{`@keyframes spinPanel { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+  </aside>
+);
 
 export const GarageScene: React.FC = () => {
   const navigate = useNavigate();
@@ -104,13 +199,16 @@ export const GarageScene: React.FC = () => {
   const clearVehiclePartSelection = useWorldStore((state) => state.clearVehiclePartSelection);
   const isRegistrationReviewModalOpen = useWorldStore((state) => state.isRegistrationReviewModalOpen);
   const setRegistrationReviewModalOpen = useWorldStore((state) => state.setRegistrationReviewModalOpen);
+  const isPaymentVerificationModalOpen = useWorldStore((state) => state.isPaymentVerificationModalOpen);
+  const setPaymentVerificationModalOpen = useWorldStore((state) => state.setPaymentVerificationModalOpen);
 
   // Authoritative TanStack Query for vehicles (scoped per role and user)
   const { data: vehicles = [], isLoading } = useQuery<VehicleResponse[]>({
     queryKey: ['vehicles', user?.role, user?.id],
     queryFn: fetchVehicles,
     enabled: authReady,
-    staleTime: 6000,
+    staleTime: 5000,
+    refetchOnWindowFocus: true,
   });
 
   // Canonical sorted staff fleet for operations (Single Source of Truth)
@@ -284,10 +382,12 @@ export const GarageScene: React.FC = () => {
               top: '16px',
               left: '20px',
               right: '20px',
-              height: '48px',
+              minHeight: '48px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '12px',
               zIndex: 15,
               pointerEvents: 'none',
             }}
@@ -299,6 +399,7 @@ export const GarageScene: React.FC = () => {
                 alignItems: 'center',
                 gap: '12px',
                 pointerEvents: 'auto',
+                flexShrink: 0,
               }}
             >
               {/* Circular Cyan Logo */}
@@ -376,6 +477,9 @@ export const GarageScene: React.FC = () => {
                 alignItems: 'center',
                 gap: '10px',
                 pointerEvents: 'auto',
+                flexShrink: 0,
+                flexWrap: 'wrap',
+                justifyContent: 'flex-end',
               }}
             >
               {/* Back to Vehicle in inspection/handover/sub-modes */}
@@ -399,6 +503,8 @@ export const GarageScene: React.FC = () => {
                     gap: '6px',
                     boxShadow: '0 4px 14px rgba(0, 0, 0, 0.3)',
                     transition: 'all 0.2s',
+                    flexShrink: 0,
+                    whiteSpace: 'nowrap',
                   }}
                 >
                   <ArrowLeft size={12} color="#c084fc" />
@@ -427,6 +533,8 @@ export const GarageScene: React.FC = () => {
                     gap: '6px',
                     boxShadow: '0 4px 14px rgba(0, 0, 0, 0.3)',
                     transition: 'all 0.2s',
+                    flexShrink: 0,
+                    whiteSpace: 'nowrap',
                   }}
                 >
                   <RotateCcw size={12} color="#00f2fe" />
@@ -451,6 +559,8 @@ export const GarageScene: React.FC = () => {
                   alignItems: 'center',
                   gap: '6px',
                   textTransform: 'uppercase',
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap',
                 }}
               >
                 {modeBadge.icon}
@@ -472,6 +582,8 @@ export const GarageScene: React.FC = () => {
                   alignItems: 'center',
                   gap: '8px',
                   boxShadow: '0 4px 14px rgba(0, 0, 0, 0.2)',
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap',
                 }}
               >
                 <Warehouse size={13} color="#38bdf8" />
@@ -532,7 +644,7 @@ export const GarageScene: React.FC = () => {
           {/* B. Left Fleet Sidebar */}
           <StaffGarageFleetSidebar />
 
-          {/* C. Center Hero Vehicle Navigator (Chevrons & Status Pill) */}
+          {/* C. Center Hero Vehicle Navigator (Chevrons) */}
           {heroVehicle && (
             <FleetHeroNavigator
               vehicles={sortedFleetVehicles}
@@ -545,57 +657,86 @@ export const GarageScene: React.FC = () => {
           {/* D. Right Selected Vehicle Operational Panel (Authoritative Screen-Space Shell) */}
           <PanelErrorBoundary key={heroVehicle ? `${heroVehicle.id}-detail` : 'panel'}>
             {heroVehicle && activePrimaryPanel !== 'NOTIFICATIONS' && (isVehicleDetailOpen || vehicleInspectionMode || vehicleDamageMappingMode || vehicleHandoverMode) && !vehicleDamageHistoryMode && !vehicleMaintenanceMode && !vehicleBatteryXrayMode && !vehicleChargingMode && (
-              <StaffVehicleDetailPanel
-                vehicle={heroVehicle}
-                onClose={() => {
-                  exitStaffInspection();
-                  closeVehicleDetail();
-                }}
-              />
+              <React.Suspense fallback={<PanelLoadingFallback title="ĐANG TẢI THÔNG TIN VẬN HÀNH..." />}>
+                <StaffVehicleDetailPanel
+                  vehicle={heroVehicle}
+                  onClose={() => {
+                    exitStaffInspection();
+                    closeVehicleDetail();
+                  }}
+                />
+              </React.Suspense>
             )}
           </PanelErrorBoundary>
 
           {/* Dedicated Phase 14 Screen-Space Damage History Panel */}
           {heroVehicle && vehicleDamageHistoryMode && (
-            <DamageHistoryPanel
-              vehicle={heroVehicle}
-              onClose={returnToVehicleOverview}
-            />
+            <PanelErrorBoundary key={`${heroVehicle.id}-damage-history`}>
+              <React.Suspense fallback={<PanelLoadingFallback title="ĐANG TẢI HỒ SƠ HƯ HỎNG..." />}>
+                <DamageHistoryPanel
+                  vehicle={heroVehicle}
+                  onClose={returnToVehicleOverview}
+                />
+              </React.Suspense>
+            </PanelErrorBoundary>
           )}
 
           {/* Dedicated Phase 15 Screen-Space Maintenance Management Panel */}
           {heroVehicle && vehicleMaintenanceMode && (
-            <StaffMaintenancePanel
-              vehicle={heroVehicle}
-              onClose={returnToVehicleOverview}
-            />
+            <PanelErrorBoundary key={`${heroVehicle.id}-maintenance-mgmt`}>
+              <React.Suspense fallback={<PanelLoadingFallback title="ĐANG TẢI QUẢN LÝ BẢO DƯỠNG..." />}>
+                <StaffMaintenancePanel
+                  vehicle={heroVehicle}
+                  onClose={returnToVehicleOverview}
+                />
+              </React.Suspense>
+            </PanelErrorBoundary>
           )}
 
           {/* Dedicated Phase 16 Screen-Space Battery Health / X-Ray Panel */}
           {heroVehicle && vehicleBatteryXrayMode && (
-            <BatteryHealthPanel
-              vehicle={heroVehicle}
-              onClose={returnToVehicleOverview}
-            />
+            <PanelErrorBoundary key={`${heroVehicle.id}-battery-xray`}>
+              <React.Suspense fallback={<PanelLoadingFallback title="ĐANG TẢI CHỈ SỐ PIN 3D..." />}>
+                <BatteryHealthPanel
+                  vehicle={heroVehicle}
+                  onClose={returnToVehicleOverview}
+                />
+              </React.Suspense>
+            </PanelErrorBoundary>
           )}
 
           {/* Dedicated Phase 17 Screen-Space Charging Panel */}
           {heroVehicle && vehicleChargingMode && (
-            <ChargingPanel
-              vehicle={heroVehicle}
-              onClose={returnToVehicleOverview}
-            />
+            <PanelErrorBoundary key={`${heroVehicle.id}-charging`}>
+              <React.Suspense fallback={<PanelLoadingFallback title="ĐANG TẢI QUẢN LÝ SẠC..." />}>
+                <ChargingPanel
+                  vehicle={heroVehicle}
+                  onClose={returnToVehicleOverview}
+                />
+              </React.Suspense>
+            </PanelErrorBoundary>
           )}
 
           {/* Authoritative Staff Vehicle Registration Review Modal Layer (outside Canvas and sidebars) */}
-          <StaffRegistrationReviewModal
-            isOpen={isRegistrationReviewModalOpen}
-            onClose={() => setRegistrationReviewModalOpen(false)}
-            onReviewed={() => {
-              queryClient.invalidateQueries({ queryKey: ['vehicles'] });
-              queryClient.invalidateQueries({ queryKey: ['staffPendingApplications'] });
-            }}
-          />
+          <React.Suspense fallback={null}>
+            <StaffRegistrationReviewModal
+              isOpen={isRegistrationReviewModalOpen}
+              onClose={() => setRegistrationReviewModalOpen(false)}
+              onReviewed={() => {
+                queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+                queryClient.invalidateQueries({ queryKey: ['staffPendingApplications'] });
+              }}
+            />
+          </React.Suspense>
+
+          {/* Authoritative Staff Payment Verification Modal Layer (Section 4 & 12) */}
+          <React.Suspense fallback={null}>
+            <StaffPaymentVerificationModal
+              isOpen={isPaymentVerificationModalOpen}
+              onClose={() => setPaymentVerificationModalOpen(false)}
+              initialVehicleId={heroVehicle?.id}
+            />
+          </React.Suspense>
         </>
       ) : (
         /* ======================================================== */
@@ -945,93 +1086,128 @@ export const GarageScene: React.FC = () => {
           {/* Screen-Space Fixed CO_OWNER Part Inspection Panel */}
           {!isOperationsRole && isCoOwner && vehicleInspectionMode && !isDamageDetailModalOpen && activePrimaryPanel === 'NONE' && (
             <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0])?.id || 'ev'}-part-inspection`}>
-              <CoOwnerVehiclePartPanel />
+              <React.Suspense fallback={<PanelLoadingFallback title="ĐANG TẢI KHẢO SÁT BỘ PHẬN..." />}>
+                <CoOwnerVehiclePartPanel />
+              </React.Suspense>
             </PanelErrorBoundary>
           )}
 
           {/* Dedicated Phase 14 Screen-Space Damage History Panel for CO_OWNER */}
           {activePrimaryPanel === 'DAMAGE' && (currentCoOwnerVehicle || vehicles[0]) && (
             <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0])?.id || 'ev'}-damage-history`}>
-              <DamageHistoryPanel
-                vehicle={currentCoOwnerVehicle || vehicles[0]}
-                onClose={() => closeGaragePanel('DAMAGE')}
-              />
+              <React.Suspense fallback={<PanelLoadingFallback title="ĐANG TẢI HỒ SƠ HƯ HỎNG..." />}>
+                <DamageHistoryPanel
+                  vehicle={currentCoOwnerVehicle || vehicles[0]}
+                  onClose={() => closeGaragePanel('DAMAGE')}
+                />
+              </React.Suspense>
             </PanelErrorBoundary>
           )}
 
           {/* Dedicated Phase 15 Screen-Space Maintenance History Panel for CO_OWNER */}
           {activePrimaryPanel === 'MAINTENANCE' && (currentCoOwnerVehicle || vehicles[0]) && (
             <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0])?.id || 'ev'}-maintenance`}>
-              <CoOwnerMaintenancePanel
-                vehicle={currentCoOwnerVehicle || vehicles[0]}
-                onClose={() => closeGaragePanel('MAINTENANCE')}
-              />
+              <React.Suspense fallback={<PanelLoadingFallback title="ĐANG TẢI QUẢN LÝ BẢO DƯỠNG..." />}>
+                <CoOwnerMaintenancePanel
+                  vehicle={currentCoOwnerVehicle || vehicles[0]}
+                  onClose={() => closeGaragePanel('MAINTENANCE')}
+                />
+              </React.Suspense>
             </PanelErrorBoundary>
           )}
 
           {/* Dedicated Screen-Space Fixed CO_OWNER Booking Detail Panel */}
           {activePrimaryPanel === 'BOOKING' && (currentCoOwnerVehicle || vehicles[0]) && (
             <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0])?.id || 'ev'}-booking`}>
-              <CoOwnerBookingPanel
-                vehicle={currentCoOwnerVehicle || vehicles[0]}
-                onClose={() => closeGaragePanel('BOOKING')}
-              />
+              <React.Suspense fallback={<PanelLoadingFallback title="ĐANG TẢI ĐẶT LỊCH SỬ DỤNG XE..." />}>
+                <CoOwnerBookingPanel
+                  vehicle={currentCoOwnerVehicle || vehicles[0]}
+                  onClose={() => closeGaragePanel('BOOKING')}
+                />
+              </React.Suspense>
             </PanelErrorBoundary>
           )}
 
           {/* Dedicated Phase 16 Screen-Space Battery Health / X-Ray Panel for CO_OWNER */}
           {activePrimaryPanel === 'BATTERY_XRAY' && (currentCoOwnerVehicle || vehicles[0]) && (
             <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0])?.id || 'ev'}-battery-xray`}>
-              <BatteryHealthPanel
-                vehicle={currentCoOwnerVehicle || vehicles[0]}
-                onClose={() => closeGaragePanel('BATTERY_XRAY')}
-              />
+              <React.Suspense fallback={<PanelLoadingFallback title="ĐANG TẢI CHỈ SỐ PIN 3D..." />}>
+                <BatteryHealthPanel
+                  vehicle={currentCoOwnerVehicle || vehicles[0]}
+                  onClose={() => closeGaragePanel('BATTERY_XRAY')}
+                />
+              </React.Suspense>
             </PanelErrorBoundary>
           )}
 
           {/* Dedicated Phase 17 Screen-Space Charging Panel for CO_OWNER */}
           {(activePrimaryPanel === 'CHARGING' || selectedZone === 'CHARGING') && (currentCoOwnerVehicle || vehicles[0]) && (
             <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0])?.id || 'ev'}-charging`}>
-              <ChargingPanel
-                vehicle={currentCoOwnerVehicle || vehicles[0]}
-                onClose={() => {
-                  closeGaragePanel('CHARGING');
-                  clearSelection();
-                }}
-              />
+              <React.Suspense fallback={<PanelLoadingFallback title="ĐANG TẢI QUẢN LÝ SẠC..." />}>
+                <ChargingPanel
+                  vehicle={currentCoOwnerVehicle || vehicles[0]}
+                  onClose={() => {
+                    closeGaragePanel('CHARGING');
+                    clearSelection();
+                  }}
+                />
+              </React.Suspense>
             </PanelErrorBoundary>
           )}
 
           {/* Dedicated Phase 21 Screen-Space Voting Panel for CO_OWNER */}
           {activePrimaryPanel === 'VOTING' && (currentCoOwnerVehicle || vehicles[0]) && (
             <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0])?.id || 'ev'}-voting`}>
-              <CoOwnerVotingPanel
-                vehicle={currentCoOwnerVehicle || vehicles[0]}
-                onClose={() => {
-                  closeVotingPanel();
-                  closeGaragePanel('VOTING');
-                }}
-              />
+              <React.Suspense fallback={<PanelLoadingFallback title="ĐANG TẢI BIỂU QUYẾT NHÓM..." />}>
+                <CoOwnerVotingPanel
+                  vehicle={currentCoOwnerVehicle || vehicles[0]}
+                  onClose={() => {
+                    closeVotingPanel();
+                    closeGaragePanel('VOTING');
+                  }}
+                />
+              </React.Suspense>
             </PanelErrorBoundary>
           )}
 
           {/* Authoritative Redesigned Showroom Zone Info Panel (e.g. Finance) for CO_OWNER */}
-          {isCoOwner && selectedZone && selectedZone !== 'VEHICLE' && selectedZone !== 'FINANCE' && selectedZone !== 'CHARGING' && !showBackToVehicle && (
+          {isCoOwner && selectedZone && selectedZone !== 'VEHICLE' && selectedZone !== 'FINANCE' && selectedZone !== 'CHARGING' && selectedZone !== 'ANALYTICS' && !showBackToVehicle && (
             <PanelErrorBoundary key={`zone-info-${selectedZone}`}>
-              <ZoneInfoPanel onClose={() => clearSelection()} />
+              <React.Suspense fallback={<PanelLoadingFallback title="ĐANG TẢI THÔNG TIN KHU VỰC..." />}>
+                <ZoneInfoPanel onClose={() => clearSelection()} />
+              </React.Suspense>
             </PanelErrorBoundary>
           )}
 
           {/* Dedicated Phase 24 Premium Redesigned Finance Dashboard for CO_OWNER */}
           {activePrimaryPanel === 'FINANCE' && (currentCoOwnerVehicle || vehicles[0]) && (
             <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0]).id}-finance-dashboard`}>
-              <FinanceZonePanel
-                vehicle={currentCoOwnerVehicle || vehicles[0]}
-                onClose={() => {
-                  closeGaragePanel('FINANCE');
-                  clearSelection();
-                }}
-              />
+              <React.Suspense fallback={<PanelLoadingFallback title="ĐANG TẢI TÀI CHÍNH & QUỸ CHUNG..." />}>
+                <FinanceZonePanel
+                  vehicle={currentCoOwnerVehicle || vehicles[0]}
+                  onClose={() => {
+                    closeGaragePanel('FINANCE');
+                    clearSelection();
+                  }}
+                />
+              </React.Suspense>
+            </PanelErrorBoundary>
+          )}
+
+          {/* Dedicated Screen-Space Analytics Panel */}
+          {(activePrimaryPanel === 'ANALYTICS' || selectedZone === 'ANALYTICS' || activeFeature === 'ANALYTICS') && (
+            <PanelErrorBoundary key={`${(isOperationsRole ? (heroVehicle || vehicles[0]) : (currentCoOwnerVehicle || vehicles[0]))?.id || 'ev'}-analytics`}>
+              <React.Suspense fallback={<PanelLoadingFallback title="ĐANG TẢI PHÂN TÍCH VẬN HÀNH..." />}>
+                <AnalyticsPanel
+                  vehicle={isOperationsRole ? (heroVehicle || vehicles[0]) : (currentCoOwnerVehicle || vehicles[0])}
+                  onClose={() => {
+                    closeGaragePanel('ANALYTICS');
+                    if (selectedZone === 'ANALYTICS') {
+                      selectZone(null);
+                    }
+                  }}
+                />
+              </React.Suspense>
             </PanelErrorBoundary>
           )}
 
@@ -1047,10 +1223,12 @@ export const GarageScene: React.FC = () => {
                 queryClient.invalidateQueries({ queryKey: ['transferPreview'] });
               }}
             >
-              <CoOwnerOwnershipPanel
-                vehicle={currentCoOwnerVehicle || vehicles[0]}
-                onClose={() => closeGaragePanel('CO_OWNERSHIP')}
-              />
+              <React.Suspense fallback={<PanelLoadingFallback title="ĐANG TẢI QUẢN LÝ ĐỒNG SỞ HỮU..." />}>
+                <CoOwnerOwnershipPanel
+                  vehicle={currentCoOwnerVehicle || vehicles[0]}
+                  onClose={() => closeGaragePanel('CO_OWNERSHIP')}
+                />
+              </React.Suspense>
             </PanelErrorBoundary>
           )}
 
@@ -1065,10 +1243,12 @@ export const GarageScene: React.FC = () => {
                 queryClient.invalidateQueries({ queryKey: ['contractSummary'] });
               }}
             >
-              <CoOwnerContractPanel
-                vehicle={currentCoOwnerVehicle || vehicles[0]}
-                onClose={() => closeGaragePanel('CONTRACT')}
-              />
+              <React.Suspense fallback={<PanelLoadingFallback title="ĐANG TẢI HỢP ĐỒNG ĐIỆN TỬ..." />}>
+                <CoOwnerContractPanel
+                  vehicle={currentCoOwnerVehicle || vehicles[0]}
+                  onClose={() => closeGaragePanel('CONTRACT')}
+                />
+              </React.Suspense>
             </PanelErrorBoundary>
           )}
 
@@ -1084,10 +1264,12 @@ export const GarageScene: React.FC = () => {
                   pointerEvents: 'auto',
                 }}
               >
-                <CoOwnerVehicleInfoPanel
-                  vehicle={currentCoOwnerVehicle}
-                  onClose={() => closeGaragePanel('VEHICLE_INFO')}
-                />
+                <React.Suspense fallback={<PanelLoadingFallback title="ĐANG TẢI THÔNG SỐ XE..." />}>
+                  <CoOwnerVehicleInfoPanel
+                    vehicle={currentCoOwnerVehicle}
+                    onClose={() => closeGaragePanel('VEHICLE_INFO')}
+                  />
+                </React.Suspense>
               </div>
             </PanelErrorBoundary>
           )}
@@ -1104,25 +1286,65 @@ export const GarageScene: React.FC = () => {
                   pointerEvents: 'auto',
                 }}
               >
-                <MyBookingsPanel
-                  vehicle={currentCoOwnerVehicle}
-                  onClose={() => closeGaragePanel('MY_BOOKINGS')}
-                />
+                <React.Suspense fallback={<PanelLoadingFallback title="ĐANG TẢI LỊCH ĐẶT XE..." />}>
+                  <MyBookingsPanel
+                    vehicle={currentCoOwnerVehicle}
+                    onClose={() => closeGaragePanel('MY_BOOKINGS')}
+                  />
+                </React.Suspense>
               </div>
+            </PanelErrorBoundary>
+          )}
+
+          {/* Authoritative Screen-Space Fixed CO_OWNER Active Trip Details Panel */}
+          {(currentCoOwnerVehicle || vehicles[0]) && vehicleTripVisualizationMode && (
+            <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0]).id}-active-trip-detail`}>
+              <React.Suspense fallback={<PanelLoadingFallback title="ĐANG TẢI CHI TIẾT CHUYẾN ĐI..." />}>
+                <ActiveTripDetailPanel
+                  vehicle={currentCoOwnerVehicle || vehicles[0]}
+                  onClose={() => returnToVehicleOverview()}
+                />
+              </React.Suspense>
+            </PanelErrorBoundary>
+          )}
+
+          {/* Authoritative Screen-Space Fixed CO_OWNER Vehicle Handover & Inspection Review Panel */}
+          {(currentCoOwnerVehicle || vehicles[0]) && vehicleReceiptReviewMode && (
+            <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0]).id}-handover-review`}>
+              <React.Suspense fallback={<PanelLoadingFallback title="ĐANG TẢI THÔNG TIN BÀN GIAO..." />}>
+                <CoOwnerHandoverReviewPanel
+                  vehicle={currentCoOwnerVehicle || vehicles[0]}
+                  onClose={() => returnToVehicleOverview()}
+                />
+              </React.Suspense>
+            </PanelErrorBoundary>
+          )}
+
+          {/* Authoritative Screen-Space Fixed CO_OWNER Trip Start Panel */}
+          {(currentCoOwnerVehicle || vehicles[0]) && vehicleTripStartMode && (
+            <PanelErrorBoundary key={`${(currentCoOwnerVehicle || vehicles[0]).id}-trip-start`}>
+              <React.Suspense fallback={<PanelLoadingFallback title="ĐANG TẢI BẮT ĐẦU CHUYẾN ĐI..." />}>
+                <CoOwnerTripStartPanel
+                  vehicle={currentCoOwnerVehicle || vehicles[0]}
+                  onClose={() => returnToVehicleOverview()}
+                />
+              </React.Suspense>
             </PanelErrorBoundary>
           )}
 
           {/* Authoritative Screen-Space CO_OWNER Right Vehicle Information Panel */}
           {currentCoOwnerVehicle && activePrimaryPanel === 'VEHICLE_DETAIL' && isVehicleDetailOpen && !showBackToVehicle && (!selectedZone || selectedZone === 'VEHICLE') && !isExplorationMode && (
             <PanelErrorBoundary key={`${currentCoOwnerVehicle.id}-co-owner-overview`}>
-              <CoOwnerVehiclePanel
-                vehicle={currentCoOwnerVehicle}
-                onClose={() => {
-                  closeVehicleDetail();
-                  closeGaragePanel('VEHICLE_DETAIL');
-                  returnToGarageOverview();
-                }}
-              />
+              <React.Suspense fallback={<PanelLoadingFallback title="ĐANG TẢI THÔNG TIN XE..." />}>
+                <CoOwnerVehiclePanel
+                  vehicle={currentCoOwnerVehicle}
+                  onClose={() => {
+                    closeVehicleDetail();
+                    closeGaragePanel('VEHICLE_DETAIL');
+                    returnToGarageOverview();
+                  }}
+                />
+              </React.Suspense>
             </PanelErrorBoundary>
           )}
 
@@ -1147,9 +1369,11 @@ export const GarageScene: React.FC = () => {
       {/* ======================================================== */}
       {(isOperationsRole ? heroVehicle : (currentCoOwnerVehicle || vehicles[0])) && (
         <PanelErrorBoundary key={`${(isOperationsRole ? heroVehicle : (currentCoOwnerVehicle || vehicles[0]))?.id || 'ev'}-damage-detail-panel`}>
-          <DamageDetailModal
-            vehicle={(isOperationsRole ? heroVehicle : (currentCoOwnerVehicle || vehicles[0]))!}
-          />
+          <React.Suspense fallback={null}>
+            <DamageDetailModal
+              vehicle={(isOperationsRole ? heroVehicle : (currentCoOwnerVehicle || vehicles[0]))!}
+            />
+          </React.Suspense>
         </PanelErrorBoundary>
       )}
     </div>

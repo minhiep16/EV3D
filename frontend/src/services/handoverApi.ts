@@ -7,10 +7,14 @@ import {
 } from '../types/handover';
 
 export async function fetchHandoverEligibility(
-  vehicleId: string
+  vehicleId: string,
+  bookingId?: string
 ): Promise<VehicleHandoverEligibilityResponse> {
   try {
-    const res = await authenticatedFetch(`/api/vehicles/${vehicleId}/handover-eligibility`);
+    const url = bookingId
+      ? `/api/vehicles/${vehicleId}/handover-eligibility?bookingId=${bookingId}`
+      : `/api/vehicles/${vehicleId}/handover-eligibility`;
+    const res = await authenticatedFetch(url);
     if (res.status === 404 || res.status === 204) {
       return {
         vehicleId,
@@ -33,6 +37,24 @@ export async function fetchHandoverEligibility(
     }
     if (err instanceof TypeError || (err instanceof Error && err.message.includes('fetch'))) {
       throw new Error('Không thể kết nối đến máy chủ kiểm tra điều kiện bàn giao xe.');
+    }
+    throw err;
+  }
+}
+
+export async function fetchBookingHandoverEligibility(
+  bookingId: string
+): Promise<VehicleHandoverEligibilityResponse> {
+  try {
+    const res = await authenticatedFetch(`/api/bookings/${bookingId}/handover-eligibility`);
+    return await safeParseResponse<VehicleHandoverEligibilityResponse>(res);
+  } catch (err: any) {
+    if (err?.status === 404 || err?.statusCode === 404) {
+      return {
+        vehicleId: '',
+        handoverAllowed: false,
+        reason: 'NO_BOOKING',
+      };
     }
     throw err;
   }

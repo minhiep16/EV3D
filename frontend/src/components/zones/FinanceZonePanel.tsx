@@ -24,6 +24,7 @@ import {
   Loader2,
   ExternalLink,
   Plus,
+  RefreshCw,
 } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useWorldStore } from '../../store/worldStore';
@@ -156,11 +157,12 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
     ? `${resolveVehicleDisplayName(activeVehicle)} (${resolveVehicleCode(activeVehicle)})`
     : 'Chưa chọn phương tiện';
 
-  // Co-ownership query to resolve members
+  // Co-ownership query to resolve members (reusing unified 'coOwnership' query cache)
   const { data: coOwnership } = useQuery({
-    queryKey: ['co-ownership', activeVehicleId],
+    queryKey: ['coOwnership', activeVehicleId],
     queryFn: () => (activeVehicleId ? fetchVehicleCoOwnership(activeVehicleId) : Promise.resolve(null)),
     enabled: !!activeVehicleId,
+    staleTime: 10000,
   });
 
   const coOwners = useMemo(() => {
@@ -168,20 +170,38 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
   }, [coOwnership]);
 
   // Expenses query
-  const { data: expenses = [], isLoading: isExpensesLoading, isError: isExpensesError } = useExpenses(activeVehicleId);
+  const {
+    data: expenses = [],
+    isLoading: isExpensesLoading,
+    isError: isExpensesError,
+    error: expensesError,
+    refetch: refetchExpenses,
+  } = useExpenses(activeVehicleId);
 
   // Shared Fund query
-  const { data: fundSummary } = useFundSummary(activeVehicleId);
+  const {
+    data: fundSummary,
+    isLoading: isFundLoading,
+    isError: isFundError,
+  } = useFundSummary(activeVehicleId);
 
   // Authoritative Cost Sharing Summary for current user & selected vehicle
-  const { data: costSharingSummary } = useCostSharingSummary(
+  const {
+    data: costSharingSummary,
+    isLoading: isCostSharingLoading,
+    isError: isCostSharingError,
+  } = useCostSharingSummary(
     activeVehicleId,
     undefined,
     { enabled: !!activeVehicleId && !!user?.id }
   );
 
   // Group-wide expense summary
-  const { data: expenseSummary } = useExpenseSummary(
+  const {
+    data: expenseSummary,
+    isLoading: isExpenseSummaryLoading,
+    isError: isExpenseSummaryError,
+  } = useExpenseSummary(
     activeVehicleId,
     undefined
   );
@@ -334,15 +354,25 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
   const myPendingObligationTotal = useMemo(() => {
     if (!activeVehicleId || !user?.id) return 0;
 
-    // 1. Authoritative Cost Sharing Summary: outstanding net negative balance
-    if (costSharingSummary && costSharingSummary.userNetPosition != null) {
-      if (costSharingSummary.userNetPosition < 0) {
-        return Math.abs(costSharingSummary.userNetPosition);
+    // 1. Authoritative Cost Sharing Summary
+    if (costSharingSummary) {
+      if (costSharingSummary.userOutstandingAmount != null) {
+        return Math.max(0, costSharingSummary.userOutstandingAmount);
       }
-      return 0;
+      if (costSharingSummary.userNetPosition != null) {
+        if (costSharingSummary.userNetPosition < 0) {
+          return Math.abs(costSharingSummary.userNetPosition);
+        }
+        return 0;
+      }
     }
 
     return 0;
+  }, [activeVehicleId, user?.id, costSharingSummary]);
+
+  const myPendingVerificationTotal = useMemo(() => {
+    if (!activeVehicleId || !user?.id || !costSharingSummary) return 0;
+    return Math.max(0, costSharingSummary.userPendingVerificationAmount ?? 0);
   }, [activeVehicleId, user?.id, costSharingSummary]);
 
   const groupPendingLiabilitiesTotal = useMemo(() => {
@@ -355,8 +385,86 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
       .reduce((sum, e) => sum + Number(e.amount || 0), 0);
   }, [activeVehicleId, expenseSummary, expenses]);
 
-  const pendingLiabilitiesTotal = isStaff ? groupPendingLiabilitiesTotal : myPendingObligationTotal;
-  const pendingLiabilitiesLabel = isStaff ? 'Chờ thanh toán toàn nhóm' : 'Chờ thanh toán của tôi';
+  const pendingLiabilitiesTotal = isStaff
+    ? groupPendingLiabilitiesTotal
+    : myPendingObligationTotal > 0
+    ? myPendingObligationTotal
+    : myPendingVerificationTotal > 0
+    ? myPendingVerificationTotal
+    : 0;
+
+  const pendingLiabilitiesLabel = isStaff
+    ? 'Chờ thanh toán toàn nhóm'
+    : myPendingObligationTotal > 0
+    ? 'Chờ thanh toán của tôi'
+    : myPendingVerificationTotal > 0
+    ? 'Chờ nhân viên xác minh'
+    : 'Chờ thanh toán của tôi';
+
+  const pendingLiabilitiesColor = isStaff
+    ? '#fbbf24'
+    : myPendingObligationTotal > 0
+    ? '#fbbf24'
+    : myPendingVerificationTotal > 0
+    ? '#38bdf8'
+    : '#10b981';
+
+  const parseFinanceError = (err: any) => {
+    if (!err) {
+      return {
+        title: 'Không thể tải dữ liệu chi phí',
+        desc: 'Đã xảy ra lỗi không xác định khi tải dữ liệu chi phí phương tiện.',
+        badge: 'Lỗi',
+        status: 0,
+      };
+    }
+    const status = err?.status ?? err?.response?.status;
+    const msg = String(err?.message || '');
+
+    if (status === 401 || msg.includes('401') || msg.toLowerCase().includes('phiên đăng nhập')) {
+      return {
+        title: 'Phiên đăng nhập đã hết hạn',
+        desc: 'Vui lòng đăng nhập lại để tiếp tục xem dữ liệu tài chính của phương tiện.',
+        badge: '401 Unauthorized',
+        status: 401,
+      };
+    }
+    if (
+      status === 403 ||
+      msg.includes('403') ||
+      msg.toLowerCase().includes('quyền truy cập') ||
+      msg.toLowerCase().includes('access denied')
+    ) {
+      return {
+        title: 'Không có quyền truy cập phương tiện',
+        desc: 'Tài khoản của bạn không có quyền truy cập dữ liệu chi phí của phương tiện này hoặc chưa thuộc nhóm đồng sở hữu.',
+        badge: '403 Forbidden',
+        status: 403,
+      };
+    }
+    if (status === 404 || msg.includes('404') || msg.toLowerCase().includes('không tìm thấy')) {
+      return {
+        title: 'Không tìm thấy dữ liệu phương tiện',
+        desc: 'Phương tiện hoặc hồ sơ chi phí không tồn tại trong hệ thống.',
+        badge: '404 Not Found',
+        status: 404,
+      };
+    }
+    if ((status && status >= 500) || msg.includes('500') || msg.toLowerCase().includes('máy chủ gặp sự cố')) {
+      return {
+        title: 'Máy chủ đang gặp sự cố',
+        desc: `Hệ thống gặp sự cố trong quá trình tổng hợp dữ liệu chi phí (HTTP ${status || 500}). Vui lòng thử lại sau ít phút.`,
+        badge: `HTTP ${status || 500}`,
+        status: status || 500,
+      };
+    }
+    return {
+      title: 'Lỗi kết nối máy chủ',
+      desc: msg || 'Không thể kết nối đến máy chủ danh sách chi phí. Vui lòng kiểm tra lại kết nối mạng.',
+      badge: 'Network Error',
+      status: 0,
+    };
+  };
 
   // Drag-to-scroll handler
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -428,6 +536,8 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
         queryClient.invalidateQueries({ queryKey: ['personal-payments', targetExpense.id] }),
         queryClient.invalidateQueries({ queryKey: ['expenses'] }),
         queryClient.invalidateQueries({ queryKey: ['expense-shares', targetExpense.id] }),
+        queryClient.invalidateQueries({ queryKey: ['cost-sharing-summary'] }),
+        queryClient.invalidateQueries({ queryKey: ['expense-summary'] }),
       ]);
       refetchMyPayments();
     } catch (err: any) {
@@ -696,7 +806,13 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
               textOverflow: 'ellipsis',
             }}
           >
-            {formatVND(totalRecordedExpenses)}
+            {isExpensesLoading ? (
+              <span style={{ fontSize: '12px', color: '#94a3b8' }}>Đang tải...</span>
+            ) : isExpensesError ? (
+              <span style={{ fontSize: '14px', color: '#64748b' }}>—</span>
+            ) : (
+              formatVND(totalRecordedExpenses)
+            )}
           </div>
         </div>
 
@@ -732,7 +848,13 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
               textOverflow: 'ellipsis',
             }}
           >
-            {formatVND(monthlyExpenseTotal)}
+            {isExpensesLoading ? (
+              <span style={{ fontSize: '12px', color: '#94a3b8' }}>Đang tải...</span>
+            ) : isExpensesError ? (
+              <span style={{ fontSize: '14px', color: '#64748b' }}>—</span>
+            ) : (
+              formatVND(monthlyExpenseTotal)
+            )}
           </div>
         </div>
 
@@ -768,15 +890,21 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
               textOverflow: 'ellipsis',
             }}
           >
-            {formatVND(sharedFundBalance)}
+            {isFundLoading ? (
+              <span style={{ fontSize: '12px', color: '#94a3b8' }}>Đang tải...</span>
+            ) : isFundError ? (
+              <span style={{ fontSize: '14px', color: '#64748b' }}>—</span>
+            ) : (
+              formatVND(sharedFundBalance)
+            )}
           </div>
         </div>
 
         {/* Card 4: KHOẢN CHỜ THANH TOÁN */}
         <div
           style={{
-            background: 'rgba(245, 158, 11, 0.05)',
-            border: '1.2px solid rgba(245, 158, 11, 0.25)',
+            background: `${pendingLiabilitiesColor}0d`,
+            border: `1.2px solid ${pendingLiabilitiesColor}40`,
             borderRadius: '12px',
             padding: '10px 12px',
             minWidth: 0,
@@ -786,7 +914,7 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Clock size={12} color="#fbbf24" />
+            <Clock size={12} color={pendingLiabilitiesColor} />
             <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>
               {pendingLiabilitiesLabel}
             </span>
@@ -796,7 +924,7 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
               fontSize: 'clamp(15px, 1.2vw, 17px)',
               fontWeight: 850,
               fontVariantNumeric: 'tabular-nums',
-              color: '#fbbf24',
+              color: pendingLiabilitiesColor,
               marginTop: '4px',
               letterSpacing: '-0.02em',
               whiteSpace: 'nowrap',
@@ -804,7 +932,13 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
               textOverflow: 'ellipsis',
             }}
           >
-            {formatVND(pendingLiabilitiesTotal)}
+            {isCostSharingLoading || isExpenseSummaryLoading ? (
+              <span style={{ fontSize: '12px', color: '#94a3b8' }}>Đang tải...</span>
+            ) : isCostSharingError ? (
+              <span style={{ fontSize: '14px', color: '#64748b' }}>—</span>
+            ) : (
+              formatVND(pendingLiabilitiesTotal)
+            )}
           </div>
         </div>
       </div>
@@ -1031,16 +1165,68 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
         ) : isExpensesError ? (
           <div
             style={{
-              padding: '30px 20px',
+              padding: '24px 20px',
               background: 'rgba(239, 68, 68, 0.08)',
               border: '1px solid rgba(239, 68, 68, 0.25)',
               borderRadius: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '10px',
               textAlign: 'center',
-              color: '#f87171',
-              fontSize: '12.5px',
             }}
           >
-            Không thể tải dữ liệu chi phí hoặc bạn không có quyền truy cập phương tiện này.
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <AlertTriangle size={20} color="#f87171" />
+              <span style={{ color: '#f87171', fontWeight: 700, fontSize: '13.5px' }}>
+                {parseFinanceError(expensesError).title}
+              </span>
+              <span
+                style={{
+                  fontSize: '10.5px',
+                  padding: '2px 8px',
+                  borderRadius: '6px',
+                  background: 'rgba(239, 68, 68, 0.2)',
+                  color: '#fca5a5',
+                  fontWeight: 600,
+                }}
+              >
+                {parseFinanceError(expensesError).badge}
+              </span>
+            </div>
+            <span style={{ fontSize: '12.5px', color: '#cbd5e1', maxWidth: '380px', lineHeight: 1.5 }}>
+              {parseFinanceError(expensesError).desc}
+            </span>
+            <button
+              type="button"
+              onClick={() => refetchExpenses()}
+              style={{
+                marginTop: '4px',
+                padding: '6px 14px',
+                background: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                borderRadius: '8px',
+                color: '#fca5a5',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.25)';
+                e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.6)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.15)';
+                e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+              }}
+            >
+              <RefreshCw size={12} />
+              Thử lại
+            </button>
           </div>
         ) : filteredExpenses.length === 0 ? (
           <div
@@ -1309,11 +1495,10 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
 
   const isSettled = verifiedPayment != null || expense.status === 'APPROVED' && myShare?.status === 'SETTLED';
 
-  // Status badge resolution for collapsed row conforming strictly to business states
+  // Status badge resolution for row conforming strictly to authoritative backend business states
   const statusMeta = useMemo(() => {
-    // 1. Check if all member shares in this expense are settled
-    const allSharesSettled = shares.length > 0 && shares.every((s) => s.status === 'SETTLED');
-    if (allSharesSettled) {
+    // 1. Authoritative Full Settlement: ALL member shares are settled
+    if (expense.isFullySettled === true || (shares.length > 0 && shares.every((s) => s.status === 'SETTLED'))) {
       return {
         label: 'ĐÃ QUYẾT TOÁN',
         color: '#10b981',
@@ -1321,7 +1506,7 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
         border: '1px solid rgba(16, 185, 129, 0.35)',
       };
     }
-    // 2. Check if current user's personal obligation is settled
+    // 2. Current user's personal obligation is settled
     if (isSettled) {
       return {
         label: 'ĐÃ THANH TOÁN',
@@ -1330,7 +1515,7 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
         border: '1px solid rgba(16, 185, 129, 0.35)',
       };
     }
-    // 3. Check if current user submitted payment awaiting staff verification
+    // 3. Current user submitted payment awaiting staff verification
     if (pendingPayment) {
       return {
         label: 'CHỜ XÁC MINH',
@@ -1340,7 +1525,7 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
       };
     }
     // 4. Pending co-owner approval or voting
-    if (expense.status === 'PENDING_APPROVAL' || expense.status === 'PENDING_VOTE') {
+    if (expense.status === 'PENDING_APPROVAL' || expense.status === 'PENDING_VOTE' || expense.status === 'PENDING_VERIFICATION') {
       return {
         label: 'CHỜ BIỂU QUYẾT',
         color: '#a855f7',
@@ -1348,8 +1533,17 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
         border: '1px solid rgba(168, 85, 247, 0.35)',
       };
     }
-    // 5. Unpaid verified obligation for current member
-    if (myShare && myShare.status === 'PENDING') {
+    // 5. Partially settled group expense
+    if (expense.settlementStatus === 'PARTIALLY_SETTLED') {
+      return {
+        label: 'QUYẾT TOÁN MỘT PHẦN',
+        color: '#38bdf8',
+        bg: 'rgba(56, 189, 248, 0.12)',
+        border: '1px solid rgba(56, 189, 248, 0.35)',
+      };
+    }
+    // 6. Unpaid verified obligation for current member
+    if (myShare && (myShare.status === 'PENDING' || myShare.status === 'ALLOCATED') && !isStaff) {
       return {
         label: 'CHỜ THANH TOÁN',
         color: '#f59e0b',
@@ -1357,7 +1551,7 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
         border: '1px solid rgba(245, 158, 11, 0.35)',
       };
     }
-    // 6. Member shares exist and allocated to group
+    // 7. Member shares exist and allocated to group
     if (shares.length > 0 || expense.status === 'APPROVED') {
       return {
         label: 'ĐÃ PHÂN BỔ',
@@ -1366,14 +1560,14 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
         border: '1px solid rgba(0, 242, 254, 0.35)',
       };
     }
-    // 7. General unallocated expense
+    // 8. General unallocated expense
     return {
       label: 'CHƯA PHÂN BỔ',
       color: '#94a3b8',
       bg: 'rgba(148, 163, 184, 0.12)',
       border: '1px solid rgba(148, 163, 184, 0.35)',
     };
-  }, [isSettled, pendingPayment, expense.status, shares, myShare]);
+  }, [expense.isFullySettled, expense.settlementStatus, isSettled, pendingPayment, expense.status, shares, myShare, isStaff]);
 
   // Formula description resolution
   const formulaInfo = useMemo(() => {

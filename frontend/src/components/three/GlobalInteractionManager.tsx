@@ -31,6 +31,7 @@ export const GlobalInteractionManager: React.FC = () => {
 
     const handlePointerMove = (e: PointerEvent) => {
       if (!globalInteractionState.pointerDownPosition) return;
+      if (globalInteractionState.isPointerDragging) return;
 
       const dx = e.clientX - globalInteractionState.pointerDownPosition.x;
       const dy = e.clientY - globalInteractionState.pointerDownPosition.y;
@@ -42,7 +43,7 @@ export const GlobalInteractionManager: React.FC = () => {
     };
 
     const handlePointerUp = (e: PointerEvent) => {
-      if (globalInteractionState.pointerDownPosition) {
+      if (globalInteractionState.pointerDownPosition && !globalInteractionState.isPointerDragging) {
         const dx = e.clientX - globalInteractionState.pointerDownPosition.x;
         const dy = e.clientY - globalInteractionState.pointerDownPosition.y;
         const dist = Math.hypot(dx, dy);
@@ -51,6 +52,8 @@ export const GlobalInteractionManager: React.FC = () => {
           globalInteractionState.isPointerDragging = true;
           globalInteractionState.lastDragEndTime = Date.now();
         }
+      } else if (globalInteractionState.isPointerDragging) {
+        globalInteractionState.lastDragEndTime = Date.now();
       }
 
       // Reset pointer down tracking
@@ -64,7 +67,7 @@ export const GlobalInteractionManager: React.FC = () => {
     };
 
     canvas.addEventListener('pointerdown', handlePointerDown);
-    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointermove', handlePointerMove, { passive: true });
     window.addEventListener('pointerup', handlePointerUp);
     canvas.addEventListener('contextmenu', handleContextMenu);
 

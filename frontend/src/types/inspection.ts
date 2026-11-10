@@ -32,6 +32,11 @@ export interface VehicleInspectionResponse {
   updatedAt?: string;
   totalInspectedCount: number;
   abnormalCount: number;
+  totalAssessmentRecords?: number;
+  uniqueAssessedComponents?: number;
+  requiredComponentCount?: number;
+  assessedRequiredComponentCount?: number;
+  unresolvedCriticalDamageCount?: number;
   items: VehicleInspectionItemResponse[];
 }
 

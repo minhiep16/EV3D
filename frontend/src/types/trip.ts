@@ -24,6 +24,7 @@ export interface TripData {
   updatedAt?: string;
   durationSeconds?: number | null;
   distanceTraveled?: number | null;
+  distanceKm?: number | null;
   batteryUsed?: number | null;
   endSocPercent?: number | null;
   energyConsumedKwh?: number | null;

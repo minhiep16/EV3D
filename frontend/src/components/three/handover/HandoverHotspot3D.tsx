@@ -124,7 +124,7 @@ export const HandoverHotspot3D: React.FC<HandoverHotspot3DProps> = ({
 
       {/* 1. Core Sphere (Visual only) */}
       <mesh ref={coreRef} raycast={() => null}>
-        <sphereGeometry args={[0.075, 24, 24]} />
+        <sphereGeometry args={[isSelected ? 0.075 : hovered ? 0.065 : 0.05, 24, 24]} />
         <meshStandardMaterial
           color={color}
           emissive={color}
@@ -135,7 +135,7 @@ export const HandoverHotspot3D: React.FC<HandoverHotspot3DProps> = ({
 
       {/* 2. Inner Rotating Pulsing Ring (Visual only) */}
       <mesh ref={ringRef} raycast={() => null}>
-        <ringGeometry args={[0.11, 0.13, 32]} />
+        <ringGeometry args={[isSelected ? 0.11 : 0.08, isSelected ? 0.13 : 0.095, 32]} />
         <meshBasicMaterial
           color={color}
           transparent
@@ -146,7 +146,7 @@ export const HandoverHotspot3D: React.FC<HandoverHotspot3DProps> = ({
 
       {/* 3. Outer Counter-Rotating Ring (Visual only) */}
       <mesh ref={outerRingRef} raycast={() => null}>
-        <ringGeometry args={[0.16, 0.175, 32]} />
+        <ringGeometry args={[isSelected ? 0.16 : 0.12, isSelected ? 0.175 : 0.135, 32]} />
         <meshBasicMaterial
           color={color}
           transparent
@@ -155,78 +155,80 @@ export const HandoverHotspot3D: React.FC<HandoverHotspot3DProps> = ({
         />
       </mesh>
 
-      {/* 4. Spatial Label with Hotspot Status (Clickable label forwarding to onSelect) */}
-      <Html
-        position={[0, 0.22, 0]}
-        center
-        distanceFactor={7.5}
-        style={{ pointerEvents: 'none', userSelect: 'none' }}
-      >
-        <div
-          onClick={(e) => {
-            e.stopPropagation();
-            onSelect(checkpoint.code);
-          }}
-          onPointerOver={(e) => {
-            e.stopPropagation();
-            setHovered(true);
-            if (canInteract) {
-              document.body.style.cursor = 'pointer';
-            }
-          }}
-          onPointerOut={(e) => {
-            e.stopPropagation();
-            setHovered(false);
-            document.body.style.cursor = 'auto';
-          }}
-          style={{
-            pointerEvents: 'auto',
-            cursor: canInteract ? 'pointer' : 'default',
-            background: isSelected
-              ? 'rgba(8, 12, 22, 0.96)'
-              : hovered
-              ? 'rgba(15, 23, 42, 0.92)'
-              : 'rgba(10, 15, 29, 0.82)',
-            backdropFilter: 'blur(12px)',
-            border: `1.5px solid ${isSelected ? '#ffffff' : color}`,
-            boxShadow: isSelected
-              ? `0 0 20px ${color}, 0 4px 16px rgba(0, 0, 0, 0.9)`
-              : `0 0 10px ${color}66, 0 4px 12px rgba(0, 0, 0, 0.8)`,
-            borderRadius: '9999px',
-            padding: '4px 10px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            whiteSpace: 'nowrap',
-            transition: 'all 0.18s ease',
-            transform: isSelected ? 'scale(1.06)' : hovered ? 'scale(1.04)' : 'none',
-          }}
+      {/* 4. Spatial Label with Hotspot Status (Only visible on hover or selection to declutter 3D car) */}
+      {(isSelected || hovered) && (
+        <Html
+          position={[0, 0.22, 0]}
+          center
+          distanceFactor={7.5}
+          style={{ pointerEvents: 'none', userSelect: 'none' }}
         >
-          <StatusIcon size={12} color={color} />
-          <span
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect(checkpoint.code);
+            }}
+            onPointerOver={(e) => {
+              e.stopPropagation();
+              setHovered(true);
+              if (canInteract) {
+                document.body.style.cursor = 'pointer';
+              }
+            }}
+            onPointerOut={(e) => {
+              e.stopPropagation();
+              setHovered(false);
+              document.body.style.cursor = 'auto';
+            }}
             style={{
-              color: '#ffffff',
-              fontSize: '10.5px',
-              fontWeight: 700,
-              letterSpacing: '0.04em',
+              pointerEvents: 'auto',
+              cursor: canInteract ? 'pointer' : 'default',
+              background: isSelected
+                ? 'rgba(8, 12, 22, 0.96)'
+                : hovered
+                ? 'rgba(15, 23, 42, 0.92)'
+                : 'rgba(10, 15, 29, 0.82)',
+              backdropFilter: 'blur(12px)',
+              border: `1.5px solid ${isSelected ? '#ffffff' : color}`,
+              boxShadow: isSelected
+                ? `0 0 20px ${color}, 0 4px 16px rgba(0, 0, 0, 0.9)`
+                : `0 0 10px ${color}66, 0 4px 12px rgba(0, 0, 0, 0.8)`,
+              borderRadius: '9999px',
+              padding: '4px 10px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              whiteSpace: 'nowrap',
+              transition: 'all 0.18s ease',
+              transform: isSelected ? 'scale(1.06)' : hovered ? 'scale(1.04)' : 'none',
             }}
           >
-            {checkpoint.nameVi}
-          </span>
-          <span
-            style={{
-              fontSize: '9.5px',
-              fontWeight: 700,
-              color: color,
-              padding: '1px 5px',
-              borderRadius: '4px',
-              background: `${color}22`,
-            }}
-          >
-            {conditionLabel}
-          </span>
-        </div>
-      </Html>
+            <StatusIcon size={12} color={color} />
+            <span
+              style={{
+                color: '#ffffff',
+                fontSize: '10.5px',
+                fontWeight: 700,
+                letterSpacing: '0.04em',
+              }}
+            >
+              {checkpoint.nameVi}
+            </span>
+            <span
+              style={{
+                fontSize: '9.5px',
+                fontWeight: 700,
+                color: color,
+                padding: '1px 5px',
+                borderRadius: '4px',
+                background: `${color}22`,
+              }}
+            >
+              {conditionLabel}
+            </span>
+          </div>
+        </Html>
+      )}
     </group>
   );
 };

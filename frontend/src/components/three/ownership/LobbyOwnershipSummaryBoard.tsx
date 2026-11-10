@@ -42,7 +42,7 @@ export const LobbyOwnershipSummaryBoard: React.FC<LobbyOwnershipSummaryBoardProp
     staleTime: 15000,
   });
 
-  // Extract member rows from real co-ownership data with reliable fallback to specification
+  // Extract member rows from real co-ownership data
   const memberRows: ShareRow[] = useMemo(() => {
     if (coOwnership?.members && coOwnership.members.length > 0) {
       const active = coOwnership.members.filter((m) => m.status === 'ACTIVE');
@@ -59,12 +59,7 @@ export const LobbyOwnershipSummaryBoard: React.FC<LobbyOwnershipSummaryBoardProp
       }
     }
 
-    // Specification fallback (Nguyen Van A 40%, Tran Thi B 30%, Le Van C 30%)
-    return [
-      { id: 'm-1', name: 'Nguyen Van A', percentage: 40, color: '#00f2fe' },
-      { id: 'm-2', name: 'Tran Thi B', percentage: 30, color: '#a855f7' },
-      { id: 'm-3', name: 'Le Van C', percentage: 30, color: '#10b981' },
-    ];
+    return [];
   }, [coOwnership?.members]);
 
   return (
@@ -155,49 +150,55 @@ export const LobbyOwnershipSummaryBoard: React.FC<LobbyOwnershipSummaryBoardProp
 
         {/* Member percentages list */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-          {memberRows.map((row, idx) => (
-            <React.Fragment key={row.id}>
-              {idx > 0 && (
-                <span style={{ color: 'rgba(255, 255, 255, 0.18)', fontSize: '9px' }}>
-                  |
-                </span>
-              )}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <span
-                  style={{
-                    width: '5px',
-                    height: '5px',
-                    borderRadius: '50%',
-                    background: row.color,
-                    boxShadow: `0 0 6px ${row.color}`,
-                    flexShrink: 0,
-                  }}
-                />
-                <span
-                  className="ownership-topbar-member-name"
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    color: '#e2e8f0',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {row.name}
-                </span>
-                <span
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 800,
-                    color: row.color,
-                    fontFamily: 'monospace',
-                    letterSpacing: '0.02em',
-                  }}
-                >
-                  {row.percentage}%
-                </span>
-              </div>
-            </React.Fragment>
-          ))}
+          {memberRows.length === 0 ? (
+            <span style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>
+              Đang tải dữ liệu sở hữu...
+            </span>
+          ) : (
+            memberRows.map((row, idx) => (
+              <React.Fragment key={row.id}>
+                {idx > 0 && (
+                  <span style={{ color: 'rgba(255, 255, 255, 0.18)', fontSize: '9px' }}>
+                    |
+                  </span>
+                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span
+                    style={{
+                      width: '5px',
+                      height: '5px',
+                      borderRadius: '50%',
+                      background: row.color,
+                      boxShadow: `0 0 6px ${row.color}`,
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span
+                    className="ownership-topbar-member-name"
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      color: '#e2e8f0',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {row.name}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      color: row.color,
+                      fontFamily: 'monospace',
+                      letterSpacing: '0.02em',
+                    }}
+                  >
+                    {row.percentage}%
+                  </span>
+                </div>
+              </React.Fragment>
+            ))
+          )}
         </div>
 
         {/* Subtle expand indicator */}
@@ -277,59 +278,65 @@ export const LobbyOwnershipSummaryBoard: React.FC<LobbyOwnershipSummaryBoardProp
 
           {/* Member Rows with Progress Bars */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
-            {memberRows.map((row) => (
-              <div key={row.id} style={{ display: 'flex', flexDirection: 'column', gap: '3.5px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {memberRows.length === 0 ? (
+              <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic', textAlign: 'center', padding: '8px 0' }}>
+                Đang tải dữ liệu cổ phần...
+              </div>
+            ) : (
+              memberRows.map((row) => (
+                <div key={row.id} style={{ display: 'flex', flexDirection: 'column', gap: '3.5px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span
+                        style={{
+                          width: '6px',
+                          height: '6px',
+                          borderRadius: '50%',
+                          background: row.color,
+                          boxShadow: `0 0 6px ${row.color}`,
+                          flexShrink: 0,
+                        }}
+                      />
+                      <span style={{ fontSize: '11px', fontWeight: 600, color: '#f8fafc' }}>
+                        {row.name}
+                      </span>
+                    </div>
                     <span
                       style={{
-                        width: '6px',
-                        height: '6px',
-                        borderRadius: '50%',
-                        background: row.color,
-                        boxShadow: `0 0 6px ${row.color}`,
-                        flexShrink: 0,
+                        fontSize: '11.5px',
+                        fontWeight: 800,
+                        color: row.color,
+                        fontFamily: 'monospace',
                       }}
-                    />
-                    <span style={{ fontSize: '11px', fontWeight: 600, color: '#f8fafc' }}>
-                      {row.name}
+                    >
+                      {row.percentage}%
                     </span>
                   </div>
-                  <span
-                    style={{
-                      fontSize: '11.5px',
-                      fontWeight: 800,
-                      color: row.color,
-                      fontFamily: 'monospace',
-                    }}
-                  >
-                    {row.percentage}%
-                  </span>
-                </div>
 
-                {/* Thin progress bar */}
-                <div
-                  style={{
-                    width: '100%',
-                    height: '3px',
-                    borderRadius: '9999px',
-                    background: 'rgba(255, 255, 255, 0.08)',
-                    overflow: 'hidden',
-                  }}
-                >
+                  {/* Thin progress bar */}
                   <div
                     style={{
-                      width: `${Math.min(100, Math.max(0, row.percentage))}%`,
-                      height: '100%',
+                      width: '100%',
+                      height: '3px',
                       borderRadius: '9999px',
-                      background: row.color,
-                      boxShadow: `0 0 6px ${row.color}`,
-                      transition: 'width 0.4s ease',
+                      background: 'rgba(255, 255, 255, 0.08)',
+                      overflow: 'hidden',
                     }}
-                  />
+                  >
+                    <div
+                      style={{
+                        width: `${Math.min(100, Math.max(0, row.percentage))}%`,
+                        height: '100%',
+                        borderRadius: '9999px',
+                        background: row.color,
+                        boxShadow: `0 0 6px ${row.color}`,
+                        transition: 'width 0.4s ease',
+                      }}
+                    />
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       )}

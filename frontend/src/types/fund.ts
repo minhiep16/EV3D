@@ -124,4 +124,7 @@ export interface PersonalExpensePaymentResponse {
   financialModeLabel?: string;
   vehicleId?: string;
   vehicleName?: string;
+  vehiclePlate?: string;
+  totalExpenseAmount?: number;
+  allocatedAmount?: number;
 }

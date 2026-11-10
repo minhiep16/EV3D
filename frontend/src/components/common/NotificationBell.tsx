@@ -16,6 +16,11 @@ import {
   MoreVertical,
   CheckCheck,
   X,
+  Calendar,
+  ShieldCheck,
+  Car,
+  Loader2,
+  RefreshCw,
 } from 'lucide-react';
 import {
   fetchNotifications,
@@ -68,6 +73,12 @@ function getEntityIcon(entityType: NotificationEntityType, severity: Notificatio
       return <Wrench size={14} color="#38bdf8" />;
     case 'FINANCE':
       return <DollarSign size={14} color="#a78bfa" />;
+    case 'BOOKING':
+      return <Calendar size={14} color="#38bdf8" />;
+    case 'HANDOVER':
+      return <ShieldCheck size={14} color="#10b981" />;
+    case 'TRIP':
+      return <Car size={14} color="#00f2fe" />;
     default:
       return <Info size={14} color="#94a3b8" />;
   }
@@ -91,23 +102,31 @@ export const NotificationBell: React.FC = () => {
   const openDamageDetailModal = useWorldStore((state) => state.openDamageDetailModal);
   const selectVehicle = useWorldStore((state) => state.selectVehicle);
   const selectedVehicleId = useWorldStore((state) => state.selectedVehicleId);
+  const setPaymentVerificationModalOpen = useWorldStore((state) => state.setPaymentVerificationModalOpen);
 
-  // Authoritative Query: Fetch notifications
-  const { data: notifications = [] } = useQuery<NotificationResponse[]>({
+  // Authoritative Query: Fetch notifications (full list needed when panel is open or on manual refresh)
+  const {
+    data: notifications = [],
+    isLoading: isNotifsLoading,
+    isError: isNotifsError,
+    refetch: refetchNotifs,
+  } = useQuery<NotificationResponse[]>({
     queryKey: ['notifications', user?.id],
     queryFn: fetchNotifications,
     enabled: isAuthenticated,
     staleTime: 5000,
-    refetchInterval: 12000,
+    refetchInterval: isOpen ? 5000 : 15000,
+    refetchOnWindowFocus: true,
   });
 
-  // Authoritative Query: Fetch unread count
+  // Authoritative Query: Fetch unread count for badge
   const { data: unreadCount = 0 } = useQuery<number>({
     queryKey: ['notifications', 'unread-count', user?.id],
     queryFn: fetchUnreadCount,
     enabled: isAuthenticated,
     staleTime: 5000,
-    refetchInterval: 12000,
+    refetchInterval: 10000,
+    refetchOnWindowFocus: true,
   });
 
   // Mark as read mutation
@@ -200,14 +219,9 @@ export const NotificationBell: React.FC = () => {
       if (selectedVehicleId !== targetVehicleId) {
         selectVehicle(targetVehicleId);
       }
-      openGaragePanel('DAMAGE', {
+      openGaragePanel('MAINTENANCE', {
         vehicleId: targetVehicleId,
       });
-      const damageId = item.entityId;
-      if (damageId) {
-        selectDamageRecord(damageId);
-        openDamageDetailModal(damageId);
-      }
     } else if (item.entityType === 'VOTE' || item.entityType === 'PROPOSAL') {
       if (selectedVehicleId !== targetVehicleId) {
         selectVehicle(targetVehicleId);
@@ -225,10 +239,55 @@ export const NotificationBell: React.FC = () => {
         maintenanceId: item.entityId || undefined,
       });
     } else if (item.entityType === 'FINANCE') {
-      if (selectedVehicleId !== targetVehicleId) {
-        selectVehicle(targetVehicleId);
+      if (user?.role === 'STAFF' || user?.role === 'ADMIN') {
+        if (targetVehicleId && selectedVehicleId !== targetVehicleId) {
+          selectVehicle(targetVehicleId);
+        }
+        setPaymentVerificationModalOpen(true);
+      } else {
+        if (targetVehicleId && selectedVehicleId !== targetVehicleId) {
+          selectVehicle(targetVehicleId);
+        }
+        openGaragePanel('FINANCE', { vehicleId: targetVehicleId });
       }
-      openGaragePanel('FINANCE', { vehicleId: targetVehicleId });
+    } else if (item.entityType === 'BOOKING') {
+      if (user?.role === 'STAFF' || user?.role === 'ADMIN') {
+        selectVehicle(targetVehicleId);
+        useWorldStore.getState().setActiveStaffOperationModule('HANDOVER');
+        openGaragePanel('VEHICLE_DETAIL', { vehicleId: targetVehicleId });
+      } else {
+        selectVehicle(targetVehicleId);
+        openGaragePanel('BOOKING', { vehicleId: targetVehicleId });
+      }
+    } else if (item.entityType === 'HANDOVER') {
+      if (user?.role === 'STAFF' || user?.role === 'ADMIN') {
+        selectVehicle(targetVehicleId);
+        useWorldStore.getState().setActiveStaffOperationModule('HANDOVER');
+        openGaragePanel('VEHICLE_DETAIL', { vehicleId: targetVehicleId });
+      } else {
+        selectVehicle(targetVehicleId);
+        useWorldStore.getState().enterVehicleTripStartMode();
+      }
+    } else if (item.entityType === 'TRIP') {
+      if (item.eventType === 'TRIP_RETURN_REQUESTED') {
+        if (user?.role === 'STAFF' || user?.role === 'ADMIN') {
+          selectVehicle(targetVehicleId);
+          useWorldStore.getState().setActiveStaffOperationModule('RETURN');
+          openGaragePanel('VEHICLE_DETAIL', { vehicleId: targetVehicleId });
+        } else {
+          selectVehicle(targetVehicleId);
+          useWorldStore.getState().enterVehicleTripVisualizationMode();
+        }
+      } else if (item.eventType === 'TRIP_START_WINDOW_OPENED') {
+        selectVehicle(targetVehicleId);
+        useWorldStore.getState().enterVehicleTripStartMode();
+      } else if (item.eventType === 'TRIP_STARTED') {
+        selectVehicle(targetVehicleId);
+        useWorldStore.getState().enterVehicleTripVisualizationMode();
+      } else {
+        selectVehicle(targetVehicleId);
+        openGaragePanel('VEHICLE_DETAIL', { vehicleId: targetVehicleId });
+      }
     } else {
       if (selectedVehicleId !== targetVehicleId) {
         selectVehicle(targetVehicleId);
@@ -608,7 +667,60 @@ export const NotificationBell: React.FC = () => {
               gap: '4px',
             }}
           >
-            {filteredNotifications.length === 0 ? (
+            {isNotifsLoading ? (
+              <div
+                style={{
+                  padding: '32px 16px',
+                  textAlign: 'center',
+                  color: '#38bdf8',
+                  fontSize: '12px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <Loader2 size={22} className="animate-spin" color="#00f2fe" />
+                <div>Đang tải thông báo...</div>
+              </div>
+            ) : isNotifsError ? (
+              <div
+                style={{
+                  padding: '24px 16px',
+                  textAlign: 'center',
+                  color: '#f87171',
+                  fontSize: '12px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <AlertTriangle size={22} color="#f87171" />
+                <div>Không thể tải thông báo</div>
+                <button
+                  type="button"
+                  onClick={() => refetchNotifs()}
+                  style={{
+                    marginTop: '4px',
+                    padding: '4px 12px',
+                    borderRadius: '6px',
+                    background: 'rgba(239, 68, 68, 0.2)',
+                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    color: '#fca5a5',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  <RefreshCw size={12} />
+                  <span>Thử lại</span>
+                </button>
+              </div>
+            ) : filteredNotifications.length === 0 ? (
               <div
                 style={{
                   padding: '32px 16px',

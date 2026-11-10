@@ -19,7 +19,7 @@ import { ChargingWorld } from './charging/ChargingWorld';
 import { GlobalInteractionManager } from './GlobalInteractionManager';
 import { handleNeutralSceneClick } from './globalInteractionState';
 
-export const EVShareWorld: React.FC = () => {
+const EVShareWorldComponent: React.FC = () => {
   const user = useAuthStore((state) => state.user);
   const isOperationsRole = user?.role === 'STAFF' || user?.role === 'ADMIN';
   const isCoOwner = !user?.role || user?.role === 'CO_OWNER';
@@ -35,7 +35,7 @@ export const EVShareWorld: React.FC = () => {
         <Canvas
           shadows
           dpr={[1, 1.5]}
-          camera={{ position: isCoOwner ? [-0.20, 2.25, 11.5] : [0.2, 3.2, 9.6], fov: 40 }}
+          camera={{ position: isCoOwner ? [-0.25, 2.35, 12.0] : [0.2, 3.2, 9.6], fov: 40 }}
           gl={{
             antialias: true,
             alpha: false,
@@ -81,4 +81,6 @@ export const EVShareWorld: React.FC = () => {
     </WorldErrorBoundary>
   );
 };
+
+export const EVShareWorld = React.memo(EVShareWorldComponent);
 export { EVShareWorld as GarageWorld };

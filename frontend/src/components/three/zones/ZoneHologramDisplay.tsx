@@ -10,7 +10,6 @@ import { VehicleResponse } from '../../../types/vehicle';
 import { FinanceHeroHologram } from './FinanceHeroHologram';
 import { FinanceControlHologram3D } from './FinanceControlHologram3D';
 import { AiControlHologram3D } from './AiControlHologram3D';
-import { AnalyticsControlHologram3D } from './AnalyticsControlHologram3D';
 import { ChargingControlHologram3D } from './ChargingControlHologram3D';
 
 interface ZoneHologramDisplayProps {
@@ -51,11 +50,12 @@ export const ZoneHologramDisplay: React.FC<ZoneHologramDisplayProps> = ({ overri
 
   const activeVehicleId = activeVehicle?.id || (vehicles[0]?.id ?? undefined);
 
-  // Authoritative CoOwnershipGroup query
+  // Authoritative CoOwnershipGroup query (standardized key for query sharing across topbar, hologram, and panels)
   const { data: coOwnership } = useQuery({
-    queryKey: ['co-ownership', activeVehicleId],
+    queryKey: ['coOwnership', activeVehicleId],
     queryFn: () => fetchVehicleCoOwnership(activeVehicleId!),
     enabled: !!activeVehicleId,
+    staleTime: 10000,
   });
 
   // Authoritative CostSharingSummary query
@@ -160,15 +160,9 @@ export const ZoneHologramDisplay: React.FC<ZoneHologramDisplayProps> = ({ overri
       );
 
     case 'ANALYTICS':
-      return (
-        <group name="AnalyticsSpatialHologramCluster">
-          {/* Right-Side 3D World-Space Holographic Analytics Console */}
-          <AnalyticsControlHologram3D
-            position={[6.5, 1.5, 2.80]}
-            rotation={[0, -0.1745, 0]}
-          />
-        </group>
-      );
+      // Authoritative front-facing screen-space DOM panel (AnalyticsPanel) is mounted in GarageScene.
+      // Eliminates world-space perspective skew and top navigation / logout occlusion.
+      return null;
 
     case 'CHARGING':
       // Authoritative front-facing screen-space DOM panel (ChargingPanel) is mounted in GarageScene.

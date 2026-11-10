@@ -2,10 +2,16 @@ import React, { useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
+import { useQuery } from '@tanstack/react-query';
 import { VehicleResponse } from '../../../types/vehicle';
 import { VehiclePartId } from '../../../types/vehiclePart';
 import { useWorldStore } from '../../../store/worldStore';
 import { useAuthStore } from '../../../store/authStore';
+import { fetchVehicleDamages } from '../../../services/damageApi';
+import { fetchActiveInspection } from '../../../services/inspectionApi';
+import { DamageRecordData } from '../../../types/damage';
+import { VehicleInspectionResponse } from '../../../types/inspection';
+import { normalizeCanonicalPartCode } from '../../../data/vehicleParts';
 
 export interface StaffInspectionPartDef {
   id: VehiclePartId;
@@ -26,7 +32,7 @@ export const STAFF_INSPECTION_PARTS: StaffInspectionPartDef[] = [
   { id: 'DOOR_FR', label: 'Cửa trước phải', position: [0.92, 0.86, 0.52] },
   { id: 'DOOR_RL', label: 'Cửa sau trái', position: [-0.92, 0.86, -0.42] },
   { id: 'DOOR_RR', label: 'Cửa sau phải', position: [0.92, 0.86, -0.42] },
-  { id: 'HEADLIGHT', label: 'Cụm đèn pha LED', position: [0.66, 0.74, 1.88] },
+  { id: 'HEADLIGHTS', label: 'Cụm đèn pha LED', position: [0.66, 0.74, 1.88] },
   { id: 'WINDSHIELD', label: 'Kính chắn gió', position: [0.0, 1.22, 0.62] },
   { id: 'BATTERY', label: 'Bộ pin cao áp', position: [0.0, 0.22, -0.1] },
   { id: 'CHARGING_PORT', label: 'Cổng sạc điện', position: [-0.88, 0.86, -1.42] },
@@ -41,7 +47,7 @@ export const STAFF_INSPECTION_PARTS_EV02: StaffInspectionPartDef[] = [
   { id: 'DOOR_FR', label: 'Cửa trước phải', position: [-0.87, 0.76, 0.21] },
   { id: 'DOOR_RL', label: 'Cửa sau trái', position: [0.79, 0.76, -0.69] },
   { id: 'DOOR_RR', label: 'Cửa sau phải', position: [-0.79, 0.76, -0.69] },
-  { id: 'HEADLIGHT', label: 'Cụm đèn pha LED', position: [0.0, 0.68, 2.38] },
+  { id: 'HEADLIGHTS', label: 'Cụm đèn pha LED', position: [0.0, 0.68, 2.38] },
   { id: 'WINDSHIELD', label: 'Kính chắn gió', position: [0.0, 1.05, 0.55] },
   { id: 'BATTERY', label: 'Bộ pin cao áp', position: [0.0, 0.18, 0.0] },
   { id: 'CHARGING_PORT', label: 'Cổng sạc điện', position: [0.86, 0.80, -1.65] },
@@ -52,6 +58,9 @@ interface StaffInspectionNodeProps {
   index: number;
   isSelected: boolean;
   isHovered: boolean;
+  statusColor: string;
+  damageCount: number;
+  assessmentLabel?: string | null;
   onSelect: (part: StaffInspectionPartDef) => void;
   onHover: (id: VehiclePartId | null) => void;
 }
@@ -61,6 +70,9 @@ const StaffInspectionNode: React.FC<StaffInspectionNodeProps> = ({
   index,
   isSelected,
   isHovered,
+  statusColor,
+  damageCount,
+  assessmentLabel,
   onSelect,
   onHover,
 }) => {
@@ -79,7 +91,8 @@ const StaffInspectionNode: React.FC<StaffInspectionNodeProps> = ({
     }
   });
 
-  const accentColor = isSelected ? '#00f2fe' : isHovered ? '#38bdf8' : '#0284c7';
+  const accentColor = isSelected ? '#ffffff' : statusColor;
+  const ringBorderColor = isSelected ? '#ffffff' : statusColor;
   const visibleRingSize = isSelected ? '18px' : isHovered ? '16px' : '14px';
   const coreDotSize = isSelected ? '7px' : isHovered ? '6px' : '5px';
 
@@ -90,9 +103,9 @@ const StaffInspectionNode: React.FC<StaffInspectionNodeProps> = ({
         <mesh raycast={() => null}>
           <sphereGeometry args={[isSelected ? 0.026 : 0.018, 14, 14]} />
           <meshStandardMaterial
-            color={accentColor}
-            emissive={accentColor}
-            emissiveIntensity={isSelected ? 2.6 : isHovered ? 1.8 : 1.1}
+            color={statusColor}
+            emissive={statusColor}
+            emissiveIntensity={isSelected ? 2.8 : isHovered ? 2.0 : 1.2}
           />
         </mesh>
 
@@ -100,9 +113,9 @@ const StaffInspectionNode: React.FC<StaffInspectionNodeProps> = ({
         <mesh ref={pulseRingRef} raycast={() => null}>
           <sphereGeometry args={[0.038, 14, 14]} />
           <meshBasicMaterial
-            color={accentColor}
+            color={statusColor}
             transparent
-            opacity={isSelected ? 0.32 : isHovered ? 0.2 : 0.1}
+            opacity={isSelected ? 0.35 : isHovered ? 0.22 : 0.12}
             depthWrite={false}
           />
         </mesh>
@@ -127,20 +140,33 @@ const StaffInspectionNode: React.FC<StaffInspectionNodeProps> = ({
                 style={{
                   position: 'absolute',
                   bottom: '26px',
-                  background: isSelected ? 'rgba(0, 242, 254, 0.95)' : 'rgba(8, 20, 38, 0.92)',
+                  background: isSelected ? 'rgba(0, 242, 254, 0.95)' : 'rgba(8, 20, 38, 0.94)',
                   color: isSelected ? '#041325' : '#ffffff',
-                  border: `1px solid ${isSelected ? '#ffffff' : 'rgba(0, 242, 254, 0.7)'}`,
+                  border: `1px solid ${isSelected ? '#ffffff' : statusColor}`,
                   borderRadius: '9999px',
                   padding: '2px 8px',
                   fontSize: '9.5px',
                   fontWeight: 800,
                   whiteSpace: 'nowrap',
                   letterSpacing: '0.02em',
-                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.6), 0 0 10px rgba(0, 242, 254, 0.35)',
+                  boxShadow: `0 4px 12px rgba(0, 0, 0, 0.6), 0 0 10px ${statusColor}55`,
                   pointerEvents: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
                 }}
               >
-                {part.label}
+                <span>{part.label}</span>
+                {damageCount > 0 && (
+                  <span style={{ color: isSelected ? '#b91c1c' : '#f87171', fontWeight: 900 }}>
+                    ({damageCount} lỗi)
+                  </span>
+                )}
+                {damageCount === 0 && assessmentLabel && (
+                  <span style={{ color: isSelected ? '#065f46' : '#34d399', fontWeight: 900 }}>
+                    ({assessmentLabel})
+                  </span>
+                )}
               </div>
             )}
 
@@ -184,24 +210,21 @@ const StaffInspectionNode: React.FC<StaffInspectionNodeProps> = ({
             >
               <span
                 style={{
+                  position: 'relative',
                   width: visibleRingSize,
                   height: visibleRingSize,
                   borderRadius: '50%',
                   background: isSelected
-                    ? 'radial-gradient(circle, rgba(0, 242, 254, 0.38) 0%, rgba(6, 18, 36, 0.88) 78%)'
+                    ? `radial-gradient(circle, ${statusColor}55 0%, rgba(6, 18, 36, 0.9) 78%)`
                     : isHovered
-                    ? 'radial-gradient(circle, rgba(56, 189, 248, 0.28) 0%, rgba(6, 18, 36, 0.82) 78%)'
-                    : 'radial-gradient(circle, rgba(2, 132, 199, 0.22) 0%, rgba(6, 18, 36, 0.72) 80%)',
-                  border: isSelected
-                    ? '1.75px solid #00f2fe'
-                    : isHovered
-                    ? '1.5px solid #38bdf8'
-                    : '1.25px solid rgba(2, 132, 199, 0.75)',
+                    ? `radial-gradient(circle, ${statusColor}33 0%, rgba(6, 18, 36, 0.85) 78%)`
+                    : `radial-gradient(circle, ${statusColor}22 0%, rgba(6, 18, 36, 0.75) 80%)`,
+                  border: `1.5px solid ${ringBorderColor}`,
                   boxShadow: isSelected
-                    ? '0 0 0 4px rgba(0, 242, 254, 0.22), 0 0 16px rgba(0, 242, 254, 0.85)'
+                    ? `0 0 0 4px ${statusColor}44, 0 0 16px ${statusColor}`
                     : isHovered
-                    ? '0 0 0 3px rgba(56, 189, 248, 0.16), 0 0 12px rgba(56, 189, 248, 0.6)'
-                    : '0 0 8px rgba(2, 132, 199, 0.35)',
+                    ? `0 0 0 3px ${statusColor}33, 0 0 12px ${statusColor}bb`
+                    : `0 0 8px ${statusColor}66`,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -214,9 +237,33 @@ const StaffInspectionNode: React.FC<StaffInspectionNodeProps> = ({
                     height: coreDotSize,
                     borderRadius: '50%',
                     background: accentColor,
-                    boxShadow: `0 0 8px ${accentColor}`,
+                    boxShadow: `0 0 8px ${statusColor}`,
                   }}
                 />
+                {/* Damage warning badge */}
+                {damageCount > 0 && (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: '-3px',
+                      right: '-3px',
+                      width: '10px',
+                      height: '10px',
+                      borderRadius: '50%',
+                      background: '#ef4444',
+                      border: '1.2px solid #071426',
+                      boxShadow: '0 0 6px #ef4444',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '7px',
+                      fontWeight: 900,
+                      color: '#ffffff',
+                    }}
+                  >
+                    !
+                  </span>
+                )}
               </span>
             </button>
           </div>
@@ -235,9 +282,13 @@ export interface StaffVehicleInspectionHotspotLayerProps {
  * StaffVehicleInspectionHotspotLayer
  * Dedicated 3D Inspection Points for Staff / Admin Operations Workflow.
  * - Renders 12 inspectable component markers on 3D vehicle.
+ * - Synchronizes visual states with authoritative damages and active inspection items:
+ *   - CYAN: Normal selectable inspection hotspot
+ *   - AMBER: Component has an unresolved recorded damage issue
+ *   - RED: Component has a severe unresolved damage issue
+ *   - GREEN: Component assessed GOOD in active inspection (with zero unresolved damage)
  * - Clicking a marker atomically updates selectedVehiclePartId in worldStore.
  * - Synchronizes with the right-panel Component Assessment Form.
- * - STRICTLY NO educational floating cards, NO typewriter animation, NO 2s timers.
  */
 export const StaffVehicleInspectionHotspotLayer: React.FC<StaffVehicleInspectionHotspotLayerProps> = ({
   vehicle,
@@ -258,18 +309,39 @@ export const StaffVehicleInspectionHotspotLayer: React.FC<StaffVehicleInspection
   const hoverVehiclePart = useWorldStore((state) => state.hoverVehiclePart);
   const hoveredVehiclePartId = useWorldStore((state) => state.hoveredVehiclePartId);
 
+  // Authoritative damage query for the active vehicle
+  const { data: damages = [] } = useQuery<DamageRecordData[]>({
+    queryKey: ['vehicleDamages', vehicle.id],
+    queryFn: () => fetchVehicleDamages(vehicle.id),
+    enabled: Boolean(vehicle.id),
+    staleTime: 6000,
+  });
+
+  // Authoritative active inspection query for the active vehicle
+  const { data: activeInspection } = useQuery<VehicleInspectionResponse | null>({
+    queryKey: ['activeInspection', vehicle.id],
+    queryFn: () => fetchActiveInspection(vehicle.id),
+    enabled: Boolean(vehicle.id),
+    staleTime: 5000,
+  });
+
+  const unresolvedDamages = damages.filter(
+    (d: any) => d.status !== 'RESOLVED' && d.status !== 'REPAIRED'
+  );
+
   const [localHoveredId, setLocalHoveredId] = useState<VehiclePartId | null>(null);
 
   const isEv02 = vehicleCode === 'EV02' || vehicle?.model?.includes('EV02');
   const parts = isEv02 ? STAFF_INSPECTION_PARTS_EV02 : STAFF_INSPECTION_PARTS;
 
   const handleSelectPart = (part: StaffInspectionPartDef) => {
-    if (selectedVehiclePartId === part.id) {
+    const canonical = (normalizeCanonicalPartCode(part.id) || part.id) as VehiclePartId;
+    if (normalizeCanonicalPartCode(selectedVehiclePartId) === canonical) {
       clearVehiclePartSelection();
       selectVehiclePartCode(null);
     } else {
-      selectVehiclePart(part.id);
-      selectVehiclePartCode(part.id);
+      selectVehiclePart(canonical);
+      selectVehiclePartCode(canonical);
     }
   };
 
@@ -280,17 +352,53 @@ export const StaffVehicleInspectionHotspotLayer: React.FC<StaffVehicleInspection
 
   return (
     <group name="StaffVehicleInspectionHotspotLayer3D">
-      {parts.map((part, idx) => (
-        <StaffInspectionNode
-          key={part.id}
-          part={part}
-          index={idx}
-          isSelected={selectedVehiclePartId === part.id}
-          isHovered={localHoveredId === part.id || hoveredVehiclePartId === part.id}
-          onSelect={handleSelectPart}
-          onHover={handleHoverPart}
-        />
-      ))}
+      {parts.map((part, idx) => {
+        const canonicalId = normalizeCanonicalPartCode(part.id);
+        const partDamages = unresolvedDamages.filter(
+          (d) => normalizeCanonicalPartCode(d.vehiclePartCode || (d as any).partCode) === canonicalId
+        );
+        const assessedItem = activeInspection?.items?.find(
+          (i) => normalizeCanonicalPartCode(i.vehiclePartCode) === canonicalId
+        );
+
+        let statusColor = '#00f2fe'; // Default CYAN (Normal selectable hotspot)
+        let assessmentLabel: string | null = null;
+
+        if (partDamages.length > 0) {
+          // Unresolved damage: SEVERE -> RED, others -> AMBER
+          const hasSevere = partDamages.some(
+            (d) => d.severity === 'SEVERE' || d.damageType === 'CRACK' || d.damageType === 'BROKEN'
+          );
+          statusColor = hasSevere ? '#ef4444' : '#f59e0b';
+        } else if (assessedItem) {
+          // Current inspection session assessment (only if no unresolved damage)
+          if (assessedItem.conditionStatus === 'GOOD') {
+            statusColor = '#10b981'; // GREEN
+            assessmentLabel = 'TỐT';
+          } else if (assessedItem.conditionStatus === 'CRACK') {
+            statusColor = '#ef4444'; // RED
+            assessmentLabel = 'NỨT';
+          } else {
+            statusColor = '#f59e0b'; // AMBER
+            assessmentLabel = assessedItem.conditionStatus === 'SCRATCH' ? 'TRẦY' : 'MÓP';
+          }
+        }
+
+        return (
+          <StaffInspectionNode
+            key={part.id}
+            part={part}
+            index={idx}
+            isSelected={normalizeCanonicalPartCode(selectedVehiclePartId) === canonicalId}
+            isHovered={localHoveredId === part.id || hoveredVehiclePartId === part.id}
+            statusColor={statusColor}
+            damageCount={partDamages.length}
+            assessmentLabel={assessmentLabel}
+            onSelect={handleSelectPart}
+            onHover={handleHoverPart}
+          />
+        );
+      })}
     </group>
   );
 };

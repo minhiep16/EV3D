@@ -18,7 +18,7 @@ interface FleetPreviewRow3DProps {
   visible?: boolean;
 }
 
-export const FleetPreviewRow3D: React.FC<FleetPreviewRow3DProps> = ({
+const FleetPreviewRow3DComponent: React.FC<FleetPreviewRow3DProps> = ({
   vehicles,
   selectedVehicleId,
   onSelectVehicle,
@@ -77,14 +77,14 @@ export const FleetPreviewRow3D: React.FC<FleetPreviewRow3DProps> = ({
 
   return (
     <group name="FleetPreviewRow3D" position={[0, previewRowY, previewRowZ]}>
-      {/* Elevated Horizontal Backdrop Stage Rail (subtle architectural platform) */}
-      <mesh position={[heroAnchor[0], -0.12, 0]} receiveShadow>
-        <boxGeometry args={[Math.max(10, previewItems.length * previewSpacingX + 2.5), 0.1, 3.2]} />
+      {/* Elevated Horizontal Backdrop Stage Rail (Fixed 4-slot architectural platform) */}
+      <mesh position={[heroAnchor[0], -0.12, 0]} receiveShadow raycast={() => null}>
+        <boxGeometry args={[maxPreviewVehicles * previewSpacingX + 1.6, 0.1, 3.2]} />
         <meshStandardMaterial color="#f1f5f9" roughness={0.2} metalness={0.25} />
       </mesh>
       {/* Thin Emissive Blue Edge Line on stage */}
-      <mesh position={[heroAnchor[0], -0.065, 1.55]}>
-        <boxGeometry args={[Math.max(10, previewItems.length * previewSpacingX + 2.5), 0.015, 0.04]} />
+      <mesh position={[heroAnchor[0], -0.065, 1.55]} raycast={() => null}>
+        <boxGeometry args={[maxPreviewVehicles * previewSpacingX + 1.6, 0.015, 0.04]} />
         <meshBasicMaterial color="#00f2fe" transparent opacity={0.65} />
       </mesh>
 
@@ -115,13 +115,19 @@ export const FleetPreviewRow3D: React.FC<FleetPreviewRow3DProps> = ({
               document.body.style.cursor = 'auto';
             }}
           >
+            {/* Lightweight single-box raycast hitbox to avoid traversing complex vehicle geometry */}
+            <mesh position={[0, 0.6, 0]}>
+              <boxGeometry args={[2.0, 1.2, 3.6]} />
+              <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
+            </mesh>
+
             {/* Circular Mini Display Pedestal */}
-            <mesh position={[0, -0.04, 0]} receiveShadow>
+            <mesh position={[0, -0.04, 0]} receiveShadow raycast={() => null}>
               <cylinderGeometry args={[1.35, 1.42, 0.06, 32]} />
               <meshStandardMaterial color="#ffffff" roughness={0.25} metalness={0.2} />
             </mesh>
             {/* Glowing Neon Ring around pedestal */}
-            <mesh position={[0, -0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <mesh position={[0, -0.005, 0]} rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
               <ringGeometry args={[1.28, 1.36, 32]} />
               <meshBasicMaterial
                 color={accent}
@@ -130,7 +136,7 @@ export const FleetPreviewRow3D: React.FC<FleetPreviewRow3DProps> = ({
               />
             </mesh>
 
-            {/* Scaled Visual Model (Lightweight, Simplified Shadow, No Semantic Hitboxes) */}
+            {/* Scaled Visual Model (Lightweight, Simplified Shadow, No Semantic Hitboxes, Zero Raycast) */}
             <group scale={[previewScale, previewScale, previewScale]}>
               <Suspense fallback={null}>
                 <VehicleModel
@@ -141,7 +147,9 @@ export const FleetPreviewRow3D: React.FC<FleetPreviewRow3DProps> = ({
                   exteriorColor={resolveAuthoritativeVehicleColor(vehicle)}
                   onSelectVehicle={() => onSelectVehicle(vehicle)}
                   castShadow={false}
-                  receiveShadow={true}
+                  receiveShadow={false}
+                  disableRaycast={true}
+                  disableDoorAnimation={true}
                 />
               </Suspense>
             </group>
@@ -151,3 +159,5 @@ export const FleetPreviewRow3D: React.FC<FleetPreviewRow3DProps> = ({
     </group>
   );
 };
+
+export const FleetPreviewRow3D = React.memo(FleetPreviewRow3DComponent);

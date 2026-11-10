@@ -1,147 +1,15 @@
-import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import React from 'react';
 import { VehicleResponse } from '../../../types/vehicle';
-import {
-  fetchActiveTripForVehicle,
-  startTripApi,
-} from '../../../services/tripApi';
-import { useCoOwnerTripPrerequisites } from '../../../hooks/useCoOwnerTripPrerequisites';
-import { TripStartPanel3D } from './TripStartPanel3D';
-import { SpatialDataLink } from '../SpatialDataLink';
-import { useWorldStore } from '../../../store/worldStore';
-import { Html } from '@react-three/drei';
-import { Loader2 } from 'lucide-react';
 
 interface TripStartWorldProps {
   vehicle: VehicleResponse;
 }
 
-export const TripStartWorld: React.FC<TripStartWorldProps> = ({ vehicle }) => {
-  const qc = useQueryClient();
-  const returnToVehicleOverview = useWorldStore((state) => state.returnToVehicleOverview);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  // 1. Fetch active trip for vehicle (restoration on reload / ongoing trip)
-  const { data: activeTrip = null, isLoading: isTripLoading } = useQuery({
-    queryKey: ['activeTrip', vehicle.id],
-    queryFn: () => fetchActiveTripForVehicle(vehicle.id),
-    refetchInterval: 3000,
-  });
-
-  const isTripActive = !!activeTrip && activeTrip.status === 'ACTIVE';
-
-  // 2. Fetch authoritative CO_OWNER trip prerequisites using booking-specific identity chain
-  const {
-    candidateBooking,
-    completedHandover,
-    tripEligibility,
-    isLoading: isPrereqLoading,
-  } = useCoOwnerTripPrerequisites(vehicle.id, isTripActive);
-
-  // 3. Resolve stable bookingId for Trip Start
-  const bookingId = completedHandover?.bookingId || candidateBooking?.id || activeTrip?.bookingId;
-
-  const startTripMutation = useMutation({
-    mutationFn: async () => {
-      if (!isTripActive && !completedHandover) {
-        throw new Error('Chưa hoàn tất bàn giao xe từ nhân viên. Không thể bắt đầu chuyến đi.');
-      }
-      if (!bookingId) {
-        throw new Error('Không tìm thấy lịch đặt xe hợp lệ.');
-      }
-      return await startTripApi(bookingId);
-    },
-    onSuccess: () => {
-      setErrorMessage(null);
-      qc.invalidateQueries({ queryKey: ['activeTrip', vehicle.id] });
-      qc.invalidateQueries({ queryKey: ['activeVehicleHandovers', vehicle.id] });
-      qc.invalidateQueries({ queryKey: ['vehicle', vehicle.id] });
-      qc.invalidateQueries({ queryKey: ['vehicles'] });
-      qc.invalidateQueries({ queryKey: ['vehicleBookings', vehicle.id] });
-      qc.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] });
-      if (bookingId) {
-        qc.invalidateQueries({ queryKey: ['tripEligibility', bookingId] });
-        qc.invalidateQueries({ queryKey: ['trip-start-eligibility', bookingId] });
-        qc.invalidateQueries({ queryKey: ['bookingHandover', bookingId] });
-        qc.invalidateQueries({ queryKey: ['booking-handover', bookingId] });
-      }
-      qc.invalidateQueries({ queryKey: ['bookingHandover'] });
-      qc.invalidateQueries({ queryKey: ['booking-handover'] });
-      qc.invalidateQueries({ queryKey: ['tripEligibility'] });
-      qc.invalidateQueries({ queryKey: ['trip-start-eligibility'] });
-      qc.invalidateQueries({ queryKey: ['bookingTrip'] });
-      qc.invalidateQueries({ queryKey: ['booking-trip'] });
-      qc.invalidateQueries({ queryKey: ['vehicle-handover-history', vehicle.id] });
-    },
-    onError: (err: any) => {
-      setErrorMessage(err.message || 'Không thể bắt đầu chuyến đi lúc này.');
-    },
-  });
-
-  const handleStartTrip = async () => {
-    try {
-      await startTripMutation.mutateAsync();
-    } catch {
-      // Error handled by mutation onError
-    }
-  };
-
-  const isLoading = (isPrereqLoading || isTripLoading) && !activeTrip && !completedHandover;
-
-  if (isLoading) {
-    return (
-      <group position={[0, 1.4, 0]}>
-        <Html center distanceFactor={8.5} style={{ pointerEvents: 'none', userSelect: 'none' }}>
-          <div
-            style={{
-              background: 'rgba(8, 12, 22, 0.94)',
-              backdropFilter: 'blur(16px)',
-              border: '1px solid rgba(0, 242, 254, 0.5)',
-              borderRadius: '9999px',
-              padding: '10px 22px',
-              color: '#38bdf8',
-              fontSize: '12px',
-              fontWeight: 800,
-              letterSpacing: '0.06em',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              boxShadow: '0 0 25px rgba(0, 242, 254, 0.4)',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            <Loader2 size={16} className="animate-spin" color="#00f2fe" />
-            <span>ĐANG KIỂM TRA ĐIỀU KIỆN CHUYẾN ĐI...</span>
-          </div>
-        </Html>
-      </group>
-    );
-  }
-
-  const panelPosition: [number, number, number] = [2.7, 1.45, 0];
-  const vehicleAnchor: [number, number, number] = [-0.5, 0.7, 0];
-
-  return (
-    <group>
-      {/* 1. Spatial 3D Data Link connecting EV01 to Trip Start Panel */}
-      <SpatialDataLink
-        start={vehicleAnchor}
-        end={panelPosition}
-        color={activeTrip?.status === 'ACTIVE' ? '#10b981' : '#00f2fe'}
-        pulseSpeed={2.5}
-      />
-
-      {/* 2. Holographic 3D Panel */}
-      <TripStartPanel3D
-        vehicle={vehicle}
-        handover={completedHandover}
-        activeTrip={activeTrip}
-        eligibility={tripEligibility}
-        isStarting={startTripMutation.isPending}
-        onStartTrip={handleStartTrip}
-        onBack={returnToVehicleOverview}
-        panelPosition={panelPosition}
-      />
-    </group>
-  );
+/**
+ * 3D Canvas representation during Trip Start mode.
+ * The Trip Start form is rendered in screen space via CoOwnerTripStartPanel
+ * in GarageScene to prevent obstructing the 3D vehicle in the showroom.
+ */
+export const TripStartWorld: React.FC<TripStartWorldProps> = () => {
+  return null;
 };

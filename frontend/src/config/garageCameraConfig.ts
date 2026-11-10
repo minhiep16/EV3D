@@ -192,8 +192,8 @@ export function panelFriendlyFocusCamera(
  */
 export function overviewCamera(role?: string, viewportWidth?: number): GarageCameraPreset {
   const isCoOwner = !role || role === 'CO_OWNER';
-  const target: [number, number, number] = isCoOwner ? [0.0, 0.85, 1.8] : [0.0, 0.7, 0.5];
-  const position: [number, number, number] = isCoOwner ? [-0.20, 2.25, 11.5] : [0.0, 14.5, 19.5];
+  const target: [number, number, number] = isCoOwner ? [0.0, 0.85, 1.8] : [0.2, 0.92, 0.5];
+  const position: [number, number, number] = isCoOwner ? [-0.25, 2.35, 12.0] : [0.2, 3.2, 9.6];
 
   const dx = position[0] - target[0];
   const dy = position[1] - target[1];
@@ -204,10 +204,10 @@ export function overviewCamera(role?: string, viewportWidth?: number): GarageCam
     target,
     position,
     fov: 40,
-    minDistance: isCoOwner ? 5.0 : 4.0,
-    maxDistance: isCoOwner ? 18.0 : 32.0,
-    minPolarAngle: isCoOwner ? 0.40 : 0.1,
-    maxPolarAngle: isCoOwner ? 1.42 : Math.PI / 2 - 0.05,
+    minDistance: isCoOwner ? 5.0 : 5.5,
+    maxDistance: 18.0,
+    minPolarAngle: isCoOwner ? 0.40 : 0.45,
+    maxPolarAngle: 1.42,
     enableRotate: true,
     enableZoom: true,
     enablePan: true,

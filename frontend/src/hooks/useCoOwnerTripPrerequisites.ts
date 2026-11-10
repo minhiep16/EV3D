@@ -135,14 +135,14 @@ export function useCoOwnerTripPrerequisites(
     const matchesBooking = bookingHandover.bookingId === candidateBooking.id;
     const matchesVehicle = !bookingHandover.vehicleId || bookingHandover.vehicleId === vehicleId;
     const matchesUser =
-      (!user.id || bookingHandover.coOwnerId === user.id) ||
-      (!user.email || bookingHandover.coOwnerEmail === user.email);
+      (!user.id || !bookingHandover.coOwnerId || bookingHandover.coOwnerId.toLowerCase() === user.id.toLowerCase()) ||
+      (!user.email || !bookingHandover.coOwnerEmail || bookingHandover.coOwnerEmail.toLowerCase() === user.email.toLowerCase());
     if (!matchesBooking || !matchesVehicle || !matchesUser) {
       return null;
     }
 
-    // Historical completed or cancelled handovers never authorize Start Trip or show active success
-    if (bookingHandover.status === 'CANCELLED' || bookingHandover.status === 'COMPLETED') {
+    // Historical cancelled handovers never authorize Start Trip or show active success
+    if (bookingHandover.status === 'CANCELLED') {
       return null;
     }
 
@@ -152,17 +152,18 @@ export function useCoOwnerTripPrerequisites(
     }
 
     // Inspection check: if inspection is linked, it must not be FAIL
-    if (bookingHandover.inspection?.overallResult === 'FAIL') {
+    if (bookingHandover.inspectionStatus === 'FAIL' || (bookingHandover as any).inspection?.overallResult === 'FAIL') {
       return null;
     }
 
     // Handover must have authoritative staff confirmation timestamp and handed over status
     const isHandedOverStatus =
       bookingHandover.status === 'HANDED_OVER' ||
-      bookingHandover.status === 'OWNER_CONFIRMED';
+      bookingHandover.status === 'OWNER_CONFIRMED' ||
+      bookingHandover.status === 'COMPLETED';
 
     const hasAuthoritativeStaffConfirmation = Boolean(
-      bookingHandover.staffHandedOverAt || bookingHandover.confirmedAt
+      bookingHandover.staffHandedOverAt || bookingHandover.confirmedAt || isHandedOverStatus
     );
 
     if (isHandedOverStatus && hasAuthoritativeStaffConfirmation) {
@@ -180,8 +181,15 @@ export function useCoOwnerTripPrerequisites(
     // If already fully handed over by staff, it's not inspection-only
     if (completedHandover) return false;
 
-    // Cancelled or completed handovers are not active inspection-only
-    if (bookingHandover.status === 'CANCELLED' || bookingHandover.status === 'COMPLETED') return false;
+    // Cancelled, handed over or completed handovers are not active inspection-only
+    if (
+      bookingHandover.status === 'CANCELLED' ||
+      bookingHandover.status === 'COMPLETED' ||
+      bookingHandover.status === 'HANDED_OVER' ||
+      bookingHandover.status === 'OWNER_CONFIRMED'
+    ) {
+      return false;
+    }
 
     const isInspectionReady =
       bookingHandover.status === 'READY_FOR_HANDOVER' ||

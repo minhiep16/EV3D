@@ -35,6 +35,8 @@ interface VehicleModelMeshProps {
   exteriorColor?: string;
   castShadow?: boolean;
   receiveShadow?: boolean;
+  disableRaycast?: boolean;
+  disableDoorAnimation?: boolean;
   onSelectVehicle?: () => void;
   onPointerDown?: (e: ThreeEvent<PointerEvent>) => void;
 }
@@ -43,7 +45,7 @@ interface VehicleModelMeshProps {
  * Inner mesh renderer for EV 3D GLB models.
  * Handles model loading, scene cloning, transform calibration, and PBR automotive material setup.
  */
-const VehicleModelMesh: React.FC<VehicleModelMeshProps> = ({
+const VehicleModelMeshComponent: React.FC<VehicleModelMeshProps> = ({
   isSelected,
   isHovered,
   isDeEmphasized,
@@ -52,6 +54,8 @@ const VehicleModelMesh: React.FC<VehicleModelMeshProps> = ({
   exteriorColor,
   castShadow = true,
   receiveShadow = true,
+  disableRaycast = false,
+  disableDoorAnimation = false,
   onSelectVehicle,
   onPointerDown,
 }) => {
@@ -61,186 +65,134 @@ const VehicleModelMesh: React.FC<VehicleModelMeshProps> = ({
   const isLegacyModel = modelUrl.includes('ev-car.glb');
   const transformConfig = useMemo(() => getModelTransformConfig(modelUrl), [modelUrl]);
 
-  // Clone scene so multiple instances don't cross-contaminate
-  const clonedScene = useMemo(() => {
+  // Clone scene and configure automotive PBR materials ONCE per asset/color combination
+  const { clonedScene, dynamicMaterials } = useMemo(() => {
     const scene = gltf.scene.clone(true);
     // Apply calibrated model transforms
     scene.scale.set(...transformConfig.scale);
     scene.rotation.set(...transformConfig.rotation);
     scene.position.set(...transformConfig.offset);
-    return scene;
-  }, [gltf.scene, transformConfig]);
 
-  // Cache original materials and configure shadow participation
-  const originalMaterialsMap = useMemo(() => {
-    const map = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
-    clonedScene.traverse((child) => {
+    const headlights: THREE.MeshStandardMaterial[] = [];
+    const taillights: THREE.MeshStandardMaterial[] = [];
+    const ev02Body: THREE.MeshStandardMaterial[] = [];
+    const legacyHeadlights: THREE.MeshStandardMaterial[] = [];
+    const legacyChassis: THREE.MeshStandardMaterial[] = [];
+    const fadeMeshes: { mesh: THREE.Mesh; defaultMat: THREE.Material; isWheel: boolean }[] = [];
+    const createdMaterials: THREE.Material[] = [];
+
+    scene.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
         const mesh = child as THREE.Mesh;
         mesh.castShadow = castShadow;
         mesh.receiveShadow = receiveShadow;
-        map.set(mesh, mesh.material);
-      }
-    });
-    return map;
-  }, [clonedScene, castShadow, receiveShadow]);
 
-  // Visual appearance & PBR material tuning
-  useEffect(() => {
-    clonedScene.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        const mesh = child as THREE.Mesh;
-        const originalMat = originalMaterialsMap.get(mesh);
+        if (disableRaycast) {
+          mesh.raycast = () => null;
+        }
+
+        const originalMat = mesh.material;
         if (!originalMat) return;
 
-        // Phase 16: 3D X-Ray Battery Health inspection mode
-        if (isBatteryXray) {
-          const isWheelOrTire =
-            mesh.name.toLowerCase().includes('tire') ||
-            mesh.name.toLowerCase().includes('wheel') ||
-            mesh.name.toLowerCase().includes('rim') ||
-            (originalMat as any).name === 'Material.011' ||
-            (originalMat as any).name === 'MA_tire_003.001';
-
-          const mat = (originalMat as THREE.Material).clone();
-          if ('transparent' in mat) {
-            (mat as any).transparent = true;
-            (mat as any).depthWrite = false;
-            if (isWheelOrTire) {
-              // Preserve wheels and structural chassis silhouette for clear vehicle spatial context
-              (mat as any).opacity = 0.42;
-            } else {
-              // Exterior vehicle body shell & glass: semi-transparent ghost shell
-              (mat as any).opacity = 0.22;
-              if ('color' in mat && 'emissive' in mat) {
-                (mat as any).emissive = new THREE.Color('#00f2fe');
-                (mat as any).emissiveIntensity = 0.05;
-              }
-            }
-          }
-          mesh.material = mat;
-          return;
-        }
-
-        if (isDeEmphasized) {
-          const mat = (originalMat as THREE.Material).clone();
-          if ('transparent' in mat) {
-            (mat as any).transparent = true;
-            (mat as any).opacity = 0.52;
-          }
-          mesh.material = mat;
-          return;
-        }
+        const isWheelOrTire =
+          mesh.name.toLowerCase().includes('tire') ||
+          mesh.name.toLowerCase().includes('wheel') ||
+          mesh.name.toLowerCase().includes('rim') ||
+          (originalMat as any).name === 'Material.011' ||
+          (originalMat as any).name === 'MA_tire_003.001';
 
         if (isLegacyModel) {
-          // Legacy model fallback accents
-          if (mesh.name === 'Headlight_Bar') {
-            const intensity = isSelected ? 2.5 : isHovered ? 2.0 : 1.6;
-            if ('emissiveIntensity' in (originalMat as THREE.MeshStandardMaterial)) {
-              const mat = (originalMat as THREE.MeshStandardMaterial).clone();
-              mat.emissiveIntensity = intensity;
-              mesh.material = mat;
-            }
+          if (mesh.name === 'Headlight_Bar' && 'emissiveIntensity' in (originalMat as any)) {
+            const mat = (originalMat as THREE.MeshStandardMaterial).clone();
+            createdMaterials.push(mat);
+            mesh.material = mat;
+            legacyHeadlights.push(mat);
           } else if (mesh.name === 'Chassis_Body' || mesh.name === 'Chassis_Nose') {
-            if (isSelected) {
-              const mat = (originalMat as THREE.MeshStandardMaterial).clone();
-              mat.emissive = new THREE.Color('#00f2fe');
-              mat.emissiveIntensity = 0.15;
-              mesh.material = mat;
-            } else if (isHovered) {
-              const mat = (originalMat as THREE.MeshStandardMaterial).clone();
-              mat.emissive = new THREE.Color('#38bdf8');
-              mat.emissiveIntensity = 0.08;
-              mesh.material = mat;
-            } else {
-              mesh.material = originalMat;
-            }
-          } else {
-            mesh.material = originalMat;
+            const mat = (originalMat as THREE.MeshStandardMaterial).clone();
+            createdMaterials.push(mat);
+            mesh.material = mat;
+            legacyChassis.push(mat);
           }
         } else {
-          // Realistic EV GLB: Professional automotive PBR shading
           const mat = originalMat as THREE.MeshStandardMaterial;
 
           if (mat.name === 'Material.003') {
-            // Main exterior car body shell: Luxury Automotive Metallic Paint
-            // If color is absent: Preserve the source model paint rather than inventing a color
-            if (!exteriorColor) {
-              mesh.material = originalMat;
-            } else {
+            if (exteriorColor) {
               const paintHex = resolveVehicleColorHex(exteriorColor);
               const bodyMat = new THREE.MeshPhysicalMaterial({
                 color: new THREE.Color(paintHex),
-                metalness: 0.42,                   // Moderate metalness eliminates chalky diffuse wash & retains body color
-                roughness: 0.30,                   // Controlled gloss rolloff preventing harsh highlight clipping
-                clearcoat: 0.85,                   // Premium automotive clearcoat layer
-                clearcoatRoughness: 0.12,          // Soft clearcoat highlight spread across curves
-                reflectivity: 0.60,                // Controlled Fresnel reflectance
-                envMapIntensity: 0.45,             // Crisp, non-scorching IBL reflection
+                metalness: 0.42,
+                roughness: 0.30,
+                clearcoat: 0.85,
+                clearcoatRoughness: 0.12,
+                reflectivity: 0.60,
+                envMapIntensity: 0.45,
                 emissive: new THREE.Color('#000000'),
                 emissiveIntensity: 0,
               });
+              createdMaterials.push(bodyMat);
               mesh.material = bodyMat;
             }
           } else if (mat.name === 'Material.006') {
-            // Panoramic glass & windows: Smoked luxury automotive glass with readable subtle reflection
             const glassMat = new THREE.MeshPhysicalMaterial({
-              color: new THREE.Color('#0f172a'), // Smoked dark navy/slate glass (not crushed #000000)
+              color: new THREE.Color('#0f172a'),
               metalness: 0.10,
               roughness: 0.10,
               clearcoat: 0.88,
               clearcoatRoughness: 0.08,
               reflectivity: 0.72,
-              envMapIntensity: 0.65,             // Subtle environment sky & frame reflection
+              envMapIntensity: 0.65,
             });
+            createdMaterials.push(glassMat);
             mesh.material = glassMat;
           } else if (mat.name === 'Material.011') {
-            // Wheel rims: Precision diamond-cut satin alloy with crisp metallic specular response
             const rimMat = new THREE.MeshStandardMaterial({
               color: new THREE.Color('#cbd5e1'),
               metalness: 0.85,
               roughness: 0.22,
               envMapIntensity: 0.60,
             });
+            createdMaterials.push(rimMat);
             mesh.material = rimMat;
           } else if (mat.name === 'MA_tire_003.001') {
-            // Tires: Matte dark vulcanized rubber
             const tireMat = mat.clone();
             tireMat.color = new THREE.Color('#121214');
             tireMat.metalness = 0.02;
             tireMat.roughness = 0.94;
+            createdMaterials.push(tireMat);
             mesh.material = tireMat;
           } else if (mat.name === 'Material.009') {
-            // Headlights: Modern crisp white LED projector & lightguide
             const headMat = mat.clone();
             headMat.color = new THREE.Color('#ffffff');
             headMat.emissive = new THREE.Color('#ffffff');
-            headMat.emissiveIntensity = isSelected ? 2.0 : isHovered ? 1.6 : 1.3;
+            headMat.emissiveIntensity = 1.3;
+            createdMaterials.push(headMat);
             mesh.material = headMat;
+            headlights.push(headMat);
           } else if (mat.name === 'Material.007') {
-            // Taillights: Precision red LED dynamic taillight bar
             const tailMat = mat.clone();
             tailMat.color = new THREE.Color('#ef4444');
             tailMat.emissive = new THREE.Color('#ef4444');
-            tailMat.emissiveIntensity = isSelected ? 1.8 : isHovered ? 1.5 : 1.2;
+            tailMat.emissiveIntensity = 1.2;
+            createdMaterials.push(tailMat);
             mesh.material = tailMat;
+            taillights.push(tailMat);
           } else if (mat.name === 'PD_VehiclePack_bodycolor') {
-            // EV02 Stylized Exterior Body Paint: Vibrant Golden Amber with interaction sheen
-            const bodyMat = new THREE.MeshStandardMaterial();
-            bodyMat.color = new THREE.Color(isSelected ? '#d97706' : isHovered ? '#f59e0b' : '#d97706');
-            bodyMat.metalness = 0.18;
-            bodyMat.roughness = 0.45;
-            bodyMat.emissive = new THREE.Color('#000000');
-            bodyMat.emissiveIntensity = 0;
+            const bodyMat = new THREE.MeshStandardMaterial({
+              color: new THREE.Color('#d97706'),
+              metalness: 0.18,
+              roughness: 0.45,
+            });
+            createdMaterials.push(bodyMat);
             mesh.material = bodyMat;
+            ev02Body.push(bodyMat);
           } else if (mat.name === 'PD_VehiclePack_MAT') {
-            // EV02 Interior, glass, tires & trim: Clean dark slate PBR finish
-            const trimMat = new THREE.MeshStandardMaterial();
-            trimMat.color = new THREE.Color('#1e293b');
-            trimMat.metalness = 0.15;
-            trimMat.roughness = 0.60;
-            trimMat.emissive = new THREE.Color('#000000');
-            trimMat.emissiveIntensity = 0;
+            const trimMat = new THREE.MeshStandardMaterial({
+              color: new THREE.Color('#1e293b'),
+              metalness: 0.15,
+              roughness: 0.60,
+            });
+            createdMaterials.push(trimMat);
             mesh.material = trimMat;
           } else {
             const matName = mat.name || '';
@@ -268,36 +220,119 @@ const VehicleModelMesh: React.FC<VehicleModelMeshProps> = ({
               meshName.toLowerCase().includes('wheel') ||
               meshName.toLowerCase().includes('light');
 
-            if (isGenericBodyPaint && !isGenericProtected) {
-              if (!exteriorColor) {
-                // If color is absent: Preserve the source model paint rather than inventing a color
-                mesh.material = originalMat;
-              } else {
-                const paintHex = resolveVehicleColorHex(exteriorColor);
-                const bodyMat = new THREE.MeshPhysicalMaterial({
-                  color: new THREE.Color(paintHex),
-                  metalness: 0.42,
-                  roughness: 0.30,
-                  clearcoat: 0.85,
-                  clearcoatRoughness: 0.12,
-                  reflectivity: 0.60,
-                  envMapIntensity: 0.45,
-                });
-                mesh.material = bodyMat;
-              }
+            if (isGenericBodyPaint && !isGenericProtected && exteriorColor) {
+              const paintHex = resolveVehicleColorHex(exteriorColor);
+              const bodyMat = new THREE.MeshPhysicalMaterial({
+                color: new THREE.Color(paintHex),
+                metalness: 0.42,
+                roughness: 0.30,
+                clearcoat: 0.85,
+                clearcoatRoughness: 0.12,
+                reflectivity: 0.60,
+                envMapIntensity: 0.45,
+              });
+              createdMaterials.push(bodyMat);
+              mesh.material = bodyMat;
             } else if ('envMapIntensity' in (originalMat as any)) {
-              // Generic vehicle trims: Clamp environment reflection to prevent blowout on untracked trim meshes
               const clone = (originalMat as THREE.Material).clone();
               (clone as any).envMapIntensity = 0.20;
+              createdMaterials.push(clone);
               mesh.material = clone;
-            } else {
-              mesh.material = originalMat;
             }
           }
         }
+
+        const activeMat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+        fadeMeshes.push({
+          mesh,
+          defaultMat: activeMat,
+          isWheel: isWheelOrTire,
+        });
       }
     });
-  }, [clonedScene, originalMaterialsMap, isLegacyModel, isSelected, isHovered, isDeEmphasized, isBatteryXray, exteriorColor]);
+
+    return {
+      clonedScene: scene,
+      dynamicMaterials: {
+        headlights,
+        taillights,
+        ev02Body,
+        legacyHeadlights,
+        legacyChassis,
+        fadeMeshes,
+        createdMaterials,
+      },
+    };
+  }, [gltf.scene, transformConfig, exteriorColor, castShadow, receiveShadow, disableRaycast, isLegacyModel]);
+
+  // Clean up created materials on unmount
+  useEffect(() => {
+    return () => {
+      dynamicMaterials.createdMaterials.forEach((m) => m.dispose());
+    };
+  }, [dynamicMaterials]);
+
+  // Instantaneous in-place uniform updates (emissive, color) on hover/select (ZERO shader recompilation)
+  useEffect(() => {
+    const headIntensity = isSelected ? 2.0 : isHovered ? 1.6 : 1.3;
+    const tailIntensity = isSelected ? 1.8 : isHovered ? 1.5 : 1.2;
+
+    for (const mat of dynamicMaterials.headlights) {
+      mat.emissiveIntensity = headIntensity;
+    }
+    for (const mat of dynamicMaterials.taillights) {
+      mat.emissiveIntensity = tailIntensity;
+    }
+    for (const mat of dynamicMaterials.legacyHeadlights) {
+      mat.emissiveIntensity = isSelected ? 2.5 : isHovered ? 2.0 : 1.6;
+    }
+    for (const mat of dynamicMaterials.legacyChassis) {
+      if (isSelected) {
+        mat.emissive.set('#00f2fe');
+        mat.emissiveIntensity = 0.15;
+      } else if (isHovered) {
+        mat.emissive.set('#38bdf8');
+        mat.emissiveIntensity = 0.08;
+      } else {
+        mat.emissive.set('#000000');
+        mat.emissiveIntensity = 0;
+      }
+    }
+    for (const mat of dynamicMaterials.ev02Body) {
+      mat.color.set(isSelected ? '#d97706' : isHovered ? '#f59e0b' : '#d97706');
+    }
+  }, [dynamicMaterials, isSelected, isHovered]);
+
+  // Battery X-Ray and De-emphasis opacity (Separated from hover/select to prevent main-thread shader recompile stalls)
+  const prevTransparencyStateRef = React.useRef<{ isBatteryXray?: boolean; isDeEmphasized?: boolean }>({});
+  useEffect(() => {
+    const prevState = prevTransparencyStateRef.current;
+    if (
+      prevState.isBatteryXray === isBatteryXray &&
+      prevState.isDeEmphasized === isDeEmphasized
+    ) {
+      return;
+    }
+    prevTransparencyStateRef.current = { isBatteryXray, isDeEmphasized };
+
+    for (const { defaultMat, isWheel } of dynamicMaterials.fadeMeshes) {
+      const targetTransparent = Boolean(isBatteryXray || isDeEmphasized);
+      const targetDepthWrite = !isBatteryXray;
+      const targetOpacity = isBatteryXray ? (isWheel ? 0.42 : 0.22) : isDeEmphasized ? 0.52 : 1.0;
+
+      const needsRecompile =
+        defaultMat.transparent !== targetTransparent ||
+        defaultMat.depthWrite !== targetDepthWrite;
+
+      defaultMat.transparent = targetTransparent;
+      defaultMat.depthWrite = targetDepthWrite;
+      defaultMat.opacity = targetOpacity;
+
+      if (needsRecompile) {
+        defaultMat.needsUpdate = true;
+      }
+    }
+  }, [dynamicMaterials, isDeEmphasized, isBatteryXray]);
 
   const user = useAuthStore((state) => state.user);
   const vehicleDamageMappingMode = useWorldStore((state) => state.vehicleDamageMappingMode);
@@ -323,9 +358,33 @@ const VehicleModelMesh: React.FC<VehicleModelMeshProps> = ({
 
   // Animate door opening/closing smoothly if model supports separate door meshes
   useFrame((_, delta) => {
-    if (!doorBindings?.isSupported) return;
+    if (disableDoorAnimation || !doorBindings?.isSupported) return;
     updateDoorAnimation(doorBindings, activeDoorPartCode, delta);
   });
+
+  // Dynamic Raycast Optimization:
+  // When not in inspection or damage mapping mode, bypass all mesh-level raycasting to eliminate pointer latency
+  useEffect(() => {
+    const shouldDisable = disableRaycast || (!vehicleDamageMappingMode && !vehicleInspectionMode);
+    clonedScene.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        if (shouldDisable) {
+          mesh.raycast = () => null;
+        } else {
+          delete (mesh as any).raycast;
+        }
+      }
+    });
+
+    return () => {
+      clonedScene.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          delete ((child as THREE.Mesh) as any).raycast;
+        }
+      });
+    };
+  }, [clonedScene, disableRaycast, vehicleDamageMappingMode, vehicleInspectionMode]);
 
   // Passive click fallback: selects vehicle if clicked directly on visual geometry
   // In DAMAGE_MAPPING mode: allows selecting part or placing draft damage point
@@ -381,16 +440,20 @@ const VehicleModelMesh: React.FC<VehicleModelMeshProps> = ({
     }
   };
 
+  const isRaycastActive = !disableRaycast && (Boolean(vehicleDamageMappingMode) || Boolean(vehicleInspectionMode));
+
   return (
     <primitive
       object={clonedScene}
       castShadow={castShadow}
       receiveShadow={receiveShadow}
-      onPointerDown={onPointerDown}
-      onClick={handleClick}
+      onPointerDown={isRaycastActive ? onPointerDown : undefined}
+      onClick={isRaycastActive ? handleClick : undefined}
     />
   );
 };
+
+const VehicleModelMesh = React.memo(VehicleModelMeshComponent);
 
 interface VehicleModelErrorBoundaryProps {
   activeUrl: string;
@@ -447,6 +510,8 @@ interface VehicleModelProps {
   exteriorColor?: string;
   castShadow?: boolean;
   receiveShadow?: boolean;
+  disableRaycast?: boolean;
+  disableDoorAnimation?: boolean;
   onSelectVehicle?: () => void;
   onPointerDown?: (e: ThreeEvent<PointerEvent>) => void;
 }
@@ -458,7 +523,7 @@ interface VehicleModelProps {
  * Decoupled from semantic business logic (inspection, handover, check-in).
  * Gracefully falls back: articulated GLB -> realistic GLB -> legacy GLB.
  */
-export const VehicleModel: React.FC<VehicleModelProps> = ({
+const VehicleModelRoot: React.FC<VehicleModelProps> = ({
   isSelected,
   isHovered,
   isDeEmphasized,
@@ -467,6 +532,8 @@ export const VehicleModel: React.FC<VehicleModelProps> = ({
   exteriorColor,
   castShadow = true,
   receiveShadow = true,
+  disableRaycast = false,
+  disableDoorAnimation = false,
   onSelectVehicle,
   onPointerDown,
 }) => {
@@ -516,6 +583,8 @@ export const VehicleModel: React.FC<VehicleModelProps> = ({
           exteriorColor={exteriorColor}
           castShadow={castShadow}
           receiveShadow={receiveShadow}
+          disableRaycast={disableRaycast}
+          disableDoorAnimation={disableDoorAnimation}
           onSelectVehicle={onSelectVehicle}
           onPointerDown={onPointerDown}
         />
@@ -524,7 +593,9 @@ export const VehicleModel: React.FC<VehicleModelProps> = ({
   );
 };
 
-// Preload proven models (realistic, stylized, and fallback)
+export const VehicleModel = React.memo(VehicleModelRoot);
+
+// Preload primary 3D vehicle assets to eliminate interaction frame drops on initial load
 useGLTF.preload(EV01_REALISTIC_MODEL_URL);
 useGLTF.preload(EV02_STYLIZED_MODEL_URL);
 useGLTF.preload(EV01_FALLBACK_MODEL_URL);

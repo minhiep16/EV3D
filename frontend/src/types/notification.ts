@@ -1,6 +1,15 @@
 export type NotificationSeverity = 'INFO' | 'SUCCESS' | 'WARNING' | 'ACTION_REQUIRED';
 
-export type NotificationEntityType = 'DAMAGE' | 'PROPOSAL' | 'VOTE' | 'MAINTENANCE' | 'FINANCE' | 'SYSTEM';
+export type NotificationEntityType =
+  | 'DAMAGE'
+  | 'PROPOSAL'
+  | 'VOTE'
+  | 'MAINTENANCE'
+  | 'FINANCE'
+  | 'SYSTEM'
+  | 'BOOKING'
+  | 'HANDOVER'
+  | 'TRIP';
 
 export interface NotificationResponse {
   id: string;

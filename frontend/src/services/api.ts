@@ -87,6 +87,20 @@ export async function safeParseResponse<T = any>(response: Response): Promise<T>
         errorLower.includes('dataintegrityviolationexception') ||
         errorLower.includes('hibernate');
 
+      if (
+        errorLower.includes('maintenancetype') ||
+        errorLower.includes('cannot deserialize') ||
+        errorLower.includes('loại bảo dưỡng')
+      ) {
+        throw new ApiError(400, 'Loại bảo dưỡng không hợp lệ.', data);
+      }
+      if (errorLower.includes('không tìm thấy') && errorLower.includes('hư hỏng')) {
+        throw new ApiError(404, 'Không tìm thấy hồ sơ hư hỏng.', data);
+      }
+      if (errorLower.includes('hư hỏng đã được khắc phục') || errorLower.includes('đã có đề xuất')) {
+        throw new ApiError(409, 'Hư hỏng này đã có đề xuất đang xử lý.', data);
+      }
+
       const safeMessage = isRawTechnicalException
         ? 'Dữ liệu không hợp lệ hoặc đã tồn tại trong hệ thống. Vui lòng kiểm tra lại thông tin.'
         : errorMsg;
@@ -124,6 +138,9 @@ export async function safeParseResponse<T = any>(response: Response): Promise<T>
     if (rawText.includes('Invalid CORS request') || rawText.includes('CORS')) {
       throw new ApiError(0, 'Không thể kết nối đến máy chủ do lỗi cấu hình mạng.');
     }
+    if (response.status === 400) {
+      throw new ApiError(400, rawText || 'Dữ liệu gửi lên không hợp lệ.');
+    }
     if (response.status === 401) {
       throw new ApiError(401, 'Phiên đăng nhập đã hết hạn.');
     }
@@ -133,10 +150,13 @@ export async function safeParseResponse<T = any>(response: Response): Promise<T>
     if (response.status === 404) {
       throw new ApiError(404, 'Không tìm thấy dữ liệu yêu cầu.');
     }
+    if (response.status === 409) {
+      throw new ApiError(409, rawText || 'Xung đột dữ liệu hoặc yêu cầu đã tồn tại.');
+    }
     if (response.status >= 500) {
       throw new ApiError(response.status, 'Máy chủ đang gặp sự cố. Vui lòng thử lại sau.');
     }
-    throw new ApiError(response.status, 'Không thể kết nối đến máy chủ.');
+    throw new ApiError(response.status, rawText || `Yêu cầu thất bại (Mã lỗi HTTP ${response.status}).`);
   }
 
   return rawText as unknown as T;

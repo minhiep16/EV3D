@@ -45,7 +45,7 @@ export const ChargingControlHologram3D: React.FC<ChargingControlHologram3DProps>
   const { data: stations = [] } = useQuery<ChargingStationResponse[]>({
     queryKey: ['chargingStations'],
     queryFn: fetchChargingStations,
-    staleTime: 6000,
+    staleTime: 60000,
   });
 
   // Query vehicles to resolve active vehicle
@@ -70,12 +70,17 @@ export const ChargingControlHologram3D: React.FC<ChargingControlHologram3DProps>
 
   const vehicleCode = resolveVehicleCode(activeVehicle);
 
-  // Query active charging session
+  // Query active charging session (polls every 3s only when actively charging)
   const { data: activeSession = null } = useQuery<ChargingSessionResponse | null>({
     queryKey: ['activeChargingSession', activeVehicle?.id],
     queryFn: () => (activeVehicle?.id ? fetchActiveChargingSession(activeVehicle.id) : Promise.resolve(null)),
     enabled: Boolean(activeVehicle?.id),
-    refetchInterval: 3000,
+    staleTime: 3000,
+    refetchInterval: (query) => {
+      const session = query.state.data;
+      const isChargingNow = session?.status === 'ACTIVE' || activeVehicle?.status === 'CHARGING' || vehicleChargingMode;
+      return isChargingNow ? 3000 : false;
+    },
   });
 
   const isCharging = activeVehicle?.status === 'CHARGING' || activeSession?.status === 'ACTIVE' || vehicleChargingMode;

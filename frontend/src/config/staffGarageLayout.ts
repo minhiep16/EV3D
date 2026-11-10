@@ -38,7 +38,7 @@ export const STAFF_GARAGE_LAYOUT: StaffGarageLayoutConfig = {
   previewRowZ: -3.5,
   previewSpacingX: 2.85,
   previewScale: 0.54,
-  maxPreviewVehicles: 6,
+  maxPreviewVehicles: 4,
   camera: {
     // Optical center of usable 3D area between 240px left sidebar and 360px right panel
     target: [0.2, 0.92, 0.5],

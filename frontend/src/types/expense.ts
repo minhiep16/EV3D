@@ -103,6 +103,9 @@ export interface ExpenseResponse {
   energyConsumedKwh?: number | null;
   isEstimatedEnergy?: boolean | null;
   verifiedByStaffName?: string | null;
+  isFullySettled?: boolean | null;
+  settlementStatus?: string | null;
+  settlementStatusLabel?: string | null;
 }
 
 export interface ExpenseSummaryResponse {

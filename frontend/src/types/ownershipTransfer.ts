@@ -145,6 +145,12 @@ export interface OwnershipTransferResponse {
   responsibleUserId?: string | null;
   responsibleUserName?: string | null;
   financialMode?: string | null;
+  financialObligationPaymentStatus?: string | null;
+  financialObligationPaymentId?: string | null;
+  financialObligationPaymentReference?: string | null;
+  financialObligationPaymentSubmittedAt?: string | null;
+  financialObligationPaymentAmount?: number | null;
+  financialObligationRejectionReason?: string | null;
 }
 
 export interface OwnershipHistoryResponse {

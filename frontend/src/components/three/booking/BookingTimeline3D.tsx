@@ -4,6 +4,7 @@ import { useThree } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import { Booking } from '../../../types/booking';
 import { INTERACTION_CONFIG } from '../../../config/interactionConfig';
+import { useWorldStore } from '../../../store/worldStore';
 
 export type SlotState = 'AVAILABLE' | 'SELECTED' | 'BOOKED' | 'PAST';
 
@@ -15,6 +16,7 @@ export interface BookingTimelineSlot {
   endTimeIso: string;
   state: SlotState;
   bookedBy?: string;
+  booking?: Booking;
   rowIndex: number;         // 0 for Row 1, 1 for Row 2
   colIndex: number;
   xOffset: number;
@@ -131,6 +133,8 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
   rightSafeX: propRightSafeX,
 }) => {
   const { size, camera } = useThree();
+  const inspectedBooking = useWorldStore((s) => s.bookingInspectedBooking);
+  const setBookingInspectedBooking = useWorldStore((s) => s.setBookingInspectedBooking);
 
   // Stable slot ID tracked on hover (matches exact clicked slot ID)
   const [hoveredSlotId, setHoveredSlotId] = useState<string | null>(null);
@@ -258,6 +262,7 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
 
       let state: SlotState = 'AVAILABLE';
       let bookedBy: string | undefined = undefined;
+      let matchedBooking: Booking | undefined = undefined;
 
       if (isToday && hour <= now.getHours()) {
         state = 'PAST';
@@ -271,6 +276,7 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
 
         if (conflicting) {
           state = 'BOOKED';
+          matchedBooking = conflicting;
           bookedBy = conflicting.userName || 'Đồng sở hữu';
         } else if (startHour !== null && endHour !== null) {
           if (hour >= startHour && hour < endHour) {
@@ -289,6 +295,7 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
         endTimeIso: slotEnd.toISOString(),
         state,
         bookedBy,
+        booking: matchedBooking,
         rowIndex,
         colIndex,
         xOffset,
@@ -312,17 +319,35 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
   }, [dateKey, selectedDate, bookings, startHour, endHour, row1Hours, row2Hours, row1StartX, row2StartX, slotWidth, gapX]);
 
   const handleSlotClick = (slot: BookingTimelineSlot) => {
-    if (slot.state === 'PAST' || slot.state === 'BOOKED') {
+    if (slot.state === 'PAST') {
+      return;
+    }
+    if (slot.state === 'BOOKED') {
+      console.log(`[3D TIMELINE] CLICK BOOKED slot=${slot.timeLabel} id=${slot.id}`);
+      if (inspectedBooking && slot.booking && inspectedBooking.id === slot.booking.id) {
+        setBookingInspectedBooking(null);
+      } else {
+        setBookingInspectedBooking(
+          slot.booking || {
+            id: slot.id,
+            startTime: slot.startTimeIso,
+            endTime: slot.endTimeIso,
+            userName: slot.bookedBy,
+            status: 'CONFIRMED',
+          }
+        );
+      }
       return;
     }
     console.log(`[3D TIMELINE] CLICK slot=${slot.timeLabel} id=${slot.id}`);
+    setBookingInspectedBooking(null);
     onSelectSlot(slot.hour);
   };
 
   const handleSlotPointerOver = (slot: BookingTimelineSlot) => {
     console.log(`[3D TIMELINE] HOVER slot=${slot.timeLabel} id=${slot.id}`);
     setHoveredSlotId(slot.id);
-    if (slot.state === 'AVAILABLE' || slot.state === 'SELECTED') {
+    if (slot.state === 'AVAILABLE' || slot.state === 'SELECTED' || slot.state === 'BOOKED') {
       document.body.style.cursor = 'pointer';
     }
   };
@@ -342,6 +367,12 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
     <group position={timelineGroupPosition}>
       {slots.map((slot) => {
         const isHovered = hoveredSlotId === slot.id;
+        const isInspected = Boolean(
+          slot.state === 'BOOKED' &&
+          inspectedBooking &&
+          slot.booking &&
+          inspectedBooking.id === slot.booking.id
+        );
 
         // Visual styles based on state
         let baseColor = '#064e3b';
@@ -349,7 +380,7 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
         let emissiveIntensity = 0.35;
         let badgeText = 'Có thể đặt';
         let badgeColor = '#34d399';
-        let badgeBg = 'rgba(16, 185, 129, 0.2)';
+        let badgeBg = 'rgba(168, 85, 247, 0.2)';
         let zOffset = 0;
 
         if (slot.state === 'SELECTED') {
@@ -361,12 +392,22 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
           badgeBg = 'rgba(168, 85, 247, 0.4)';
           zOffset = 0.06;
         } else if (slot.state === 'BOOKED') {
-          baseColor = '#7f1d1d';
-          emissiveColor = '#ef4444';
-          emissiveIntensity = 0.45;
-          badgeText = 'Đã có lịch';
-          badgeColor = '#fca5a5';
-          badgeBg = 'rgba(239, 68, 68, 0.25)';
+          if (isInspected) {
+            baseColor = '#991b1b';
+            emissiveColor = '#f87171';
+            emissiveIntensity = 1.0;
+            badgeText = 'Đang xem';
+            badgeColor = '#fecaca';
+            badgeBg = 'rgba(239, 68, 68, 0.5)';
+            zOffset = 0.08;
+          } else {
+            baseColor = '#7f1d1d';
+            emissiveColor = '#ef4444';
+            emissiveIntensity = 0.45;
+            badgeText = 'Đã có lịch';
+            badgeColor = '#fca5a5';
+            badgeBg = 'rgba(239, 68, 68, 0.25)';
+          }
         } else if (slot.state === 'PAST') {
           baseColor = '#0f172a';
           emissiveColor = '#334155';

@@ -20,8 +20,8 @@ export const GarageFloor: React.FC = () => {
       >
         <planeGeometry args={[120, 120]} />
         <MeshReflectorMaterial
-          blur={[200, 50]}
-          resolution={1024}
+          blur={[100, 30]}
+          resolution={512}
           mirror={0.55}
           mixBlur={0.65}
           mixStrength={1.6}
@@ -37,38 +37,38 @@ export const GarageFloor: React.FC = () => {
       {/* 2. Hero Turntable Floor Expansion Rings & Concentric Floor Reflection Accents */}
       <group position={[0, 0.001, 1.8]}>
         {/* Inner perimeter reveal joint around podium */}
-        <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
           <ringGeometry args={[3.08, 3.10, 96]} />
           <meshBasicMaterial color="#94a3b8" transparent opacity={0.30} />
         </mesh>
 
         {/* First architectural floor expansion joint */}
-        <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
           <ringGeometry args={[3.85, 3.868, 96]} />
           <meshBasicMaterial color="#cbd5e1" transparent opacity={0.26} />
         </mesh>
 
         {/* Second broad floor expansion ring */}
-        <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
           <ringGeometry args={[4.95, 4.968, 96]} />
           <meshBasicMaterial color="#cbd5e1" transparent opacity={0.20} />
         </mesh>
 
         {/* Crisp Cyan Concentric Accent Ring embedded in showroom floor */}
-        <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
           <ringGeometry args={[3.48, 3.52, 96]} />
           <meshBasicMaterial color="#00f2fe" transparent opacity={0.24} />
         </mesh>
 
         {/* Soft, subtle cyan floor bounce under hero podium bezel */}
-        <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
           <ringGeometry args={[2.98, 3.45, 96]} />
           <meshBasicMaterial color="#00f2fe" transparent opacity={0.06} />
         </mesh>
       </group>
 
       {/* 3. Perimeter Architecture Guide Ring */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.001, 0]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.001, 0]} raycast={() => null}>
         <ringGeometry args={[16.5, 16.53, 96]} />
         <meshBasicMaterial color="#cbd5e1" transparent opacity={0.18} />
       </mesh>

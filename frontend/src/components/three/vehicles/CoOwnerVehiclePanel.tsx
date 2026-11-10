@@ -18,7 +18,7 @@ import {
 } from './vehicleModelConfig';
 import { fetchActiveVehicleHandovers, fetchHandoverHistory } from '../../../services/handoverApi';
 import { fetchVehicleBookings } from '../../../services/bookingApi';
-import { fetchActiveTripForVehicle, requestTripReturnApi } from '../../../services/tripApi';
+import { fetchActiveTripForVehicle, requestTripReturnApi, fetchVehicleTrips } from '../../../services/tripApi';
 import { fetchVehicleMaintenance, fetchMaintenanceApproval } from '../../../services/maintenanceApi';
 import { fetchVehicleDamages } from '../../../services/damageApi';
 import { useAuthStore } from '../../../store/authStore';
@@ -258,6 +258,7 @@ interface CoOwnerHandoverHistoryViewProps {
   vehicle: VehicleResponse;
   displayCode: string;
   handoverHistory: VehicleHandoverData[];
+  vehicleTrips?: TripData[];
   isLoading: boolean;
   selectedHandover: VehicleHandoverData | null;
   onSelectHandover: (h: VehicleHandoverData | null) => void;
@@ -268,11 +269,17 @@ const CoOwnerHandoverHistoryView: React.FC<CoOwnerHandoverHistoryViewProps> = ({
   vehicle,
   displayCode,
   handoverHistory,
+  vehicleTrips = [],
   isLoading,
   selectedHandover,
   onSelectHandover,
   onBack,
 }) => {
+  const selectedMatchedTrip = selectedHandover
+    ? vehicleTrips.find(
+        (t) => t.id === selectedHandover.tripId || (t.bookingId && t.bookingId === selectedHandover.bookingId)
+      )
+    : null;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
       {/* Navigation Header */}
@@ -441,6 +448,36 @@ const CoOwnerHandoverHistoryView: React.FC<CoOwnerHandoverHistoryViewProps> = ({
                 </span>
               </div>
             )}
+            {selectedMatchedTrip && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Odometer bắt đầu:</span>
+                  <span style={{ color: '#f8fafc', fontWeight: 600 }}>
+                    {selectedMatchedTrip.startOdometer != null ? `${Number(selectedMatchedTrip.startOdometer).toLocaleString('vi-VN')} km` : '—'}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Odometer kết thúc:</span>
+                  <span style={{ color: '#f8fafc', fontWeight: 600 }}>
+                    {selectedMatchedTrip.endOdometer != null ? `${Number(selectedMatchedTrip.endOdometer).toLocaleString('vi-VN')} km` : '—'}
+                  </span>
+                </div>
+                {selectedMatchedTrip.startOdometer != null && selectedMatchedTrip.endOdometer != null && Number(selectedMatchedTrip.endOdometer) >= Number(selectedMatchedTrip.startOdometer) && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#94a3b8' }}>Quãng đường di chuyển:</span>
+                    <strong style={{ color: '#00f2fe' }}>
+                      {(Number(selectedMatchedTrip.endOdometer) - Number(selectedMatchedTrip.startOdometer)).toLocaleString('vi-VN')} km
+                    </strong>
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Mức pin (SOC):</span>
+                  <strong style={{ color: '#34d399' }}>
+                    {selectedMatchedTrip.startBatteryLevel != null ? `${selectedMatchedTrip.startBatteryLevel}%` : '—'} ➔ {selectedMatchedTrip.endBatteryLevel != null ? `${selectedMatchedTrip.endBatteryLevel}%` : '—'}
+                  </strong>
+                </div>
+              </>
+            )}
             {(selectedHandover.returnVerifiedAt || selectedHandover.tripEndedAt) && (
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: '#94a3b8' }}>Thời gian trả xe:</span>
@@ -594,6 +631,42 @@ const CoOwnerHandoverHistoryView: React.FC<CoOwnerHandoverHistoryViewProps> = ({
                           {h.tripStatus === 'COMPLETED' ? 'Đã hoàn tất' : (h.tripStatus || 'Chưa bắt đầu')}
                         </span>
                       </div>
+                      {(() => {
+                        const trip = vehicleTrips.find(
+                          (t) => t.id === h.tripId || (t.bookingId && t.bookingId === h.bookingId)
+                        );
+                        if (!trip) return null;
+                        const dist =
+                          trip.startOdometer != null && trip.endOdometer != null && Number(trip.endOdometer) >= Number(trip.startOdometer)
+                            ? Number(trip.endOdometer) - Number(trip.startOdometer)
+                            : null;
+                        return (
+                          <>
+                            {dist != null && (
+                              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <span style={{ color: '#94a3b8' }}>Quãng đường đã đi:</span>
+                                <strong style={{ color: '#00f2fe' }}>{dist.toLocaleString('vi-VN')} km</strong>
+                              </div>
+                            )}
+                            {trip.startOdometer != null && trip.endOdometer != null && (
+                              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <span style={{ color: '#94a3b8' }}>Số km (ODO):</span>
+                                <span style={{ color: '#cbd5e1' }}>
+                                  {Number(trip.startOdometer).toLocaleString('vi-VN')} ➔ {Number(trip.endOdometer).toLocaleString('vi-VN')} km
+                                </span>
+                              </div>
+                            )}
+                            {trip.startBatteryLevel != null && trip.endBatteryLevel != null && (
+                              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <span style={{ color: '#94a3b8' }}>Pin (SOC):</span>
+                                <span style={{ color: '#34d399', fontWeight: 600 }}>
+                                  {trip.startBatteryLevel}% ➔ {trip.endBatteryLevel}%
+                                </span>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                       {(h.returnVerifiedAt || h.tripEndedAt) && (
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                           <span style={{ color: '#94a3b8' }}>Thời gian trả xe:</span>
@@ -681,6 +754,13 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
   } = useQuery<VehicleHandoverData[]>({
     queryKey: ['vehicle-handover-history', vehicle.id],
     queryFn: () => fetchHandoverHistory(vehicle.id),
+    enabled: authReady && !!vehicle.id,
+    staleTime: 5000,
+  });
+
+  const { data: vehicleTrips = [] } = useQuery<TripData[]>({
+    queryKey: ['vehicleTrips', vehicle.id],
+    queryFn: () => fetchVehicleTrips(vehicle.id),
     enabled: authReady && !!vehicle.id,
     staleTime: 5000,
   });
@@ -827,7 +907,8 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
         label: 'Sẵn sàng',
         color: '#10b981',
       };
-  const estimatedRangeKm = Math.round(((vehicle.currentBatteryLevel || 82) / 100) * 450);
+  const hasBattery = vehicle.currentBatteryLevel != null;
+  const estimatedRangeKm = hasBattery ? Math.round((vehicle.currentBatteryLevel! / 100) * 450) : null;
 
   return (
     <div
@@ -835,6 +916,7 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
+      onWheel={(e) => e.stopPropagation()}
       style={{
         position: 'fixed',
         top: '76px',
@@ -898,6 +980,7 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
           vehicle={vehicle}
           displayCode={displayCode}
           handoverHistory={handoverHistory}
+          vehicleTrips={vehicleTrips}
           isLoading={isHistoryLoading}
           selectedHandover={selectedHistoryHandover}
           onSelectHandover={setSelectedHistoryHandover}
@@ -1007,12 +1090,12 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
                 <span style={{ fontSize: '24px', fontWeight: 900, color: '#ffffff', letterSpacing: '-0.02em' }}>
-                  {vehicle.currentBatteryLevel ?? 82}%
+                  {hasBattery ? `${vehicle.currentBatteryLevel}%` : 'Chưa ghi nhận'}
                 </span>
                 <span style={{ fontSize: '10.5px', color: '#94a3b8' }}>Dung lượng</span>
               </div>
               <div style={{ fontSize: '12px', fontWeight: 800, color: '#00f2fe' }}>
-                ~{estimatedRangeKm} km
+                {estimatedRangeKm != null ? `~${estimatedRangeKm} km` : '—'}
               </div>
             </div>
 
@@ -1028,7 +1111,7 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
             >
               <div
                 style={{
-                  width: `${vehicle.currentBatteryLevel ?? 82}%`,
+                  width: `${hasBattery ? Math.min(100, Math.max(0, vehicle.currentBatteryLevel!)) : 0}%`,
                   height: '100%',
                   background: 'linear-gradient(90deg, #06b6d4 0%, #00f2fe 100%)',
                   borderRadius: '9999px',
@@ -1553,7 +1636,7 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#34d399', letterSpacing: '0.03em' }}>
-                XE ĐÃ BÀN GIAO THÀNH CÔNG
+                XE ĐÃ ĐƯỢC BÀN GIAO
               </span>
             </div>
             <span

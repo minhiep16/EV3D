@@ -33,8 +33,14 @@ export const CoOwnerVehicleInfoPanel: React.FC<CoOwnerVehicleInfoPanelProps> = (
   const displayCode = resolveVehicleCode(vehicle);
   const displayName = resolveVehicleDisplayName(vehicle, displayCode);
   const modelSubtitle = resolveVehicleSubtitle(vehicle, displayName);
-  const formattedOdometer = Number(vehicle.odometer ?? 12450).toLocaleString('vi-VN');
-  const estimatedRangeKm = Math.round(((vehicle.currentBatteryLevel || 82) / 100) * 450);
+  const hasOdometer = vehicle.odometer != null;
+  const formattedOdometer = hasOdometer
+    ? `${Number(vehicle.odometer).toLocaleString('vi-VN')} km`
+    : 'Chưa ghi nhận ODO';
+  const hasBattery = vehicle.currentBatteryLevel != null;
+  const estimatedRangeKm = hasBattery
+    ? Math.round((vehicle.currentBatteryLevel! / 100) * 450)
+    : null;
 
   return (
     <div
@@ -144,7 +150,7 @@ export const CoOwnerVehicleInfoPanel: React.FC<CoOwnerVehicleInfoPanelProps> = (
           <span style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase' }}>Dung lượng khả dụng</span>
           <div style={{ fontSize: '16px', fontWeight: 800, color: '#34d399', display: 'flex', alignItems: 'center', gap: '4px' }}>
             <Zap size={16} />
-            {vehicle.currentBatteryLevel}% (~{estimatedRangeKm} km)
+            {hasBattery ? `${vehicle.currentBatteryLevel}%${estimatedRangeKm != null ? ` (~${estimatedRangeKm} km)` : ''}` : 'Chưa ghi nhận'}
           </div>
         </div>
         <div style={{ textAlign: 'right' }}>
@@ -182,7 +188,9 @@ export const CoOwnerVehicleInfoPanel: React.FC<CoOwnerVehicleInfoPanelProps> = (
         </div>
         <div>
           <div style={{ fontSize: '9.5px', color: '#94a3b8', textTransform: 'uppercase' }}>Quãng đường đã chạy</div>
-          <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#f8fafc' }}>{formattedOdometer} km</div>
+          <div style={{ fontSize: '12.5px', fontWeight: 700, color: hasOdometer ? '#f8fafc' : '#94a3b8', fontStyle: hasOdometer ? 'normal' : 'italic' }}>
+            {formattedOdometer}
+          </div>
         </div>
         <div>
           <div style={{ fontSize: '9.5px', color: '#94a3b8', textTransform: 'uppercase' }}>Dung lượng pin danh định</div>

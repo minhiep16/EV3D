@@ -303,7 +303,7 @@ export const VehicleInteractionHitboxes: React.FC<VehicleInteractionHitboxesProp
                 onPointerOut={(e) => handlePointerOut(e, hitbox)}
               >
                 {renderGeometry(hitbox)}
-                <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+                <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
               </mesh>
             )}
 

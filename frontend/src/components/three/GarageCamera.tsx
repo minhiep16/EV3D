@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useLayoutEffect, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls as DreiOrbitControls } from '@react-three/drei';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
@@ -59,7 +59,13 @@ export const GarageCamera: React.FC = () => {
   const draftDamage = useWorldStore((state) => state.draftDamage);
   const selectedDamageId = useWorldStore((state) => state.selectedDamageId);
   const isDamageDetailModalOpen = useWorldStore((state) => state.isDamageDetailModalOpen);
-  const vehicleYaw = useWorldStore((state) => state.vehicleYaw);
+  const isVehicleDetailOpen = useWorldStore((state) => state.isVehicleDetailOpen);
+  // Only subscribe to dynamic turntable yaw updates when inspecting a specific vehicle part or checkpoint
+  const vehicleYaw = useWorldStore((state) =>
+    state.selectedVehiclePartCode || state.selectedVehiclePartId || state.selectedHandoverCheckpoint
+      ? state.vehicleYaw
+      : 0
+  );
 
   // TanStack Query: Read cached vehicles and damages to resolve vehicle code and damage coordinates
   const { data: vehicles = [] } = useQuery<VehicleResponse[]>({
@@ -69,10 +75,18 @@ export const GarageCamera: React.FC = () => {
   const currentVehicle = vehicles.find((v) => v.id === selectedVehicleId);
   const resolvedVehicleCode = resolveVehicleCode(currentVehicle || selectedVehicleId);
 
+  const isDamageRelatedMode =
+    vehicleDamageMappingMode ||
+    vehicleDamageHistoryMode ||
+    vehicleMaintenanceMode ||
+    vehicleInspectionMode ||
+    isDamageDetailModalOpen ||
+    selectedDamageId != null;
+
   const { data: damages = [] } = useQuery<DamageRecordResponse[]>({
     queryKey: ['vehicleDamages', selectedVehicleId],
     queryFn: () => (selectedVehicleId ? fetchVehicleDamages(selectedVehicleId) : Promise.resolve([])),
-    enabled: !!selectedVehicleId,
+    enabled: !!selectedVehicleId && isDamageRelatedMode,
   });
 
   const selectedDamageRecord = React.useMemo(() => {
@@ -120,6 +134,8 @@ export const GarageCamera: React.FC = () => {
   const targetCamPos = useRef<THREE.Vector3 | null>(null);
   const isTransitioning = useRef(false);
   const lastPresetSignatureRef = useRef<string>('');
+  const activeModeKeyRef = useRef<string>('');
+  const isInitializedRef = useRef(false);
 
   // Dynamic OrbitControls constraints resolved from active camera preset
   const [controlsLimits, setControlsLimits] = useState<{
@@ -139,6 +155,29 @@ export const GarageCamera: React.FC = () => {
     enableZoom: initialPreset.enableZoom,
     enablePan: initialPreset.enablePan,
   });
+
+  // Synchronous mount-time camera initialization to guarantee canonical overview before first render
+  useLayoutEffect(() => {
+    camera.position.set(...initialPreset.position);
+    camera.lookAt(...initialPreset.target);
+    if ((camera as THREE.PerspectiveCamera).isPerspectiveCamera) {
+      const pCam = camera as THREE.PerspectiveCamera;
+      pCam.fov = initialPreset.fov ?? 40;
+      pCam.updateProjectionMatrix();
+    }
+
+    if (controlsRef.current) {
+      controlsRef.current.target.set(...initialPreset.target);
+      controlsRef.current.update();
+    }
+
+    targetLookAt.current.set(...initialPreset.target);
+    targetCamPos.current = null;
+    isTransitioning.current = false;
+    lastPresetSignatureRef.current = `${initialPreset.target.join(',')}|${initialPreset.position.join(',')}|${initialPreset.fov ?? 40}`;
+    activeModeKeyRef.current = `${role || 'CO_OWNER'}_OVERVIEW`;
+    isInitializedRef.current = true;
+  }, []);
 
   useEffect(() => {
     const isVehicleMode =
@@ -165,8 +204,11 @@ export const GarageCamera: React.FC = () => {
     let preset: VehicleCameraPreset;
     const isOperations = role === 'STAFF' || role === 'ADMIN';
 
+    let activePresetKey = 'OVERVIEW';
+
     if (!isOperations && selectedZone && selectedZone !== 'VEHICLE' && !isVehicleMode) {
       // Non-vehicle showroom zone (e.g. Charging, Finance, Maintenance, AI) for CO_OWNER only
+      activePresetKey = `ZONE_${selectedZone}`;
       const zoneConfig = getGarageZoneCameraPreset(selectedZone, role, size.width);
       preset = {
         target: zoneConfig.target,
@@ -204,7 +246,9 @@ export const GarageCamera: React.FC = () => {
         vehicleChargingMode,
         vehicleInspectionMode,
         isExplorationMode,
+        isVehicleDetailOpen,
       });
+      activePresetKey = presetKey;
 
       if (
         (presetKey === 'VEHICLE_PART_INSPECTION' ||
@@ -249,8 +293,13 @@ export const GarageCamera: React.FC = () => {
       preset = getVehicleCameraPreset('OVERVIEW', role, size.width);
     }
 
+    const currentModeKey = `${role || 'CO_OWNER'}_${activePresetKey}_${selectedVehicleId || ''}_${activePartCode || ''}_${selectedHandoverCheckpoint || ''}_${isVehicleDetailOpen}`;
+    const modeChanged = activeModeKeyRef.current !== currentModeKey;
     const nextSignature = `${preset.target.join(',')}|${preset.position.join(',')}|${preset.fov ?? 40}`;
-    if (lastPresetSignatureRef.current !== nextSignature) {
+
+    // Only initiate animated camera transition when the logical mode or target changes
+    if (modeChanged && lastPresetSignatureRef.current !== nextSignature) {
+      activeModeKeyRef.current = currentModeKey;
       lastPresetSignatureRef.current = nextSignature;
       targetLookAt.current.set(...preset.target);
       targetCamPos.current = new THREE.Vector3(...preset.position);
@@ -264,24 +313,46 @@ export const GarageCamera: React.FC = () => {
           pCam.updateProjectionMatrix();
         }
       }
+    } else if (!modeChanged) {
+      // Viewport resize or DevTools dock: update FOV and projection without triggering camera glide
+      if (preset.fov && (camera as THREE.PerspectiveCamera).isPerspectiveCamera) {
+        const pCam = camera as THREE.PerspectiveCamera;
+        if (pCam.fov !== preset.fov) {
+          pCam.fov = preset.fov;
+          pCam.updateProjectionMatrix();
+        }
+      }
     }
 
-    // Synchronize control constraints
-    setControlsLimits({
-      minDistance: preset.minDistance,
-      maxDistance: preset.maxDistance,
-      minPolarAngle: preset.minPolarAngle,
-      maxPolarAngle: preset.maxPolarAngle,
-      enableRotate: preset.enableRotate,
-      enableZoom: preset.enableZoom,
-      enablePan: preset.enablePan,
+    // Synchronize control constraints (guarded to avoid re-rendering OrbitControls when limits are unchanged)
+    setControlsLimits((prev) => {
+      if (
+        prev.minDistance === preset.minDistance &&
+        prev.maxDistance === preset.maxDistance &&
+        prev.minPolarAngle === preset.minPolarAngle &&
+        prev.maxPolarAngle === preset.maxPolarAngle &&
+        prev.enableRotate === preset.enableRotate &&
+        prev.enableZoom === preset.enableZoom &&
+        prev.enablePan === preset.enablePan
+      ) {
+        return prev;
+      }
+      return {
+        minDistance: preset.minDistance,
+        maxDistance: preset.maxDistance,
+        minPolarAngle: preset.minPolarAngle,
+        maxPolarAngle: preset.maxPolarAngle,
+        enableRotate: preset.enableRotate,
+        enableZoom: preset.enableZoom,
+        enablePan: preset.enablePan,
+      };
     });
 
     if (controlsRef.current) {
       controlsRef.current.minDistance = preset.minDistance;
       controlsRef.current.maxDistance = preset.maxDistance;
-      controlsRef.current.minPolarAngle = preset.minPolarAngle;
-      controlsRef.current.maxPolarAngle = preset.maxPolarAngle;
+      controlsRef.current.minPolarAngle = Math.max(0.35, preset.minPolarAngle);
+      controlsRef.current.maxPolarAngle = Math.min(1.42, preset.maxPolarAngle);
       controlsRef.current.enableRotate = preset.enableRotate;
       controlsRef.current.enableZoom = preset.enableZoom;
       controlsRef.current.enablePan = preset.enablePan;
@@ -294,6 +365,7 @@ export const GarageCamera: React.FC = () => {
     activeDamagePoint,
     selectedDamageId,
     isDamageDetailModalOpen,
+    isVehicleDetailOpen,
     selectedHandoverCheckpoint,
     vehicleCoOwnershipMode,
     vehicleBookingMode,
@@ -306,6 +378,7 @@ export const GarageCamera: React.FC = () => {
     vehicleMaintenanceMode,
     vehicleBatteryXrayMode,
     vehicleChargingMode,
+    vehicleInspectionMode,
     isExplorationMode,
     vehicleYaw,
     role,
@@ -323,6 +396,24 @@ export const GarageCamera: React.FC = () => {
   useFrame((_, delta) => {
     if (!controlsRef.current) return;
 
+    // Guard against NaN/Infinity in camera position or controls target
+    if (
+      isNaN(camera.position.x) ||
+      isNaN(camera.position.y) ||
+      isNaN(camera.position.z) ||
+      isNaN(controlsRef.current.target.x) ||
+      isNaN(controlsRef.current.target.y) ||
+      isNaN(controlsRef.current.target.z)
+    ) {
+      const fallbackPreset = getVehicleCameraPreset('OVERVIEW', role, size.width);
+      camera.position.set(...fallbackPreset.position);
+      controlsRef.current.target.set(...fallbackPreset.target);
+      controlsRef.current.update();
+      isTransitioning.current = false;
+      targetCamPos.current = null;
+      return;
+    }
+
     // Dynamically pause OrbitControls when pointer is interacting or dragging on EV01
     const shouldControlsBeEnabled =
       !globalInteractionState.isVehicleDragging &&
@@ -338,6 +429,10 @@ export const GarageCamera: React.FC = () => {
       // Smoothly glide camera position towards vehicle preset position
       camera.position.lerp(targetCamPos.current, delta * 3.4);
 
+      // Floor clearance clamp during transition: never allow camera to dip below floor level
+      camera.position.y = Math.max(0.45, camera.position.y);
+      controlsRef.current.target.y = Math.max(0.15, controlsRef.current.target.y);
+
       // When close enough, end transition to yield full orbit control to user
       if (
         camera.position.distanceTo(targetCamPos.current) < 0.15 &&
@@ -351,18 +446,27 @@ export const GarageCamera: React.FC = () => {
     }
 
     controlsRef.current.update();
+
+    // Enforce floor clearance after OrbitControls update as well
+    if (camera.position.y < 0.45) {
+      camera.position.y = 0.45;
+    }
+    if (controlsRef.current.target.y < 0.15) {
+      controlsRef.current.target.y = 0.15;
+    }
   });
 
   return (
     <DreiOrbitControls
       ref={controlsRef}
+      target={initialPreset.target}
       makeDefault
       enableDamping
       dampingFactor={0.06}
       minDistance={controlsLimits.minDistance}
       maxDistance={controlsLimits.maxDistance}
-      minPolarAngle={controlsLimits.minPolarAngle}
-      maxPolarAngle={controlsLimits.maxPolarAngle}
+      minPolarAngle={Math.max(0.35, controlsLimits.minPolarAngle)}
+      maxPolarAngle={Math.min(1.42, controlsLimits.maxPolarAngle)}
       enableRotate={controlsLimits.enableRotate}
       enableZoom={controlsLimits.enableZoom}
       enablePan={controlsLimits.enablePan}

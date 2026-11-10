@@ -226,4 +226,26 @@ export async function requestTripReturnApi(tripId: string): Promise<TripData> {
   }
 }
 
+/**
+ * Retrieve chronological trip history for a vehicle.
+ */
+export async function fetchVehicleTrips(vehicleId: string): Promise<TripData[]> {
+  try {
+    const res = await authenticatedFetch(`/api/vehicles/${vehicleId}/trips`);
+    if (res.status === 204 || res.status === 404) {
+      return [];
+    }
+    const data = await safeParseResponse<TripData[]>(res);
+    return Array.isArray(data) ? data : [];
+  } catch (err: any) {
+    if (err.message && (err.message.includes('404') || err.message.includes('204'))) {
+      return [];
+    }
+    if (err instanceof TypeError || (err instanceof Error && err.message.includes('fetch'))) {
+      throw new Error('Không thể kết nối đến máy chủ lấy lịch sử chuyến đi.');
+    }
+    throw err;
+  }
+}
+
 

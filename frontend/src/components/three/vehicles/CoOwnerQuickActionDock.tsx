@@ -5,7 +5,6 @@ import {
   Calendar,
   Search,
   Wrench,
-  AlertTriangle,
   Zap,
   Vote,
 } from 'lucide-react';
@@ -16,8 +15,8 @@ interface CoOwnerQuickActionDockProps {
 
 export const CoOwnerQuickActionDock: React.FC<CoOwnerQuickActionDockProps> = ({ vehicle }) => {
   const enterVehicleBookingMode = useWorldStore((state) => state.enterVehicleBookingMode);
+  const vehicleBookingMode = useWorldStore((state) => state.vehicleBookingMode);
   const enterVehicleMaintenanceMode = useWorldStore((state) => state.enterVehicleMaintenanceMode);
-  const enterVehicleDamageHistoryMode = useWorldStore((state) => state.enterVehicleDamageHistoryMode);
   const enterBatteryXrayMode = useWorldStore((state) => state.enterBatteryXrayMode);
   const enterVehicleVotingMode = useWorldStore((state) => state.enterVehicleVotingMode);
   const openGaragePanel = useWorldStore((state) => state.openGaragePanel);
@@ -40,13 +39,13 @@ export const CoOwnerQuickActionDock: React.FC<CoOwnerQuickActionDockProps> = ({ 
         zIndex: 25,
         display: 'flex',
         alignItems: 'center',
-        gap: '22px',
+        gap: '24px',
         background: 'rgba(7, 20, 38, 0.90)',
         backdropFilter: 'blur(24px)',
         WebkitBackdropFilter: 'blur(24px)',
         border: '1.5px solid rgba(34, 230, 255, 0.32)',
         borderRadius: '26px',
-        padding: '10px 24px',
+        padding: '10px 26px',
         boxShadow: '0 16px 40px rgba(0, 0, 0, 0.6), 0 0 24px rgba(34, 230, 255, 0.18)',
         pointerEvents: 'auto',
       }}
@@ -56,12 +55,15 @@ export const CoOwnerQuickActionDock: React.FC<CoOwnerQuickActionDockProps> = ({ 
         type="button"
         disabled={isMaintenance}
         onClick={() => {
-          if (!isMaintenance) enterVehicleBookingMode(vehicle.id);
+          if (!isMaintenance) {
+            openGaragePanel('BOOKING', { vehicleId: vehicle.id });
+            enterVehicleBookingMode(vehicle.id);
+          }
         }}
         title={isMaintenance ? 'Xe đang bảo dưỡng kỹ thuật' : 'Đặt lịch sử dụng xe'}
         style={dockItemButtonStyle(isMaintenance)}
       >
-        <div style={dockIconCircleStyle(false, isMaintenance)}>
+        <div style={dockIconCircleStyle(vehicleBookingMode, isMaintenance)}>
           <Calendar size={18} color={isMaintenance ? '#64748b' : '#22e6ff'} />
         </div>
         <span style={dockLabelStyle(isMaintenance)}>ĐẶT LỊCH</span>
@@ -85,7 +87,10 @@ export const CoOwnerQuickActionDock: React.FC<CoOwnerQuickActionDockProps> = ({ 
       {/* 3. BẢO DƯỠNG */}
       <button
         type="button"
-        onClick={() => enterVehicleMaintenanceMode({ vehicleId: vehicle.id })}
+        onClick={() => {
+          openGaragePanel('MAINTENANCE', { vehicleId: vehicle.id });
+          enterVehicleMaintenanceMode({ vehicleId: vehicle.id });
+        }}
         title="Lịch sử bảo dưỡng và phê duyệt đề xuất"
         style={dockItemButtonStyle(false)}
       >
@@ -95,23 +100,7 @@ export const CoOwnerQuickActionDock: React.FC<CoOwnerQuickActionDockProps> = ({ 
         <span style={dockLabelStyle(false)}>BẢO DƯỠNG</span>
       </button>
 
-      {/* 4. HƯ HỎNG */}
-      <button
-        type="button"
-        onClick={() => {
-          enterVehicleDamageHistoryMode(vehicle.id);
-          openGaragePanel('DAMAGE', { vehicleId: vehicle.id });
-        }}
-        title="Quản lý và lịch sử hư hỏng xe"
-        style={dockItemButtonStyle(false)}
-      >
-        <div style={dockIconCircleStyle(false, false, '#ffb84d')}>
-          <AlertTriangle size={18} color="#ffb84d" />
-        </div>
-        <span style={dockLabelStyle(false)}>HƯ HỎNG</span>
-      </button>
-
-      {/* 5. X-RAY PIN */}
+      {/* 4. X-RAY PIN */}
       <button
         type="button"
         onClick={() => enterBatteryXrayMode(vehicle.id)}
@@ -124,7 +113,7 @@ export const CoOwnerQuickActionDock: React.FC<CoOwnerQuickActionDockProps> = ({ 
         <span style={dockLabelStyle(false)}>X-RAY PIN</span>
       </button>
 
-      {/* 6. BIỂU QUYẾT */}
+      {/* 5. BIỂU QUYẾT */}
       <button
         type="button"
         onClick={() => enterVehicleVotingMode({ vehicleId: vehicle.id })}

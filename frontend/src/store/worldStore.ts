@@ -58,7 +58,8 @@ export type PrimaryGaragePanel =
   | 'CO_OWNERSHIP'
   | 'VEHICLE_INFO'
   | 'MY_BOOKINGS'
-  | 'CONTRACT';
+  | 'CONTRACT'
+  | 'ANALYTICS';
 
 export type ActiveRightPanel =
   | null
@@ -241,6 +242,8 @@ interface WorldState {
   setVehicleDetailOpen: (open: boolean) => void;
   isRegistrationReviewModalOpen: boolean;
   setRegistrationReviewModalOpen: (open: boolean) => void;
+  isPaymentVerificationModalOpen: boolean;
+  setPaymentVerificationModalOpen: (open: boolean) => void;
   activeStaffOperationModule: 'BATTERY' | 'MAINTENANCE' | 'HANDOVER' | 'RETURN' | 'INSPECTION_3D' | 'HISTORY' | null;
   setActiveStaffOperationModule: (
     module: 'BATTERY' | 'MAINTENANCE' | 'HANDOVER' | 'RETURN' | 'INSPECTION_3D' | 'HISTORY' | null
@@ -292,8 +295,10 @@ interface WorldState {
   bookingSelectedDate: Date;
   bookingStartHour: number | null;
   bookingEndHour: number | null;
+  bookingInspectedBooking: any | null;
   setBookingSelectedDate: (date: Date) => void;
   setBookingSlot: (start: number | null, end: number | null) => void;
+  setBookingInspectedBooking: (booking: any | null) => void;
   clearBookingSelection: () => void;
   enterVehicleBookingMode: (vehicleId?: string | null) => void;
   exitVehicleBookingMode: () => void;
@@ -424,6 +429,8 @@ export const useWorldStore = create<WorldState>((set, get) => ({
   isVehicleDetailOpen: false,
   isRegistrationReviewModalOpen: false,
   setRegistrationReviewModalOpen: (open) => set({ isRegistrationReviewModalOpen: open }),
+  isPaymentVerificationModalOpen: false,
+  setPaymentVerificationModalOpen: (open) => set({ isPaymentVerificationModalOpen: open }),
   activeStaffOperationModule: null,
   setActiveStaffOperationModule: (module) => set({ activeStaffOperationModule: module }),
 
@@ -490,9 +497,15 @@ export const useWorldStore = create<WorldState>((set, get) => ({
   bookingSelectedDate: new Date(),
   bookingStartHour: null,
   bookingEndHour: null,
-  setBookingSelectedDate: (date) => set({ bookingSelectedDate: date }),
-  setBookingSlot: (start, end) => set({ bookingStartHour: start, bookingEndHour: end }),
-  clearBookingSelection: () => set({ bookingStartHour: null, bookingEndHour: null }),
+  bookingInspectedBooking: null,
+  setBookingSelectedDate: (date) =>
+    set({ bookingSelectedDate: date, bookingInspectedBooking: null, bookingStartHour: null, bookingEndHour: null }),
+  setBookingSlot: (start, end) =>
+    set({ bookingStartHour: start, bookingEndHour: end, bookingInspectedBooking: null }),
+  setBookingInspectedBooking: (booking) =>
+    set({ bookingInspectedBooking: booking, bookingStartHour: null, bookingEndHour: null }),
+  clearBookingSelection: () =>
+    set({ bookingStartHour: null, bookingEndHour: null, bookingInspectedBooking: null }),
 
   vehicleHandoverMode: false,
   vehicleReceiptReviewMode: false,
@@ -648,10 +661,12 @@ export const useWorldStore = create<WorldState>((set, get) => ({
             ? 'FINANCE'
             : zone === 'CHARGING'
             ? 'CHARGING'
-            : (state.activePrimaryPanel === 'FINANCE' || state.activePrimaryPanel === 'CHARGING')
+            : zone === 'ANALYTICS'
+            ? 'ANALYTICS'
+            : (state.activePrimaryPanel === 'FINANCE' || state.activePrimaryPanel === 'CHARGING' || state.activePrimaryPanel === 'ANALYTICS')
             ? 'NONE'
             : state.activePrimaryPanel,
-        previousGaragePanel: (zone === 'FINANCE' || zone === 'CHARGING') ? null : state.previousGaragePanel,
+        previousGaragePanel: (zone === 'FINANCE' || zone === 'CHARGING' || zone === 'ANALYTICS') ? null : state.previousGaragePanel,
         activeExperience: isVeh ? activeExp : state.activeExperience,
         vehicleFeatureMode: isVeh ? vehicleTargetMode : 'NONE',
         vehicleMode: isVeh ? vehicleTargetMode : 'NONE',
@@ -703,6 +718,9 @@ export const useWorldStore = create<WorldState>((set, get) => ({
   isRegistrationReviewModalOpen: false,
           vehicleVotingMode: false,
           selectedProposalId: null,
+          bookingInspectedBooking: null,
+          bookingStartHour: null,
+          bookingEndHour: null,
         };
       }
 
@@ -758,6 +776,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         selectedHandoverCheckpoint: null,
         hoveredHandoverCheckpoint: null,
         vehicleTripStartMode: false,
+        vehicleTripVisualizationMode: false,
         vehicleDamageHistoryMode: false,
         vehicleMaintenanceMode: false,
         selectedMaintenanceId: null,
@@ -770,9 +789,12 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     }),
 
   hoverVehicle: (id) =>
-    set({
-      hoveredVehicleId: id,
-      hoveredObjectId: id,
+    set((state) => {
+      if (state.hoveredVehicleId === id) return state;
+      return {
+        hoveredVehicleId: id,
+        hoveredObjectId: id,
+      };
     }),
 
   selectObject: (id, position) =>
@@ -1000,6 +1022,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         hoveredHandoverCheckpoint: null,
         vehicleReceiptReviewMode: false,
         vehicleTripStartMode: false,
+        vehicleTripVisualizationMode: false,
         vehicleDamageHistoryMode: false,
         damageHistorySeverityFilter: 'ALL',
         damageHistoryPartFilter: 'ALL',
@@ -1109,8 +1132,11 @@ export const useWorldStore = create<WorldState>((set, get) => ({
     }),
 
   hoverVehiclePart: (id) =>
-    set({
-      hoveredVehiclePartId: id,
+    set((state) => {
+      if (state.hoveredVehiclePartId === id) return state;
+      return {
+        hoveredVehiclePartId: id,
+      };
     }),
 
   selectVehiclePart: (id) =>
@@ -1200,6 +1226,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
       }
       const targetVehicleId = vehicleId || state.selectedVehicleId || 'EV01';
       return {
+        activePrimaryPanel: 'BOOKING',
         vehicleBookingMode: true,
         vehicleFeatureMode: 'BOOKING',
         vehicleMode: 'BOOKING',
@@ -1237,15 +1264,18 @@ export const useWorldStore = create<WorldState>((set, get) => ({
         bookingSelectedDate: state.bookingSelectedDate instanceof Date ? state.bookingSelectedDate : today,
         bookingStartHour: null,
         bookingEndHour: null,
+        bookingInspectedBooking: null,
       };
     }),
 
   exitVehicleBookingMode: () =>
-    set({
+    set((state) => ({
+      activePrimaryPanel: state.activePrimaryPanel === 'BOOKING' ? 'NONE' : state.activePrimaryPanel,
       vehicleBookingMode: false,
       bookingStartHour: null,
       bookingEndHour: null,
-    }),
+      bookingInspectedBooking: null,
+    })),
 
   hoverOwner: (id) =>
     set({
@@ -1330,6 +1360,9 @@ export const useWorldStore = create<WorldState>((set, get) => ({
       }
       if (!hasCapability(role, 'canConfirmReceipt')) return {};
       return {
+        activePrimaryPanel: 'NONE',
+        previousGaragePanel: null,
+        isVehicleDetailOpen: false,
         vehicleReceiptReviewMode: true,
         vehicleHandoverMode: false,
         vehicleBookingMode: false,
@@ -1381,6 +1414,9 @@ export const useWorldStore = create<WorldState>((set, get) => ({
       }
       if (!hasCapability(role, 'canStartTrip')) return {};
       return {
+        activePrimaryPanel: 'NONE',
+        previousGaragePanel: null,
+        isVehicleDetailOpen: false,
         vehicleTripStartMode: true,
         vehicleTripVisualizationMode: false,
         selectedTripRouteNode: null,
@@ -1412,6 +1448,9 @@ export const useWorldStore = create<WorldState>((set, get) => ({
   enterVehicleTripVisualizationMode: () =>
     set((state) => {
       return {
+        activePrimaryPanel: 'NONE',
+        previousGaragePanel: null,
+        isVehicleDetailOpen: false,
         vehicleTripVisualizationMode: true,
         vehicleTripStartMode: false,
         vehicleFeatureMode: 'TRIP_VISUALIZATION',
@@ -1603,6 +1642,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
       if (!hasCapability(role, 'canViewMaintenance')) return {};
       const targetVehicleId = options?.vehicleId || state.selectedVehicleId || 'EV01';
       return {
+        activePrimaryPanel: 'MAINTENANCE',
         vehicleMaintenanceMode: true,
         vehicleDamageHistoryMode: false,
         vehicleDamageMappingMode: false,
@@ -1656,6 +1696,7 @@ export const useWorldStore = create<WorldState>((set, get) => ({
           ? 'ADMIN_VEHICLE_OVERVIEW'
           : 'CO_OWNER_VEHICLE_OVERVIEW';
       return {
+        activePrimaryPanel: state.activePrimaryPanel === 'MAINTENANCE' ? 'NONE' : state.activePrimaryPanel,
         vehicleMaintenanceMode: false,
         vehicleFeatureMode: targetMode,
         vehicleMode: targetMode,
@@ -1952,6 +1993,9 @@ export const useWorldStore = create<WorldState>((set, get) => ({
   isRegistrationReviewModalOpen: false,
           vehicleVotingMode: false,
           selectedProposalId: null,
+          bookingInspectedBooking: null,
+          bookingStartHour: null,
+          bookingEndHour: null,
           vehicleBookingMode: false,
           vehicleMaintenanceMode: false,
           selectedMaintenanceId: null,
@@ -1980,6 +2024,9 @@ export const useWorldStore = create<WorldState>((set, get) => ({
   isRegistrationReviewModalOpen: false,
           vehicleVotingMode: false,
           selectedProposalId: null,
+          bookingInspectedBooking: null,
+          bookingStartHour: null,
+          bookingEndHour: null,
           vehicleBookingMode: false,
           vehicleMaintenanceMode: false,
           selectedMaintenanceId: null,
@@ -2004,6 +2051,36 @@ export const useWorldStore = create<WorldState>((set, get) => ({
   isRegistrationReviewModalOpen: false,
           vehicleVotingMode: false,
           selectedProposalId: null,
+          bookingInspectedBooking: null,
+          bookingStartHour: null,
+          bookingEndHour: null,
+          vehicleBookingMode: false,
+          vehicleMaintenanceMode: false,
+          selectedMaintenanceId: null,
+          vehicleBatteryXrayMode: false,
+          vehicleChargingMode: false,
+          selectedChargingStationId: null,
+          vehicleDamageHistoryMode: false,
+          selectedDamageId: null,
+          isDamageDetailModalOpen: false,
+          vehicleCoOwnershipMode: false,
+          vehicleInspectionMode: false,
+        };
+      }
+
+      if (targetPanel === 'ANALYTICS') {
+        return {
+          activePrimaryPanel: 'ANALYTICS',
+          selectedZone: 'ANALYTICS',
+          activeFeature: 'ANALYTICS',
+          previousGaragePanel: null,
+          isVehicleDetailOpen: false,
+          isRegistrationReviewModalOpen: false,
+          vehicleVotingMode: false,
+          selectedProposalId: null,
+          bookingInspectedBooking: null,
+          bookingStartHour: null,
+          bookingEndHour: null,
           vehicleBookingMode: false,
           vehicleMaintenanceMode: false,
           selectedMaintenanceId: null,
@@ -2383,6 +2460,40 @@ export const useWorldStore = create<WorldState>((set, get) => ({
           previousGaragePanel: null,
         };
       }
+      if (panel === 'ANALYTICS' || state.activePrimaryPanel === 'ANALYTICS') {
+        return {
+          activePrimaryPanel: 'NONE',
+          selectedZone: state.selectedZone === 'ANALYTICS' ? null : state.selectedZone,
+          activeFeature: state.activeFeature === 'ANALYTICS' ? 'NONE' : state.activeFeature,
+          isVehicleDetailOpen: false,
+  isRegistrationReviewModalOpen: false,
+          previousGaragePanel: null,
+        };
+      }
+      if (panel === 'BOOKING' || state.activePrimaryPanel === 'BOOKING') {
+        let role: string | undefined;
+        try {
+          role = useAuthStore.getState().user?.role;
+        } catch {
+          role = 'CO_OWNER';
+        }
+        const targetMode: VehicleFeatureMode =
+          role === 'STAFF'
+            ? 'STAFF_VEHICLE_OVERVIEW'
+            : role === 'ADMIN'
+            ? 'ADMIN_VEHICLE_OVERVIEW'
+            : 'CO_OWNER_VEHICLE_OVERVIEW';
+        return {
+          activePrimaryPanel: 'VEHICLE_DETAIL',
+          isVehicleDetailOpen: true,
+          previousGaragePanel: null,
+          vehicleFeatureMode: targetMode,
+          vehicleMode: targetMode,
+          vehicleBookingMode: false,
+          bookingStartHour: null,
+          bookingEndHour: null,
+        };
+      }
       let role: string | undefined;
       try {
         role = useAuthStore.getState().user?.role;
@@ -2482,6 +2593,9 @@ export const useWorldStore = create<WorldState>((set, get) => ({
   isRegistrationReviewModalOpen: false,
           vehicleVotingMode: false,
           selectedProposalId: null,
+          bookingInspectedBooking: null,
+          bookingStartHour: null,
+          bookingEndHour: null,
           vehicleBookingMode: false,
           vehicleMaintenanceMode: false,
           selectedMaintenanceId: null,

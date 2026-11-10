@@ -121,7 +121,8 @@ const StaffMaintenanceItemCard: React.FC<StaffMaintenanceItemCardProps> = ({
     queryKey: ['maintenanceApproval', item.id],
     queryFn: () => fetchMaintenanceApproval(item.id),
     enabled: isApprovalRelevant,
-    refetchInterval: item.status === 'PENDING_APPROVAL' ? 3000 : undefined,
+    staleTime: 5000,
+    refetchInterval: item.status === 'PENDING_APPROVAL' ? 6000 : false,
   });
 
   const statusCfg = MAINTENANCE_STATUS_CONFIG[item.status];

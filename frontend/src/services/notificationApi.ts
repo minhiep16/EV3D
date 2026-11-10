@@ -5,19 +5,15 @@ import { NotificationResponse } from '../types/notification';
  * Fetch all notifications for current user, sorted newest first.
  */
 export async function fetchNotifications(): Promise<NotificationResponse[]> {
-  try {
-    const res = await authenticatedFetch('/api/notifications');
-    if (res.status === 204 || res.status === 404) {
-      return [];
-    }
-    const data = await safeParseResponse<NotificationResponse[]>(res);
-    return Array.isArray(data) ? data : [];
-  } catch (err: any) {
-    if (err?.message && (err.message.includes('404') || err.message.includes('204'))) {
-      return [];
-    }
+  const res = await authenticatedFetch('/api/notifications');
+  if (res.status === 204 || res.status === 404) {
     return [];
   }
+  if (!res.ok) {
+    throw new Error(`Lỗi tải thông báo (${res.status})`);
+  }
+  const data = await safeParseResponse<NotificationResponse[]>(res);
+  return Array.isArray(data) ? data : [];
 }
 
 /**

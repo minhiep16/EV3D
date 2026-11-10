@@ -18,6 +18,7 @@ import {
   isMatchingVehicle,
   resolveVehicleDisplayName,
   resolveAuthoritativeVehicleColor,
+  VEHICLE_MODEL_CONFIGS,
 } from './vehicleModelConfig';
 import { StaffVehicleControlLayer } from './StaffVehicleControlLayer';
 import { resolveVehicleSlot, GarageSlotDef, DEFAULT_GARAGE_SLOT } from '../../../config/garageSlotConfig';
@@ -77,25 +78,25 @@ const VehicleBayPlatformPad: React.FC<{
   slot?: GarageSlotDef;
   isSelected: boolean;
   isHovered: boolean;
-}> = ({ vehicleSlot: propVehicleSlot, slot: propSlot, isSelected, isHovered }) => {
+}> = React.memo(({ vehicleSlot: propVehicleSlot, slot: propSlot, isSelected, isHovered }) => {
   const activeSlot = propVehicleSlot || propSlot || DEFAULT_GARAGE_SLOT;
   const accent = isSelected ? '#f59e0b' : activeSlot.accentColor || '#38bdf8';
   return (
     <group position={[0, -0.14, 0]}>
       {/* Base Stepped Turntable Pad */}
-      <mesh position={[0, 0.035, 0]} receiveShadow>
+      <mesh position={[0, 0.035, 0]} receiveShadow raycast={() => null}>
         <cylinderGeometry args={[2.15, 2.22, 0.07, 48]} />
         <meshStandardMaterial color="#f8fafc" roughness={0.2} metalness={0.25} />
       </mesh>
 
       {/* Outer Polished Aluminum Bevel Rim */}
-      <mesh position={[0, 0.072, 0]}>
+      <mesh position={[0, 0.072, 0]} raycast={() => null}>
         <cylinderGeometry args={[2.12, 2.18, 0.015, 48]} />
         <meshStandardMaterial color="#94a3b8" roughness={0.2} metalness={0.8} />
       </mesh>
 
       {/* Outer Recessed Thin Emissive Neon Ring */}
-      <mesh position={[0, 0.076, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh position={[0, 0.076, 0]} rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
         <ringGeometry args={[2.02, 2.12, 48]} />
         <meshBasicMaterial
           color={accent}
@@ -105,13 +106,13 @@ const VehicleBayPlatformPad: React.FC<{
       </mesh>
 
       {/* Middle Elevated Stepped Tier */}
-      <mesh position={[0, 0.09, 0]} receiveShadow>
+      <mesh position={[0, 0.09, 0]} receiveShadow raycast={() => null}>
         <cylinderGeometry args={[1.92, 2.02, 0.035, 48]} />
         <meshStandardMaterial color="#eef2f6" roughness={0.22} metalness={0.25} />
       </mesh>
 
       {/* Inner Recessed Thin Emissive LED Ring */}
-      <mesh position={[0, 0.11, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh position={[0, 0.11, 0]} rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
         <ringGeometry args={[1.72, 1.80, 48]} />
         <meshBasicMaterial
           color={accent}
@@ -121,13 +122,13 @@ const VehicleBayPlatformPad: React.FC<{
       </mesh>
 
       {/* Top Glossy Vehicle Turntable Surface */}
-      <mesh position={[0, 0.114, 0]} receiveShadow>
+      <mesh position={[0, 0.114, 0]} receiveShadow raycast={() => null}>
         <cylinderGeometry args={[1.72, 1.72, 0.012, 48]} />
         <meshStandardMaterial color="#ffffff" roughness={0.16} metalness={0.22} />
       </mesh>
     </group>
   );
-};
+});
 
 interface VehicleBayProps {
   vehicle: VehicleResponse;
@@ -161,7 +162,7 @@ interface VehicleBayProps {
   onClearSelection: () => void;
 }
 
-const VehicleBay: React.FC<VehicleBayProps> = ({
+const VehicleBayComponent: React.FC<VehicleBayProps> = ({
   vehicle,
   vehicleCode,
   vehicleSlot: propVehicleSlot,
@@ -192,6 +193,8 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
   onHover,
   onClearSelection,
 }) => {
+  const [isLocalHovered, setIsLocalHovered] = React.useState(false);
+  const effectiveHovered = isLocalHovered || isHovered;
   // Authoritative derivation of fleet-wide selection state
   const isAnyVehicleSelected =
     propIsAnyVehicleSelected ?? Boolean(selectedVehicleId);
@@ -233,6 +236,24 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
   const defaultYaw = isCoOwner
     ? VEHICLE_INTERACTION_CONFIG.defaultCoOwnerYaw
     : VEHICLE_INTERACTION_CONFIG.defaultOperationsYaw;
+
+  const modelDef = VEHICLE_MODEL_CONFIGS[vehicleCode] || VEHICLE_MODEL_CONFIGS.EV01;
+  const proxySize: [number, number, number] = useMemo(
+    () => [
+      modelDef.dimensions.width * 1.05,
+      modelDef.dimensions.height,
+      modelDef.dimensions.length,
+    ],
+    [modelDef]
+  );
+  const proxyPosition: [number, number, number] = useMemo(
+    () => [
+      modelDef.offset[0],
+      modelDef.dimensions.height / 2,
+      modelDef.offset[2],
+    ],
+    [modelDef]
+  );
 
   const turntableRef = useRef<THREE.Group>(null);
   const targetYaw = useRef(vehicleYaw ?? defaultYaw);
@@ -321,14 +342,14 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
   const handlePointerOver = (e: ThreeEvent<PointerEvent>) => {
     if (isBusinessModeActive || (selectedZone && selectedZone !== 'VEHICLE')) return;
     e.stopPropagation();
-    onHover(vehicleCode);
+    setIsLocalHovered(true);
     document.body.style.cursor = 'grab';
   };
 
   const handlePointerOut = (e: ThreeEvent<PointerEvent>) => {
     if (isBusinessModeActive) return;
     e.stopPropagation();
-    onHover(null);
+    setIsLocalHovered(false);
     if (!isVehicleDraggingRef.current) {
       document.body.style.cursor = 'auto';
     }
@@ -370,7 +391,7 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
     <group position={effectivePosition} name={`${vehicleCode}Bay`}>
       {/* Platform Pad for non-hero slots (EV01 is seated on hero turntable) */}
       {vehicleSlot.id !== 'BAY_READY_01' && (
-        <VehicleBayPlatformPad vehicleSlot={vehicleSlot} slot={vehicleSlot} isSelected={isSelected} isHovered={isHovered} />
+        <VehicleBayPlatformPad vehicleSlot={vehicleSlot} slot={vehicleSlot} isSelected={isSelected} isHovered={effectiveHovered} />
       )}
 
       {/* 360-Degree Interactive Vehicle Turntable Group */}
@@ -378,19 +399,38 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
         ref={turntableRef}
         name={`${vehicleCode}Turntable`}
         rotation={[0, currentYaw.current, 0]}
-        onPointerDown={handleTurntablePointerDown}
-        onClick={handleClick}
-        onPointerOver={handlePointerOver}
-        onPointerOut={handlePointerOut}
       >
+        {/* Simplified Hitbox Proxy:
+            Catches pointer down, drag-rotation, click-selection, and hover effects in O(1) time
+            without raycasting through heavy GLTF car meshes.
+            Uses vehicle-specific model dimensions and an invisible material with transparent/depthWrite=false. */}
+        {!vehicleInspectionMode && !vehicleDamageMappingMode && (
+          <mesh
+            name={`${vehicleCode}InteractionProxy`}
+            position={proxyPosition}
+            onPointerDown={handleTurntablePointerDown}
+            onClick={handleClick}
+            onPointerOver={handlePointerOver}
+            onPointerOut={handlePointerOut}
+          >
+            <boxGeometry args={proxySize} />
+            <meshBasicMaterial
+              transparent
+              opacity={0}
+              depthWrite={false}
+              colorWrite={false}
+            />
+          </mesh>
+        )}
+
         {/* Selection & Hover Halo */}
-        <VehicleSelectionEffect isSelected={isSelected} isHovered={isHovered} />
+        <VehicleSelectionEffect isSelected={isSelected} isHovered={effectiveHovered} />
 
         {/* 3D GLB Model (Visual Only) */}
         <Suspense fallback={null}>
           <VehicleModel
             isSelected={isSelected}
-            isHovered={isHovered}
+            isHovered={effectiveHovered}
             isDeEmphasized={isDeEmphasized}
             isBatteryXray={isSelected && vehicleBatteryXrayMode}
             modelUrl={getVehicleModelUrl(vehicle.model3dUrl, vehicle)}
@@ -681,6 +721,8 @@ const VehicleBay: React.FC<VehicleBayProps> = ({
   );
 };
 
+const VehicleBay = React.memo(VehicleBayComponent);
+
 export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPanel }) => {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const accessToken = useAuthStore((state) => state.accessToken);
@@ -689,7 +731,6 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
 
   const selectedZone = useWorldStore((state) => state.selectedZone);
   const selectedVehicleId = useWorldStore((state) => state.selectedVehicleId);
-  const hoveredVehicleId = useWorldStore((state) => state.hoveredVehicleId);
   const vehicleInspectionMode = useWorldStore((state) => state.vehicleInspectionMode);
   const vehicleCoOwnershipMode = useWorldStore((state) => state.vehicleCoOwnershipMode);
   const isRegistrationReviewModalOpen = useWorldStore((state) => state.isRegistrationReviewModalOpen);
@@ -728,51 +769,29 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
     queryKey: ['vehicles', user?.role, user?.id],
     queryFn: fetchVehicles,
     enabled: authReady,
-    refetchInterval: authReady ? 6000 : false,
+    staleTime: 10000,
   });
 
-  // Maximum number of vehicles to simultaneously instantiate in 3D showroom bays
-  const MAX_CONCURRENT_3D_BAYS = 8;
+  // Fixed Showroom Capacity: Exactly FOUR maximum showroom slots (Slot 1, 2, 3, 4)
+  const MAX_SHOWROOM_DISPLAY_SLOTS = 4;
 
-  // Scalable Fleet 3D Projection:
-  // 1. In CO_OWNER mode: exactly ONE vehicle is rendered in 3D space (authoritative single ownership context)
-  // 2. In operations mode (STAFF/ADMIN): prioritize EV01/EV02, support fleet preview row & up to 8 bays
-  const effectiveVehicles = useMemo(() => {
+  // Showroom Display Data (Separated from Fleet Inventory per Section 10):
+  // 1. In CO_OWNER mode: exactly ONE vehicle is rendered in 3D space.
+  // 2. In operations mode (STAFF/ADMIN): exactly at most FOUR eligible showroom vehicles in stable deterministic order.
+  const showroomDisplayVehicles = useMemo(() => {
     if (!vehicles || vehicles.length === 0) return [];
 
     if (!isOperationsRole) {
-      if (vehicles.length > 1) {
-        console.error(
-          `[Domain Invariant Violation] CO_OWNER has ${vehicles.length} active vehicles. Expected at most 1:`,
-          vehicles.map((v) => v.id)
-        );
+      if (selectedVehicleId) {
+        const matched = vehicles.find((v) => isMatchingVehicle(v, selectedVehicleId));
+        if (matched) return [matched];
       }
       return [vehicles[0]];
     }
 
     const sorted = sortStaffFleetVehicles(vehicles);
-
-    if (sorted.length <= MAX_CONCURRENT_3D_BAYS) {
-      return sorted;
-    }
-
-    const baySubset = sorted.slice(0, MAX_CONCURRENT_3D_BAYS);
-
-    if (selectedVehicleId) {
-      const isAlreadyMounted = baySubset.some((v) => isMatchingVehicle(v, selectedVehicleId));
-
-      if (!isAlreadyMounted) {
-        const targetVehicle = sorted.find((v) => isMatchingVehicle(v, selectedVehicleId));
-
-        if (targetVehicle) {
-          // Mount the selected vehicle into the active 3D set so it renders seamlessly
-          return [...baySubset.slice(0, MAX_CONCURRENT_3D_BAYS - 1), targetVehicle];
-        }
-      }
-    }
-
-    return baySubset;
-  }, [vehicles, selectedVehicleId, isOperationsRole]);
+    return sorted.slice(0, MAX_SHOWROOM_DISPLAY_SLOTS);
+  }, [vehicles, isOperationsRole, selectedVehicleId]);
 
   // Synchronize selection: If selected vehicle is not in authorized backend vehicles, reset selection
   useEffect(() => {
@@ -916,7 +935,7 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
   }
 
   // Empty State: CO_OWNER without active group memberships or no vehicles available
-  if (effectiveVehicles.length === 0) {
+  if (showroomDisplayVehicles.length === 0) {
     return (
       <group position={defaultVehiclePosition}>
         <Html position={[0, 1.8, 0]} center distanceFactor={8.5} style={{ pointerEvents: 'none', userSelect: 'none' }}>
@@ -956,9 +975,9 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
 
     return (
       <group name="StaffFleetHeroAndPreviewContainer">
-        {/* Horizontal Secondary Fleet Preview Row (Background Lineup) */}
+        {/* Horizontal Secondary Fleet Preview Row (Limited strictly to at most 4 background slots) */}
         <FleetPreviewRow3D
-          vehicles={effectiveVehicles}
+          vehicles={showroomDisplayVehicles}
           selectedVehicleId={heroVehicle.id}
           onSelectVehicle={handleVehicleSelect}
           visible={!isBusinessModeActive && !isRegistrationReviewModalOpen}
@@ -1003,11 +1022,11 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
 
   return (
     <group name="VehicleFleetTwinContainer">
-      {effectiveVehicles.map((vehicle) => {
+      {showroomDisplayVehicles.map((vehicle) => {
         const vehicleCode = resolveVehicleCode(vehicle);
         let vehicleSlot: GarageSlotDef;
         try {
-          vehicleSlot = resolveVehicleSlot(vehicle, role, effectiveVehicles);
+          vehicleSlot = resolveVehicleSlot(vehicle, role, showroomDisplayVehicles);
         } catch (err) {
           if (import.meta.env.DEV) {
             console.warn(`[VehicleFleetTwinContainer] Failed resolving slot for ${vehicleCode}:`, err);
@@ -1019,10 +1038,6 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
           selectedVehicleId && isMatchingVehicle(vehicle, selectedVehicleId)
         );
 
-        const isHovered =
-          hoveredVehicleId === vehicle.id ||
-          hoveredVehicleId === vehicleCode;
-
         return (
           <VehicleBay
             key={vehicle.id || vehicleCode}
@@ -1032,7 +1047,7 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
             slot={vehicleSlot}
             position={vehicleSlot.position}
             isSelected={isSelected}
-            isHovered={isHovered}
+            isHovered={false}
             isAnyVehicleSelected={isAnyVehicleSelected}
             isCoOwner={isCoOwner}
             role={role}

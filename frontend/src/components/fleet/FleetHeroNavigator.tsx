@@ -1,13 +1,8 @@
 import React, { useMemo } from 'react';
-import { VehicleResponse, VehicleStatus } from '../../types/vehicle';
-import {
-  resolveVehicleCode,
-  resolveVehicleDisplayName,
-  resolveVehicleSecondaryIdentifier,
-  isMatchingVehicle,
-} from '../three/vehicles/vehicleModelConfig';
+import { VehicleResponse } from '../../types/vehicle';
+import { isMatchingVehicle } from '../three/vehicles/vehicleModelConfig';
 import { useWorldStore } from '../../store/worldStore';
-import { ChevronLeft, ChevronRight, BatteryCharging, Zap } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface FleetHeroNavigatorProps {
   vehicles: VehicleResponse[];
@@ -16,30 +11,11 @@ interface FleetHeroNavigatorProps {
   visible?: boolean;
 }
 
-function getStatusMeta(status?: VehicleStatus) {
-  const s = (status || '').toUpperCase();
-  switch (s) {
-    case 'AVAILABLE':
-      return { labelVi: 'Sẵn sàng', dotColor: '#10b981' };
-    case 'CHARGING':
-      return { labelVi: 'Đang sạc', dotColor: '#00f2fe' };
-    case 'MAINTENANCE':
-    case 'IN_SERVICE':
-      return { labelVi: 'Bảo dưỡng', dotColor: '#f87171' };
-    case 'RESERVED':
-      return { labelVi: 'Bàn giao', dotColor: '#f59e0b' };
-    case 'IN_USE':
-      return { labelVi: 'Đang sử dụng', dotColor: '#a855f7' };
-    default:
-      return { labelVi: status || 'Sẵn sàng', dotColor: '#94a3b8' };
-  }
-}
-
 /**
  * FleetHeroNavigator
- * Single authoritative selected vehicle information bar:
- * Format: EVShare Demo EV • EV01 · 51E-123.45 • 70% · Sẵn sàng
- * Positioned cleanly near top bar to prevent blocking 3D vehicle roof/silhouette.
+ * Hero vehicle navigation controls (left & right chevrons) to cycle through the fleet in 3D showroom.
+ * The redundant top-center floating vehicle information banner has been completely removed,
+ * preserving only the sleek circular navigation chevron controls.
  */
 export const FleetHeroNavigator: React.FC<FleetHeroNavigatorProps> = ({
   vehicles,
@@ -57,13 +33,6 @@ export const FleetHeroNavigator: React.FC<FleetHeroNavigatorProps> = ({
 
   if (!visible || !selectedVehicle || vehicles.length === 0 || isRegistrationReviewModalOpen) return null;
 
-  const code = resolveVehicleCode(selectedVehicle);
-  const displayName = resolveVehicleDisplayName(selectedVehicle, code);
-  const secondaryIdentifier = resolveVehicleSecondaryIdentifier(selectedVehicle, code);
-  const statusMeta = getStatusMeta(selectedVehicle.status);
-  const battery = selectedVehicle.currentBatteryLevel ?? 0;
-  const isCharging = (selectedVehicle.status || '').toUpperCase() === 'CHARGING';
-
   const handlePrev = (e: React.MouseEvent) => {
     e.stopPropagation();
     const prevIdx = (currentIndex - 1 + vehicles.length) % vehicles.length;
@@ -78,72 +47,6 @@ export const FleetHeroNavigator: React.FC<FleetHeroNavigatorProps> = ({
 
   return (
     <>
-      {/* Authoritative Selected Vehicle Information Bar (Section 7) */}
-      <div
-        style={{
-          position: 'absolute',
-          top: '84px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 8,
-          pointerEvents: 'none',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          background: 'rgba(7, 20, 38, 0.92)',
-          backdropFilter: 'blur(16px)',
-          WebkitBackdropFilter: 'blur(16px)',
-          border: '1.2px solid rgba(0, 242, 254, 0.35)',
-          borderRadius: '9999px',
-          padding: '6px 18px',
-          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4), 0 0 16px rgba(0, 242, 254, 0.15)',
-          color: '#ffffff',
-          fontSize: '12px',
-          userSelect: 'none',
-          whiteSpace: 'nowrap',
-          transition: 'all 0.2s ease',
-        }}
-      >
-        {/* 1. Vehicle Display Name */}
-        <span style={{ color: '#ffffff', fontSize: '13px', fontWeight: 900, letterSpacing: '0.02em' }}>
-          {displayName}
-        </span>
-
-        <span style={{ color: 'rgba(255, 255, 255, 0.25)', fontSize: '12px' }}>•</span>
-
-        {/* 2. Secondary Identifier: Code · Plate */}
-        <span style={{ color: '#38bdf8', fontSize: '12px', fontWeight: 700, letterSpacing: '0.04em' }}>
-          {secondaryIdentifier}
-        </span>
-
-        <span style={{ color: 'rgba(255, 255, 255, 0.25)', fontSize: '12px' }}>•</span>
-
-        {/* 3. Real Persisted Battery % · Status */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#00f2fe', fontWeight: 800 }}>
-            {isCharging ? <BatteryCharging size={13} color="#00f2fe" /> : <Zap size={12} color="#00f2fe" />}
-            <span style={{ fontSize: '12px' }}>{battery}%</span>
-          </div>
-
-          <span style={{ color: 'rgba(255, 255, 255, 0.35)', fontSize: '11px' }}>·</span>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <span
-              style={{
-                width: '6px',
-                height: '6px',
-                borderRadius: '50%',
-                backgroundColor: statusMeta.dotColor,
-                boxShadow: `0 0 8px ${statusMeta.dotColor}`,
-              }}
-            />
-            <span style={{ color: '#e2e8f0', fontSize: '12px', fontWeight: 600 }}>
-              {statusMeta.labelVi}
-            </span>
-          </div>
-        </div>
-      </div>
-
       {/* Left Circular Navigation Chevron Button (<) */}
       <button
         type="button"

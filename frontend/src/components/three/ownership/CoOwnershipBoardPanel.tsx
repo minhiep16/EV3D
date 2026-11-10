@@ -48,9 +48,9 @@ export const CoOwnershipBoardPanel: React.FC<CoOwnershipBoardPanelProps> = ({
     staleTime: 10000,
   });
 
-  const vehicleCode = resolveVehicleCode(vehicle) || vehicle.name || 'EV01';
+  const vehicleCode = resolveVehicleCode(vehicle) || vehicle.name || 'EV';
 
-  // Deterministic members list: prefers backend query, with reliable fallback to required specification
+  // Deterministic members list: prefers backend query
   const membersList: DisplayMember[] = useMemo(() => {
     if (coOwnership?.members && coOwnership.members.length > 0) {
       const active = coOwnership.members.filter((m) => m.status === 'ACTIVE');
@@ -67,20 +67,15 @@ export const CoOwnershipBoardPanel: React.FC<CoOwnershipBoardPanelProps> = ({
       }
     }
 
-    // Default specification data matching 100% distribution
-    return [
-      { id: 'member-1', name: 'Nguyen Van A', percentage: 40, color: '#00f2fe' },
-      { id: 'member-2', name: 'Tran Thi B', percentage: 30, color: '#a855f7' },
-      { id: 'member-3', name: 'Le Van C', percentage: 30, color: '#10b981' },
-    ];
+    return [];
   }, [coOwnership?.members]);
 
   // Derived metadata
-  const memberCount = coOwnership?.members?.filter((m) => m.status === 'ACTIVE').length || membersList.length || 3;
+  const memberCount = coOwnership?.members?.filter((m) => m.status === 'ACTIVE').length ?? membersList.length;
   const vehicleCount = coOwnership?.vehicles && coOwnership.vehicles.length > 0 ? coOwnership.vehicles.length : 1;
-  const totalPercentage = coOwnership?.totalOwnershipPercentage ?? 100;
+  const totalPercentage = coOwnership?.totalOwnershipPercentage ?? (membersList.reduce((acc, m) => acc + m.percentage, 0));
   const isComplete = totalPercentage === 100;
-  const statusLabel = coOwnership?.statusLabel || (isComplete ? 'Hoàn chỉnh' : 'Chưa phân bổ');
+  const statusLabel = coOwnership?.statusLabel || (isComplete ? 'Hoàn chỉnh' : 'Chưa phân bổ đủ');
 
   const groupTitle = `${vehicleCode} Co-ownership`;
 
@@ -251,7 +246,7 @@ export const CoOwnershipBoardPanel: React.FC<CoOwnershipBoardPanelProps> = ({
           {groupTitle}
         </h3>
 
-        {/* Small Status Chip: "HOÀN CHỈNH" */}
+        {/* Small Status Chip */}
         <div
           style={{
             display: 'inline-flex',
@@ -259,13 +254,13 @@ export const CoOwnershipBoardPanel: React.FC<CoOwnershipBoardPanelProps> = ({
             gap: '5px',
             padding: '2.5px 8px',
             borderRadius: '9999px',
-            background: 'rgba(16, 185, 129, 0.14)',
-            border: '1px solid rgba(16, 185, 129, 0.50)',
-            color: '#10b981',
+            background: isComplete ? 'rgba(16, 185, 129, 0.14)' : 'rgba(234, 179, 8, 0.14)',
+            border: `1px solid ${isComplete ? 'rgba(16, 185, 129, 0.50)' : 'rgba(234, 179, 8, 0.50)'}`,
+            color: isComplete ? '#10b981' : '#eab308',
             fontSize: '9px',
             fontWeight: 800,
             letterSpacing: '0.06em',
-            boxShadow: '0 0 10px rgba(16, 185, 129, 0.22)',
+            boxShadow: `0 0 10px ${isComplete ? 'rgba(16, 185, 129, 0.22)' : 'rgba(234, 179, 8, 0.22)'}`,
           }}
         >
           <span
@@ -273,12 +268,12 @@ export const CoOwnershipBoardPanel: React.FC<CoOwnershipBoardPanelProps> = ({
               width: '4px',
               height: '4px',
               borderRadius: '50%',
-              background: '#10b981',
-              boxShadow: '0 0 6px #10b981',
+              background: isComplete ? '#10b981' : '#eab308',
+              boxShadow: `0 0 6px ${isComplete ? '#10b981' : '#eab308'}`,
               display: 'inline-block',
             }}
           />
-          HOÀN CHỈNH
+          {statusLabel.toUpperCase()}
         </div>
       </div>
 
@@ -443,105 +438,111 @@ export const CoOwnershipBoardPanel: React.FC<CoOwnershipBoardPanelProps> = ({
           />
         </div>
 
-        {/* 3 Electronic Data Rows */}
+        {/* Electronic Data Rows */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          {membersList.map((member) => {
-            const isSelected = selectedOwnerId === member.id;
-            return (
-              <div
-                key={member.id}
-                onClick={() => selectOwner(isSelected ? null : member.id)}
-                title={`Nhấp để ${isSelected ? 'bỏ chọn' : 'xem tiêu điểm'} thành viên`}
-                style={{
-                  background: isSelected
-                    ? 'rgba(0, 240, 255, 0.08)'
-                    : 'rgba(10, 22, 42, 0.65)',
-                  border: isSelected
-                    ? `1.5px solid ${member.color}`
-                    : '1px solid rgba(0, 240, 255, 0.16)',
-                  borderRadius: '8px',
-                  padding: '6px 9px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '4px',
-                  boxShadow: isSelected
-                    ? `0 0 14px ${member.color}40, inset 0 0 8px ${member.color}20`
-                    : 'none',
-                  transition: 'all 0.2s ease',
-                }}
-              >
-                {/* Data Strip Header: Dot + Name + Percentage */}
+          {membersList.length === 0 ? (
+            <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic', textAlign: 'center', padding: '10px 0' }}>
+              Đang tải dữ liệu cổ phần...
+            </div>
+          ) : (
+            membersList.map((member) => {
+              const isSelected = selectedOwnerId === member.id;
+              return (
                 <div
+                  key={member.id}
+                  onClick={() => selectOwner(isSelected ? null : member.id)}
+                  title={`Nhấp để ${isSelected ? 'bỏ chọn' : 'xem tiêu điểm'} thành viên`}
                   style={{
+                    background: isSelected
+                      ? 'rgba(0, 240, 255, 0.08)'
+                      : 'rgba(10, 22, 42, 0.65)',
+                    border: isSelected
+                      ? `1.5px solid ${member.color}`
+                      : '1px solid rgba(0, 240, 255, 0.16)',
+                    borderRadius: '8px',
+                    padding: '6px 9px',
+                    cursor: 'pointer',
                     display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
+                    flexDirection: 'column',
+                    gap: '4px',
+                    boxShadow: isSelected
+                      ? `0 0 14px ${member.color}40, inset 0 0 8px ${member.color}20`
+                      : 'none',
+                    transition: 'all 0.2s ease',
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-                    {/* Glowing identity dot / avatar marker */}
-                    <div
-                      style={{
-                        width: '7px',
-                        height: '7px',
-                        borderRadius: '50%',
-                        background: member.color,
-                        boxShadow: `0 0 8px ${member.color}`,
-                        flexShrink: 0,
-                      }}
-                    />
-                    {/* Owner Name */}
+                  {/* Data Strip Header: Dot + Name + Percentage */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                      {/* Glowing identity dot / avatar marker */}
+                      <div
+                        style={{
+                          width: '7px',
+                          height: '7px',
+                          borderRadius: '50%',
+                          background: member.color,
+                          boxShadow: `0 0 8px ${member.color}`,
+                          flexShrink: 0,
+                        }}
+                      />
+                      {/* Owner Name */}
+                      <span
+                        style={{
+                          fontSize: '11.5px',
+                          fontWeight: isSelected ? 700 : 600,
+                          color: isSelected ? '#ffffff' : '#f1f5f9',
+                          letterSpacing: '-0.01em',
+                        }}
+                      >
+                        {member.name}
+                      </span>
+                    </div>
+
+                    {/* Percentage in Bold */}
                     <span
                       style={{
-                        fontSize: '11.5px',
-                        fontWeight: isSelected ? 700 : 600,
-                        color: isSelected ? '#ffffff' : '#f1f5f9',
-                        letterSpacing: '-0.01em',
+                        fontSize: '12px',
+                        fontWeight: 800,
+                        color: member.color,
+                        letterSpacing: '0.02em',
+                        fontFamily: 'monospace',
                       }}
                     >
-                      {member.name}
+                      {member.percentage}%
                     </span>
                   </div>
 
-                  {/* Percentage in Bold */}
-                  <span
-                    style={{
-                      fontSize: '12px',
-                      fontWeight: 800,
-                      color: member.color,
-                      letterSpacing: '0.02em',
-                      fontFamily: 'monospace',
-                    }}
-                  >
-                    {member.percentage}%
-                  </span>
-                </div>
-
-                {/* Slim horizontal digital progress bar matching the percentage */}
-                <div
-                  style={{
-                    width: '100%',
-                    height: '3.5px',
-                    borderRadius: '9999px',
-                    background: 'rgba(255, 255, 255, 0.08)',
-                    overflow: 'hidden',
-                  }}
-                >
+                  {/* Slim horizontal digital progress bar matching the percentage */}
                   <div
                     style={{
-                      width: `${Math.min(100, Math.max(0, member.percentage))}%`,
-                      height: '100%',
+                      width: '100%',
+                      height: '3.5px',
                       borderRadius: '9999px',
-                      background: `linear-gradient(90deg, ${member.color}88, ${member.color})`,
-                      boxShadow: `0 0 6px ${member.color}`,
-                      transition: 'width 0.4s ease',
+                      background: 'rgba(255, 255, 255, 0.08)',
+                      overflow: 'hidden',
                     }}
-                  />
+                  >
+                    <div
+                      style={{
+                        width: `${Math.min(100, Math.max(0, member.percentage))}%`,
+                        height: '100%',
+                        borderRadius: '9999px',
+                        background: `linear-gradient(90deg, ${member.color}88, ${member.color})`,
+                        boxShadow: `0 0 6px ${member.color}`,
+                        transition: 'width 0.4s ease',
+                      }}
+                    />
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       </div>
 

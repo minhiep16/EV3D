@@ -8,9 +8,10 @@ import { resolveVehicleCode, sortStaffFleetVehicles, isMatchingVehicle } from '.
 import { FleetVehicleListItem } from './FleetVehicleListItem';
 import { fetchPendingReturnTrips } from '../../services/tripApi';
 import { TripData } from '../../types/trip';
-import { Search, X, AlertCircle, FileCheck2, Car } from 'lucide-react';
+import { Search, X, AlertCircle, FileCheck2, Car, Wallet } from 'lucide-react';
 import { onboardingApi } from '../../services/onboardingApi';
 import { VehicleRegistrationDraftResponse } from '../../types/onboarding';
+import { fetchPendingPersonalPayments } from '../../services/fundApi';
 
 /**
  * StaffGarageFleetSidebar
@@ -35,6 +36,7 @@ export const StaffGarageFleetSidebar: React.FC = () => {
   const isInspecting = vehicleInspectionMode || vehicleDamageMappingMode;
   const setRegistrationReviewModalOpen = useWorldStore((state) => state.setRegistrationReviewModalOpen);
   const isRegistrationReviewModalOpen = useWorldStore((state) => state.isRegistrationReviewModalOpen);
+  const setPaymentVerificationModalOpen = useWorldStore((state) => state.setPaymentVerificationModalOpen);
 
   // Default state: Closed (Section 2)
   const [isOpen, setIsOpen] = useState(false);
@@ -68,6 +70,14 @@ export const StaffGarageFleetSidebar: React.FC = () => {
     queryFn: () => onboardingApi.getStaffApplications('PENDING'),
     enabled: authReady && (role === 'STAFF' || role === 'ADMIN'),
     refetchInterval: 6000,
+  });
+
+  // TanStack Query for Pending Personal Expense Payments
+  const { data: pendingPayments = [] } = useQuery({
+    queryKey: ['pending-personal-payments'],
+    queryFn: () => fetchPendingPersonalPayments(),
+    enabled: authReady && (role === 'STAFF' || role === 'ADMIN'),
+    refetchInterval: 5000,
   });
 
   // Sort vehicles: EV01, EV02, EV03... (Single Source of Truth)
@@ -417,6 +427,59 @@ export const StaffGarageFleetSidebar: React.FC = () => {
               }}
             >
               {pendingApplications.length}
+            </span>
+          </button>
+
+          {/* Personal Payment Verification Trigger Button */}
+          <button
+            type="button"
+            onClick={() => {
+              setIsOpen(false);
+              setPaymentVerificationModalOpen(true);
+            }}
+            style={{
+              marginBottom: '10px',
+              padding: '8px 10px',
+              borderRadius: '10px',
+              background:
+                pendingPayments.length > 0
+                  ? 'rgba(245, 158, 11, 0.16)'
+                  : 'rgba(0, 242, 254, 0.08)',
+              border:
+                pendingPayments.length > 0
+                  ? '1.2px solid rgba(245, 158, 11, 0.55)'
+                  : '1px solid rgba(0, 242, 254, 0.28)',
+              color: pendingPayments.length > 0 ? '#fbbf24' : '#38bdf8',
+              fontSize: '11px',
+              fontWeight: 800,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '6px',
+              width: '100%',
+              boxSizing: 'border-box',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Wallet size={14} />
+              <span>XÁC MINH THANH TOÁN</span>
+            </span>
+            <span
+              style={{
+                fontSize: '10px',
+                padding: '1px 6px',
+                borderRadius: '999px',
+                background:
+                  pendingPayments.length > 0
+                    ? 'rgba(245, 158, 11, 0.3)'
+                    : 'rgba(148, 163, 184, 0.2)',
+                color: '#ffffff',
+                fontWeight: 800,
+              }}
+            >
+              {pendingPayments.length}
             </span>
           </button>
 

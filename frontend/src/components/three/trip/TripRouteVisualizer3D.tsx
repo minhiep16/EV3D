@@ -209,8 +209,8 @@ export const TripRouteVisualizer3D: React.FC = () => {
               <meshBasicMaterial color={nodeColor} transparent opacity={0.8} />
             </mesh>
 
-            {/* 3D Spatial Tag Pill */}
-            <Billboard position={[0, 0.38, 0]} follow={true}>
+            {/* Compact 3D Spatial Tag Pill */}
+            <Billboard position={[0, 0.26, 0]} follow={true}>
               <Html
                 center
                 distanceFactor={7.5}
@@ -228,29 +228,29 @@ export const TripRouteVisualizer3D: React.FC = () => {
                     backdropFilter: 'blur(12px)',
                     border: `1px solid ${isSelected ? nodeColor : 'rgba(255, 255, 255, 0.2)'}`,
                     boxShadow: isSelected
-                      ? `0 0 16px ${nodeColor}`
-                      : '0 4px 14px rgba(0, 0, 0, 0.6)',
-                    borderRadius: '8px',
-                    padding: '4px 10px',
+                      ? `0 0 12px ${nodeColor}`
+                      : '0 4px 12px rgba(0, 0, 0, 0.6)',
+                    borderRadius: '6px',
+                    padding: '3px 8px',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px',
+                    gap: '5px',
                     color: '#ffffff',
                     fontFamily:
                       '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                    fontSize: '10px',
+                    fontSize: '9.5px',
                     fontWeight: 700,
-                    letterSpacing: '0.04em',
+                    letterSpacing: '0.03em',
                     transition: 'all 0.18s ease',
-                    transform: isSelected ? 'scale(1.08)' : 'scale(1.0)',
+                    transform: isSelected ? 'scale(1.05)' : 'scale(1.0)',
                   }}
                 >
                   {node.id === 'START' ? (
-                    <MapPin size={11} color={nodeColor} />
+                    <MapPin size={10} color={nodeColor} />
                   ) : node.id === 'CURRENT_PROGRESS' ? (
-                    <Compass size={11} color={nodeColor} />
+                    <Compass size={10} color={nodeColor} />
                   ) : (
-                    <Flag size={11} color={nodeColor} />
+                    <Flag size={10} color={nodeColor} />
                   )}
                   <span style={{ color: isSelected ? '#ffffff' : '#e2e8f0' }}>
                     {node.title}
@@ -261,41 +261,6 @@ export const TripRouteVisualizer3D: React.FC = () => {
           </group>
         );
       })}
-
-      {/* 6. Overall Journey Simulation Label in 3D Space (Requirement 9) */}
-      <group position={[2.2, 1.1, 4.0]}>
-        <Billboard follow={true}>
-          <Html
-            center
-            distanceFactor={9.0}
-            style={{ pointerEvents: 'none', userSelect: 'none', whiteSpace: 'nowrap' }}
-          >
-            <div
-              style={{
-                background: 'rgba(4, 12, 24, 0.92)',
-                backdropFilter: 'blur(16px)',
-                border: '1px solid rgba(0, 242, 254, 0.45)',
-                boxShadow: '0 0 20px rgba(0, 242, 254, 0.25)',
-                borderRadius: '9999px',
-                padding: '6px 16px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                color: '#00f2fe',
-                fontFamily:
-                  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                fontSize: '11px',
-                fontWeight: 800,
-                letterSpacing: '0.06em',
-                textTransform: 'uppercase',
-              }}
-            >
-              <Navigation size={13} color="#00f2fe" />
-              <span>MÔ PHỎNG TIẾN TRÌNH CHUYẾN ĐI</span>
-            </div>
-          </Html>
-        </Billboard>
-      </group>
     </group>
   );
 };

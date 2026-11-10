@@ -31,6 +31,8 @@ export interface MemberCostShareResponse {
   ownershipPercentage: number;
   requiredShare: number;
   paidAmount: number;
+  pendingVerificationAmount?: number;
+  outstandingAmount?: number;
   netPosition: number;
   isCurrentUser: boolean;
 }
@@ -44,5 +46,7 @@ export interface CostSharingSummaryResponse {
   userRequiredShare: number;
   userPaidAmount: number;
   userNetPosition: number;
+  userPendingVerificationAmount?: number;
+  userOutstandingAmount?: number;
   memberBreakdown: MemberCostShareResponse[];
 }

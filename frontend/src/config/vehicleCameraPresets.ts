@@ -172,6 +172,7 @@ export function resolveActiveCameraPresetKey(state: {
   selectedVehiclePartCode?: string | null;
   selectedDamageId?: string | null;
   isDamageDetailModalOpen?: boolean;
+  isVehicleDetailOpen?: boolean;
   vehicleCoOwnershipMode?: boolean;
   vehicleBookingMode?: boolean;
   vehicleHandoverMode?: boolean;
@@ -248,7 +249,10 @@ export function resolveActiveCameraPresetKey(state: {
     return 'VEHICLE_CO_OWNERSHIP';
   }
   if (state.selectedVehicleId) {
-    return 'VEHICLE_WITH_RIGHT_PANEL';
+    if (state.isVehicleDetailOpen) {
+      return 'VEHICLE_WITH_RIGHT_PANEL';
+    }
+    return 'VEHICLE_FOCUS';
   }
   return 'OVERVIEW';
 }
@@ -498,16 +502,19 @@ export function getVehicleCameraPreset(
 
     case 'TRIP_VIEW':
     case 'VEHICLE_TRIP_VISUALIZATION': {
-      // Trip telemetrics & visualizer
-      const panelOffsetX = 1.25;
-      const baseDistZ = 12.8 * responsiveFactor;
+      // Balanced Active Trip Details framing:
+      // Vehicle prominent in left-center (~35-40% viewport width) with platform grounded and visible,
+      // 3D spline route curving forward, comfortable eye-level elevation, clear breathing room from right-side panel
+      const panelOffsetX = 0.85;
+      const baseDistZ = 8.6 * responsiveFactor;
       return {
-        target: [vx + panelOffsetX, vy + 1.05, vz],
-        position: [vx + 1.45, vy + 3.6, vz + baseDistZ],
-        minDistance: 6.0,
-        maxDistance: 22.0,
-        minPolarAngle: defaultMinPolar,
-        maxPolarAngle: defaultMaxPolar,
+        target: [vx + panelOffsetX, vy + 0.90, vz],
+        position: [vx + 0.35, vy + 2.15, vz + baseDistZ],
+        fov: 40,
+        minDistance: 4.5,
+        maxDistance: 16.0,
+        minPolarAngle: 0.40,
+        maxPolarAngle: 1.42,
         enableRotate: true,
         enableZoom: true,
         enablePan: true,
@@ -941,9 +948,9 @@ export function getVehiclePartInspectionPreset(
   ];
 
   // 6. Camera position in vehicle-local space maintaining exterior line-of-sight
-  // For CO_OWNER 3D Hotspot Explore mode, pull the camera slightly farther back (1.16x)
-  // so the focus feels smooth and spacious without aggressive close-up zooming (Requirement 6).
-  const distanceScale = isOperations ? 1.0 : 1.16;
+  // For OPERATIONS with right inspection/handover panel (~420px) and CO_OWNER 3D Hotspot Explore mode:
+  // Pull camera farther back (1.28x) so vehicle has generous breathing room without aggressive close-up zooming or clipping.
+  const distanceScale = isOperations ? 1.28 : 1.18;
   const relCamX = (cfg.cameraOffset[0] - cfg.targetOffset[0]) * distanceScale;
   const relCamY = (cfg.cameraOffset[1] - cfg.targetOffset[1]) * distanceScale;
   const relCamZ = (cfg.cameraOffset[2] - cfg.targetOffset[2]) * distanceScale;
@@ -958,7 +965,7 @@ export function getVehiclePartInspectionPreset(
   const [cRotX, cRotZ] = rotY(camLocal[0], camLocal[2]);
   const camWorldPos: [number, number, number] = [
     vx + cRotX,
-    vy + camLocal[1],
+    Math.max(vy + 0.75, vy + camLocal[1]), // Floor-safe: camera never dips into or below ground
     vz + cRotZ,
   ];
 
@@ -982,14 +989,14 @@ export function getVehiclePartInspectionPreset(
   }
 
   // 9. Panel-Safe Framing Offset:
-  // OPERATIONS uses a fixed right-side detail panel (~360px wide -> 0.14 offset).
-  // CO_OWNER 3D Hotspot Explore uses an in-scene 3D floating callout right next to the part (-> gentle 0.05 offset).
-  const lateralFactor = isOperations ? 0.14 : 0.05;
+  // OPERATIONS uses a fixed right-side detail panel (~400-440px wide -> 0.24 offset).
+  // CO_OWNER 3D Hotspot Explore uses an in-scene 3D floating callout right next to the part (-> gentle 0.08 offset).
+  const lateralFactor = isOperations ? 0.24 : 0.08;
   const lateralOffset = dist * lateralFactor;
 
   const target: [number, number, number] = [
     focusWorldPos[0] + rx * lateralOffset,
-    focusWorldPos[1],
+    Math.max(vy + 0.45, focusWorldPos[1]),
     focusWorldPos[2] + rz * lateralOffset,
   ];
 
@@ -1002,10 +1009,10 @@ export function getVehiclePartInspectionPreset(
   return {
     target,
     position,
-    minDistance: 2.2,
-    maxDistance: 16.0,
+    minDistance: 2.8,
+    maxDistance: 18.0,
     minPolarAngle: 0.35,
-    maxPolarAngle: 1.45,
+    maxPolarAngle: 1.40, // Floor-safe: never look upwards from below floor
     enableRotate: true,
     enableZoom: true,
     enablePan: true,
