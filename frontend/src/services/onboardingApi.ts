@@ -66,7 +66,11 @@ export const onboardingApi = {
   // Status
   async getStatus(): Promise<OnboardingStatusResponse> {
     const res = await authenticatedFetch('/api/onboarding/status');
-    return safeParseResponse<OnboardingStatusResponse>(res);
+    const data = await safeParseResponse<any>(res);
+    return {
+      ...data,
+      vehicleCount: data.activeVehiclesCount ?? data.vehicleCount ?? (data.activeVehicles?.length || 0),
+    };
   },
 
   // Drafts
@@ -133,11 +137,15 @@ export const onboardingApi = {
     return safeParseResponse(res);
   },
 
-  // Staff Registration Review Workflow
+  // Staff & Admin Registration Review Workflow
   async getStaffApplications(status?: string): Promise<VehicleRegistrationDraftResponse[]> {
     const query = status ? `?status=${encodeURIComponent(status)}` : '';
     const res = await authenticatedFetch(`/api/onboarding/staff/applications${query}`);
     return safeParseResponse<VehicleRegistrationDraftResponse[]>(res);
+  },
+
+  async getAdminApplications(status?: string): Promise<VehicleRegistrationDraftResponse[]> {
+    return this.getStaffApplications(status);
   },
 
   async getStaffApplicationById(applicationId: string): Promise<VehicleRegistrationDraftResponse> {
@@ -149,9 +157,13 @@ export const onboardingApi = {
     applicationId: string,
     data: ReviewVehicleRegistrationRequest
   ): Promise<VehicleRegistrationDraftResponse> {
+    const payload = {
+      decision: data.decision || data.action,
+      reason: data.reason,
+    };
     const res = await authenticatedFetch(`/api/onboarding/staff/applications/${applicationId}/review`, {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     });
     return safeParseResponse<VehicleRegistrationDraftResponse>(res);
   },

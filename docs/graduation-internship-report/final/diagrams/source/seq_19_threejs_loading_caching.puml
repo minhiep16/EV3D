@@ -1,0 +1,55 @@
+@startuml
+title SƠ ĐỒ TUẦN TỰ: TẢI TIẾN TRÌNH VÀ BỘ ĐỆM MÔ HÌNH 3D THREE.JS (SEQ-19)
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam sequenceMessageAlign center
+skinparam participant {
+    BackgroundColor #F8F9FA
+    BorderColor #2C3E50
+    FontColor #2C3E50
+}
+skinparam actor {
+    BackgroundColor #E8F4F8
+    BorderColor #1A5276
+}
+skinparam database {
+    BackgroundColor #FEF9E7
+    BorderColor #B7950B
+}
+
+autonumber
+actor "Người Dùng" as User
+participant "Garage3DView (React)" as UI
+participant "useGLTF (R3F/Drei)" as Loader
+participant "IndexedDB / BrowserCache" as Cache
+participant "Static CDN / Backend" as CDN
+
+User -> UI : Truy cập màn hình /garage/3d
+activate UI
+UI -> Loader : useGLTF('/models/vf8_optimized.glb')
+activate Loader
+
+Loader -> Cache : Kiểm tra model cache theo URL & Hash
+alt Cache Hit (Đã tải trước đó)
+    Cache --> Loader : ArrayBuffer (Model 3D)
+else Cache Miss (Tải mới)
+    Loader -> CDN : GET /models/vf8_optimized.glb
+    CDN --> Loader : 200 OK (Binary stream với OnProgress callback)
+    Loader -> Cache : Lưu ArrayBuffer vào IndexedDB
+end
+
+Loader -> Loader : GLTFLoader.parse() -> Scene Hierarchy
+Loader -> Loader : KTX2Loader giải nén kết cấu GPU Texture (Basis)
+Loader --> UI : scene, materials, nodes
+deactivate Loader
+
+UI -> UI : Gắn xe vào Three.js Canvas, bật bóng đổ (Shadows)
+UI --> User : Hiển thị không gian Garage 3D sống động
+deactivate UI
+
+@enduml

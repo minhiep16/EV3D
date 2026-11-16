@@ -33,10 +33,14 @@ export const VehicleStatusLabel: React.FC<VehicleStatusLabelProps> = ({
   const vehicleDamageMappingMode = useWorldStore((state) => state.vehicleDamageMappingMode);
   const vehicleInspectionMode = useWorldStore((state) => state.vehicleInspectionMode);
   const isRegistrationReviewModalOpen = useWorldStore((state) => state.isRegistrationReviewModalOpen);
+  const activePrimaryPanel = useWorldStore((state) => state.activePrimaryPanel);
+  const isStaffDisputeDashboardOpen = useWorldStore((state) => state.isStaffDisputeDashboardOpen);
 
-  // When review modal is active, vehicle is selected, or any zone is focused, hide this status pill completely
+  // When review modal is active, dispute is active, vehicle is selected, or any zone is focused, hide this status pill completely
   if (
     isRegistrationReviewModalOpen ||
+    isStaffDisputeDashboardOpen ||
+    activePrimaryPanel === 'DISPUTE' ||
     isSelected ||
     isGarageZoneFocused({
       selectedZone,

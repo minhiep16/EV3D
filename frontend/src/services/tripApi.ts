@@ -1,5 +1,6 @@
 import { authenticatedFetch, safeParseResponse } from './api';
-import { TripData, TripStartEligibilityData } from '../types/trip';
+import { TripData, TripStartEligibilityData, TripExtensionCheckData, TripExtensionRequestData } from '../types/trip';
+import { isValidUuid } from '../utils/formatUtils';
 
 /**
  * Fetch trip by booking ID (null if not started yet).
@@ -63,6 +64,7 @@ export async function startTripApi(bookingId: string): Promise<TripData> {
  * Retrieve active trip for a vehicle (for restoration & operations monitoring).
  */
 export async function fetchActiveTripForVehicle(vehicleId: string): Promise<TripData | null> {
+  if (!vehicleId || !isValidUuid(vehicleId)) return null;
   try {
     const res = await authenticatedFetch(`/api/vehicles/${vehicleId}/active-trip`);
     if (res.status === 204 || res.status === 404) {
@@ -75,6 +77,28 @@ export async function fetchActiveTripForVehicle(vehicleId: string): Promise<Trip
     }
     if (err instanceof TypeError || (err instanceof Error && err.message.includes('fetch'))) {
       throw new Error('Không thể kết nối đến máy chủ quản lý trạng thái chuyến đi.');
+    }
+    throw err;
+  }
+}
+
+/**
+ * Retrieve latest completed trip for a vehicle (for completed-trip summary after return).
+ */
+export async function fetchLatestCompletedTripForVehicle(vehicleId: string): Promise<TripData | null> {
+  if (!vehicleId || !isValidUuid(vehicleId)) return null;
+  try {
+    const res = await authenticatedFetch(`/api/vehicles/${vehicleId}/latest-completed-trip`);
+    if (res.status === 204 || res.status === 404) {
+      return null;
+    }
+    return await safeParseResponse<TripData>(res);
+  } catch (err: any) {
+    if (err.message && (err.message.includes('404') || err.message.includes('204'))) {
+      return null;
+    }
+    if (err instanceof TypeError || (err instanceof Error && err.message.includes('fetch'))) {
+      throw new Error('Không thể kết nối đến máy chủ lấy thông tin chuyến đi đã hoàn tất.');
     }
     throw err;
   }
@@ -230,6 +254,7 @@ export async function requestTripReturnApi(tripId: string): Promise<TripData> {
  * Retrieve chronological trip history for a vehicle.
  */
 export async function fetchVehicleTrips(vehicleId: string): Promise<TripData[]> {
+  if (!vehicleId || !isValidUuid(vehicleId)) return [];
   try {
     const res = await authenticatedFetch(`/api/vehicles/${vehicleId}/trips`);
     if (res.status === 204 || res.status === 404) {
@@ -247,5 +272,168 @@ export async function fetchVehicleTrips(vehicleId: string): Promise<TripData[]> 
     throw err;
   }
 }
+
+/**
+ * Extend an active trip (Section 3 & 6).
+ * Supports both:
+ * - (tripId, { additionalMinutes: 30, reason })
+ * - legacy (tripId, newEndTime, reason)
+ */
+export async function extendTripApi(
+  tripId: string,
+  targetOrPayload: string | { additionalMinutes?: number; newEndTime?: string; reason?: string },
+  legacyReason?: string
+): Promise<TripData> {
+  const payload = typeof targetOrPayload === 'string'
+    ? { newEndTime: targetOrPayload, reason: legacyReason }
+    : targetOrPayload;
+
+  try {
+    const res = await authenticatedFetch(`/api/trips/${tripId}/extend`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    return await safeParseResponse<TripData>(res);
+  } catch (err: any) {
+    if (err.message) {
+      throw new Error(err.message);
+    }
+    throw new Error('Không thể gia hạn chuyến đi. Vui lòng thử lại.');
+  }
+}
+
+/**
+ * Check trip extension availability & detect conflicts against subsequent bookings.
+ */
+export async function checkTripExtensionAvailabilityApi(
+  tripId: string,
+  additionalMinutes: number
+): Promise<TripExtensionCheckData> {
+  const res = await authenticatedFetch(`/api/trips/${tripId}/extend/check`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ additionalMinutes }),
+  });
+  return await safeParseResponse<TripExtensionCheckData>(res);
+}
+
+/**
+ * Create and submit a booking negotiation / yield request to the subsequent owner.
+ */
+export async function createNegotiationRequestApi(
+  tripId: string,
+  additionalMinutes: number,
+  reason?: string
+): Promise<TripExtensionRequestData> {
+  const res = await authenticatedFetch(`/api/trips/${tripId}/extend/negotiate`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ additionalMinutes, reason }),
+  });
+  return await safeParseResponse<TripExtensionRequestData>(res);
+}
+
+/**
+ * Fetch the active pending extension request for a trip.
+ */
+export async function fetchActiveTripExtensionRequestApi(
+  tripId: string
+): Promise<TripExtensionRequestData | null> {
+  try {
+    const res = await authenticatedFetch(`/api/trips/${tripId}/extension-request/active`);
+    if (res.status === 204 || res.status === 404) {
+      return null;
+    }
+    return await safeParseResponse<TripExtensionRequestData>(res);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch pending extension requests where the current user is asked to yield their booking.
+ */
+export async function fetchPendingExtensionRequestsApi(): Promise<TripExtensionRequestData[]> {
+  try {
+    const res = await authenticatedFetch('/api/trips/extension-requests/pending');
+    if (res.status === 204 || res.status === 404) {
+      return [];
+    }
+    const data = await safeParseResponse<TripExtensionRequestData[]>(res);
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetch a specific extension request by ID.
+ */
+export async function fetchExtensionRequestByIdApi(
+  requestId: string
+): Promise<TripExtensionRequestData> {
+  const res = await authenticatedFetch(`/api/trips/extension-requests/${requestId}`);
+  return await safeParseResponse<TripExtensionRequestData>(res);
+}
+
+/**
+ * Affected co-owner accepts the yield request.
+ */
+export async function acceptExtensionRequestApi(
+  requestId: string
+): Promise<TripExtensionRequestData> {
+  const res = await authenticatedFetch(`/api/trips/extension-requests/${requestId}/accept`, {
+    method: 'POST',
+  });
+  return await safeParseResponse<TripExtensionRequestData>(res);
+}
+
+/**
+ * Affected co-owner rejects the yield request.
+ */
+export async function rejectExtensionRequestApi(
+  requestId: string
+): Promise<TripExtensionRequestData> {
+  const res = await authenticatedFetch(`/api/trips/extension-requests/${requestId}/reject`, {
+    method: 'POST',
+  });
+  return await safeParseResponse<TripExtensionRequestData>(res);
+}
+
+/**
+ * Requester cancels their pending yield request.
+ */
+export async function cancelExtensionRequestApi(
+  requestId: string
+): Promise<TripExtensionRequestData> {
+  const res = await authenticatedFetch(`/api/trips/extension-requests/${requestId}/cancel`, {
+    method: 'POST',
+  });
+  return await safeParseResponse<TripExtensionRequestData>(res);
+}
+
+/**
+ * Acknowledge viewing completed trip details to dismiss the summary card from vehicle overview.
+ */
+export async function acknowledgeTripViewedApi(tripId: string): Promise<TripData> {
+  const res = await authenticatedFetch(`/api/trips/${tripId}/acknowledge`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`Không thể ghi nhận trạng thái đã xem chuyến đi (${res.status})`);
+  }
+  return await safeParseResponse<TripData>(res);
+}
+
 
 

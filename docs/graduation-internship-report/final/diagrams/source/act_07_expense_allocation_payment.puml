@@ -1,0 +1,60 @@
+@startuml
+title QUY TRÌNH PHÂN BỔ CHI PHÍ VÀ THANH TOÁN DEMO (ACT-07)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+|Nhân Viên / Admin|
+start
+:Khởi tạo khoản chi phí phương tiện (Bảo dưỡng / Tiền điện);
+:Phê duyệt khoản chi (Approve Expense);
+
+|Hệ Thống Backend (Spring Boot)|
+if (Chính sách phân bổ là gì?) then (USER_RESPONSIBILITY)
+    :Gán 100% số tiền hóa đơn cho người lái chuyến đi;
+    :Tạo 1 bản ghi ExpenseShare;
+else (OWNERSHIP_RATIO)
+    :Sắp xếp thành viên theo % sở hữu giảm dần;
+    :Tính toán chia tiền theo tỷ lệ và lấy phần nguyên sàn;
+    :Tính phần dư lẻ do làm tròn: remainder = total - sum;
+    :Phân phối từng đồng lẻ phần dư theo thuật toán Hare-Niemeyer;
+    :Tạo danh sách ExpenseShare cho toàn bộ thành viên nhóm;
+endif
+
+|Chủ Đồng Sở Hữu (CO_OWNER)|
+:Nhận thông báo nợ chi phí trên giao diện 3D;
+:Mở modal thanh toán cá nhân;
+:Chuyển khoản mô phỏng theo số tài khoản hiển thị;
+:Nhập mã tham chiếu giao dịch và bấm "Nộp Thanh Toán";
+
+|Hệ Thống Backend (Spring Boot)|
+:Lưu PersonalExpensePayment (status = PAYMENT_SUBMITTED);
+:Khoản nợ vẫn ở trạng thái ALLOCATED (chưa tất toán);
+:Gửi thông báo chờ đối soát đến Nhân viên;
+
+|Nhân Viên Điều Hành (STAFF)|
+:Mở StaffPaymentVerificationModal;
+:Kiểm tra biến động số dư tài khoản thực tế;
+if (Đã nhận đủ tiền?) then (Đủ tiền)
+    :Bấm "Xác Nhận Phê Duyệt";
+    |Hệ Thống Backend (Spring Boot)|
+    :Cập nhật Payment status = PAYMENT_VERIFIED;
+    :Cập nhật ExpenseShare status = SETTLED (Đã tất toán);
+    |Chủ Đồng Sở Hữu (CO_OWNER)|
+    :Nhận biên lai xác nhận: Hết nợ;
+else (Sai lệch / Thiếu)
+    |Nhân Viên Điều Hành (STAFF)|
+    :Bấm "Từ Chối";
+    |Hệ Thống Backend (Spring Boot)|
+    :Cập nhật Payment status = REJECTED;
+    |Chủ Đồng Sở Hữu (CO_OWNER)|
+    :Nhận thông báo từ chối thanh toán;
+endif
+stop
+@enduml

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -8,10 +8,15 @@ import { VehiclePartId } from '../../../types/vehiclePart';
 import { useWorldStore } from '../../../store/worldStore';
 import { useAuthStore } from '../../../store/authStore';
 import { fetchVehicleDamages } from '../../../services/damageApi';
-import { fetchActiveInspection } from '../../../services/inspectionApi';
+import { fetchActiveInspection, fetchLatestCompletedInspection } from '../../../services/inspectionApi';
 import { DamageRecordData } from '../../../types/damage';
-import { VehicleInspectionResponse } from '../../../types/inspection';
-import { normalizeCanonicalPartCode } from '../../../data/vehicleParts';
+import { VehicleInspectionResponse, resolveHotspotSemanticColor } from '../../../types/inspection';
+import {
+  normalizeComponentId,
+  resolveVehicleComponentAnchor,
+  resolveSeverityColor,
+  getSeverityRank,
+} from '../../../services/vehicleDamageMappingService';
 
 export interface StaffInspectionPartDef {
   id: VehiclePartId;
@@ -36,6 +41,11 @@ export const STAFF_INSPECTION_PARTS: StaffInspectionPartDef[] = [
   { id: 'WINDSHIELD', label: 'Kính chắn gió', position: [0.0, 1.22, 0.62] },
   { id: 'BATTERY', label: 'Bộ pin cao áp', position: [0.0, 0.22, -0.1] },
   { id: 'CHARGING_PORT', label: 'Cổng sạc điện', position: [-0.88, 0.86, -1.42] },
+  { id: 'HOOD', label: 'Nắp ca-pô', position: [0.0, 0.82, 1.25] },
+  { id: 'ROOF', label: 'Nóc xe', position: [0.0, 1.45, -0.30] },
+  { id: 'TAILLIGHTS', label: 'Cụm đèn hậu LED', position: [0.0, 0.95, -1.82] },
+  { id: 'BODY', label: 'Thân vỏ & Khung gầm', position: [0.0, 0.65, 0.0] },
+  { id: 'DIFFUSER', label: 'Cản sau & Khuếch tán', position: [0.0, 0.32, -1.80] },
 ];
 
 export const STAFF_INSPECTION_PARTS_EV02: StaffInspectionPartDef[] = [
@@ -51,6 +61,11 @@ export const STAFF_INSPECTION_PARTS_EV02: StaffInspectionPartDef[] = [
   { id: 'WINDSHIELD', label: 'Kính chắn gió', position: [0.0, 1.05, 0.55] },
   { id: 'BATTERY', label: 'Bộ pin cao áp', position: [0.0, 0.18, 0.0] },
   { id: 'CHARGING_PORT', label: 'Cổng sạc điện', position: [0.86, 0.80, -1.65] },
+  { id: 'HOOD', label: 'Nắp ca-pô', position: [0.0, 0.82, 1.25] },
+  { id: 'ROOF', label: 'Nóc xe', position: [0.0, 1.45, -0.30] },
+  { id: 'TAILLIGHTS', label: 'Cụm đèn hậu LED', position: [0.0, 0.95, -1.82] },
+  { id: 'BODY', label: 'Thân vỏ & Khung gầm', position: [0.0, 0.65, 0.0] },
+  { id: 'DIFFUSER', label: 'Cản sau & Khuếch tán', position: [0.0, 0.32, -1.80] },
 ];
 
 interface StaffInspectionNodeProps {
@@ -60,6 +75,7 @@ interface StaffInspectionNodeProps {
   isHovered: boolean;
   statusColor: string;
   damageCount: number;
+  activeDefectCount?: number;
   assessmentLabel?: string | null;
   onSelect: (part: StaffInspectionPartDef) => void;
   onHover: (id: VehiclePartId | null) => void;
@@ -72,6 +88,7 @@ const StaffInspectionNode: React.FC<StaffInspectionNodeProps> = ({
   isHovered,
   statusColor,
   damageCount,
+  activeDefectCount = 0,
   assessmentLabel,
   onSelect,
   onHover,
@@ -91,7 +108,7 @@ const StaffInspectionNode: React.FC<StaffInspectionNodeProps> = ({
     }
   });
 
-  const accentColor = isSelected ? '#ffffff' : statusColor;
+  const accentColor = statusColor;
   const ringBorderColor = isSelected ? '#ffffff' : statusColor;
   const visibleRingSize = isSelected ? '18px' : isHovered ? '16px' : '14px';
   const coreDotSize = isSelected ? '7px' : isHovered ? '6px' : '5px';
@@ -159,11 +176,16 @@ const StaffInspectionNode: React.FC<StaffInspectionNodeProps> = ({
                 <span>{part.label}</span>
                 {damageCount > 0 && (
                   <span style={{ color: isSelected ? '#b91c1c' : '#f87171', fontWeight: 900 }}>
-                    ({damageCount} lỗi)
+                    ({damageCount} lỗi hồ sơ)
                   </span>
                 )}
-                {damageCount === 0 && assessmentLabel && (
-                  <span style={{ color: isSelected ? '#065f46' : '#34d399', fontWeight: 900 }}>
+                {activeDefectCount > 0 && (
+                  <span style={{ color: isSelected ? '#b91c1c' : '#ef4444', fontWeight: 900 }}>
+                    (Phát hiện: {assessmentLabel})
+                  </span>
+                )}
+                {assessmentLabel && activeDefectCount === 0 && (
+                  <span style={{ color: isSelected ? '#041325' : statusColor, fontWeight: 900 }}>
                     ({assessmentLabel})
                   </span>
                 )}
@@ -240,8 +262,8 @@ const StaffInspectionNode: React.FC<StaffInspectionNodeProps> = ({
                     boxShadow: `0 0 8px ${statusColor}`,
                   }}
                 />
-                {/* Damage warning badge */}
-                {damageCount > 0 && (
+                {/* Damage warning badge: active defect finding or confirmed unresolved damage */}
+                {(damageCount > 0 || activeDefectCount > 0) && (
                   <span
                     style={{
                       position: 'absolute',
@@ -325,6 +347,14 @@ export const StaffVehicleInspectionHotspotLayer: React.FC<StaffVehicleInspection
     staleTime: 5000,
   });
 
+  // Authoritative latest completed inspection query for the active vehicle (historical baseline)
+  const { data: latestCompletedInspection } = useQuery<VehicleInspectionResponse | null>({
+    queryKey: ['latestCompletedInspection', vehicle.id],
+    queryFn: () => fetchLatestCompletedInspection(vehicle.id),
+    enabled: Boolean(vehicle.id),
+    staleTime: 10000,
+  });
+
   const unresolvedDamages = damages.filter(
     (d: any) => d.status !== 'RESOLVED' && d.status !== 'REPAIRED'
   );
@@ -332,11 +362,17 @@ export const StaffVehicleInspectionHotspotLayer: React.FC<StaffVehicleInspection
   const [localHoveredId, setLocalHoveredId] = useState<VehiclePartId | null>(null);
 
   const isEv02 = vehicleCode === 'EV02' || vehicle?.model?.includes('EV02');
-  const parts = isEv02 ? STAFF_INSPECTION_PARTS_EV02 : STAFF_INSPECTION_PARTS;
+  const parts = useMemo(() => {
+    const baseList = isEv02 ? STAFF_INSPECTION_PARTS_EV02 : STAFF_INSPECTION_PARTS;
+    return baseList.map((p) => {
+      const anchor = resolveVehicleComponentAnchor(vehicle, p.id);
+      return anchor ? { ...p, position: anchor } : p;
+    });
+  }, [vehicle, isEv02, vehicleCode, vehicle?.id, vehicle?.model]);
 
   const handleSelectPart = (part: StaffInspectionPartDef) => {
-    const canonical = (normalizeCanonicalPartCode(part.id) || part.id) as VehiclePartId;
-    if (normalizeCanonicalPartCode(selectedVehiclePartId) === canonical) {
+    const canonical = (normalizeComponentId(part.id) || part.id) as VehiclePartId;
+    if (normalizeComponentId(selectedVehiclePartId) === canonical) {
       clearVehiclePartSelection();
       selectVehiclePartCode(null);
     } else {
@@ -350,49 +386,107 @@ export const StaffVehicleInspectionHotspotLayer: React.FC<StaffVehicleInspection
     hoverVehiclePart(id);
   };
 
+  const isSessionActive = Boolean(activeInspection && activeInspection.status === 'IN_PROGRESS');
+
   return (
     <group name="StaffVehicleInspectionHotspotLayer3D">
       {parts.map((part, idx) => {
-        const canonicalId = normalizeCanonicalPartCode(part.id);
+        const canonicalId = normalizeComponentId(part.id);
+        const isSelected = normalizeComponentId(selectedVehiclePartId) === canonicalId;
         const partDamages = unresolvedDamages.filter(
-          (d) => normalizeCanonicalPartCode(d.vehiclePartCode || (d as any).partCode) === canonicalId
+          (d) => normalizeComponentId(d.vehiclePartCode || (d as any).partCode) === canonicalId
         );
-        const assessedItem = activeInspection?.items?.find(
-          (i) => normalizeCanonicalPartCode(i.vehiclePartCode) === canonicalId
+        const assessedDraftItem = activeInspection?.items?.find(
+          (i) => normalizeComponentId(i.vehiclePartCode) === canonicalId
         );
 
-        let statusColor = '#00f2fe'; // Default CYAN (Normal selectable hotspot)
+        const resolvedForPart = damages.filter(
+          (d: any) =>
+            (d.status === 'RESOLVED' || d.status === 'REPAIRED') &&
+            normalizeComponentId(d.vehiclePartCode || (d as any).partCode) === canonicalId
+        );
+        const hasOpenDamage = partDamages.length > 0;
+
+        let statusColor = '#94a3b8'; // Default UNINSPECTED: Gray (#94a3b8)
         let assessmentLabel: string | null = null;
 
-        if (partDamages.length > 0) {
-          // Unresolved damage: SEVERE -> RED, others -> AMBER
-          const hasSevere = partDamages.some(
-            (d) => d.severity === 'SEVERE' || d.damageType === 'CRACK' || d.damageType === 'BROKEN'
-          );
-          statusColor = hasSevere ? '#ef4444' : '#f59e0b';
-        } else if (assessedItem) {
-          // Current inspection session assessment (only if no unresolved damage)
-          if (assessedItem.conditionStatus === 'GOOD') {
-            statusColor = '#10b981'; // GREEN
-            assessmentLabel = 'TỐT';
-          } else if (assessedItem.conditionStatus === 'CRACK') {
-            statusColor = '#ef4444'; // RED
-            assessmentLabel = 'NỨT';
+        if (isSessionActive) {
+          // ========================================================
+          // ACTIVE INSPECTION SESSION MODE:
+          // Strictly authoritative on active session items.
+          // Centralized semantic colors:
+          // GOOD -> Cyan (#00f2fe), SCRATCH -> Yellow (#facc15),
+          // DENT -> Orange (#f97316), CRACK -> Red (#ef4444)
+          // Live session assessments are strictly respected.
+          // ========================================================
+          if (assessedDraftItem) {
+            statusColor = resolveHotspotSemanticColor(assessedDraftItem.conditionStatus, true);
+            if (assessedDraftItem.conditionStatus === 'GOOD') {
+              assessmentLabel = 'TỐT';
+            } else if (assessedDraftItem.conditionStatus === 'SCRATCH') {
+              assessmentLabel = 'TRẦY';
+            } else if (assessedDraftItem.conditionStatus === 'DENT') {
+              assessmentLabel = 'MÓP';
+            } else if (assessedDraftItem.conditionStatus === 'CRACK') {
+              assessmentLabel = 'NỨT';
+            } else {
+              assessmentLabel = 'HƯ HỎNG';
+            }
           } else {
-            statusColor = '#f59e0b'; // AMBER
-            assessmentLabel = assessedItem.conditionStatus === 'SCRATCH' ? 'TRẦY' : 'MÓP';
+            // Component has NOT been inspected in the active session
+            statusColor = '#94a3b8'; // Gray (#94a3b8) - do not fake GOOD
+            assessmentLabel = isSelected ? 'CHƯA KIỂM TRA (ĐANG CHỌN)' : 'CHƯA KIỂM TRA';
+          }
+        } else {
+          // ========================================================
+          // HISTORICAL / OVERVIEW MODE (No active session in progress)
+          // ========================================================
+          if (hasOpenDamage) {
+            const primaryDmg = partDamages[0];
+            statusColor = resolveHotspotSemanticColor(primaryDmg.damageType, true);
+            assessmentLabel = primaryDmg.damageType || 'HƯ HỎNG';
+          } else if (resolvedForPart.length > 0) {
+            statusColor = '#00f2fe';
+            assessmentLabel = 'TỐT (ĐÃ KHẮC PHỤC)';
+          } else if (latestCompletedInspection?.items) {
+            const histItem = latestCompletedInspection.items.find(
+              (i) => normalizeComponentId(i.vehiclePartCode) === canonicalId
+            );
+            if (histItem) {
+              statusColor = resolveHotspotSemanticColor(histItem.conditionStatus, true);
+              if (histItem.conditionStatus === 'GOOD') {
+                assessmentLabel = 'TỐT (LỊCH SỬ)';
+              } else if (histItem.conditionStatus === 'SCRATCH') {
+                assessmentLabel = 'TRẦY (LỊCH SỬ)';
+              } else if (histItem.conditionStatus === 'DENT') {
+                assessmentLabel = 'MÓP (LỊCH SỬ)';
+              } else {
+                assessmentLabel = 'HƯ HỎNG (LỊCH SỬ)';
+              }
+            } else {
+              statusColor = '#94a3b8';
+              assessmentLabel = 'CHƯA KIỂM ĐỊNH';
+            }
+          } else {
+            statusColor = '#94a3b8';
+            assessmentLabel = isSelected ? 'ĐANG CHỌN' : 'CHƯA KIỂM ĐỊNH';
           }
         }
+
+        const hasActiveDefect = Boolean(
+          assessedDraftItem && assessedDraftItem.conditionStatus && assessedDraftItem.conditionStatus !== 'GOOD'
+        );
 
         return (
           <StaffInspectionNode
             key={part.id}
             part={part}
             index={idx}
-            isSelected={normalizeCanonicalPartCode(selectedVehiclePartId) === canonicalId}
+            isSelected={isSelected}
             isHovered={localHoveredId === part.id || hoveredVehiclePartId === part.id}
             statusColor={statusColor}
             damageCount={partDamages.length}
+            activeDefectCount={hasActiveDefect ? 1 : 0}
             assessmentLabel={assessmentLabel}
             onSelect={handleSelectPart}
             onHover={handleHoverPart}

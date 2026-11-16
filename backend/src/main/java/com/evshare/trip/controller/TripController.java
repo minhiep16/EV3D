@@ -22,9 +22,11 @@ import java.util.UUID;
 public class TripController {
 
     private final TripService tripService;
+    private final com.evshare.trip.service.TripExtensionService tripExtensionService;
 
-    public TripController(TripService tripService) {
+    public TripController(TripService tripService, com.evshare.trip.service.TripExtensionService tripExtensionService) {
         this.tripService = tripService;
+        this.tripExtensionService = tripExtensionService;
     }
 
     /**
@@ -101,6 +103,25 @@ public class TripController {
     }
 
     /**
+     * Retrieve the latest completed trip for a vehicle (for completed-trip summary after return).
+     * For CO_OWNER: restricted to their own completed trip on this vehicle.
+     * For STAFF/ADMIN: retrieves the vehicle's latest completed trip.
+     */
+    @GetMapping("/vehicles/{vehicleId}/latest-completed-trip")
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
+    public ResponseEntity<TripResponse> getLatestCompletedTripForVehicle(
+            @PathVariable UUID vehicleId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        if (principal == null || principal.getUser() == null) {
+            throw new UnauthorizedException("Vui lòng đăng nhập để xem thông tin chuyến đi.");
+        }
+        Optional<TripResponse> response = tripService.getLatestCompletedTripForVehicle(vehicleId, principal);
+        return response.map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    /**
      * Retrieve trip by trip ID (purely read-only query).
      */
     @GetMapping("/trips/{tripId}")
@@ -116,6 +137,178 @@ public class TripController {
         );
         return response.map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    /**
+     * Acknowledge viewing completed trip details to dismiss the summary card from vehicle overview.
+     */
+    @PostMapping("/trips/{tripId}/acknowledge")
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
+    public ResponseEntity<TripResponse> acknowledgeTrip(
+            @PathVariable UUID tripId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        if (principal == null || principal.getUser() == null) {
+            throw new UnauthorizedException("Vui lòng đăng nhập");
+        }
+        return ResponseEntity.ok(tripService.acknowledgeTripViewed(tripId, principal));
+    }
+
+    /**
+     * Check extension availability and detect conflicts (Section 5 & 14).
+     */
+    @PostMapping("/trips/{tripId}/extend/check")
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'ADMIN')")
+    public ResponseEntity<com.evshare.trip.dto.TripExtensionCheckResponse> checkExtensionAvailability(
+            @PathVariable UUID tripId,
+            @RequestBody com.evshare.trip.dto.ExtendTripRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        if (principal == null || principal.getUser() == null) {
+            throw new UnauthorizedException("Vui lòng đăng nhập");
+        }
+        int minutes = request.getAdditionalMinutes() != null ? request.getAdditionalMinutes() : 30;
+        return ResponseEntity.ok(tripExtensionService.checkAvailability(
+                tripId, minutes, principal.getId(), principal.getUser().getRole()));
+    }
+
+    /**
+     * Extend an active trip (Section 3, 6, 7).
+     * Supports both POST and PATCH methods.
+     */
+    @RequestMapping(value = "/trips/{tripId}/extend", method = {RequestMethod.POST, RequestMethod.PATCH})
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'ADMIN')")
+    public ResponseEntity<?> extendTrip(
+            @PathVariable UUID tripId,
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestBody com.evshare.trip.dto.ExtendTripRequest request
+    ) {
+        if (principal == null || principal.getUser() == null) {
+            throw new UnauthorizedException("Vui lòng đăng nhập để gia hạn chuyến đi");
+        }
+        if (Boolean.TRUE.equals(request.getRequestNegotiation())) {
+            int minutes = request.getAdditionalMinutes() != null ? request.getAdditionalMinutes() : 30;
+            com.evshare.trip.dto.TripExtensionRequestResponse res = tripExtensionService.createNegotiationRequest(
+                    tripId, minutes, request.getReason(), principal.getId(), principal.getUser().getRole());
+            return ResponseEntity.status(HttpStatus.ACCEPTED).body(res);
+        }
+
+        TripResponse response = tripService.extendTrip(
+                tripId,
+                principal.getId(),
+                principal.getUser().getRole(),
+                request
+        );
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Submit a direct booking negotiation request (Section 7, 8).
+     */
+    @PostMapping("/trips/{tripId}/extend/negotiate")
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'ADMIN')")
+    public ResponseEntity<com.evshare.trip.dto.TripExtensionRequestResponse> createNegotiationRequest(
+            @PathVariable UUID tripId,
+            @RequestBody com.evshare.trip.dto.ExtendTripRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        if (principal == null || principal.getUser() == null) {
+            throw new UnauthorizedException("Vui lòng đăng nhập");
+        }
+        int minutes = request.getAdditionalMinutes() != null ? request.getAdditionalMinutes() : 30;
+        com.evshare.trip.dto.TripExtensionRequestResponse res = tripExtensionService.createNegotiationRequest(
+                tripId, minutes, request.getReason(), principal.getId(), principal.getUser().getRole());
+        return ResponseEntity.status(HttpStatus.CREATED).body(res);
+    }
+
+    /**
+     * Retrieve active pending extension request for a trip.
+     */
+    @GetMapping("/trips/{tripId}/extension-request/active")
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
+    public ResponseEntity<com.evshare.trip.dto.TripExtensionRequestResponse> getActiveRequestForTrip(
+            @PathVariable UUID tripId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        if (principal == null || principal.getUser() == null) {
+            throw new UnauthorizedException("Vui lòng đăng nhập");
+        }
+        Optional<com.evshare.trip.dto.TripExtensionRequestResponse> opt = tripExtensionService.getActiveRequestForTrip(
+                tripId, principal.getId(), principal.getUser().getRole());
+        return opt.map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    /**
+     * Retrieve pending extension requests for the authenticated user (Section 9).
+     */
+    @GetMapping("/trips/extension-requests/pending")
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
+    public ResponseEntity<List<com.evshare.trip.dto.TripExtensionRequestResponse>> getPendingRequestsForUser(
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        if (principal == null || principal.getUser() == null) {
+            throw new UnauthorizedException("Vui lòng đăng nhập");
+        }
+        return ResponseEntity.ok(tripExtensionService.getPendingRequestsForUser(principal.getId()));
+    }
+
+    /**
+     * Retrieve specific request details by ID.
+     */
+    @GetMapping("/trips/extension-requests/{requestId}")
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
+    public ResponseEntity<com.evshare.trip.dto.TripExtensionRequestResponse> getRequestById(
+            @PathVariable UUID requestId
+    ) {
+        return ResponseEntity.ok(tripExtensionService.getRequestById(requestId));
+    }
+
+    /**
+     * Accept a booking negotiation request (Section 10).
+     */
+    @PostMapping("/trips/extension-requests/{requestId}/accept")
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'ADMIN')")
+    public ResponseEntity<com.evshare.trip.dto.TripExtensionRequestResponse> acceptExtensionRequest(
+            @PathVariable UUID requestId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        if (principal == null || principal.getUser() == null) {
+            throw new UnauthorizedException("Vui lòng đăng nhập");
+        }
+        return ResponseEntity.ok(tripExtensionService.acceptExtensionRequest(
+                requestId, principal.getId(), principal.getUser().getRole()));
+    }
+
+    /**
+     * Reject a booking negotiation request (Section 12).
+     */
+    @PostMapping("/trips/extension-requests/{requestId}/reject")
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'ADMIN')")
+    public ResponseEntity<com.evshare.trip.dto.TripExtensionRequestResponse> rejectExtensionRequest(
+            @PathVariable UUID requestId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        if (principal == null || principal.getUser() == null) {
+            throw new UnauthorizedException("Vui lòng đăng nhập");
+        }
+        return ResponseEntity.ok(tripExtensionService.rejectExtensionRequest(
+                requestId, principal.getId(), principal.getUser().getRole()));
+    }
+
+    /**
+     * Cancel a pending extension request (Section 12).
+     */
+    @PostMapping("/trips/extension-requests/{requestId}/cancel")
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'ADMIN')")
+    public ResponseEntity<com.evshare.trip.dto.TripExtensionRequestResponse> cancelExtensionRequest(
+            @PathVariable UUID requestId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        if (principal == null || principal.getUser() == null) {
+            throw new UnauthorizedException("Vui lòng đăng nhập");
+        }
+        return ResponseEntity.ok(tripExtensionService.cancelExtensionRequest(
+                requestId, principal.getId(), principal.getUser().getRole()));
     }
 
     /**
@@ -194,5 +387,22 @@ public class TripController {
                 principal.getUser().getRole()
         );
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Retrieve chronological trip history for a vehicle.
+     * Accessible by STAFF, ADMIN, and CO_OWNER (with ownership validation in service).
+     */
+    @GetMapping("/vehicles/{vehicleId}/trips")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN', 'CO_OWNER')")
+    public ResponseEntity<List<TripResponse>> getTripsForVehicle(
+            @PathVariable UUID vehicleId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        if (principal == null || principal.getUser() == null) {
+            throw new UnauthorizedException("Vui lòng đăng nhập để xem lịch sử chuyến đi");
+        }
+        List<TripResponse> trips = tripService.getTripsForVehicle(vehicleId, principal);
+        return ResponseEntity.ok(trips);
     }
 }

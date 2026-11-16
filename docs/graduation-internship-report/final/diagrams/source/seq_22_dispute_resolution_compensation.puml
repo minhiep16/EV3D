@@ -1,0 +1,52 @@
+@startuml
+title SƠ ĐỒ TUẦN TỰ: GIẢI QUYẾT KHIẾU NẠI VÀ BỒI THƯỜNG HÒA GIẢI (SEQ-22)
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam sequenceMessageAlign center
+
+autonumber
+actor "Chủ Xe Khiếu Nại" as Complainant
+actor "Nhân Viên Hòa Giải" as Staff
+participant "DisputePanel (React)" as UI
+participant "DisputeController" as Controller
+participant "DisputeService" as Service
+participant "ExpenseShareRepository" as ShareRepo
+database "MySQL Database" as DB
+
+Complainant -> UI : Tạo khiếu nại về tiền sạc chuyến đi, đính kèm biên lai
+activate UI
+UI -> Controller : POST /api/disputes {tripId, category: 'BILLING', description, evidenceUrls}
+activate Controller
+Controller -> Service : createDispute(userId, request)
+activate Service
+Service -> DB : INSERT INTO disputes (status = 'OPEN', priority = 'MEDIUM')
+Service -> DB : INSERT INTO dispute_evidence (dispute_id, file_url)
+Service --> Controller : DisputeResponse
+Controller --> UI : HTTP 201 Created
+UI --> Complainant : Gửi khiếu nại thành công, chờ phân công nhân viên
+deactivate UI
+
+Staff -> Controller : PATCH /api/disputes/{id}/assign-staff
+Controller -> Service : assignStaffMediator(disputeId, staffId)
+Service -> DB : UPDATE disputes SET mediator_staff_id = staffId, status = 'UNDER_INVESTIGATION'
+
+Staff -> Controller : POST /api/disputes/{id}/record-investigation {findings, proposedCompensation}
+Controller -> Service : recordInvestigation(disputeId, findings, amount)
+Service -> DB : UPDATE disputes SET status = 'INVESTIGATION_COMPLETED', resolution_proposed = ?
+
+Staff -> Controller : POST /api/disputes/{id}/compensation-payment {amount, payer: 'SYSTEM_ADMIN'}
+Controller -> Service : executeCompensation(disputeId, staffId, request)
+Service -> DB : INSERT INTO dispute_compensation_payments (amount, status = 'COMPLETED')
+Service -> ShareRepo : Điều chỉnh giảm nghĩa vụ ExpenseShare của Complainant
+Service -> DB : UPDATE expense_shares SET share_amount = share_amount - compensationAmount
+Service -> DB : UPDATE disputes SET status = 'RESOLVED', closed_at = now()
+Service --> Controller : CompensationResult
+Controller --> Staff : HTTP 200 OK (Đã bồi thường và đóng khiếu nại)
+deactivate Service
+deactivate Controller
+@enduml

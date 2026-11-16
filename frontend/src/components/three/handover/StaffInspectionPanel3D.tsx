@@ -970,7 +970,7 @@ export const StaffInspectionPanel3D: React.FC<StaffInspectionPanel3DProps> = ({
                           }}
                         >
                           <Send size={14} />
-                          {isSubmitting ? 'ĐANG XỬ LÝ...' : `XÁC NHẬN GIAO XE CHO ${handover.coOwnerName.toUpperCase()}`}
+                          {isSubmitting ? 'ĐANG XỬ LÝ...' : `XÁC NHẬN BÀN GIAO XE CHO ${handover.coOwnerName ? handover.coOwnerName.toUpperCase() : 'ĐỒNG SỞ HỮU'}`}
                         </button>
                       </div>
                     )}
@@ -979,18 +979,20 @@ export const StaffInspectionPanel3D: React.FC<StaffInspectionPanel3DProps> = ({
                     {handover.status === 'HANDED_OVER' && (
                       <div
                         style={{
-                          background: 'rgba(168, 85, 247, 0.15)',
-                          border: '1px solid rgba(168, 85, 247, 0.5)',
-                          borderRadius: '10px',
+                          background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(168, 85, 247, 0.2) 100%)',
+                          border: '1.5px solid rgba(16, 185, 129, 0.55)',
+                          borderRadius: '12px',
                           padding: '12px',
                           textAlign: 'center',
+                          boxShadow: '0 4px 16px rgba(16, 185, 129, 0.25)',
                         }}
                       >
                         <div
                           style={{
-                            color: '#c084fc',
-                            fontSize: '12px',
-                            fontWeight: 800,
+                            color: '#34d399',
+                            fontSize: '12.5px',
+                            fontWeight: 900,
+                            letterSpacing: '0.04em',
                             textTransform: 'uppercase',
                             marginBottom: '4px',
                             display: 'flex',
@@ -999,19 +1001,34 @@ export const StaffInspectionPanel3D: React.FC<StaffInspectionPanel3DProps> = ({
                             gap: '6px',
                           }}
                         >
-                          <CheckCheck size={14} />
-                          ĐÃ BÀN GIAO XE
+                          <CheckCheck size={16} />
+                          BÀN GIAO XE THÀNH CÔNG
                         </div>
-                        <div style={{ color: '#ffffff', fontSize: '12px', fontWeight: 700, marginBottom: '2px' }}>
+                        <div style={{ color: '#ffffff', fontSize: '11.5px', fontWeight: 700, marginBottom: '2px' }}>
                           Đã giao cho: {handover.coOwnerName}
                         </div>
                         {handover.staffHandedOverAt && (
-                          <div style={{ color: '#94a3b8', fontSize: '10.5px', marginBottom: '6px' }}>
+                          <div style={{ color: '#38bdf8', fontSize: '10px', marginBottom: '6px' }}>
                             Thời gian: {formatDateTime(handover.staffHandedOverAt)}
                           </div>
                         )}
-                        <div style={{ color: '#fbbf24', fontSize: '11px', fontWeight: 600 }}>
-                          CHỜ CHỦ XE XÁC NHẬN NHẬN XE
+                        <div
+                          style={{
+                            background: 'rgba(168, 85, 247, 0.2)',
+                            border: '1px solid rgba(168, 85, 247, 0.45)',
+                            borderRadius: '999px',
+                            padding: '3px 10px',
+                            color: '#c084fc',
+                            fontSize: '10.5px',
+                            fontWeight: 800,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            marginTop: '2px',
+                          }}
+                        >
+                          <Clock size={12} color="#c084fc" />
+                          <span>Chờ đồng sở hữu bắt đầu chuyến đi</span>
                         </div>
                       </div>
                     )}

@@ -40,7 +40,7 @@ export const VehicleBookingWorld: React.FC<VehicleBookingWorldProps> = ({ vehicl
 
   // Calculate panel-safe 3D bounds at timeline depth using authoritative layout metrics
   const safeMetrics = useMemo(() => {
-    return computeBookingLayoutMetrics(size.width, size.height, camera, 2.4);
+    return computeBookingLayoutMetrics(size.width, size.height, camera, 0.6);
   }, [size.width, size.height, camera]);
 
   const handleSelectDate = (date: Date) => {
@@ -73,7 +73,14 @@ export const VehicleBookingWorld: React.FC<VehicleBookingWorldProps> = ({ vehicl
       slotEnd.setHours(h + 1, 0, 0, 0);
 
       const isBooked = bookings.some((b) => {
-        if (b.status === 'CANCELLED') return false;
+        if (b.status === 'CANCELLED' || b.status === 'EXPIRED') return false;
+        if (b.status === 'COMPLETED') {
+          // Early return release: completed bookings only occupy actual completed duration
+          const bStart = new Date(b.startTime);
+          const bEnd = new Date(b.endTime);
+          const effectiveEnd = Math.min(bEnd.getTime(), Date.now());
+          return bStart.getTime() < slotEnd.getTime() && effectiveEnd > slotStart.getTime();
+        }
         const bStart = new Date(b.startTime);
         const bEnd = new Date(b.endTime);
         return bStart < slotEnd && bEnd > slotStart;
@@ -190,25 +197,26 @@ export const VehicleBookingWorld: React.FC<VehicleBookingWorldProps> = ({ vehicl
   }
 
   return (
-    <group>
-      {/* 1. Spatial 3D Date Selector (positioned as cohesive cluster above timeline in safe area) */}
+    <group position={[safeMetrics.safeCenterX, 0, 0.6]}>
+      {/* 1. Spatial 3D Date Selector (cohesive group above timeline, aligned horizontally) */}
       <SpatialDateSelector3D
         selectedDate={bookingSelectedDate}
         onSelectDate={handleSelectDate}
-        position={[safeMetrics.safeCenterX, 3.25, 0.6]}
+        position={[0, 3.30, 0]}
       />
 
-      {/* 2. Pure 3D Interactive Booking Timeline (centered in panel-safe viewport beside EV01) */}
+      {/* 2. Pure 3D Interactive Booking Timeline (compact 4 rows of 6 slots) */}
       <BookingTimeline3D
         selectedDate={bookingSelectedDate}
         bookings={bookings}
         startHour={bookingStartHour}
         endHour={bookingEndHour}
         onSelectSlot={handleSelectSlot}
-        position={[safeMetrics.safeCenterX, 2.35, 0.6]}
+        position={[0, 2.05, 0]}
         safeCenterX={safeMetrics.safeCenterX}
         usableSafeWidth={safeMetrics.usableSafeWidth}
         rightSafeX={safeMetrics.rightSafeX}
+        vehicleStatus={vehicle.status}
       />
     </group>
   );

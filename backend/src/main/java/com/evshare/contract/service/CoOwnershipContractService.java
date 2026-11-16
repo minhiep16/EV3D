@@ -43,6 +43,7 @@ public class CoOwnershipContractService {
     private final VehicleRepository vehicleRepository;
     private final UserRepository userRepository;
     private final OwnershipTransferRequestRepository transferRepository;
+    private final MembershipInvitationRepository invitationRepository;
     private final ObjectMapper objectMapper;
 
     public CoOwnershipContractService(
@@ -56,6 +57,7 @@ public class CoOwnershipContractService {
             VehicleRepository vehicleRepository,
             UserRepository userRepository,
             OwnershipTransferRequestRepository transferRepository,
+            MembershipInvitationRepository invitationRepository,
             ObjectMapper objectMapper
     ) {
         this.contractRepository = contractRepository;
@@ -68,6 +70,7 @@ public class CoOwnershipContractService {
         this.vehicleRepository = vehicleRepository;
         this.userRepository = userRepository;
         this.transferRepository = transferRepository;
+        this.invitationRepository = invitationRepository;
         this.objectMapper = objectMapper;
     }
 
@@ -262,11 +265,13 @@ public class CoOwnershipContractService {
         CoOwnershipContract contract = version.getContract();
         CoOwnershipGroup group = contract.getGroup();
 
-        // 1. Verify user is active group member
+        // 1. Verify user is active group member OR authorized invitee
         GroupMember member = memberRepository.findByGroupIdAndUserId(group.getId(), principal.getUser().getId())
-                .orElseThrow(() -> new AccessDeniedException("Bạn không phải là thành viên trong nhóm đồng sở hữu của hợp đồng này."));
-        if (member.getStatus() != MemberStatus.ACTIVE || member.getRemovedAt() != null) {
-            throw new AccessDeniedException("Tài khoản của bạn không ở trạng thái hoạt động trong nhóm đồng sở hữu.");
+                .filter(m -> m.getStatus() == MemberStatus.ACTIVE && m.getRemovedAt() == null)
+                .orElse(null);
+
+        if (member == null) {
+            validateInviteeContractAuthorization(version, principal.getUser());
         }
 
         // 2. Verify version is pending acceptance or active
@@ -300,7 +305,11 @@ public class CoOwnershipContractService {
         ContractAcceptance saved = acceptanceRepository.save(acceptance);
 
         // 6. Check if all active members have accepted -> Auto-activate or ready to activate
-        checkAndAttemptAutoActivation(version, group);
+        // Note: Onboarding invitation contracts are finalized atomically by MembershipInvitationService
+        boolean isOnboardingInvitation = !invitationRepository.findByContractVersionId(version.getId()).isEmpty();
+        if (!isOnboardingInvitation) {
+            checkAndAttemptAutoActivation(version, group);
+        }
 
         return mapToAcceptanceResponse(saved, member);
     }
@@ -956,6 +965,12 @@ public class CoOwnershipContractService {
                     .findFirst()
                     .orElse(BigDecimal.ZERO);
         }
+        if (percentage.compareTo(BigDecimal.ZERO) == 0 && member == null && acceptance.getContractVersion() != null) {
+            List<MembershipInvitation> invs = invitationRepository.findByContractVersionId(acceptance.getContractVersion().getId());
+            if (!invs.isEmpty() && invs.get(0).getTotalOfferedPercentage() != null) {
+                percentage = invs.get(0).getTotalOfferedPercentage();
+            }
+        }
         return new ContractAcceptanceResponse(
                 acceptance.getId(),
                 acceptance.getContractVersion().getId(),
@@ -1027,8 +1042,47 @@ public class CoOwnershipContractService {
         boolean isMember = memberRepository.findByGroupIdAndUserId(groupId, user.getId())
                 .filter(m -> m.getStatus() == MemberStatus.ACTIVE && m.getRemovedAt() == null)
                 .isPresent();
-        if (!isMember) {
+        if (isMember) {
+            return;
+        }
+        // Narrowly scoped invitation read access for authorized invitee
+        boolean isInvitee = !invitationRepository.findByGroupIdAndInviteeUserIdAndStatusIn(
+                groupId, user.getId(), List.of(
+                        InvitationStatus.PENDING_INVITEE_RESPONSE,
+                        InvitationStatus.INVITED,
+                        InvitationStatus.PENDING_CONTRACT_SIGNATURE,
+                        InvitationStatus.ACCEPTED,
+                        InvitationStatus.READY_FOR_COMPLETION
+                )
+        ).isEmpty() || !invitationRepository.findByGroupIdAndInviteeEmailIgnoreCaseAndStatus(
+                groupId, user.getEmail(), InvitationStatus.PENDING_CONTRACT_SIGNATURE
+        ).isEmpty();
+        if (!isInvitee) {
             throw new AccessDeniedException("Bạn không có quyền truy cập vào thông tin hợp đồng của nhóm này.");
+        }
+    }
+
+    private void validateInviteeContractAuthorization(CoOwnershipContractVersion version, User user) {
+        List<MembershipInvitation> invitations = invitationRepository.findByContractVersionId(version.getId());
+        if (invitations.isEmpty()) {
+            throw new AccessDeniedException("Bạn không phải là thành viên trong nhóm đồng sở hữu của hợp đồng này.");
+        }
+        MembershipInvitation inv = invitations.get(0);
+        boolean isInvitee = (inv.getInviteeUser() != null && inv.getInviteeUser().getId().equals(user.getId()))
+                || (inv.getInviteeEmail() != null && inv.getInviteeEmail().equalsIgnoreCase(user.getEmail()));
+        if (!isInvitee) {
+            throw new AccessDeniedException("Bạn không phải là người được mời ký kết phụ lục hợp đồng này.");
+        }
+        if (inv.getStatus() != InvitationStatus.PENDING_CONTRACT_SIGNATURE && inv.getStatus() != InvitationStatus.ACCEPTED) {
+            throw new IllegalStateException("Lời mời hiện không ở trạng thái sẵn sàng ký hợp đồng (Trạng thái: " + inv.getStatus() + ").");
+        }
+        if (inv.getExpiresAt() != null && inv.getExpiresAt().isBefore(Instant.now())) {
+            throw new IllegalStateException("Lời mời tham gia đồng sở hữu đã hết hạn ký kết.");
+        }
+        if (version.getContract() == null
+                || !version.getContract().getGroup().getId().equals(inv.getGroup().getId())
+                || !version.getContract().getVehicle().getId().equals(inv.getVehicle().getId())) {
+            throw new IllegalStateException("Phiên bản hợp đồng không khớp với phương tiện và nhóm được mời.");
         }
     }
 

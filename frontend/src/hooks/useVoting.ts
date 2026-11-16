@@ -7,6 +7,7 @@ import {
   finalizeVoteProposal,
   fetchVoteResults,
   fetchStaffApprovedWork,
+  acceptApprovedWork,
   startApprovedWork,
   completeApprovedWork,
   updateGroupVotingPolicy,
@@ -104,6 +105,7 @@ export function useFinalizeVoteProposal() {
       queryClient.invalidateQueries({ queryKey: ['vote-proposal', data.id] });
       queryClient.invalidateQueries({ queryKey: ['vote-results', data.id] });
       queryClient.invalidateQueries({ queryKey: ['vehicleMaintenance'] });
+      queryClient.invalidateQueries({ queryKey: ['maintenanceApproval'] });
       queryClient.invalidateQueries({ queryKey: ['staffApprovedWork'] });
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
@@ -116,6 +118,26 @@ export function useStaffApprovedWork(vehicleId?: string | null) {
     queryFn: () => fetchStaffApprovedWork(vehicleId || undefined),
     refetchInterval: 6000,
     staleTime: 3000,
+  });
+}
+
+export function useAcceptApprovedWork() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    ApprovedWorkResponse,
+    Error,
+    { proposalId: string; assignedStaffId?: string }
+  >({
+    mutationFn: ({ proposalId, assignedStaffId }) => acceptApprovedWork(proposalId, assignedStaffId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['staffApprovedWork'] });
+      queryClient.invalidateQueries({ queryKey: ['vote-proposals'] });
+      queryClient.invalidateQueries({ queryKey: ['vehicleMaintenance'] });
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+      queryClient.invalidateQueries({ queryKey: ['vehicleDamages'] });
+      queryClient.invalidateQueries({ queryKey: ['damageHistory'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
   });
 }
 

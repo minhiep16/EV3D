@@ -1,0 +1,67 @@
+@startuml
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Times New Roman"
+skinparam defaultFontSize 12
+skinparam roundCorner 10
+skinparam componentStyle uml2
+
+title Kiến Trúc Tổng Thể Hệ Thống EVShare 3D (Full-Stack 3D Architecture)
+
+actor "Người Dùng\n(Admin / Staff / Co-Owner)" as User
+
+node "Khách Hàng (Client Tier - Web Browser)" {
+    package "Giao Diện Người Dùng & 3D WebGL (Frontend)" {
+        [React 18 & TypeScript (SPA Root)] as ReactApp
+        [Trạng Thái Toàn Cục (Zustand Stores)] as ZustandStore
+        [Bộ Nhớ Đệm API (TanStack Query Cache)] as TanStackQuery
+        [Khối Render 3D (React Three Fiber / Three.js r173)] as R3FScene
+        [Thư Viện Hỗ Trợ 3D (@react-three/drei)] as DreiHelpers
+        [Giao Diện Không Gian (Spatial 3D HUD & Panels)] as SpatialUI
+        
+        ReactApp --> ZustandStore : Quản lý trạng thái (Auth, World, Vehicle)
+        ReactApp --> TanStackQuery : Truy vấn và đồng bộ dữ liệu REST
+        ReactApp --> R3FScene : Khởi tạo Canvas & Scene Graph
+        R3FScene --> DreiHelpers : OrbitControls, Html Overlay, Loader
+        R3FScene --> SpatialUI : Gắn thẻ thông tin nổi 3D (Holograms)
+    }
+}
+
+node "Máy Chủ Ứng Dụng (Application Tier - Spring Boot 3.3.4)" {
+    package "Hệ Thống Backend (evshare-backend)" {
+        [Bộ Lọc Bảo Mật & Xác Thực (JwtAuthenticationFilter)] as SecurityFilter
+        [Tầng Điều Khiển (REST Controllers - 27 Controllers)] as Controllers
+        [Tầng Nghiệp Vụ Chuyên Biệt (Service Layer - 25+ Services)] as Services
+        [Tầng Truy Cập Dữ Liệu (Spring Data JPA Repositories)] as Repositories
+        [Động Cơ Quản Trị Tồn Kho Năng Lượng (Energy Inventory Engine)] as EnergyEngine
+        [Động Cơ Phân Bổ Chi Phí (Expense Allocation Engine)] as ExpenseEngine
+        [Động Cơ Lập Lịch & Giải Quyết Xung Đột (Booking Conflict Engine)] as BookingEngine
+        
+        SecurityFilter --> Controllers : Xác thực Token JWT & Kiểm tra Vai trò (RBAC)
+        Controllers --> Services : Chuyển giao DTO nghiệp vụ
+        Services --> EnergyEngine : Tính toán tiêu hao kWh & Giá bình quân gia quyền
+        Services --> ExpenseEngine : Thuật toán phần dư lớn nhất Hare-Niemeyer
+        Services --> BookingEngine : Kiểm tra chồng lấn thời gian đặt lịch
+        Services --> Repositories : Thực hiện CRUD và truy vấn JPA
+    }
+}
+
+node "Tầng Dữ Liệu & Tài Nguyên (Persistence & Asset Tier)" {
+    database "Hệ Quản Trị Cơ Sở Dữ Liệu (MySQL 8.0+)" {
+        [Bảng Dữ Liệu Quan Hệ (46 Bảng - Flyway Migrations V1-V46)] as MySQLDB
+        [Giao Dịch ACID & Khóa Ngoại Ràng Buộc] as DBConstraints
+        MySQLDB -- DBConstraints
+    }
+    
+    folder "Kho Tài Nguyên Mô Hình 3D (Static Public Assets)" {
+        file "ev01-realistic.glb" as ModelEV01
+        file "ev02-stylized.glb" as ModelEV02
+        file "vinfast_vf3.glb" as ModelVF3
+    }
+}
+
+User --> ReactApp : Tương tác giao diện & Không gian 3D
+ReactApp ..> ModelEV01 : Tải mô hình 3D (GLTF/GLB via HTTP)
+TanStackQuery --> SecurityFilter : Giao thức HTTPS / RESTful API (JSON Payload)
+Repositories --> MySQLDB : Ánh xạ Thực thể Đối tượng (Hibernate ORM / JDBC)
+
+@enduml

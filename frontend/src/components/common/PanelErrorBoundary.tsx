@@ -100,7 +100,9 @@ export class PanelErrorBoundary extends Component<Props, State> {
               maxWidth: '280px',
             }}
           >
-            {this.state.error?.message || 'Đã xảy ra sự cố trong quá trình kết xuất dữ liệu.'}
+            {import.meta.env?.DEV
+              ? (this.state.error?.message || 'Đã xảy ra sự cố trong quá trình kết xuất dữ liệu.')
+              : 'Đã xảy ra sự cố trong quá trình kết xuất dữ liệu. Vui lòng bấm thử lại để tiếp tục.'}
           </p>
 
           <button

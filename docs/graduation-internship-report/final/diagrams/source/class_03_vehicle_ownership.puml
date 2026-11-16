@@ -1,0 +1,76 @@
+@startuml
+title SƠ ĐỒ LỚP: PHƯƠNG TIỆN VÀ NHÓM ĐỒNG SỞ HỮU (CLASS-03)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam classAttributeIconSize 0
+
+
+class Vehicle {
+    - id: UUID
+    - vin: String
+    - licensePlate: String
+    - modelName: String
+    - exteriorColor: String
+    - batteryCapacityKwh: BigDecimal
+    - currentBatteryLevel: int
+    - currentOdometerKm: BigDecimal
+    - status: VehicleStatus
+}
+
+enum VehicleStatus <<enumeration>> {
+    AVAILABLE
+    RESERVED
+    IN_USE
+    CHARGING
+    MAINTENANCE
+    DECOMMISSIONED
+}
+
+class CoOwnershipGroup {
+    - id: UUID
+    - groupCode: String
+    - groupName: String
+    - maxMembers: int
+    - status: GroupStatus
+}
+
+class GroupMember {
+    - id: UUID
+    - memberRole: GroupMemberRole
+    - joinedAt: Instant
+    - removedAt: Instant
+}
+
+enum GroupMemberRole <<enumeration>> {
+    LEADER
+    MEMBER
+}
+
+class OwnershipShare {
+    - id: UUID
+    - percentage: BigDecimal
+    - capitalContribution: BigDecimal
+}
+
+class OwnershipChangeHistory {
+    - id: UUID
+    - changeType: String
+    - oldPercentage: BigDecimal
+    - newPercentage: BigDecimal
+    - recordedAt: Instant
+}
+
+Vehicle --> VehicleStatus
+Vehicle "1" -- "1" CoOwnershipGroup
+CoOwnershipGroup "1" *-- "many" GroupMember
+GroupMember --> GroupMemberRole
+GroupMember "1" *-- "many" OwnershipShare
+OwnershipShare "1" -- "many" OwnershipChangeHistory
+
+@enduml

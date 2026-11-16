@@ -1,0 +1,44 @@
+@startuml
+title QUY TRÌNH KHIẾU NẠI, HÒA GIẢI VÀ BỒI THƯỜNG SỰ CỐ (ACT-11)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+|Người Khiếu Nại (CO_OWNER)|
+start
+:Phát hiện sai lệch hóa đơn hoặc hư hỏng tranh chấp;
+:Mở CoOwnerDisputePanel, bấm "Mở Khiếu Nại";
+:Nhập mô tả sự việc, chọn người liên quan;
+:Tải lên tệp ảnh hiện trường / hóa đơn chứng từ;
+:Bấm "Gửi Hồ Sơ Khiếu Nại";
+
+|Hệ Thống Backend (Spring Boot)|
+:Lưu bản ghi Dispute (status = OPEN);
+:Lưu các tệp đính kèm vào DisputeEvidence;
+:Thông báo cho Nhân viên điều hành và Bên bị khiếu nại;
+
+|Nhân Viên Điều Hành (STAFF)|
+:Mở StaffDisputeDashboardModal;
+:Đối chiếu nhật ký hành trình ODO, pin và biên bản bàn giao;
+:Liên hệ phỏng vấn các bên liên quan;
+:Ghi nhận biên bản kết luận điều tra;
+if (Cần bồi hoàn thiệt hại?) then (Có bồi thường)
+    :Xác định số tiền bồi hoàn và bên chịu trách nhiệm;
+    :Thực thi lệnh bồi thường mô phỏng (DEMO Compensation);
+    |Hệ Thống Backend (Spring Boot)|
+    :Tạo giao dịch cấn trừ nợ DisputeCompensation;
+endif
+
+|Nhân Viên Điều Hành (STAFF)|
+:Chuyển trạng thái hồ sơ sang RESOLVED;
+
+|Các Bên Tranh Chấp|
+:Nhận thông báo kết quả hòa giải và biên bản đóng hồ sơ;
+stop
+@enduml

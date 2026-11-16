@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Bot,
   Sparkles,
@@ -10,69 +10,145 @@ import {
   DollarSign,
   ShieldCheck,
   RotateCcw,
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  Wrench,
+  Scale,
+  RefreshCw,
 } from 'lucide-react';
 import { useWorldStore } from '../../store/worldStore';
-
-interface AiMessage {
-  id: string;
-  sender: 'ai' | 'user';
-  text: string;
-  timestamp: string;
-}
+import { useAuthStore } from '../../store/authStore';
+import { VehicleResponse } from '../../types/vehicle';
+import {
+  fetchAiStatus,
+  fetchAiSuggestions,
+  sendAiMessage,
+  AiChatMessage,
+  AiSuggestedQuestion,
+  AiStatusResponse,
+} from '../../services/aiApi';
+import { EVCarLoader } from '../common/EVCarLoader';
 
 interface AiZonePanelProps {
+  vehicle?: VehicleResponse | null;
   onClose?: () => void;
 }
 
-const PRESET_PROMPTS = [
-  {
-    icon: Car,
-    label: 'Tình trạng xe EV01',
-    query: 'Kiểm tra tình trạng pin, lốp và mức độ sẵn sàng của xe EV01?',
-    response:
-      'Xe EV01 đang ở trạng thái Hoàn hảo: Pin hiện tại đạt 82% (tầm vận hành ~345 km), áp suất lốp 2.3 bar đều 4 bánh, không phát hiện lỗi kỹ thuật. Xe đang đỗ tại vị trí trung tâm showroom và sẵn sàng cho ca sử dụng tiếp theo.',
-  },
-  {
-    icon: Calendar,
-    label: 'Lịch đặt xe tuần này',
-    query: 'Xem lịch biểu đặt xe tuần này của các thành viên?',
-    response:
-      'Lịch tuần này: Bạn có ca đặt xe vào Thứ Sáu (08:00 - 18:00). Cổ đông B đã đặt Thứ Bảy (09:00 - 21:00). Các khung giờ từ Thứ Hai đến Thứ Năm hiện đang trống và có thể đặt ngay không cần chờ phê duyệt.',
-  },
-  {
-    icon: DollarSign,
-    label: 'Quỹ chung & chi phí',
-    query: 'Báo cáo số dư quỹ chung và chi phí bảo dưỡng gần nhất?',
-    response:
-      'Số dư Quỹ chung đang duy trì ở mức 25.000.000 ₫. Chi phí vận hành tháng này đã giải ngân 3.450.000 ₫ (gồm sạc điện và rửa xe định kỳ). Phần phân bổ theo tỷ lệ 40% của bạn là 1.380.000 ₫, tất cả hoá đơn điện tử đã được đối soát minh bạch.',
-  },
-  {
-    icon: Zap,
-    label: 'Trạm sạc khả dụng',
-    query: 'Khu vực sạc xe trong garage có trụ nào đang trống?',
-    response:
-      'Trạm sạc thông minh Station A1 (DC 120kW) và Station A2 (AC 22kW) tại phía Đông garage đều đang sẵn sàng kết nối. Tốc độ sạc nhanh DC có thể nạp từ 20% đến 80% chỉ trong 28 phút.',
-  },
-];
-
-export const AiZonePanel: React.FC<AiZonePanelProps> = ({ onClose }) => {
+export const AiZonePanel: React.FC<AiZonePanelProps> = ({ vehicle, onClose }) => {
+  const user = useAuthStore((state) => state.user);
   const clearSelection = useWorldStore((state) => state.clearSelection);
-  const [messages, setMessages] = useState<AiMessage[]>([
-    {
-      id: 'msg-welcome',
+  const closeGaragePanel = useWorldStore((state) => state.closeGaragePanel);
+  const selectedVehicleId = useWorldStore((state) => state.selectedVehicleId);
+
+  const activeVehicleId = vehicle?.id || selectedVehicleId || 'EV01';
+  const activeVehicleName = vehicle?.name || vehicle?.model || 'EV01';
+
+  // State: Conversation Messages (isolated per user session)
+  const initialWelcomeMessage = useMemo<AiChatMessage>(
+    () => ({
+      id: 'welcome-init',
       sender: 'ai',
-      text: 'Xin chào! Tôi là Trợ lý AI của EVShare. Tôi có thể hỗ trợ bạn kiểm tra tình trạng xe EV01, lịch biểu đặt trước, phân bổ chi phí minh bạch hoặc quy trình vận hành đồng sở hữu. Bạn muốn tìm hiểu thông tin gì?',
+      text: `Xin chào ${user?.fullName || 'bạn'}! Tôi là Trợ lý Vận hành Garage EVShare. Tôi có thể hỗ trợ tra cứu thông số pin thực tế của xe ${activeVehicleName}, đối soát chi phí cá nhân, kiểm tra lịch đặt xe và hồ sơ tranh chấp.`,
       timestamp: 'Vừa xong',
-    },
-  ]);
+      sourceMode: 'GROUNDED_DATA',
+      verifiedFacts: [`Phương tiện: ${activeVehicleName}`, 'Nguồn dữ liệu: EVShare Business Services'],
+    }),
+    [user?.fullName, activeVehicleName]
+  );
+
+  const [messages, setMessages] = useState<AiChatMessage[]>([initialWelcomeMessage]);
   const [inputText, setInputText] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [errorBanner, setErrorBanner] = useState<string | null>(null);
+
+  // Status & Suggestions
+  const [aiStatus, setAiStatus] = useState<AiStatusResponse | null>(null);
+  const [suggestions, setSuggestions] = useState<AiSuggestedQuestion[]>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+
+  // Scroll references
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const isNearBottomRef = useRef(true);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Viewport responsive dimensions
+  const [viewportWidth, setViewportWidth] = useState<number>(() =>
+    typeof window !== 'undefined' ? window.innerWidth : 1920
+  );
+
+  useEffect(() => {
+    const handleResize = () => {
+      setViewportWidth(window.innerWidth);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const isMobile = viewportWidth < 640;
+  const isTablet = viewportWidth >= 640 && viewportWidth < 1024;
+
+  const panelTop = isMobile ? '72px' : '88px';
+  const panelRight = isMobile ? '16px' : '24px';
+  const panelWidth = isMobile
+    ? 'calc(100vw - 32px)'
+    : isTablet
+    ? '380px'
+    : '440px';
+  const panelHeight = isMobile
+    ? 'calc(100dvh - 88px)'
+    : 'min(680px, calc(100dvh - 112px))';
+  const panelMaxHeight = isMobile
+    ? 'calc(100dvh - 88px)'
+    : 'calc(100dvh - 112px)';
+
+  // Load AI status & suggestions
+  useEffect(() => {
+    let mounted = true;
+    fetchAiStatus()
+      .then((status) => {
+        if (mounted) setAiStatus(status);
+      })
+      .catch(() => {
+        if (mounted) {
+          setAiStatus({
+            llmConfigured: false,
+            groundedDataAvailable: true,
+            provider: 'Grounded Engine',
+            model: 'Direct Service Layer',
+            statusMessage: 'Chế độ Trợ lý Đồng sở hữu Grounded trực tuyến.',
+          });
+        }
+      });
+
+    setLoadingSuggestions(true);
+    fetchAiSuggestions(activeVehicleId)
+      .then((suggs) => {
+        if (mounted) setSuggestions(suggs);
+      })
+      .catch(() => {
+        if (mounted) setSuggestions([]);
+      })
+      .finally(() => {
+        if (mounted) setLoadingSuggestions(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [activeVehicleId]);
+
+  // Reset conversation if authenticated user changes
+  useEffect(() => {
+    setMessages([initialWelcomeMessage]);
+  }, [user?.id, initialWelcomeMessage]);
 
   const handleClose = () => {
     if (onClose) {
       onClose();
     } else {
+      closeGaragePanel('AI_ASSISTANT');
       clearSelection();
     }
   };
@@ -88,160 +164,243 @@ export const AiZonePanel: React.FC<AiZonePanelProps> = ({ onClose }) => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Auto-scroll to bottom of conversation
+  // Track user scroll position: do not auto-scroll down if user scrolled up to read earlier messages
+  const handleScroll = () => {
+    if (!scrollContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+    isNearBottomRef.current = scrollHeight - scrollTop - clientHeight < 90;
+  };
+
+  // Scroll appropriately when messages update or sending changes
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isTyping]);
+    if (isNearBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, isSending]);
 
-  const handleSendMessage = (textToSend?: string) => {
+  const handleSendMessage = async (textToSend?: string) => {
     const query = (textToSend || inputText).trim();
-    if (!query) return;
+    if (!query || isSending) return;
 
-    const userMsg: AiMessage = {
+    setErrorBanner(null);
+    const userMsg: AiChatMessage = {
       id: `user-${Date.now()}`,
       sender: 'user',
       text: query,
-      timestamp: 'Vừa xong',
+      timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
     };
 
     setMessages((prev) => [...prev, userMsg]);
     if (!textToSend) setInputText('');
-    setIsTyping(true);
+    setIsSending(true);
 
-    // Contextual matching or intelligent fallback response
-    setTimeout(() => {
-      let replyText =
-        'Hệ thống AI đã ghi nhận yêu cầu của bạn. Tôi đang đồng bộ dữ liệu thời gian thực từ mạng lưới xe và hợp đồng đồng sở hữu EVShare để phản hồi chính xác nhất.';
+    // Build compact history for backend context
+    const historyPayload = messages.slice(-4).map((m) => ({
+      sender: m.sender,
+      text: m.text,
+    }));
 
-      const matchedPreset = PRESET_PROMPTS.find(
-        (p) =>
-          p.query.toLowerCase() === query.toLowerCase() ||
-          query.toLowerCase().includes(p.label.toLowerCase())
-      );
-
-      if (matchedPreset) {
-        replyText = matchedPreset.response;
-      } else if (query.toLowerCase().includes('pin') || query.toLowerCase().includes('sạc')) {
-        replyText =
-          'Pin của xe EV01 hiện đạt 82%, dung lượng khả dụng 64 kWh. Trụ sạc tự động Station A1 đang trống và có thể bắt đầu phiên sạc ngay lập tức.';
-      } else if (query.toLowerCase().includes('đặt') || query.toLowerCase().includes('lịch')) {
-        replyText =
-          'Bạn có thể vào tính năng "Đặt lịch xe" ở thanh điều hướng để chọn khung giờ sử dụng. Hệ thống đảm bảo thuật toán phân bổ công bằng tuyệt đối giữa các đồng sở hữu.';
-      } else if (query.toLowerCase().includes('tiền') || query.toLowerCase().includes('chi phí')) {
-        replyText =
-          'Quỹ chung hiện có 25.000.000 ₫. Bạn có thể mở khu vực "Tài chính" để tra cứu bảng tổng hợp chi phí và tải hoá đơn chi tiết theo tháng.';
-      }
-
-      const aiMsg: AiMessage = {
-        id: `ai-${Date.now()}`,
+    try {
+      const response = await sendAiMessage(query, activeVehicleId, historyPayload);
+      const aiReply: AiChatMessage = {
+        id: response.id || `ai-${Date.now()}`,
         sender: 'ai',
-        text: replyText,
-        timestamp: 'Vừa xong',
+        text: response.reply,
+        timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+        asOf: response.asOf,
+        sourceMode: response.sourceMode,
+        verifiedFacts: response.verifiedFacts,
+        actionNotice: response.actionNotice,
       };
 
-      setMessages((prev) => [...prev, aiMsg]);
-      setIsTyping(false);
-    }, 600);
+      setMessages((prev) => [...prev, aiReply]);
+    } catch (err: any) {
+      const errText = err?.message || 'Không thể kết nối đến máy chủ AI. Vui lòng kiểm tra lại kết nối mạng.';
+      setErrorBanner(errText);
+      // Preserve user query in input if sending failed and was manually typed
+      if (!textToSend) {
+        setInputText(query);
+      }
+    } finally {
+      setIsSending(false);
+      // Keep input focused
+      setTimeout(() => textareaRef.current?.focus(), 100);
+    }
   };
 
   const handleResetConversation = () => {
     setMessages([
       {
-        id: `msg-welcome-${Date.now()}`,
+        id: `welcome-${Date.now()}`,
         sender: 'ai',
-        text: 'Cuộc trò chuyện đã được làm mới. Tôi sẵn sàng hỗ trợ bạn về bất kỳ câu hỏi nào liên quan đến xe điện đồng sở hữu EVShare!',
+        text: `Hội thoại đã được làm mới. Tôi sẵn sàng hỗ trợ bạn về bất kỳ câu hỏi nào liên quan đến xe ${activeVehicleName} và vận hành Garage!`,
         timestamp: 'Vừa xong',
+        sourceMode: 'GROUNDED_DATA',
+        verifiedFacts: [`Phương tiện: ${activeVehicleName}`],
       },
     ]);
+    setErrorBanner(null);
+  };
+
+  const handleTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
+
+  const renderSuggestionIcon = (type: string) => {
+    switch (type) {
+      case 'car':
+        return <Car size={13} color="#00f2fe" />;
+      case 'battery':
+        return <Zap size={13} color="#38bdf8" />;
+      case 'calendar':
+        return <Calendar size={13} color="#34d399" />;
+      case 'finance':
+        return <DollarSign size={13} color="#fbbf24" />;
+      case 'dispute':
+        return <Scale size={13} color="#f87171" />;
+      case 'maintenance':
+        return <Wrench size={13} color="#a78bfa" />;
+      default:
+        return <Sparkles size={13} color="#00f2fe" />;
+    }
   };
 
   return (
-    <div
+    <aside
+      role="complementary"
+      aria-label="EVShare AI Assistant"
+      onWheel={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
       style={{
         position: 'fixed',
-        right: '32px',
-        top: '50%',
-        transform: 'translateY(-50%)',
-        width: '380px',
-        maxHeight: 'calc(100vh - 100px)',
-        background: 'linear-gradient(180deg, rgba(8, 24, 46, 0.94) 0%, rgba(4, 14, 28, 0.98) 100%)',
-        backdropFilter: 'blur(30px)',
-        WebkitBackdropFilter: 'blur(30px)',
-        border: '2px solid #00f2fe',
-        borderRadius: '28px',
+        top: panelTop,
+        right: panelRight,
+        width: panelWidth,
+        maxWidth: 'calc(100vw - 32px)',
+        height: panelHeight,
+        maxHeight: panelMaxHeight,
+        bottom: 'auto',
+        background: 'linear-gradient(180deg, rgba(8, 22, 42, 0.96) 0%, rgba(4, 12, 24, 0.98) 100%)',
+        backdropFilter: 'blur(28px)',
+        WebkitBackdropFilter: 'blur(28px)',
+        border: '1.5px solid rgba(0, 242, 254, 0.45)',
+        borderRadius: '24px',
         boxShadow:
-          '0 24px 60px rgba(0, 0, 0, 0.75), 0 0 35px rgba(0, 242, 254, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.25)',
-        padding: '24px',
+          '0 24px 60px rgba(0, 0, 0, 0.75), 0 0 32px rgba(0, 242, 254, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.15)',
         color: '#ffffff',
         fontFamily: "var(--font-family, 'Outfit', sans-serif)",
-        zIndex: 35,
-        pointerEvents: 'auto',
+        zIndex: 45,
         display: 'flex',
         flexDirection: 'column',
-        gap: '14px',
-        animation: 'panelSlideInRight 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+        minHeight: 0,
+        overflow: 'hidden',
+        pointerEvents: 'auto',
+        animation: 'panelSlideInFromRight 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards',
       }}
     >
-      {/* 1. Header with Glowing Icon, Title, and Action Buttons */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      {/* 1. FIXED HEADER */}
+      <header
+        style={{
+          padding: '18px 20px 14px 20px',
+          borderBottom: '1px solid rgba(56, 189, 248, 0.18)',
+          background: 'rgba(6, 18, 36, 0.75)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexShrink: 0,
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div
             style={{
-              width: '44px',
-              height: '44px',
-              borderRadius: '14px',
-              background: 'rgba(0, 242, 254, 0.16)',
-              border: '1.8px solid #00f2fe',
+              width: '42px',
+              height: '42px',
+              borderRadius: '13px',
+              background: 'linear-gradient(135deg, rgba(0, 242, 254, 0.25) 0%, rgba(3, 105, 161, 0.3) 100%)',
+              border: '1.5px solid #00f2fe',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              boxShadow: '0 0 18px rgba(0, 242, 254, 0.4)',
+              boxShadow: '0 0 16px rgba(0, 242, 254, 0.35)',
               flexShrink: 0,
             }}
           >
             <Bot size={22} color="#00f2fe" />
           </div>
+
           <div>
             <div
               style={{
-                fontSize: '17px',
-                fontWeight: 900,
-                letterSpacing: '-0.01em',
+                fontSize: '16px',
+                fontWeight: 800,
+                letterSpacing: '0.02em',
                 lineHeight: '1.2',
                 color: '#ffffff',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
               }}
             >
-              TRỢ LÝ AI
+              <span>EVShare AI Assistant</span>
             </div>
             <div
               style={{
-                fontSize: '11px',
-                fontWeight: 700,
-                color: '#00f2fe',
-                letterSpacing: '0.04em',
+                fontSize: '11.5px',
+                fontWeight: 500,
+                color: '#7dd3fc',
+                lineHeight: '1.3',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '4px',
+                gap: '6px',
+                marginTop: '2px',
               }}
             >
-              <Sparkles size={11} color="#00f2fe" />
-              <span>EVShare Intelligence</span>
+              <span>Trợ lý vận hành Garage</span>
+              <span style={{ color: 'rgba(125, 211, 252, 0.4)' }}>•</span>
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  color: aiStatus?.llmConfigured ? '#34d399' : '#38bdf8',
+                  fontWeight: 600,
+                  fontSize: '10.5px',
+                }}
+              >
+                <span
+                  style={{
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '50%',
+                    background: aiStatus?.llmConfigured ? '#34d399' : '#38bdf8',
+                    boxShadow: aiStatus?.llmConfigured
+                      ? '0 0 8px #34d399'
+                      : '0 0 8px #38bdf8',
+                  }}
+                />
+                {aiStatus?.llmConfigured ? 'AI Trực tuyến' : 'Grounded Copilot'}
+              </span>
             </div>
           </div>
         </div>
 
-        {/* Top Actions: Reset & Close */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        {/* Header Actions */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <button
             type="button"
             onClick={handleResetConversation}
             title="Làm mới cuộc trò chuyện"
+            aria-label="Làm mới cuộc trò chuyện"
             style={{
               width: '32px',
               height: '32px',
-              borderRadius: '50%',
-              background: 'rgba(255, 255, 255, 0.06)',
-              border: '1px solid rgba(255, 255, 255, 0.14)',
+              borderRadius: '9px',
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
               color: '#94a3b8',
               cursor: 'pointer',
               display: 'flex',
@@ -255,23 +414,24 @@ export const AiZonePanel: React.FC<AiZonePanelProps> = ({ onClose }) => {
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.color = '#94a3b8';
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.14)';
+              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)';
             }}
           >
-            <RotateCcw size={14} />
+            <RotateCcw size={15} />
           </button>
 
           <button
             type="button"
             onClick={handleClose}
-            title="Đóng bảng Trợ lý AI"
+            title="Đóng trợ lý"
+            aria-label="Đóng trợ lý"
             style={{
               width: '32px',
               height: '32px',
-              borderRadius: '50%',
-              background: 'rgba(255, 255, 255, 0.08)',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
-              color: '#cbd5e1',
+              borderRadius: '9px',
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              color: '#94a3b8',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
@@ -279,259 +439,413 @@ export const AiZonePanel: React.FC<AiZonePanelProps> = ({ onClose }) => {
               transition: 'all 0.2s',
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.color = '#ffffff';
-              e.currentTarget.style.background = 'rgba(239, 68, 68, 0.25)';
-              e.currentTarget.style.borderColor = '#ef4444';
+              e.currentTarget.style.color = '#f87171';
+              e.currentTarget.style.borderColor = 'rgba(248, 113, 113, 0.5)';
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.color = '#cbd5e1';
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+              e.currentTarget.style.color = '#94a3b8';
+              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)';
             }}
           >
-            <X size={16} />
+            <X size={17} />
           </button>
         </div>
-      </div>
+      </header>
 
-      {/* 2. System Status Bar */}
-      <div
-        style={{
-          background: 'rgba(0, 242, 254, 0.08)',
-          border: '1px solid rgba(0, 242, 254, 0.22)',
-          borderRadius: '12px',
-          padding: '8px 12px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          fontSize: '11px',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <div
-            style={{
-              width: '6px',
-              height: '6px',
-              borderRadius: '50%',
-              background: '#10b981',
-              boxShadow: '0 0 8px #10b981',
-            }}
-          />
-          <span style={{ color: '#38bdf8', fontWeight: 700 }}>Trực tuyến • Sẵn sàng hỗ trợ</span>
-        </div>
-        <div style={{ color: '#94a3b8', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <ShieldCheck size={11} color="#00f2fe" />
-          <span>Bảo mật nhóm xe</span>
-        </div>
-      </div>
-
-      {/* 3. Quick Suggestions Carousel / Chips */}
-      <div>
-        <div
+      {/* 2. SUGGESTED QUESTIONS CHIPS SECTION */}
+      {suggestions.length > 0 && (
+        <section
+          aria-label="Gợi ý câu hỏi"
           style={{
-            fontSize: '10px',
-            fontWeight: 800,
-            letterSpacing: '0.08em',
-            textTransform: 'uppercase',
-            color: '#94a3b8',
-            marginBottom: '6px',
+            padding: '10px 16px',
+            borderBottom: '1px solid rgba(56, 189, 248, 0.10)',
+            background: 'rgba(4, 14, 28, 0.65)',
+            display: 'flex',
+            flexWrap: 'nowrap',
+            gap: '8px',
+            overflowX: 'auto',
+            flexShrink: 0,
+            scrollbarWidth: 'none',
           }}
         >
-          Hỏi tôi về xe, lịch đặt, chi phí hoặc vận hành:
-        </div>
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            gap: '6px',
-          }}
-        >
-          {PRESET_PROMPTS.map((prompt, idx) => {
-            const Icon = prompt.icon;
-            return (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => handleSendMessage(prompt.query)}
-                style={{
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid rgba(0, 242, 254, 0.2)',
-                  borderRadius: '10px',
-                  padding: '7px 10px',
-                  color: '#e2e8f0',
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  transition: 'all 0.2s',
-                }}
-                onMouseEnter={(e) => {
+          {suggestions.map((sug) => (
+            <button
+              key={sug.id}
+              type="button"
+              onClick={() => handleSendMessage(sug.query)}
+              disabled={isSending}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 12px',
+                borderRadius: '12px',
+                background: 'rgba(15, 34, 60, 0.75)',
+                border: '1px solid rgba(56, 189, 248, 0.25)',
+                color: '#e0f2fe',
+                fontSize: '11.5px',
+                fontWeight: 600,
+                whiteSpace: 'nowrap',
+                cursor: isSending ? 'not-allowed' : 'pointer',
+                opacity: isSending ? 0.6 : 1,
+                transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={(e) => {
+                if (!isSending) {
                   e.currentTarget.style.background = 'rgba(0, 242, 254, 0.15)';
                   e.currentTarget.style.borderColor = '#00f2fe';
-                  e.currentTarget.style.color = '#ffffff';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-                  e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.2)';
-                  e.currentTarget.style.color = '#e2e8f0';
-                }}
-              >
-                <Icon size={12} color="#00f2fe" style={{ flexShrink: 0 }} />
-                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {prompt.label}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 4. Scrollable Chat Message Feed */}
-      <div
-        style={{
-          flex: 1,
-          minHeight: '220px',
-          maxHeight: '340px',
-          overflowY: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '10px',
-          paddingRight: '4px',
-        }}
-      >
-        {messages.map((msg) => {
-          const isUser = msg.sender === 'user';
-          return (
-            <div
-              key={msg.id}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: isUser ? 'flex-end' : 'flex-start',
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(15, 34, 60, 0.75)';
+                e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.25)';
+                e.currentTarget.style.transform = 'translateY(0)';
               }}
             >
-              <div
-                style={{
-                  maxWidth: '85%',
-                  background: isUser
-                    ? 'linear-gradient(135deg, rgba(0, 242, 254, 0.35) 0%, rgba(2, 132, 199, 0.6) 100%)'
-                    : 'rgba(255, 255, 255, 0.06)',
-                  border: isUser
-                    ? '1.2px solid rgba(0, 242, 254, 0.7)'
-                    : '1px solid rgba(255, 255, 255, 0.12)',
-                  borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                  padding: '10px 14px',
-                  fontSize: '12px',
-                  lineHeight: '1.5',
-                  color: isUser ? '#ffffff' : '#e2e8f0',
-                  boxShadow: isUser
-                    ? '0 4px 14px rgba(0, 242, 254, 0.2)'
-                    : '0 2px 8px rgba(0, 0, 0, 0.3)',
-                }}
-              >
-                {msg.text}
-              </div>
-              <span
-                style={{
-                  fontSize: '9px',
-                  color: '#64748b',
-                  marginTop: '3px',
-                  marginRight: isUser ? '4px' : '0',
-                  marginLeft: isUser ? '0' : '4px',
-                }}
-              >
-                {msg.timestamp}
-              </span>
-            </div>
-          );
-        })}
+              {renderSuggestionIcon(sug.iconType)}
+              <span>{sug.label}</span>
+            </button>
+          ))}
+        </section>
+      )}
 
-        {isTyping && (
+      {/* 3. SCROLLABLE CONVERSATION AREA */}
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        style={{
+          flex: '1 1 0%',
+          minHeight: 0,
+          overflowY: 'auto',
+          padding: '16px 18px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px',
+          scrollBehavior: 'smooth',
+        }}
+      >
+        {messages.map((msg) => (
+          <div
+            key={msg.id}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: msg.sender === 'user' ? 'flex-end' : 'flex-start',
+              width: '100%',
+            }}
+          >
+            {/* Sender Label & Timestamp */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '10.5px',
+                fontWeight: 600,
+                color: msg.sender === 'user' ? '#7dd3fc' : '#94a3b8',
+                marginBottom: '4px',
+                paddingLeft: msg.sender === 'ai' ? '4px' : '0',
+                paddingRight: msg.sender === 'user' ? '4px' : '0',
+              }}
+            >
+              {msg.sender === 'ai' ? (
+                <>
+                  <Bot size={12} color="#00f2fe" />
+                  <span>Trợ lý AI</span>
+                  {msg.asOf && (
+                    <span style={{ color: 'rgba(148, 163, 184, 0.6)' }}>
+                      • Dữ liệu lúc {msg.asOf}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <>
+                  <span>Bạn</span>
+                  <span style={{ color: 'rgba(125, 211, 252, 0.6)' }}>• {msg.timestamp}</span>
+                </>
+              )}
+            </div>
+
+            {/* Bubble Card */}
+            <div
+              style={{
+                maxWidth: '92%',
+                borderRadius: msg.sender === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+                padding: '12px 16px',
+                fontSize: '13px',
+                lineHeight: '1.5',
+                letterSpacing: '0.01em',
+                background:
+                  msg.sender === 'user'
+                    ? 'linear-gradient(135deg, rgba(2, 132, 199, 0.85) 0%, rgba(3, 105, 161, 0.95) 100%)'
+                    : 'linear-gradient(135deg, rgba(10, 28, 52, 0.85) 0%, rgba(6, 18, 36, 0.92) 100%)',
+                border:
+                  msg.sender === 'user'
+                    ? '1px solid rgba(56, 189, 248, 0.5)'
+                    : '1px solid rgba(56, 189, 248, 0.22)',
+                color: '#ffffff',
+                boxShadow:
+                  msg.sender === 'user'
+                    ? '0 4px 16px rgba(2, 132, 199, 0.25)'
+                    : '0 4px 16px rgba(0, 0, 0, 0.35)',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}
+            >
+              {msg.text}
+
+              {/* Action Safety Warning Notice */}
+              {msg.actionNotice && (
+                <div
+                  style={{
+                    marginTop: '10px',
+                    padding: '8px 10px',
+                    borderRadius: '8px',
+                    background: 'rgba(234, 179, 8, 0.12)',
+                    border: '1px solid rgba(234, 179, 8, 0.35)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    fontSize: '11px',
+                    color: '#fef08a',
+                  }}
+                >
+                  <AlertTriangle size={14} color="#facc15" flexShrink={0} />
+                  <span>{msg.actionNotice}</span>
+                </div>
+              )}
+
+              {/* Verified Facts Badges */}
+              {msg.verifiedFacts && msg.verifiedFacts.length > 0 && (
+                <div
+                  style={{
+                    marginTop: '10px',
+                    paddingTop: '8px',
+                    borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '6px',
+                  }}
+                >
+                  {msg.verifiedFacts.map((fact, fIdx) => (
+                    <span
+                      key={fIdx}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        fontSize: '10.5px',
+                        fontWeight: 600,
+                        padding: '2px 8px',
+                        borderRadius: '6px',
+                        background: 'rgba(0, 242, 254, 0.10)',
+                        border: '1px solid rgba(0, 242, 254, 0.22)',
+                        color: '#7dd3fc',
+                      }}
+                    >
+                      <CheckCircle2 size={11} color="#38bdf8" />
+                      <span>{fact}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+
+        {/* Compact EV Loading Indicator */}
+        {isSending && (
           <div
             style={{
               display: 'flex',
-              alignItems: 'center',
+              flexDirection: 'column',
+              alignItems: 'flex-start',
               gap: '6px',
-              padding: '8px 12px',
-              background: 'rgba(255, 255, 255, 0.05)',
-              borderRadius: '12px',
-              width: 'fit-content',
+              paddingLeft: '4px',
             }}
           >
             <div
               style={{
-                width: '6px',
-                height: '6px',
-                borderRadius: '50%',
-                background: '#00f2fe',
-                animation: 'pulse 1s infinite',
+                fontSize: '11px',
+                fontWeight: 600,
+                color: '#7dd3fc',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
               }}
-            />
-            <span style={{ fontSize: '11px', color: '#94a3b8' }}>AI đang phản hồi...</span>
+            >
+              <Bot size={12} color="#00f2fe" />
+              <span>Trợ lý AI đang truy vấn cơ sở dữ liệu...</span>
+            </div>
+
+            <div
+              style={{
+                padding: '10px 16px',
+                borderRadius: '16px',
+                background: 'rgba(10, 28, 52, 0.85)',
+                border: '1px solid rgba(0, 242, 254, 0.25)',
+              }}
+            >
+              <EVCarLoader
+                variant="inline"
+                message="Đang tra cứu dữ liệu vận hành..."
+                style={{ padding: '0px' }}
+              />
+            </div>
           </div>
         )}
+
+        {/* Error Banner with Retry */}
+        {errorBanner && (
+          <div
+            role="alert"
+            style={{
+              padding: '10px 14px',
+              borderRadius: '12px',
+              background: 'rgba(239, 68, 68, 0.12)',
+              border: '1px solid rgba(239, 68, 68, 0.35)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '10px',
+              color: '#fca5a5',
+              fontSize: '12px',
+            }}
+          >
+            <span>{errorBanner}</span>
+            <button
+              type="button"
+              onClick={() => handleSendMessage()}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '4px 10px',
+                borderRadius: '6px',
+                background: 'rgba(239, 68, 68, 0.2)',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                color: '#ffffff',
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              <RefreshCw size={12} />
+              <span>Thử lại</span>
+            </button>
+          </div>
+        )}
+
         <div ref={messagesEndRef} />
       </div>
 
-      {/* 5. Input Bar at Bottom */}
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          handleSendMessage();
-        }}
+      {/* 4. FIXED MESSAGE COMPOSER */}
+      <footer
         style={{
+          padding: '14px 18px',
+          borderTop: '1px solid rgba(56, 189, 248, 0.16)',
+          background: 'rgba(6, 18, 36, 0.90)',
           display: 'flex',
-          alignItems: 'center',
+          flexDirection: 'column',
           gap: '8px',
-          background: 'rgba(255, 255, 255, 0.06)',
-          border: '1.5px solid rgba(0, 242, 254, 0.35)',
-          borderRadius: '16px',
-          padding: '4px 6px 4px 14px',
-          transition: 'border-color 0.2s',
+          flexShrink: 0,
         }}
       >
-        <input
-          type="text"
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          placeholder="Hỏi tôi về xe, lịch đặt, chi phí..."
+        <div
+          id="ai-composer-wrap"
           style={{
-            flex: 1,
-            background: 'transparent',
-            border: 'none',
-            outline: 'none',
-            color: '#ffffff',
-            fontSize: '12px',
-            fontFamily: "var(--font-family, 'Outfit', sans-serif)",
-          }}
-        />
-        <button
-          type="submit"
-          disabled={!inputText.trim()}
-          title="Gửi câu hỏi"
-          style={{
-            width: '34px',
-            height: '34px',
-            borderRadius: '12px',
-            background: inputText.trim()
-              ? 'linear-gradient(135deg, #00f2fe 0%, #0284c7 100%)'
-              : 'rgba(255, 255, 255, 0.1)',
-            border: 'none',
-            color: inputText.trim() ? '#051326' : '#64748b',
-            cursor: inputText.trim() ? 'pointer' : 'default',
             display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'all 0.2s',
-            boxShadow: inputText.trim() ? '0 0 14px rgba(0, 242, 254, 0.5)' : 'none',
+            alignItems: 'flex-end',
+            gap: '8px',
+            background: 'rgba(10, 24, 46, 0.85)',
+            border: '1.5px solid rgba(56, 189, 248, 0.35)',
+            borderRadius: '16px',
+            padding: '8px 12px',
+            transition: 'border-color 0.2s',
+          }}
+          onFocus={() => {
+            // High contrast focus border
+            const el = document.getElementById('ai-composer-wrap');
+            if (el) el.style.borderColor = '#00f2fe';
+          }}
+          onBlur={() => {
+            const el = document.getElementById('ai-composer-wrap');
+            if (el) el.style.borderColor = 'rgba(56, 189, 248, 0.35)';
           }}
         >
-          <Send size={15} />
-        </button>
-      </form>
-    </div>
+          <textarea
+            ref={textareaRef}
+            rows={1}
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            onKeyDown={handleTextareaKeyDown}
+            placeholder={`Hỏi về pin, lịch đặt, nợ chi phí xe ${activeVehicleName}...`}
+            disabled={isSending}
+            aria-label="Nhập câu hỏi cho trợ lý AI"
+            style={{
+              flex: 1,
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              color: '#ffffff',
+              fontSize: '13px',
+              fontFamily: "var(--font-family, 'Outfit', sans-serif)",
+              lineHeight: '1.45',
+              resize: 'none',
+              maxHeight: '110px',
+              overflowY: 'auto',
+              opacity: isSending ? 0.6 : 1,
+            }}
+          />
+
+          <button
+            type="button"
+            onClick={() => handleSendMessage()}
+            disabled={!inputText.trim() || isSending}
+            title="Gửi câu hỏi"
+            aria-label="Gửi câu hỏi"
+            style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '10px',
+              background:
+                inputText.trim() && !isSending
+                  ? 'linear-gradient(135deg, #00f2fe 0%, #0284c7 100%)'
+                  : 'rgba(255, 255, 255, 0.08)',
+              border: 'none',
+              color: inputText.trim() && !isSending ? '#031024' : '#64748b',
+              cursor: inputText.trim() && !isSending ? 'pointer' : 'not-allowed',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              boxShadow:
+                inputText.trim() && !isSending
+                  ? '0 0 14px rgba(0, 242, 254, 0.45)'
+                  : 'none',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            <Send size={16} />
+          </button>
+        </div>
+
+        {/* Accessibility & Hotkey Hint */}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            fontSize: '10.5px',
+            color: '#64748b',
+            padding: '0 4px',
+          }}
+        >
+          <span>Nhấn Enter để gửi, Shift+Enter để xuống dòng</span>
+          <span>EVShare Verified Guard</span>
+        </div>
+      </footer>
+    </aside>
   );
 };

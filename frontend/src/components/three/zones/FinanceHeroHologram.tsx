@@ -5,10 +5,10 @@ import * as THREE from 'three';
 import { useQuery } from '@tanstack/react-query';
 import { useWorldStore } from '../../../store/worldStore';
 import { useAuthStore } from '../../../store/authStore';
-import { useFundSummary } from '../../../hooks/useFund';
+import { useExpenses } from '../../../hooks/useExpenses';
 import { fetchVehicleCoOwnership } from '../../../services/coOwnershipApi';
 import { HologramCore3D } from './widgets/HologramCore3D';
-import { Wallet, PieChart, Sparkles } from 'lucide-react';
+import { Receipt, PieChart, Sparkles } from 'lucide-react';
 
 interface FinanceHeroHologramProps {
   position?: [number, number, number];
@@ -21,11 +21,8 @@ interface FinanceHeroHologramProps {
 
 /**
  * FinanceHeroHologram: Harmonized 3D Financial Holographic Cockpit HUD
- * Phase 24A Visual Refinement:
- * - Restores the OLD rich cyan/teal glass glow, glossy highlight streaks, and neon edge depth
- * - Preserves the NEW balanced 2-widget layout, spacing, and safe-area alignment
- * - Overhead: Glowing panoramic energy canopy arc spanning across both cards
- * - Grounding: Conical projection rays and central crystal nexus anchoring to EV01 roof
+ * Direct Expense Allocation & Ownership Ratio Hologram
+ * Replaces redundant Shared Fund hologram with direct vehicle expense allocation summaries.
  */
 export const FinanceHeroHologram: React.FC<FinanceHeroHologramProps> = ({
   position = [0.0, 2.70, 1.8],
@@ -43,22 +40,18 @@ export const FinanceHeroHologram: React.FC<FinanceHeroHologramProps> = ({
   const groupRef = useRef<THREE.Group>(null);
   const floatRef = useRef<THREE.Group>(null);
 
-  const [hoveredWidget, setHoveredWidget] = useState<'OWNERSHIP' | 'FUND' | null>(null);
+  const [hoveredWidget, setHoveredWidget] = useState<'OWNERSHIP' | 'EXPENSE' | null>(null);
 
   const targetVehicleId = vehicleId || selectedVehicleId || '11111111-1111-1111-1111-111111111111';
 
-  // 1. Authoritative SharedFund data query
-  const { data: fundSummary, isLoading: isFundLoading, isError: isFundError } = useFundSummary(
-    fundTotal ? null : targetVehicleId
-  );
+  // 1. Authoritative direct vehicle expenses query
+  const { data: expenses = [], isLoading: isExpensesLoading } = useExpenses(targetVehicleId);
 
-  const displayFundTotal = useMemo(() => {
-    if (fundTotal) return fundTotal;
-    if (isFundLoading) return 'ĐANG TẢI...';
-    if (isFundError) return '0đ';
-    if (!fundSummary) return '7.500.000đ';
-    return `${Number(fundSummary.availableBalance).toLocaleString('vi-VN')}đ`;
-  }, [fundTotal, fundSummary, isFundLoading, isFundError]);
+  const displayExpenseTotal = useMemo(() => {
+    if (isExpensesLoading) return 'ĐANG TẢI...';
+    const total = expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    return `${Math.round(total).toLocaleString('vi-VN')}đ`;
+  }, [expenses, isExpensesLoading]);
 
   // 2. Authoritative Co-ownership data query
   const { data: coOwnershipData } = useQuery({
@@ -499,8 +492,8 @@ export const FinanceHeroHologram: React.FC<FinanceHeroHologramProps> = ({
                 </div>
 
                 {/* ======================================================== */}
-                {/* WIDGET 2 (RIGHT): QUỸ CHUNG                              */}
-                {/* Restored: Luminous Wallet Orb, Teal Diffusion, Arc Sheen */}
+                {/* WIDGET 2 (RIGHT): CHI PHÍ VẬN HÀNH                       */}
+                {/* Restored: Luminous Receipt Orb, Teal Diffusion, Arc Sheen */}
                 {/* ======================================================== */}
                 <div
                   role="button"
@@ -510,24 +503,24 @@ export const FinanceHeroHologram: React.FC<FinanceHeroHologramProps> = ({
                     e.preventDefault();
                     openGaragePanel('FINANCE', { vehicleId: targetVehicleId });
                   }}
-                  onMouseEnter={() => setHoveredWidget('FUND')}
+                  onMouseEnter={() => setHoveredWidget('EXPENSE')}
                   onMouseLeave={() => setHoveredWidget(null)}
-                  title="Nhấn để mở Lịch sử chi phí & Quỹ chung"
+                  title="Nhấn để mở Lịch sử chi phí & Phân bổ"
                   style={{
                     width: '312px',
                     height: '136px',
                     borderRadius: '20px',
                     // Restored translucent cybernetic glass gradient
-                    background: hoveredWidget === 'FUND'
+                    background: hoveredWidget === 'EXPENSE'
                       ? 'radial-gradient(120% 110% at 50% 15%, rgba(10, 56, 102, 0.68) 0%, rgba(5, 32, 66, 0.60) 55%, rgba(3, 18, 42, 0.72) 100%)'
                       : 'radial-gradient(120% 110% at 50% 15%, rgba(8, 48, 90, 0.58) 0%, rgba(4, 26, 56, 0.50) 55%, rgba(2, 14, 34, 0.64) 100%)',
                     backdropFilter: 'blur(16px)',
                     WebkitBackdropFilter: 'blur(16px)',
-                    border: hoveredWidget === 'FUND'
+                    border: hoveredWidget === 'EXPENSE'
                       ? '1.5px solid rgba(0, 242, 254, 0.95)'
                       : '1.5px solid rgba(0, 242, 254, 0.70)',
                     // Restored vivid cyan neon glow & crystal bevel
-                    boxShadow: hoveredWidget === 'FUND'
+                    boxShadow: hoveredWidget === 'EXPENSE'
                       ? `
                         0 16px 38px rgba(0, 0, 0, 0.6),
                         0 0 28px rgba(0, 242, 254, 0.45),
@@ -547,7 +540,7 @@ export const FinanceHeroHologram: React.FC<FinanceHeroHologramProps> = ({
                     cursor: 'pointer',
                     pointerEvents: 'auto',
                     transition: 'all 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
-                    transform: hoveredWidget === 'FUND' ? 'translateY(-2.5px) scale(1.015)' : 'translateY(0) scale(1)',
+                    transform: hoveredWidget === 'EXPENSE' ? 'translateY(-2.5px) scale(1.015)' : 'translateY(0) scale(1)',
                     position: 'relative',
                     overflow: 'hidden',
                   }}
@@ -606,7 +599,7 @@ export const FinanceHeroHologram: React.FC<FinanceHeroHologramProps> = ({
                     }}
                   />
 
-                  {/* Header: Luminous Wallet Icon Pill + Title */}
+                  {/* Header: Luminous Receipt Icon Pill + Title */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', position: 'relative', zIndex: 2 }}>
                     <div
                       style={{
@@ -620,7 +613,7 @@ export const FinanceHeroHologram: React.FC<FinanceHeroHologramProps> = ({
                         boxShadow: '0 0 10px rgba(0, 242, 254, 0.25)',
                       }}
                     >
-                      <Wallet size={11} color="#00f2fe" />
+                      <Receipt size={11} color="#00f2fe" />
                       <span
                         style={{
                           fontSize: '10px',
@@ -631,7 +624,7 @@ export const FinanceHeroHologram: React.FC<FinanceHeroHologramProps> = ({
                           textShadow: '0 0 8px rgba(0, 242, 254, 0.65)',
                         }}
                       >
-                        Quỹ chung
+                        Chi phí vận hành
                       </span>
                     </div>
                   </div>
@@ -649,7 +642,7 @@ export const FinanceHeroHologram: React.FC<FinanceHeroHologramProps> = ({
                         textShadow: '0 0 18px rgba(0, 242, 254, 0.70), 0 2px 4px rgba(0, 0, 0, 0.8)',
                       }}
                     >
-                      {displayFundTotal}
+                      {displayExpenseTotal}
                     </div>
                     <div
                       style={{
@@ -661,7 +654,7 @@ export const FinanceHeroHologram: React.FC<FinanceHeroHologramProps> = ({
                         textShadow: '0 0 6px rgba(0, 242, 254, 0.35)',
                       }}
                     >
-                      Quỹ sở hữu và chi phí vận hành
+                      Phân bổ trực tiếp theo tỷ lệ sở hữu
                     </div>
                   </div>
                 </div>

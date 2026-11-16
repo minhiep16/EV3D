@@ -1,0 +1,41 @@
+@startuml
+title USE CASE: XÁC THỰC VÀ QUẢN LÝ TÀI KHOẢN (UC-02)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam actorStyle awesome
+
+
+left to right direction
+
+actor "Người Dùng" as User
+actor "Quản Trị Viên (ADMIN)" as Admin
+
+package "Phân Hệ Xác Thực & Tài Khoản" #F8F9FA {
+    usecase "Đăng Nhập Hệ Thống" as UC_Login
+    usecase "Làm Mới Token (Refresh Token)" as UC_Refresh
+    usecase "Đăng Xuất Khỏi Hệ Thống" as UC_Logout
+    usecase "Xem Thông Tin Cá Nhân" as UC_ViewProfile
+    usecase "Đổi Mật Khẩu" as UC_ChangePass
+    usecase "Xem Danh Sách Tài Khoản" as UC_ListUsers
+    usecase "Thay Đổi Vai Trò Người Dùng" as UC_ChangeRole
+    usecase "Khóa / Mở Khóa Tài Khoản" as UC_LockUser
+}
+
+User --> UC_Login
+User --> UC_Logout
+User --> UC_ViewProfile
+User --> UC_ChangePass
+UC_Login ..> UC_Refresh : <<extend>> (Khi hết hạn)
+
+Admin --> UC_ListUsers
+Admin --> UC_ChangeRole
+Admin --> UC_LockUser
+Admin --|> User
+
+@enduml

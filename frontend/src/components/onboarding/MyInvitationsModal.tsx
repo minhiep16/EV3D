@@ -22,7 +22,10 @@ import {
   GroupJoinRequestResponse,
   InvitationContractReviewResponse,
 } from '../../types/onboarding';
+import { MembershipInvitationResponse } from '../../types/coOwnership';
 import { onboardingApi } from '../../services/onboardingApi';
+import { fetchMyPendingInvitations } from '../../services/coOwnershipApi';
+import { InvitationReviewModal } from '../three/ownership/InvitationReviewModal';
 import { useAuthStore } from '../../store/authStore';
 
 interface MyInvitationsModalProps {
@@ -41,9 +44,11 @@ export const MyInvitationsModal: React.FC<MyInvitationsModalProps> = ({
   const { user } = useAuthStore();
   const [activeTab, setActiveTab] = useState<InvitationPanelTab>('invitations');
   const [invitations, setInvitations] = useState<GroupInvitationResponse[]>([]);
+  const [membershipInvitations, setMembershipInvitations] = useState<MembershipInvitationResponse[]>([]);
   const [joinRequests, setJoinRequests] = useState<GroupJoinRequestResponse[]>([]);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [reviewingMembershipInvId, setReviewingMembershipInvId] = useState<string | null>(null);
 
   // In-Panel Drill-down Detail State
   const [selectedInvitation, setSelectedInvitation] = useState<GroupInvitationResponse | null>(null);
@@ -71,6 +76,7 @@ export const MyInvitationsModal: React.FC<MyInvitationsModalProps> = ({
       loadData();
       setSelectedInvitation(null);
       setReviewingInvitation(null);
+      setReviewingMembershipInvId(null);
       setContractData(null);
       setConfirmAgreed(false);
       setSignSuccessMessage(null);
@@ -80,12 +86,14 @@ export const MyInvitationsModal: React.FC<MyInvitationsModalProps> = ({
   const loadData = async () => {
     setLoading(true);
     try {
-      const [invList, reqList] = await Promise.all([
+      const [invList, reqList, memberInvList] = await Promise.all([
         onboardingApi.getMyInvitations(),
         onboardingApi.getMyJoinRequests(),
+        fetchMyPendingInvitations().catch(() => []),
       ]);
       setInvitations(invList || []);
       setJoinRequests(reqList || []);
+      setMembershipInvitations(memberInvList || []);
     } catch (err) {
       console.error('Error loading invitations/requests:', err);
     } finally {
@@ -203,7 +211,11 @@ export const MyInvitationsModal: React.FC<MyInvitationsModalProps> = ({
 
   if (!isOpen) return null;
 
-  const pendingInvitationsCount = invitations.filter((i) => i.status === 'PENDING').length;
+  const pendingInvitationsCount =
+    invitations.filter((i) => i.status === 'PENDING').length +
+    membershipInvitations.filter(
+      (i) => i.status === 'PENDING_INVITEE_RESPONSE' || i.status === 'INVITED'
+    ).length;
   const joinRequestsCount = joinRequests.length;
 
   return createPortal(
@@ -212,7 +224,7 @@ export const MyInvitationsModal: React.FC<MyInvitationsModalProps> = ({
       {/* 1. NON-BLOCKING FLOATING RIGHT-SIDE INVITATION PANEL              */}
       {/* Zero fullscreen backdrop: Car & showroom remain 100% interactive */}
       {/* ================================================================= */}
-      {!reviewingInvitation && (
+      {!reviewingInvitation && !reviewingMembershipInvId && (
         <aside
           role="complementary"
           aria-label="Lời mời và yêu cầu"
@@ -590,7 +602,7 @@ export const MyInvitationsModal: React.FC<MyInvitationsModalProps> = ({
               /* ======================================================== */
               /* TAB 1: INCOMING INVITATIONS LIST                         */
               /* ======================================================== */
-              invitations.length === 0 ? (
+              invitations.length === 0 && membershipInvitations.length === 0 ? (
                 /* Compact Empty State */
                 <div style={{ textAlign: 'center', padding: '36px 16px', color: '#64748b' }}>
                   <div
@@ -617,6 +629,108 @@ export const MyInvitationsModal: React.FC<MyInvitationsModalProps> = ({
               ) : (
                 /* Compact Invitation Cards */
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {/* Membership Invitations (Phase 2 Full Governance) */}
+                  {membershipInvitations.map((mInv) => {
+                    const sharePct = Number(mInv.totalOfferedPercentage ?? mInv.proposedPercentage ?? 0);
+                    return (
+                      <div
+                        key={mInv.id}
+                        onClick={() => setReviewingMembershipInvId(mInv.id)}
+                        style={{
+                          background: '#ffffff',
+                          borderRadius: '14px',
+                          border: '1.2px solid rgba(0, 201, 216, 0.45)',
+                          boxShadow: '0 2px 10px rgba(0, 180, 200, 0.08)',
+                          padding: '14px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '10px',
+                          cursor: 'pointer',
+                          transition: 'all 0.18s ease',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div
+                              style={{
+                                fontWeight: 800,
+                                color: '#0f172a',
+                                fontSize: '13.5px',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                              }}
+                            >
+                              {mInv.groupName || 'Nhóm đồng sở hữu'}
+                            </div>
+                            <div style={{ fontSize: '11.5px', color: '#64748b', marginTop: '2px' }}>
+                              Trưởng nhóm: <strong>{mInv.invitedByUserName || 'Trưởng nhóm'}</strong>
+                            </div>
+                            {mInv.vehicleName && (
+                              <div style={{ fontSize: '11.5px', color: '#009e9d', marginTop: '2px', fontWeight: 600 }}>
+                                Xe: {mInv.vehicleName} {mInv.licensePlate ? `(${mInv.licensePlate})` : ''}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Status Badge */}
+                          <span
+                            style={{
+                              fontSize: '10px',
+                              fontWeight: 800,
+                              padding: '2px 7px',
+                              borderRadius: '9999px',
+                              background: 'rgba(0, 201, 216, 0.15)',
+                              color: '#009e9d',
+                            }}
+                          >
+                            {mInv.statusVi || 'Chờ phản hồi'}
+                          </span>
+                        </div>
+
+                        {/* Share & Action */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            paddingTop: '8px',
+                            borderTop: '1px solid rgba(226, 232, 240, 0.8)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#0f172a', fontWeight: 700 }}>
+                            <PieChart size={13} color="#00c9d8" />
+                            <span>Tỷ lệ: {sharePct.toFixed(2)}%</span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setReviewingMembershipInvId(mInv.id);
+                            }}
+                            style={{
+                              background: 'linear-gradient(135deg, #00c9d8, #009e9d)',
+                              border: 'none',
+                              borderRadius: '6px',
+                              color: '#ffffff',
+                              fontSize: '11px',
+                              fontWeight: 750,
+                              padding: '5px 12px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                          >
+                            <span>Xem & Phản hồi</span>
+                            <ChevronRight size={12} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+
                   {invitations.map((inv) => {
                     const sharePct = Number(inv.proposedPercentage ?? inv.intendedSharePercentage ?? 0);
                     const isZeroPercent = sharePct <= 0;
@@ -1249,6 +1363,18 @@ export const MyInvitationsModal: React.FC<MyInvitationsModalProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {reviewingMembershipInvId && (
+        <InvitationReviewModal
+          invitationId={reviewingMembershipInvId}
+          onClose={() => setReviewingMembershipInvId(null)}
+          onSuccess={() => {
+            setReviewingMembershipInvId(null);
+            loadData();
+            onSuccess();
+          }}
+        />
       )}
     </>,
     document.body

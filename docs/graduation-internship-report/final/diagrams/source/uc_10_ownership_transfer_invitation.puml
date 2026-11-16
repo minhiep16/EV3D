@@ -1,0 +1,40 @@
+@startuml
+title USE CASE: ĐỒNG SỞ HỮU, CHUYỂN NHƯỢNG VÀ MỜI THÀNH VIÊN (UC-10)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam actorStyle awesome
+
+
+left to right direction
+
+actor "Trưởng Nhóm (LEADER)" as Leader
+actor "Thành Viên (CO_OWNER)" as Member
+actor "Người Được Mời" as Invitee
+
+package "Quản Trị Nhóm Đồng Sở Hữu" #F8F9FA {
+    usecase "Gửi Lời Mời Thành Viên Mới" as UC_Invite
+    usecase "Xem Quyền Lợi & Nghĩa Vụ Vốn Góp" as UC_ViewInvite
+    usecase "Chấp Nhận Lời Mời Gia Nhập" as UC_AcceptInvite
+    usecase "Tạo Yêu Cầu Chuyển Nhượng Cổ Phần" as UC_TransferReq
+    usecase "Ký Chấp Thuận Chuyển Nhượng" as UC_ConsentTransfer
+    usecase "Cập Nhật Tỷ Lệ Cổ Phần & Lưu Lịch Sử" as UC_ExecTransfer
+}
+
+Leader --> UC_Invite
+Invitee --> UC_ViewInvite
+Invitee --> UC_AcceptInvite
+
+Member --> UC_TransferReq
+Leader --> UC_ConsentTransfer
+
+UC_TransferReq ..> UC_ConsentTransfer : <<include>>
+UC_ConsentTransfer ..> UC_ExecTransfer : <<include>>
+UC_AcceptInvite ..> UC_ExecTransfer : <<include>>
+
+@enduml

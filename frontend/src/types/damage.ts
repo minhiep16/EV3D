@@ -10,7 +10,7 @@ export type DamageType =
   | 'TIRE_DAMAGE'
   | 'OTHER';
 
-export type DamageSeverity = 'MINOR' | 'MODERATE' | 'SEVERE';
+export type DamageSeverity = 'MINOR' | 'MODERATE' | 'SEVERE' | 'CRITICAL';
 
 export type DamageStatus = 'OPEN' | 'UNDER_MAINTENANCE' | 'RESOLVED';
 
@@ -47,10 +47,13 @@ export interface CreateDamagePayload {
   localPositionZ: number;
 }
 
-export const DAMAGE_TYPE_LABELS: Record<DamageType, string> = {
+export const DAMAGE_TYPE_LABELS: Record<string, string> = {
   SCRATCH: 'TRẦY XƯỚC',
+  SCRATCHED: 'TRẦY XƯỚC',
   DENT: 'MÓP',
+  DENTED: 'MÓP',
   CRACK: 'NỨT',
+  CRACKED: 'NỨT',
   BROKEN: 'VỠ',
   PAINT_DAMAGE: 'HƯ SƠN',
   GLASS_DAMAGE: 'HƯ KÍNH',
@@ -109,5 +112,12 @@ export const DAMAGE_SEVERITY_CONFIG: Record<
     color: '#f87171',
     bg: 'rgba(239, 68, 68, 0.2)',
     borderColor: 'rgba(239, 68, 68, 0.6)',
+  },
+  CRITICAL: {
+    label: 'NGHIÊM TRỌNG',
+    labelVi: 'NGHIÊM TRỌNG',
+    color: '#ef4444',
+    bg: 'rgba(239, 68, 68, 0.25)',
+    borderColor: 'rgba(239, 68, 68, 0.7)',
   },
 };

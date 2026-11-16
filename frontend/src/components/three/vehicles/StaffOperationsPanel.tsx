@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { VehicleResponse } from '../../../types/vehicle';
 import {
@@ -43,6 +43,8 @@ import { StaffFinancialVerificationPanel } from '../../fleet/StaffFinancialVerif
 import { StaffApprovedWorkSection } from '../../fleet/StaffApprovedWorkSection';
 import { useFundSummary, useFundContributions, usePendingPersonalPayments } from '../../../hooks/useFund';
 import { useStaffApprovedWork } from '../../../hooks/useVoting';
+import { fetchVehicleEnergyInventory } from '../../../services/chargingApi';
+import { VehicleEnergyInventoryResponse } from '../../../types/charging';
 
 function formatDate(isoString?: string): string {
   if (!isoString) return '--/--/----';
@@ -114,6 +116,7 @@ export const StaffOperationsPanel: React.FC<StaffOperationsPanelProps> = ({
   const enterVehicleHandoverMode = useWorldStore((state) => state.enterVehicleHandoverMode);
   const enterVehicleDamageMappingMode = useWorldStore((state) => state.enterVehicleDamageMappingMode);
   const enterVehicleDamageHistoryMode = useWorldStore((state) => state.enterVehicleDamageHistoryMode);
+  const enterChargingMode = useWorldStore((state) => state.enterChargingMode);
   const queryClient = useQueryClient();
 
   const [showFinanceVerification, setShowFinanceVerification] = React.useState(false);
@@ -132,6 +135,13 @@ export const StaffOperationsPanel: React.FC<StaffOperationsPanelProps> = ({
     return contributions.filter((c) => c.status === 'PENDING').length;
   }, [contributions]);
   const totalPendingFinances = pendingContributionsCount + pendingPersonalPayments.length;
+
+  const { data: energyInventory } = useQuery<VehicleEnergyInventoryResponse | null>({
+    queryKey: ['vehicleEnergyInventory', vehicle.id],
+    queryFn: () => (vehicle.id ? fetchVehicleEnergyInventory(vehicle.id) : Promise.resolve(null)),
+    enabled: authReady && !!vehicle.id,
+    refetchInterval: 5000,
+  });
 
   const [isConfirmingReturn, setIsConfirmingReturn] = React.useState(false);
   const [returnSuccessMsg, setReturnSuccessMsg] = React.useState<string | null>(null);
@@ -590,6 +600,89 @@ export const StaffOperationsPanel: React.FC<StaffOperationsPanelProps> = ({
         />
       ) : (
         <>
+          {/* VEHICLE ENERGY INVENTORY OVERVIEW CARD */}
+          <div
+            style={{
+              background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.12) 0%, rgba(15, 23, 42, 0.6) 100%)',
+              border: '1px solid rgba(0, 242, 254, 0.3)',
+              borderRadius: '10px',
+              padding: '8px 10px',
+              marginBottom: '12px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px',
+              fontSize: '10.5px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#00f2fe', fontWeight: 800, textTransform: 'uppercase', fontSize: '10px' }}>
+                <Zap size={12} color="#00f2fe" />
+                <span>KHO ĐIỆN NĂNG PHƯƠNG TIỆN</span>
+              </div>
+              <span
+                style={{
+                  fontSize: '9px',
+                  fontWeight: 700,
+                  color: energyInventory?.isReconciliationRequired ? '#fbbf24' : '#34d399',
+                  background: energyInventory?.isReconciliationRequired ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                  padding: '1px 5px',
+                  borderRadius: '3px',
+                }}
+              >
+                {energyInventory?.isReconciliationRequired ? 'Cần đối soát' : 'Đã đồng bộ'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#cbd5e1' }}>
+              <span style={{ color: '#94a3b8' }}>Điện tích trữ:</span>
+              <strong style={{ color: '#ffffff' }}>
+                {energyInventory?.availableEnergyKwh != null
+                  ? `${Number(energyInventory.availableEnergyKwh).toFixed(1)} kWh`
+                  : `${(((vehicle.currentBatteryLevel ?? 80) * 78.4) / 100).toFixed(1)} kWh`}
+              </strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#cbd5e1' }}>
+              <span style={{ color: '#94a3b8' }}>Đơn giá bình quân:</span>
+              <strong style={{ color: '#38bdf8' }}>
+                {(energyInventory?.weightedAverageCostPerKwh ?? 3850).toLocaleString('vi-VN')} đ/kWh
+              </strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#cbd5e1' }}>
+              <span style={{ color: '#94a3b8' }}>Giá trị tồn kho điện:</span>
+              <strong style={{ color: '#10b981' }}>
+                {(energyInventory?.totalInventoryCost ?? Math.round((((vehicle.currentBatteryLevel ?? 80) * 78.4) / 100) * 3850)).toLocaleString('vi-VN')} đ
+              </strong>
+            </div>
+
+            {/* Quick Action: Open Charging Control Panel */}
+            <button
+              type="button"
+              onClick={() => {
+                enterChargingMode(vehicle.id);
+              }}
+              style={{
+                marginTop: '6px',
+                width: '100%',
+                background: 'linear-gradient(135deg, rgba(0, 242, 254, 0.22) 0%, rgba(2, 132, 199, 0.3) 100%)',
+                border: '1px solid #00f2fe',
+                borderRadius: '6px',
+                padding: '6px 8px',
+                color: '#ffffff',
+                fontSize: '10.5px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '5px',
+                boxShadow: '0 2px 10px rgba(0, 242, 254, 0.2)',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <Zap size={12} color="#00f2fe" />
+              <span>ĐIỀU KHIỂN SẠC XE</span>
+            </button>
+          </div>
+
           {/* ======================================================== */}
           {/* CASE 1: AUTHORITATIVE ACTIVE TRIP OPERATIONAL CARD      */}
           {/* ======================================================== */}

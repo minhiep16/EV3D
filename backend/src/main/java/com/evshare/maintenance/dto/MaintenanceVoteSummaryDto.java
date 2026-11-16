@@ -39,6 +39,30 @@ public class MaintenanceVoteSummaryDto {
         return dto;
     }
 
+    public static MaintenanceVoteSummaryDto fromProposalVote(com.evshare.voting.entity.ProposalVote vote) {
+        if (vote == null) return null;
+        MaintenanceVoteSummaryDto dto = new MaintenanceVoteSummaryDto();
+        dto.setId(vote.getId());
+        dto.setMemberId(vote.getMember() != null ? vote.getMember().getId() : null);
+        if (vote.getVoterUser() != null) {
+            dto.setUserId(vote.getVoterUser().getId());
+            dto.setUserName(vote.getVoterUser().getFullName());
+        }
+        if (vote.getChoice() != null) {
+            VoteDecision dec = switch (vote.getChoice()) {
+                case APPROVE -> VoteDecision.APPROVE;
+                case REJECT -> VoteDecision.REJECT;
+                case ABSTAIN -> VoteDecision.ABSTAIN;
+            };
+            dto.setDecision(dec);
+        }
+        dto.setVotingWeight(vote.getVotingWeightSnapshot());
+        dto.setComment(vote.getComment());
+        dto.setCreatedAt(vote.getCastAt());
+        dto.setUpdatedAt(vote.getUpdatedAt());
+        return dto;
+    }
+
     public UUID getId() {
         return id;
     }

@@ -13,6 +13,8 @@ export interface ExpenseShareResponse {
   status: ExpenseShareStatus;
   isPayer: boolean;
   paidAmount: number;
+  pendingVerificationAmount?: number;
+  remainingAmount?: number;
   allocationPolicy?: ExpenseAllocationPolicy;
   allocationPolicyLabel?: string;
   isResponsibleUser?: boolean;
@@ -23,6 +25,12 @@ export interface ExpenseShareResponse {
   allocationPeriodStart?: string | null;
   allocationPeriodEnd?: string | null;
   calculationVersion?: string | null;
+  inverseOwnershipWeight?: number | null;
+  totalInverseOwnershipWeight?: number | null;
+  ownershipCost?: number | null;
+  usageCost?: number | null;
+  alphaWeight?: number | null;
+  betaWeight?: number | null;
 }
 
 export interface MemberCostShareResponse {

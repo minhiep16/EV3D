@@ -100,8 +100,8 @@ const AiHologramHintCard: React.FC<AiHologramHintCardProps> = ({
         border: isSelected
           ? '1px solid rgba(0, 242, 254, 0.90)'
           : isSubdued
-          ? '1px solid rgba(0, 242, 254, 0.35)'
-          : '1px solid rgba(0, 242, 254, 0.60)',
+            ? '1px solid rgba(0, 242, 254, 0.35)'
+            : '1px solid rgba(0, 242, 254, 0.60)',
         borderRadius: '16px',
         padding: '12px 16px',
         boxShadow:
@@ -270,8 +270,8 @@ export const AiAssistantInstallation: React.FC<AiAssistantInstallationProps> = (
   const isGarageOverview = activeFeature === 'NONE' && !effectiveVehicleFocused;
   const isAiActive = activeFeature === 'AI_ASSISTANT' || isSelected;
 
-  // Positive allow-list condition: show ONLY in Garage Overview or when AI is Active
-  const showAiHint = (isGarageOverview || isAiActive) && !isFocusedBusinessMode;
+  // Positive allow-list condition: show floating speech bubble ONLY in ambient Garage Overview when AI panel is NOT open
+  const showAiHint = isGarageOverview && !isAiActive && !isFocusedBusinessMode;
 
   // Subdued state: When Finance Mode, Analytics, Charging, other zones, or vehicle detail is active,
   // the AI orb remains present in the background but visually subdued to prevent distraction or overlap.
@@ -360,8 +360,8 @@ export const AiAssistantInstallation: React.FC<AiAssistantInstallationProps> = (
       const tipGlow = isSubdued
         ? 0.4
         : isSelected
-        ? 0.95 + Math.sin(t * 3.5) * 0.05
-        : 0.85 + Math.sin(t * 1.8) * 0.12;
+          ? 0.95 + Math.sin(t * 3.5) * 0.05
+          : 0.85 + Math.sin(t * 1.8) * 0.12;
       antennaLeftTipRef.current.opacity = tipGlow;
       antennaRightTipRef.current.opacity = tipGlow;
     }

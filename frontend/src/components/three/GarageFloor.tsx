@@ -9,7 +9,7 @@ import { MeshReflectorMaterial } from '@react-three/drei';
  * - Refined circular floor expansion joints centered on the hero turntable
  * - Smooth, high-performance PBR reflection response
  */
-export const GarageFloor: React.FC = () => {
+const GarageFloorComponent: React.FC = () => {
   return (
     <group position={[0, 0, 0]}>
       {/* 1. Primary High-Gloss Luxury Showroom Epoxy Floor */}
@@ -75,4 +75,6 @@ export const GarageFloor: React.FC = () => {
     </group>
   );
 };
+
+export const GarageFloor = React.memo(GarageFloorComponent);
 

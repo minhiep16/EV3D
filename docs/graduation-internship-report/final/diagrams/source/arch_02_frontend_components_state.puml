@@ -1,0 +1,64 @@
+@startuml
+title KIẾN TRÚC FRONTEND VÀ QUẢN LÝ TRẠNG THÁI ZUSTAND
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+package "Entry & Router" #EBF5FB {
+    [App.tsx] as App
+    [BrowserRouter] as Router
+    App --> Router
+}
+
+package "Zustand Global Stores" #FEF9E7 {
+    [authStore.ts] as AuthStore #FAD7A0
+    [worldStore.ts] as WorldStore #FAD7A0
+}
+
+package "Scenes" #E8F8F5 {
+    [AuthScene.tsx] as AuthScene
+    [GarageScene.tsx] as GarageScene
+    [StatusScene.tsx] as StatusScene
+}
+
+package "3D Spatial Components" #EAECEE {
+    [EVShareWorld.tsx] as World3D
+    [VehicleDigitalTwin.tsx] as VehicleTwin
+    [BatteryHealthZone.tsx] as BatteryZone
+    [DamageHotspotMarker.tsx] as Hotspot
+    [ChargingStationZone.tsx] as ChargingZone
+}
+
+package "Operational UI Panels" #FADBD8 {
+    [CoOwnerBookingPanel.tsx] as BookingPanel
+    [FinanceZonePanel.tsx] as FinancePanel
+    [StaffHandoverModal.tsx] as HandoverModal
+    [StaffReturnInspectionModal.tsx] as ReturnModal
+    [AdminCommandCenterPanels.tsx] as AdminPanel
+}
+
+Router --> AuthScene : /login
+Router --> GarageScene : /garage
+GarageScene --> World3D
+World3D --> VehicleTwin
+VehicleTwin --> BatteryZone
+VehicleTwin --> Hotspot
+World3D --> ChargingZone
+
+GarageScene --> BookingPanel : activePrimaryPanel
+GarageScene --> FinancePanel
+GarageScene --> HandoverModal
+GarageScene --> ReturnModal
+GarageScene --> AdminPanel
+
+BookingPanel ..> WorldStore : Đọc selectedVehicleId
+FinancePanel ..> WorldStore : Đọc selectedVehicleId
+AuthScene ..> AuthStore : Cập nhật Token khi đăng nhập
+BookingPanel ..> AuthStore : Kiểm tra quyền CO_OWNER
+@enduml

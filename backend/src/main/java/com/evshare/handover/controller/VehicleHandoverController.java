@@ -1,5 +1,7 @@
 package com.evshare.handover.controller;
 
+import com.evshare.handover.dto.HandoverEligibilityReason;
+import com.evshare.handover.dto.VehicleHandoverEligibilityResponse;
 import com.evshare.handover.dto.VehicleHandoverResponse;
 import com.evshare.handover.dto.VehicleInspectionRequest;
 import com.evshare.handover.dto.VehicleInspectionResponse;
@@ -43,11 +45,15 @@ public class VehicleHandoverController {
     @GetMapping(value = {"/vehicles/{vehicleId}/active-handover", "/vehicles/{vehicleId}/handovers/active"})
     @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
     public ResponseEntity<VehicleHandoverResponse> getActiveHandoverForVehicle(
-            @PathVariable UUID vehicleId,
+            @PathVariable String vehicleId,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
+        UUID resolvedId = handoverService.resolvePersistentVehicleId(vehicleId);
+        if (resolvedId == null) {
+            return ResponseEntity.noContent().build();
+        }
         Optional<VehicleHandoverResponse> response = handoverService.getActiveHandoverForVehicle(
-                vehicleId,
+                resolvedId,
                 principal.getId(),
                 principal.getUser().getRole()
         );
@@ -58,11 +64,15 @@ public class VehicleHandoverController {
     @GetMapping(value = {"/vehicles/{vehicleId}/handover-history", "/vehicles/{vehicleId}/handovers/history"})
     @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
     public ResponseEntity<List<VehicleHandoverResponse>> getHandoverHistory(
-            @PathVariable UUID vehicleId,
+            @PathVariable String vehicleId,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
+        UUID resolvedId = handoverService.resolvePersistentVehicleId(vehicleId);
+        if (resolvedId == null) {
+            return ResponseEntity.ok(List.of());
+        }
         List<VehicleHandoverResponse> response = handoverService.getHandoverHistory(
-                vehicleId,
+                resolvedId,
                 principal.getId(),
                 principal.getUser().getRole()
         );
@@ -72,11 +82,15 @@ public class VehicleHandoverController {
     @GetMapping("/vehicles/{vehicleId}/active-handovers")
     @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
     public ResponseEntity<List<VehicleHandoverResponse>> getActiveHandoversForVehicle(
-            @PathVariable UUID vehicleId,
+            @PathVariable String vehicleId,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
+        UUID resolvedId = handoverService.resolvePersistentVehicleId(vehicleId);
+        if (resolvedId == null) {
+            return ResponseEntity.ok(List.of());
+        }
         List<VehicleHandoverResponse> response = handoverService.getActiveHandoversForVehicle(
-                vehicleId,
+                resolvedId,
                 principal.getId(),
                 principal.getUser().getRole()
         );
@@ -85,12 +99,39 @@ public class VehicleHandoverController {
 
     @GetMapping("/vehicles/{vehicleId}/handover-eligibility")
     @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
-    public ResponseEntity<com.evshare.handover.dto.VehicleHandoverEligibilityResponse> getHandoverEligibility(
-            @PathVariable UUID vehicleId,
+    public ResponseEntity<VehicleHandoverEligibilityResponse> getHandoverEligibility(
+            @PathVariable String vehicleId,
+            @RequestParam(required = false) UUID bookingId,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
-        com.evshare.handover.dto.VehicleHandoverEligibilityResponse response = handoverService.getHandoverEligibility(
-                vehicleId,
+        if (bookingId != null) {
+            VehicleHandoverEligibilityResponse response = handoverService.getHandoverEligibilityByBookingId(
+                    bookingId,
+                    principal.getId(),
+                    principal.getUser().getRole()
+            );
+            return ResponseEntity.ok(response);
+        }
+        UUID resolvedId = handoverService.resolvePersistentVehicleId(vehicleId);
+        if (resolvedId == null) {
+            return ResponseEntity.ok(VehicleHandoverEligibilityResponse.notFound("Không tìm thấy phương tiện với mã định danh cung cấp."));
+        }
+        VehicleHandoverEligibilityResponse response = handoverService.getHandoverEligibility(
+                resolvedId,
+                principal.getId(),
+                principal.getUser().getRole()
+        );
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/bookings/{bookingId}/handover-eligibility")
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
+    public ResponseEntity<VehicleHandoverEligibilityResponse> getHandoverEligibilityByBooking(
+            @PathVariable UUID bookingId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        VehicleHandoverEligibilityResponse response = handoverService.getHandoverEligibilityByBookingId(
+                bookingId,
                 principal.getId(),
                 principal.getUser().getRole()
         );
@@ -99,11 +140,11 @@ public class VehicleHandoverController {
 
     @GetMapping("/handovers/{handoverId}/eligibility")
     @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
-    public ResponseEntity<com.evshare.handover.dto.VehicleHandoverEligibilityResponse> getHandoverEligibilityByHandover(
+    public ResponseEntity<VehicleHandoverEligibilityResponse> getHandoverEligibilityByHandover(
             @PathVariable UUID handoverId,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
-        com.evshare.handover.dto.VehicleHandoverEligibilityResponse response = handoverService.getHandoverEligibilityByHandoverId(
+        VehicleHandoverEligibilityResponse response = handoverService.getHandoverEligibilityByHandoverId(
                 handoverId,
                 principal.getId(),
                 principal.getUser().getRole()
@@ -112,7 +153,7 @@ public class VehicleHandoverController {
     }
 
     @PostMapping("/bookings/{bookingId}/handover")
-    @PreAuthorize("hasRole('STAFF')")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     public ResponseEntity<VehicleHandoverResponse> createHandover(
             @PathVariable UUID bookingId,
             @AuthenticationPrincipal UserPrincipal principal
@@ -122,7 +163,7 @@ public class VehicleHandoverController {
     }
 
     @PostMapping("/bookings/{bookingId}/handover/start")
-    @PreAuthorize("hasRole('STAFF')")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     public ResponseEntity<VehicleHandoverResponse> startHandover(
             @PathVariable UUID bookingId,
             @AuthenticationPrincipal UserPrincipal principal
@@ -134,7 +175,7 @@ public class VehicleHandoverController {
     @Deprecated
     @SuppressWarnings("deprecation")
     @PostMapping("/handovers/{handoverId}/inspections")
-    @PreAuthorize("hasRole('STAFF')")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     public ResponseEntity<VehicleInspectionResponse> recordInspection(
             @PathVariable UUID handoverId,
             @AuthenticationPrincipal UserPrincipal principal,
@@ -145,7 +186,7 @@ public class VehicleHandoverController {
     }
 
     @PostMapping("/handovers/{handoverId}/ready")
-    @PreAuthorize("hasRole('STAFF')")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     public ResponseEntity<VehicleHandoverResponse> markReady(
             @PathVariable UUID handoverId,
             @AuthenticationPrincipal UserPrincipal principal
@@ -155,7 +196,7 @@ public class VehicleHandoverController {
     }
 
     @PostMapping("/handovers/{handoverId}/handover")
-    @PreAuthorize("hasRole('STAFF')")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     public ResponseEntity<VehicleHandoverResponse> confirmStaffHandover(
             @PathVariable UUID handoverId,
             @AuthenticationPrincipal UserPrincipal principal
@@ -190,6 +231,18 @@ public class VehicleHandoverController {
             @PathVariable UUID handoverId
     ) {
         VehicleHandoverResponse response = handoverService.completeHandover(handoverId);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/handovers/{handoverId}/recover")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    public ResponseEntity<VehicleHandoverResponse> recoverVehicle(
+            @PathVariable UUID handoverId,
+            @RequestBody(required = false) java.util.Map<String, String> body,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        String note = (body != null && body.containsKey("note")) ? body.get("note") : null;
+        VehicleHandoverResponse response = handoverService.recoverVehicle(handoverId, principal.getId(), note);
         return ResponseEntity.ok(response);
     }
 }

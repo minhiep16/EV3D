@@ -1,0 +1,60 @@
+@startuml
+title SƠ ĐỒ LỚP: XÁC THỰC VÀ NGƯỜI DÙNG (CLASS-02)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam classAttributeIconSize 0
+
+
+class User {
+    - id: UUID
+    - email: String
+    - passwordHash: String
+    - fullName: String
+    - phoneNumber: String
+    - role: Role
+    - status: UserStatus
+    - createdAt: Instant
+    - updatedAt: Instant
+    + getAuthorities(): Collection<GrantedAuthority>
+}
+
+enum Role <<enumeration>> {
+    ADMIN
+    STAFF
+    CO_OWNER
+}
+
+enum UserStatus <<enumeration>> {
+    ACTIVE
+    LOCKED
+    SUSPENDED
+}
+
+class RefreshToken {
+    - id: UUID
+    - token: String
+    - expiryDate: Instant
+    - revoked: boolean
+    - user: User
+    + isExpired(): boolean
+}
+
+class UserPrincipal {
+    - id: UUID
+    - email: String
+    - role: Role
+    + fromEntity(user: User): UserPrincipal
+}
+
+User --> Role
+User --> UserStatus
+RefreshToken --> User : belongsTo
+UserPrincipal ..> User : adapts
+
+@enduml

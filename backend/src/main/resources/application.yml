@@ -19,7 +19,7 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: update
     show-sql: false
     properties:
       hibernate:
@@ -40,6 +40,16 @@ app:
   handover:
     inspection-max-age-hours: 24
   financial-mode: ${FINANCIAL_MODE:DEMO}
+  ai:
+    enabled: ${AI_ENABLED:false}
+    provider: ${AI_PROVIDER:none}
+    api-key: ${AI_API_KEY:}
+    model: ${AI_MODEL:gemini-1.5-flash}
+    endpoint: ${AI_ENDPOINT:https://generativelanguage.googleapis.com/v1beta/models}
+
+dispute:
+  booking-return:
+    alert-grace-minutes: 10
 
 management:
   endpoints:

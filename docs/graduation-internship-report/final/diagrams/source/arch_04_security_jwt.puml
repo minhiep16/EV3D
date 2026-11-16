@@ -1,0 +1,40 @@
+@startuml
+title KIẾN TRÚC BẢO MẬT VÀ CHUỖI LỌC JWT (RBAC)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+actor "Client (Browser)" as Client
+participant "SecurityFilterChain" as Chain
+participant "JwtAuthenticationFilter" as JwtFilter
+participant "JwtTokenProvider" as Provider
+participant "CustomUserDetailsService" as UserDetails
+participant "SecurityContextHolder" as Context
+participant "REST Controller" as Controller
+
+Client -> Chain : HTTP Request + Header "Authorization: Bearer <JWT>"
+Chain -> JwtFilter : doFilterInternal()
+
+alt Token hợp lệ
+    JwtFilter -> Provider : validateToken(jwt)
+    Provider --> JwtFilter : Valid
+    JwtFilter -> Provider : getUserIdFromJWT(jwt)
+    Provider --> JwtFilter : userId
+    JwtFilter -> UserDetails : loadUserById(userId)
+    UserDetails --> JwtFilter : UserPrincipal (Roles)
+    JwtFilter -> Context : setAuthentication()
+    JwtFilter -> Chain : filterChain.doFilter()
+    Chain -> Controller : @PreAuthorize("hasRole('...')")
+    Controller --> Client : HTTP 200 OK + JSON
+else Token hết hạn / không hợp lệ
+    JwtFilter --> Client : HTTP 401 Unauthorized
+else Sai quyền truy cập
+    Controller --> Client : HTTP 403 Forbidden
+end
+@enduml

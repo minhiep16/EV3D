@@ -1,0 +1,48 @@
+@startuml
+title KIẾN TRÚC KHÔNG GIAN 3D VÀ CHU TRÌNH RENDER THREE.JS
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+package "R3F Canvas (React Three Fiber)" #EBF5FB {
+    [PerspectiveCamera] as Camera
+    [OrbitControls] as Controls
+    [Lighting (Ambient, Directional)] as Lighting
+    [MeshReflectorMaterial (Sàn phản xạ)] as Floor
+}
+
+package "Scene Graph Phân Cấp" #E8F8F5 {
+    [Pedestal Group (Bục xe)] as Pedestal
+    [Vehicle Group (Cụm xe)] as VehGroup
+    [Body Meshes] as BodyMesh
+    [Battery Mesh (Emissive)] as BatteryMesh
+    [Damage Hotspot Mesh] as HotspotMesh
+    [Html Label (HUD)] as HtmlLabel
+}
+
+package "Raycasting & Tương Tác" #FEF9E7 {
+    [Three.js Raycaster] as Raycaster
+    [Pointer Events] as Pointer
+    [Camera Tween Animation] as CamTween
+}
+
+Camera --> Pedestal
+Lighting --> VehGroup
+Controls --> Camera
+Pedestal *-- VehGroup
+VehGroup *-- BodyMesh
+VehGroup *-- BatteryMesh
+VehGroup *-- HotspotMesh
+VehGroup *-- HtmlLabel
+
+Pointer --> Raycaster : Tọa độ chuột (x, y)
+Raycaster --> BodyMesh : Bóc tách phụ tùng
+Raycaster --> HotspotMesh : Chi tiết hư hỏng
+Raycaster --> Pedestal : Chọn xe -> Di chuyển Camera
+@enduml

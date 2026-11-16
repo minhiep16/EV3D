@@ -1,0 +1,70 @@
+@startuml
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Times New Roman"
+skinparam defaultFontSize 12
+skinparam roundCorner 10
+
+title Quy Trình Hoạt Động Nghiệp Vụ: Đặt Lịch Sử Dụng Xe (Booking Activity)
+
+|Chủ Đồng Sở Hữu (CO_OWNER)|
+start
+:Mở Panel Đặt Lịch trên giao diện 3D;
+:Chọn khoảng thời gian dự kiến (Bắt đầu - Kết thúc);
+:Gửi yêu cầu tạo lịch đặt (createBooking);
+
+|Hệ Thống Backend (Spring Boot)|
+:Tiếp nhận yêu cầu kèm Token JWT;
+:Kiểm tra tính hợp lệ cơ bản\n(startTime < endTime, không ở quá khứ);
+
+if (Thời gian hợp lệ?) then (Không)
+    :Báo lỗi IllegalArgumentException;
+    |Chủ Đồng Sở Hữu (CO_OWNER)|
+    :Hiển thị thông báo lỗi trên UI;
+    stop
+else (Có)
+endif
+
+|Hệ Thống Backend (Spring Boot)|
+:Xác minh quyền thành viên của Co-Owner\nđối với nhóm đồng sở hữu xe;
+
+if (Là thành viên hoạt động?) then (Không)
+    :Báo lỗi AccessDeniedException;
+    |Chủ Đồng Sở Hữu (CO_OWNER)|
+    :Hiển thị cảnh báo không có quyền;
+    stop
+else (Có)
+endif
+
+|Hệ Thống Backend (Spring Boot)|
+:Kiểm tra trạng thái phương tiện\n(Có đang MAINTENANCE?);
+
+if (Xe đang bảo dưỡng?) then (Có)
+    :Từ chối đặt xe;
+    |Chủ Đồng Sở Hữu (CO_OWNER)|
+    :Hiển thị xe đang bảo dưỡng;
+    stop
+else (Không)
+endif
+
+|Hệ Thống Backend (Spring Boot)|
+:Truy vấn kiểm tra xung đột thời gian\n(findConflictingBookings trong DB);
+
+if (Có lịch CONFIRMED/PENDING trùng?) then (Có)
+    :Báo lỗi xung đột lịch đặt;
+    |Chủ Đồng Sở Hữu (CO_OWNER)|
+    :Hiển thị khung giờ đã bị trùng;
+    stop
+else (Không)
+endif
+
+|Hệ Thống Backend (Spring Boot)|
+:Tạo bản ghi Booking mới (Trạng thái: CONFIRMED);
+:Lưu vào Cơ sở dữ liệu MySQL;
+:Gửi thông báo thành công cho người dùng;
+
+|Chủ Đồng Sở Hữu (CO_OWNER)|
+:Cập nhật lịch trực quan trên giao diện 3D;
+:Nhận thông báo đặt lịch thành công;
+stop
+
+@enduml

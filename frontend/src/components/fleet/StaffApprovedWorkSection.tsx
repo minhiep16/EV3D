@@ -3,6 +3,7 @@ import { VehicleResponse } from '../../types/vehicle';
 import { ApprovedWorkResponse, VOTE_PROPOSAL_TYPE_CONFIG } from '../../types/voting';
 import {
   useStaffApprovedWork,
+  useAcceptApprovedWork,
   useStartApprovedWork,
   useCompleteApprovedWork,
 } from '../../hooks/useVoting';
@@ -30,6 +31,7 @@ export const StaffApprovedWorkSection: React.FC<StaffApprovedWorkSectionProps> =
   onRefreshParent,
 }) => {
   const { data: approvedWorks = [], isLoading } = useStaffApprovedWork(vehicle.id);
+  const acceptWorkMutation = useAcceptApprovedWork();
   const startWorkMutation = useStartApprovedWork();
   const completeWorkMutation = useCompleteApprovedWork();
 
@@ -68,6 +70,21 @@ export const StaffApprovedWorkSection: React.FC<StaffApprovedWorkSectionProps> =
     } catch {
       return '--:-- --/--/----';
     }
+  };
+
+  const handleAcceptWork = (item: ApprovedWorkResponse) => {
+    acceptWorkMutation.mutate(
+      { proposalId: item.proposalId },
+      {
+        onSuccess: () => {
+          showToast('success', `Đã tiếp nhận công việc: ${item.title}`);
+          onRefreshParent?.();
+        },
+        onError: (err: any) => {
+          showToast('error', err?.message || 'Không thể tiếp nhận công việc.');
+        },
+      }
+    );
   };
 
   const handleStartWork = (item: ApprovedWorkResponse) => {
@@ -360,30 +377,57 @@ export const StaffApprovedWorkSection: React.FC<StaffApprovedWorkSectionProps> =
                 )}
 
                 {!isWaitingVote && !isInProgress && !isCompleted && (
-                  <button
-                    type="button"
-                    onClick={() => handleStartWork(item)}
-                    disabled={startWorkMutation.isPending}
-                    style={{
-                      width: '100%',
-                      background: 'linear-gradient(135deg, #0284c7 0%, #22e6ff 100%)',
-                      border: 'none',
-                      borderRadius: '6px',
-                      padding: '8px 12px',
-                      color: '#071426',
-                      fontSize: '11.5px',
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px',
-                      marginTop: '4px',
-                    }}
-                  >
-                    <Play size={14} />
-                    <span>BẮT ĐẦU THỰC HIỆN</span>
-                  </button>
+                  item.workStatus === 'ACCEPTED' ? (
+                    <button
+                      type="button"
+                      onClick={() => handleStartWork(item)}
+                      disabled={startWorkMutation.isPending}
+                      style={{
+                        width: '100%',
+                        background: 'linear-gradient(135deg, #d97706 0%, #f59e0b 100%)',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '8px 12px',
+                        color: '#ffffff',
+                        fontSize: '11.5px',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        marginTop: '4px',
+                      }}
+                    >
+                      <Play size={14} />
+                      <span>{startWorkMutation.isPending ? 'ĐANG KHỞI ĐỘNG...' : 'BẮT ĐẦU THỰC HIỆN'}</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleAcceptWork(item)}
+                      disabled={acceptWorkMutation.isPending}
+                      style={{
+                        width: '100%',
+                        background: 'linear-gradient(135deg, #0284c7 0%, #22e6ff 100%)',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '8px 12px',
+                        color: '#071426',
+                        fontSize: '11.5px',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        marginTop: '4px',
+                      }}
+                    >
+                      <CheckCircle2 size={14} />
+                      <span>{acceptWorkMutation.isPending ? 'ĐANG TIẾP NHẬN...' : 'TIẾP NHẬN CÔNG VIỆC'}</span>
+                    </button>
+                  )
                 )}
 
                 {isInProgress && !isCompleting && (

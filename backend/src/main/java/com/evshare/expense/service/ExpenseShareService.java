@@ -6,8 +6,10 @@ import com.evshare.expense.dto.ExpenseShareResponse;
 import com.evshare.expense.dto.MemberCostShareResponse;
 import com.evshare.expense.entity.Expense;
 import com.evshare.expense.entity.ExpenseAllocationPolicy;
+import com.evshare.expense.entity.ExpenseCategory;
 import com.evshare.expense.entity.ExpenseShare;
 import com.evshare.expense.entity.ExpenseShareStatus;
+import com.evshare.expense.entity.ExpenseSourceType;
 import com.evshare.expense.entity.ExpenseStatus;
 import com.evshare.expense.repository.ExpenseRepository;
 import com.evshare.expense.repository.ExpenseShareRepository;
@@ -17,6 +19,9 @@ import com.evshare.ownership.entity.GroupVehicleStatus;
 import com.evshare.ownership.entity.MemberStatus;
 import com.evshare.ownership.entity.OwnershipShare;
 import com.evshare.ownership.repository.CoOwnershipGroupRepository;
+import com.evshare.fund.entity.PersonalExpensePayment;
+import com.evshare.fund.entity.PersonalPaymentStatus;
+import com.evshare.fund.repository.PersonalExpensePaymentRepository;
 import com.evshare.ownership.repository.GroupMemberRepository;
 import com.evshare.ownership.repository.GroupVehicleRepository;
 import com.evshare.ownership.repository.OwnershipShareRepository;
@@ -48,6 +53,7 @@ public class ExpenseShareService {
     private final GroupVehicleRepository groupVehicleRepository;
     private final OwnershipShareRepository ownershipShareRepository;
     private final TripRepository tripRepository;
+    private final PersonalExpensePaymentRepository paymentRepository;
 
     public ExpenseShareService(
             ExpenseShareRepository expenseShareRepository,
@@ -56,7 +62,8 @@ public class ExpenseShareService {
             GroupMemberRepository memberRepository,
             GroupVehicleRepository groupVehicleRepository,
             OwnershipShareRepository ownershipShareRepository,
-            TripRepository tripRepository
+            TripRepository tripRepository,
+            PersonalExpensePaymentRepository paymentRepository
     ) {
         this.expenseShareRepository = expenseShareRepository;
         this.expenseRepository = expenseRepository;
@@ -65,6 +72,7 @@ public class ExpenseShareService {
         this.groupVehicleRepository = groupVehicleRepository;
         this.ownershipShareRepository = ownershipShareRepository;
         this.tripRepository = tripRepository;
+        this.paymentRepository = paymentRepository;
     }
 
     /**
@@ -114,7 +122,7 @@ public class ExpenseShareService {
 
         ExpenseAllocationPolicy policy = expense.getAllocationPolicy() != null
                 ? expense.getAllocationPolicy()
-                : ExpenseAllocationPolicy.OWNERSHIP_RATIO;
+                : ExpenseService.defaultPolicyForCategory(expense.getCategory());
 
         BigDecimal expenseAmount = expense.getAmount().setScale(2, RoundingMode.HALF_UP);
         List<ExpenseShare> sharesToSave = new ArrayList<>();
@@ -246,6 +254,36 @@ public class ExpenseShareService {
     }
 
     /**
+     * Shared authoritative check to determine whether an expense is an operational / user-specific obligation.
+     * Charging, travel, parking, toll, and user-responsibility expenses MUST NEVER treat a co-owner as an upfront payer.
+     */
+    public static boolean isOperationalOrUserExpense(Expense exp, ExpenseShare share) {
+        if (exp == null) return false;
+        if (exp.getCategory() == ExpenseCategory.CHARGING
+                || exp.getCategory() == ExpenseCategory.PARKING
+                || exp.getCategory() == ExpenseCategory.TOLL) {
+            return true;
+        }
+        if (exp.getSourceType() == ExpenseSourceType.TRIP
+                || exp.getSourceType() == ExpenseSourceType.CHARGING_SESSION) {
+            return true;
+        }
+        if (exp.getAllocationPolicy() == ExpenseAllocationPolicy.USER_RESPONSIBILITY) {
+            return true;
+        }
+        if (share != null && share.getAllocationPolicy() == ExpenseAllocationPolicy.USER_RESPONSIBILITY) {
+            return true;
+        }
+        if (exp.getDescription() != null) {
+            String desc = exp.getDescription().toLowerCase();
+            if (desc.contains("chi phí điện") || desc.contains("sạc pin") || desc.contains("chuyến đi")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Retrieve cost allocation for a single Expense.
      * Backfills shares lazily ONLY if the expense is APPROVED.
      */
@@ -271,11 +309,82 @@ public class ExpenseShareService {
                 : null;
         BigDecimal expenseAmount = expense.getAmount();
 
+        BigDecimal computedTotalInverseWeight = BigDecimal.ZERO;
+        for (ExpenseShare sh : shares) {
+            BigDecimal ownPct = sh.getOwnershipPercentage() != null ? sh.getOwnershipPercentage() : BigDecimal.ZERO;
+            BigDecimal decOwn = ownPct.divide(new BigDecimal("100"), 6, RoundingMode.HALF_UP);
+            computedTotalInverseWeight = computedTotalInverseWeight.add(BigDecimal.ONE.subtract(decOwn).max(BigDecimal.ZERO));
+        }
+        final BigDecimal totalInverseWeightSnapshot = computedTotalInverseWeight.setScale(4, RoundingMode.HALF_UP);
+
         return shares.stream()
                 .map(s -> {
-                    boolean isPayer = payerId != null && payerId.equals(s.getUser().getId());
-                    BigDecimal paidAmount = isPayer ? expenseAmount : BigDecimal.ZERO;
-                    return ExpenseShareResponse.fromEntity(s, isPayer, paidAmount);
+                    // Lazy-heal trip usage distance if missing
+                    if (s.getMemberKmSnapshot() == null && expense.getRelatedTripId() != null) {
+                        tripRepository.findById(expense.getRelatedTripId()).ifPresent(t -> {
+                            if (t.getStartOdometer() != null && t.getEndOdometer() != null && t.getEndOdometer().compareTo(t.getStartOdometer()) > 0) {
+                                BigDecimal dist = t.getEndOdometer().subtract(t.getStartOdometer());
+                                boolean isResp = expense.getResponsibleUser() != null && s.getUser() != null && expense.getResponsibleUser().getId().equals(s.getUser().getId());
+                                s.setMemberKmSnapshot(isResp ? dist : BigDecimal.ZERO);
+                                s.setTotalKmSnapshot(dist);
+                                try {
+                                    expenseShareRepository.save(s);
+                                } catch (Exception ignored) {}
+                            }
+                        });
+                    }
+
+                    // Only external out-of-pocket common expenses qualify for upfront payer status.
+                    // Operational trip charges (TRIP, CHARGING) and USER_RESPONSIBILITY obligations NEVER treat the user as an upfront payer.
+                    boolean isUpfrontPayer = !isOperationalOrUserExpense(expense, s)
+                            && payerId != null
+                            && payerId.equals(s.getUser().getId());
+
+                    List<PersonalExpensePayment> sharePayments = paymentRepository.findByExpenseShareIdOrderByCreatedAtDesc(s.getId());
+                    if (sharePayments.isEmpty() && s.getUser() != null) {
+                        sharePayments = paymentRepository.findByExpenseIdAndPayerUserIdOrderByCreatedAtDesc(expenseId, s.getUser().getId());
+                    }
+
+                    BigDecimal verifiedPaid = sharePayments.stream()
+                            .filter(p -> p.getStatus() == PersonalPaymentStatus.PAYMENT_VERIFIED)
+                            .map(PersonalExpensePayment::getAmount)
+                            .filter(Objects::nonNull)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                    BigDecimal pendingVerification = sharePayments.stream()
+                            .filter(p -> p.getStatus() == PersonalPaymentStatus.PAYMENT_SUBMITTED)
+                            .map(PersonalExpensePayment::getAmount)
+                            .filter(Objects::nonNull)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                    BigDecimal paidAmount = isUpfrontPayer ? s.getShareAmount() : verifiedPaid;
+                    BigDecimal remainingAmount = s.getShareAmount().subtract(paidAmount).max(BigDecimal.ZERO);
+
+                    // Reconcile and heal persisted share status based on authoritative verified payments
+                    if (isUpfrontPayer || (paidAmount.compareTo(s.getShareAmount()) >= 0 && s.getShareAmount().compareTo(BigDecimal.ZERO) > 0)) {
+                        if (s.getStatus() != ExpenseShareStatus.SETTLED) {
+                            s.setStatus(ExpenseShareStatus.SETTLED);
+                            try {
+                                expenseShareRepository.save(s);
+                            } catch (Exception ignored) {}
+                        }
+                    } else if (pendingVerification.compareTo(BigDecimal.ZERO) > 0) {
+                        if (s.getStatus() != ExpenseShareStatus.PENDING) {
+                            s.setStatus(ExpenseShareStatus.PENDING);
+                            try {
+                                expenseShareRepository.save(s);
+                            } catch (Exception ignored) {}
+                        }
+                    } else {
+                        if (s.getStatus() != ExpenseShareStatus.ALLOCATED) {
+                            s.setStatus(ExpenseShareStatus.ALLOCATED);
+                            try {
+                                expenseShareRepository.save(s);
+                            } catch (Exception ignored) {}
+                        }
+                    }
+
+                    return ExpenseShareResponse.fromEntity(s, isUpfrontPayer, paidAmount, pendingVerification, remainingAmount, totalInverseWeightSnapshot);
                 })
                 .toList();
     }
@@ -345,30 +454,102 @@ public class ExpenseShareService {
         BigDecimal currentUserRequired = BigDecimal.ZERO;
         BigDecimal currentUserPaid = BigDecimal.ZERO;
         BigDecimal currentUserPercentage = BigDecimal.ZERO;
+        BigDecimal currentUserPending = BigDecimal.ZERO;
+        BigDecimal currentUserOutstanding = BigDecimal.ZERO;
 
         for (OwnershipShare oShare : activeShares) {
             User memberUser = oShare.getMember().getUser();
             UUID memberUserId = memberUser.getId();
 
-            BigDecimal requiredShare = monthShares.stream()
+            List<ExpenseShare> memberShares = monthShares.stream()
                     .filter(s -> s.getUser().getId().equals(memberUserId))
+                    .toList();
+
+            BigDecimal requiredShare = memberShares.stream()
                     .map(ExpenseShare::getShareAmount)
                     .reduce(BigDecimal.ZERO, BigDecimal::add)
                     .setScale(2, RoundingMode.HALF_UP);
 
-            BigDecimal paidAmount = monthExpenses.stream()
-                    .filter(e -> e.getPaidBy() != null && e.getPaidBy().getId().equals(memberUserId))
+            BigDecimal verifiedSharePaid = BigDecimal.ZERO;
+            BigDecimal pendingShareAmount = BigDecimal.ZERO;
+
+            for (ExpenseShare s : memberShares) {
+                Expense exp = s.getExpense();
+                boolean isUpfrontPayer = exp != null
+                        && !isOperationalOrUserExpense(exp, s)
+                        && exp.getPaidBy() != null
+                        && exp.getPaidBy().getId().equals(memberUserId)
+                        && exp.getPaidBy().getRole() == Role.CO_OWNER;
+
+                List<PersonalExpensePayment> sharePayments = paymentRepository.findByExpenseShareIdOrderByCreatedAtDesc(s.getId());
+                if (sharePayments.isEmpty() && exp != null) {
+                    sharePayments = paymentRepository.findByExpenseIdAndPayerUserIdOrderByCreatedAtDesc(exp.getId(), memberUserId);
+                }
+
+                BigDecimal verifiedForShare = sharePayments.stream()
+                        .filter(p -> p.getStatus() == PersonalPaymentStatus.PAYMENT_VERIFIED)
+                        .map(PersonalExpensePayment::getAmount)
+                        .filter(Objects::nonNull)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                BigDecimal pendingForShare = sharePayments.stream()
+                        .filter(p -> p.getStatus() == PersonalPaymentStatus.PAYMENT_SUBMITTED)
+                        .map(PersonalExpensePayment::getAmount)
+                        .filter(Objects::nonNull)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                if (isUpfrontPayer) {
+                    verifiedSharePaid = verifiedSharePaid.add(s.getShareAmount());
+                    if (s.getStatus() != ExpenseShareStatus.SETTLED) {
+                        s.setStatus(ExpenseShareStatus.SETTLED);
+                        try {
+                            expenseShareRepository.save(s);
+                        } catch (Exception ignored) {}
+                    }
+                } else if (verifiedForShare.compareTo(s.getShareAmount()) >= 0 && s.getShareAmount().compareTo(BigDecimal.ZERO) > 0) {
+                    verifiedSharePaid = verifiedSharePaid.add(s.getShareAmount());
+                    if (s.getStatus() != ExpenseShareStatus.SETTLED) {
+                        s.setStatus(ExpenseShareStatus.SETTLED);
+                        try {
+                            expenseShareRepository.save(s);
+                        } catch (Exception ignored) {}
+                    }
+                } else {
+                    verifiedSharePaid = verifiedSharePaid.add(verifiedForShare);
+                    pendingShareAmount = pendingShareAmount.add(pendingForShare);
+                    if (s.getStatus() == ExpenseShareStatus.SETTLED) {
+                        s.setStatus(pendingForShare.compareTo(BigDecimal.ZERO) > 0 ? ExpenseShareStatus.PENDING : ExpenseShareStatus.ALLOCATED);
+                        try {
+                            expenseShareRepository.save(s);
+                        } catch (Exception ignored) {}
+                    }
+                }
+            }
+
+            // Upfront paid is ONLY for external out-of-pocket expenses paid by co-owner, never for operational trip charges!
+            BigDecimal upfrontPaid = monthExpenses.stream()
+                    .filter(e -> !isOperationalOrUserExpense(e, null)
+                            && e.getPaidBy() != null
+                            && e.getPaidBy().getId().equals(memberUserId)
+                            && e.getPaidBy().getRole() == Role.CO_OWNER)
                     .map(Expense::getAmount)
                     .reduce(BigDecimal.ZERO, BigDecimal::add)
                     .setScale(2, RoundingMode.HALF_UP);
 
-            BigDecimal netPosition = paidAmount.subtract(requiredShare);
+            BigDecimal totalMemberPaid = verifiedSharePaid.add(upfrontPaid).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal outstandingAmount = requiredShare.subtract(verifiedSharePaid).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal netPosition = upfrontPaid.compareTo(BigDecimal.ZERO) > 0
+                    ? upfrontPaid.subtract(requiredShare).setScale(2, RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO.subtract(outstandingAmount).setScale(2, RoundingMode.HALF_UP);
+
             boolean isCurrentUser = currentUserId != null && currentUserId.equals(memberUserId);
 
             if (isCurrentUser) {
                 currentUserRequired = requiredShare;
-                currentUserPaid = paidAmount;
+                currentUserPaid = totalMemberPaid;
                 currentUserPercentage = oShare.getPercentage();
+                currentUserPending = pendingShareAmount.setScale(2, RoundingMode.HALF_UP);
+                currentUserOutstanding = outstandingAmount;
             }
 
             breakdown.add(new MemberCostShareResponse(
@@ -376,7 +557,9 @@ public class ExpenseShareService {
                     memberUser.getFullName(),
                     oShare.getPercentage(),
                     requiredShare,
-                    paidAmount,
+                    totalMemberPaid,
+                    pendingShareAmount.setScale(2, RoundingMode.HALF_UP),
+                    outstandingAmount,
                     netPosition,
                     isCurrentUser
             ));
@@ -389,7 +572,9 @@ public class ExpenseShareService {
             return b.ownershipPercentage().compareTo(a.ownershipPercentage());
         });
 
-        BigDecimal currentUserNet = currentUserPaid.subtract(currentUserRequired);
+        BigDecimal currentUserNet = currentUserOutstanding.compareTo(BigDecimal.ZERO) == 0
+                ? BigDecimal.ZERO
+                : BigDecimal.ZERO.subtract(currentUserOutstanding);
 
         return new CostSharingSummaryResponse(
                 vehicleId,
@@ -400,6 +585,8 @@ public class ExpenseShareService {
                 currentUserRequired,
                 currentUserPaid,
                 currentUserNet,
+                currentUserPending,
+                currentUserOutstanding,
                 breakdown
         );
     }
@@ -432,8 +619,13 @@ public class ExpenseShareService {
     }
 
     /**
-     * Validate User Authorization for Vehicle
-     * Invariant: CO_OWNER user may only access their authorized active co-owned vehicle.
+     * Validate User Authorization for Vehicle Financial Records
+     * - STAFF and ADMIN have global access to all vehicles.
+     * - CO_OWNER:
+     *   1. Active members of any co-ownership group owning this vehicle.
+     *   2. Co-owners holding registered ownership shares in this vehicle.
+     *   3. Members with pending transfer/withdrawal or past members who hold historical expense obligations.
+     *   4. Fallback for open/unconstrained vehicles.
      */
     public void validateVehicleAccess(UUID vehicleId, UserPrincipal principal) {
         if (principal == null || principal.getUser() == null) {
@@ -446,58 +638,121 @@ public class ExpenseShareService {
         }
 
         UUID userId = principal.getId();
-        List<com.evshare.ownership.entity.GroupMember> activeMemberships = memberRepository.findByUserIdAndStatus(userId, MemberStatus.ACTIVE);
-        boolean hasAccess = false;
 
-        for (com.evshare.ownership.entity.GroupMember member : activeMemberships) {
-            if (member.getRemovedAt() != null) {
-                continue;
+        // 1. Resolve all groups associated with this vehicle (via GroupVehicle or direct vehicleId)
+        List<GroupVehicle> gvs = groupVehicleRepository.findByVehicleId(vehicleId);
+        List<UUID> groupIds = new ArrayList<>();
+        for (GroupVehicle gv : gvs) {
+            if (gv.getGroup() != null && !groupIds.contains(gv.getGroup().getId())) {
+                groupIds.add(gv.getGroup().getId());
             }
-            CoOwnershipGroup group = member.getGroup();
-            if (group != null && group.getStatus() == com.evshare.ownership.entity.GroupStatus.ACTIVE) {
-                if (vehicleId.equals(group.getVehicleId())) {
-                    hasAccess = true;
-                    break;
+        }
+        groupRepository.findByVehicleId(vehicleId).ifPresent(g -> {
+            if (!groupIds.contains(g.getId())) {
+                groupIds.add(g.getId());
+            }
+        });
+
+        // If vehicle is not linked to any group, allow access (open/unrestricted vehicle)
+        if (groupIds.isEmpty()) {
+            return;
+        }
+
+        // 2. Check user association across the vehicle's groups
+        for (UUID groupId : groupIds) {
+            // Check active membership
+            if (memberRepository.existsByGroupIdAndUserIdAndStatus(groupId, userId, MemberStatus.ACTIVE)) {
+                return;
+            }
+            // Check ownership share record
+            if (ownershipShareRepository.findByGroupIdAndVehicleIdAndUserId(groupId, vehicleId, userId).isPresent()) {
+                return;
+            }
+            // Check pending transfer/withdrawal or group membership
+            Optional<com.evshare.ownership.entity.GroupMember> memberOpt = memberRepository.findByGroupIdAndUserId(groupId, userId);
+            if (memberOpt.isPresent()) {
+                com.evshare.ownership.entity.GroupMember member = memberOpt.get();
+                if (member.getStatus() == MemberStatus.ACTIVE
+                        || member.getStatus() == MemberStatus.TRANSFER_PENDING
+                        || member.getStatus() == MemberStatus.WITHDRAWAL_PENDING) {
+                    return;
                 }
-                List<GroupVehicle> gvs = groupVehicleRepository.findByGroupIdAndStatus(group.getId(), GroupVehicleStatus.ACTIVE);
-                for (GroupVehicle gv : gvs) {
+            }
+        }
+
+        // 3. Check historical expense obligations (past shares on this vehicle)
+        if (expenseShareRepository.existsByVehicleIdAndUserId(vehicleId, userId)) {
+            return;
+        }
+
+        // 4. Bi-directional fallback: check active memberships of user
+        List<com.evshare.ownership.entity.GroupMember> userMemberships = memberRepository.findByUserIdAndStatus(userId, MemberStatus.ACTIVE);
+        for (com.evshare.ownership.entity.GroupMember member : userMemberships) {
+            if (member.getRemovedAt() != null) continue;
+            CoOwnershipGroup group = member.getGroup();
+            if (group != null) {
+                if (vehicleId.equals(group.getVehicleId())) {
+                    return;
+                }
+                List<GroupVehicle> groupVehicles = groupVehicleRepository.findByGroupId(group.getId());
+                for (GroupVehicle gv : groupVehicles) {
                     if (gv.getVehicle() != null && vehicleId.equals(gv.getVehicle().getId())) {
-                        hasAccess = true;
-                        break;
+                        return;
                     }
                 }
-                if (hasAccess) break;
             }
         }
 
-        if (!hasAccess) {
-            throw new AccessDeniedException("Bạn không có quyền truy cập dữ liệu chi phí của phương tiện này.");
-        }
+        throw new AccessDeniedException("Bạn không có quyền truy cập dữ liệu chi phí của phương tiện này.");
     }
 
     private static class UsageCapitalItem {
         final OwnershipShare share;
         final BigDecimal memberKm;
-        final BigDecimal rawCost;
-        BigDecimal positiveWeight;
+        final BigDecimal ownershipShare;
+        final BigDecimal inverseWeight;
+        BigDecimal ownershipCost;
+        BigDecimal usageCost;
+        BigDecimal rawCost;
         BigDecimal unroundedFinalCost;
         BigDecimal integerPart;
         BigDecimal fractionalPart;
         BigDecimal finalCost;
 
-        UsageCapitalItem(OwnershipShare share, BigDecimal memberKm, BigDecimal rawCost) {
+        UsageCapitalItem(OwnershipShare share, BigDecimal memberKm, BigDecimal ownershipShare, BigDecimal inverseWeight) {
             this.share = share;
             this.memberKm = memberKm;
-            this.rawCost = rawCost;
+            this.ownershipShare = ownershipShare;
+            this.inverseWeight = inverseWeight;
         }
     }
 
     /**
-     * Phase 19 Refined USAGE_AND_CAPITAL Allocation Formula & Negative Redistribution:
-     * rawCost_i = totalExpense * ( (memberKm_i / totalKm) - ownershipRatio_i + (1 / N) )
-     * Positive weight floor: max(rawCost_i, 0)
-     * Normalized redistribution for positive weights: totalExpense * weight_i / positiveTotal
-     * Largest-remainder VND rounding with deterministic tie-breaking.
+     * Official Inverse Ownership and Distance-based Allocation Formula:
+     * For each eligible co-owner i:
+     *   s_i = ownershipPercentage_i / 100.0 (normalized in [0, 1])
+     *   inverseOwnershipWeight_i = 1 - s_i
+     *   totalInverseOwnershipWeight = SUM(inverseOwnershipWeight_j)
+     *   
+     *   If totalDistanceKm > 0:
+     *     alpha = 0.5, beta = 0.5
+     *     ownershipCost_i = totalExpense * alpha * (inverseOwnershipWeight_i / totalInverseOwnershipWeight)
+     *     usageCost_i = totalExpense * beta * (distanceKm_i / totalDistanceKm)
+     *     unroundedCost_i = ownershipCost_i + usageCost_i
+     *   
+     *   If totalDistanceKm == 0 (Zero-usage handling):
+     *     alpha = 1.0, beta = 0.0
+     *     ownershipCost_i = totalExpense * (inverseOwnershipWeight_i / totalInverseOwnershipWeight)
+     *     usageCost_i = 0
+     *     unroundedCost_i = ownershipCost_i
+     *
+     *   If activeShares.size() == 1:
+     *     100% of expense allocated to this single member.
+     *
+     * Monetary Rounding:
+     *   Deterministic largest-remainder rounding to whole VND.
+     *   Discrepancy assigned to highest remainder, tie-breaking by User ID.
+     *   Invariant: SUM(finalCost_i) == totalExpense exactly.
      */
     private List<ExpenseShare> generateUsageAndCapitalShares(
             Expense expense,
@@ -540,56 +795,81 @@ public class ExpenseShareService {
             return List.of();
         }
 
-        boolean isZeroKm = totalKm.compareTo(BigDecimal.ZERO) <= 0;
-        BigDecimal oneOverN = BigDecimal.ONE.divide(BigDecimal.valueOf(n), 10, RoundingMode.HALF_UP);
-        BigDecimal twoOverN = BigDecimal.valueOf(2).divide(BigDecimal.valueOf(n), 10, RoundingMode.HALF_UP);
+        // Single member edge case
+        if (n == 1) {
+            OwnershipShare oShare = activeShares.get(0);
+            UUID memberUserId = oShare.getMember().getUser().getId();
+            BigDecimal memberKm = memberKmMap.getOrDefault(memberUserId, BigDecimal.ZERO);
+            BigDecimal finalCost = expenseAmount.setScale(2, RoundingMode.HALF_UP);
 
-        // Step 1: Raw formula calculation
+            ExpenseShare share = new ExpenseShare(
+                    UUID.randomUUID(),
+                    expense,
+                    oShare.getMember().getUser(),
+                    oShare.getPercentage().setScale(4, RoundingMode.HALF_UP),
+                    finalCost,
+                    ExpenseShareStatus.ALLOCATED
+            );
+            share.setAllocationPolicy(ExpenseAllocationPolicy.USAGE_AND_CAPITAL);
+            share.setAllocationPercentage(new BigDecimal("100.0000"));
+            share.setMemberKmSnapshot(memberKm.setScale(2, RoundingMode.HALF_UP));
+            share.setTotalKmSnapshot(totalKm.setScale(2, RoundingMode.HALF_UP));
+            share.setRawCalculatedAmount(finalCost);
+            share.setRedistributionAdjustment(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
+            share.setAllocationPeriodStart(periodStart);
+            share.setAllocationPeriodEnd(periodEnd);
+            share.setCalculationVersion("V3_INVERSE_KM");
+
+            return List.of(share);
+        }
+
+        boolean isZeroKm = totalKm.compareTo(BigDecimal.ZERO) <= 0;
+        BigDecimal alpha = isZeroKm ? BigDecimal.ONE : new BigDecimal("0.5");
+        BigDecimal beta = isZeroKm ? BigDecimal.ZERO : new BigDecimal("0.5");
+
+        // Calculate inverse ownership weights: inverseWeight_i = 1 - ownershipShare_i
+        // and totalInverseWeight = SUM(inverseWeight_j)
         List<UsageCapitalItem> items = new ArrayList<>();
+        BigDecimal totalInverseWeight = BigDecimal.ZERO;
+
         for (OwnershipShare oShare : activeShares) {
             UUID memberUserId = oShare.getMember().getUser().getId();
             BigDecimal memberKm = memberKmMap.getOrDefault(memberUserId, BigDecimal.ZERO);
-            BigDecimal ownershipRatio = oShare.getPercentage().divide(new BigDecimal("100"), 10, RoundingMode.HALF_UP);
+            BigDecimal ownershipShare = oShare.getPercentage().divide(new BigDecimal("100"), 10, RoundingMode.HALF_UP);
+            BigDecimal inverseWeight = BigDecimal.ONE.subtract(ownershipShare).max(BigDecimal.ZERO);
 
-            BigDecimal factor;
-            if (isZeroKm) {
-                // Approved Phase 24 Zero-KM Inverse Capital Baseline:
-                // neutralUsageRatio = 1 / N, fallbackFactor_i = (2 / N) - ownershipRatio_i
-                factor = twoOverN.subtract(ownershipRatio);
-            } else {
-                // Original Phase 19 Formula when valid completed-trip mileage exists:
-                // factor_i = (memberKm_i / totalKm) - ownershipRatio_i + (1 / N)
-                BigDecimal kmRatio = memberKm.divide(totalKm, 10, RoundingMode.HALF_UP);
-                factor = kmRatio.subtract(ownershipRatio).add(oneOverN);
-            }
-
-            BigDecimal rawCost = expenseAmount.multiply(factor);
-            items.add(new UsageCapitalItem(oShare, memberKm, rawCost));
+            totalInverseWeight = totalInverseWeight.add(inverseWeight);
+            items.add(new UsageCapitalItem(oShare, memberKm, ownershipShare, inverseWeight));
         }
 
-        // Step 2 & 3: Negative floor & sum positive weights
-        BigDecimal positiveTotal = BigDecimal.ZERO;
+        if (totalInverseWeight.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalStateException("Tổng trọng số sở hữu nghịch đảo không hợp lệ: " + totalInverseWeight);
+        }
+
+        // Calculate unrounded cost per member:
+        // ownershipCost_i = totalExpense * alpha * (inverseWeight_i / totalInverseWeight)
+        // usageCost_i = isZeroKm ? 0 : totalExpense * beta * (memberKm_i / totalKm)
+        // unroundedCost_i = ownershipCost_i + usageCost_i
         for (UsageCapitalItem item : items) {
-            BigDecimal weight = item.rawCost.compareTo(BigDecimal.ZERO) > 0 ? item.rawCost : BigDecimal.ZERO;
-            item.positiveWeight = weight;
-            positiveTotal = positiveTotal.add(weight);
+            BigDecimal ownershipCost = expenseAmount
+                    .multiply(alpha)
+                    .multiply(item.inverseWeight)
+                    .divide(totalInverseWeight, 10, RoundingMode.HALF_UP);
+
+            BigDecimal usageCost = isZeroKm
+                    ? BigDecimal.ZERO
+                    : expenseAmount
+                            .multiply(beta)
+                            .multiply(item.memberKm)
+                            .divide(totalKm, 10, RoundingMode.HALF_UP);
+
+            item.ownershipCost = ownershipCost;
+            item.usageCost = usageCost;
+            item.unroundedFinalCost = ownershipCost.add(usageCost);
+            item.rawCost = item.unroundedFinalCost;
         }
 
-        // Section XIII: If positiveTotal == 0, mark allocation unresolved
-        if (positiveTotal.compareTo(BigDecimal.ZERO) <= 0) {
-            return List.of();
-        }
-
-        // Step 4: Recalculate unrounded final allocations
-        for (UsageCapitalItem item : items) {
-            if (item.rawCost.compareTo(BigDecimal.ZERO) <= 0) {
-                item.unroundedFinalCost = BigDecimal.ZERO;
-            } else {
-                item.unroundedFinalCost = expenseAmount.multiply(item.positiveWeight).divide(positiveTotal, 10, RoundingMode.HALF_UP);
-            }
-        }
-
-        // Step 5: Monetary rounding (whole VND) using deterministic largest-remainder algorithm
+        // Monetary rounding (whole VND) using deterministic largest-remainder algorithm
         BigDecimal targetExpenseTotal = expenseAmount.setScale(0, RoundingMode.HALF_UP);
         BigDecimal sumIntegers = BigDecimal.ZERO;
         for (UsageCapitalItem item : items) {
@@ -602,7 +882,6 @@ public class ExpenseShareService {
         int remainderBonusCount = Math.max(0, discrepancy.intValue());
 
         List<UsageCapitalItem> candidates = items.stream()
-                .filter(it -> it.positiveWeight.compareTo(BigDecimal.ZERO) > 0)
                 .sorted((a, b) -> {
                     int cmp = b.fractionalPart.compareTo(a.fractionalPart);
                     if (cmp != 0) return cmp;
@@ -632,7 +911,7 @@ public class ExpenseShareService {
         List<ExpenseShare> sharesToSave = new ArrayList<>();
         for (UsageCapitalItem item : items) {
             BigDecimal allocPct = item.finalCost.multiply(new BigDecimal("100")).divide(expenseAmount, 4, RoundingMode.HALF_UP);
-            BigDecimal redistributionAdjustment = item.finalCost.subtract(item.rawCost).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal redistributionAdjustment = item.finalCost.subtract(item.unroundedFinalCost).setScale(2, RoundingMode.HALF_UP);
 
             ExpenseShare share = new ExpenseShare(
                     UUID.randomUUID(),
@@ -646,11 +925,11 @@ public class ExpenseShareService {
             share.setAllocationPercentage(allocPct);
             share.setMemberKmSnapshot(item.memberKm.setScale(2, RoundingMode.HALF_UP));
             share.setTotalKmSnapshot(totalKm.setScale(2, RoundingMode.HALF_UP));
-            share.setRawCalculatedAmount(item.rawCost.setScale(2, RoundingMode.HALF_UP));
+            share.setRawCalculatedAmount(item.unroundedFinalCost.setScale(2, RoundingMode.HALF_UP));
             share.setRedistributionAdjustment(redistributionAdjustment);
             share.setAllocationPeriodStart(periodStart);
             share.setAllocationPeriodEnd(periodEnd);
-            share.setCalculationVersion("V2");
+            share.setCalculationVersion("V3_INVERSE_KM");
 
             sharesToSave.add(share);
         }

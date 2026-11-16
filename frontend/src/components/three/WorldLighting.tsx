@@ -9,7 +9,7 @@ import React from 'react';
  * - Soft hemisphere sky-to-ground bounce for luminous interior feeling
  * - Controlled cyan accent lighting on turntable platform & ceiling accent
  */
-export const WorldLighting: React.FC = () => {
+const WorldLightingComponent: React.FC = () => {
   return (
     <>
       {/* 1. Global Hemisphere Skylight: Luminous daylight sky to soft neutral floor bounce */}
@@ -90,4 +90,6 @@ export const WorldLighting: React.FC = () => {
     </>
   );
 };
+
+export const WorldLighting = React.memo(WorldLightingComponent);
 

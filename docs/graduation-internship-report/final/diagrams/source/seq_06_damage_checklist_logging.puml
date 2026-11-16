@@ -1,0 +1,54 @@
+@startuml
+title SƠ ĐỒ TUẦN TỰ: GHI NHẬN KIỂM ĐỊNH TỔN HẠI XE (SEQ-06)
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam sequenceMessageAlign center
+skinparam participant {
+    BackgroundColor #F8F9FA
+    BorderColor #2C3E50
+    FontColor #2C3E50
+}
+skinparam actor {
+    BackgroundColor #E8F4F8
+    BorderColor #1A5276
+}
+skinparam database {
+    BackgroundColor #FEF9E7
+    BorderColor #B7950B
+}
+
+autonumber
+actor "Nhân Viên (STAFF)" as Staff
+participant "InspectionModal" as UI
+participant "VehicleInspectionController" as Controller
+participant "VehicleInspectionService" as Service
+participant "VehicleInspectionDamageRepository" as DamageRepo
+database "MySQL Database" as DB
+
+Staff -> UI : Điền checklist kiểm định, chụp ảnh vết xước, bấm "Lưu Kiểm Định"
+activate UI
+UI -> Controller : POST /api/inspections {vehicleId, inspectionType, checklistItems, damages}
+activate Controller
+
+Controller -> Service : createInspection(staffId, request)
+activate Service
+
+Service -> DB : INSERT INTO vehicle_inspections (vehicle_id, inspector_id, inspection_type, overall_status)
+DB --> Service : inspectionId = 42
+
+loop Mỗi tổn hại trong damages
+    Service -> DamageRepo : save(VehicleInspectionDamage)
+    DamageRepo -> DB : INSERT INTO vehicle_inspection_damages (inspection_id, part_name, severity, description, photo_url)
+end
+
+Service --> Controller : VehicleInspectionResponse
+deactivate Service
+Controller --> UI : HTTP 201 Created + VehicleInspectionResponse
+deactivate UI
+
+@enduml

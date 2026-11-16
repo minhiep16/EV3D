@@ -144,6 +144,14 @@ export const CoOwnerHandoverReviewPanel: React.FC<CoOwnerHandoverReviewPanelProp
   const handover = useMemo(() => {
     if (lastConfirmedHandover) return lastConfirmedHandover;
     if (!targetBookingId) return null;
+    const targetBooking = allBookings.find((b) => b && b.id === targetBookingId);
+    if (targetBooking) {
+      const start = new Date(targetBooking.startTime).getTime();
+      // If before preparation window (120 min), do not resolve as active handover review
+      if (!isNaN(start) && Date.now() < start - 120 * 60 * 1000) {
+        return null;
+      }
+    }
     if (bookingHandover && bookingHandover.bookingId === targetBookingId) {
       return bookingHandover;
     }
@@ -159,7 +167,7 @@ export const CoOwnerHandoverReviewPanel: React.FC<CoOwnerHandoverReviewPanelProp
       return eligibility.handover;
     }
     return null;
-  }, [lastConfirmedHandover, bookingHandover, activeHandovers, eligibility, targetBookingId, user?.id, user?.email]);
+  }, [lastConfirmedHandover, bookingHandover, activeHandovers, eligibility, targetBookingId, allBookings, user?.id, user?.email]);
 
   // Selected checkpoint object
   const currentCheckpointObj = useMemo(() => {
@@ -193,6 +201,8 @@ export const CoOwnerHandoverReviewPanel: React.FC<CoOwnerHandoverReviewPanelProp
     const uniqueCount = uniquePartCodes.size;
     const totalRecords = list.length;
     const requiredCount = handover?.requiredCheckpointsCount || HANDOVER_CHECKPOINTS.length;
+    const reqCodes = new Set(HANDOVER_CHECKPOINTS.map((c) => c.code));
+    const assessedRequiredCount = (handover as any)?.assessedRequiredCheckpointsCount ?? Array.from(uniquePartCodes).filter((c) => reqCodes.has(c as any)).length;
 
     return {
       good,
@@ -202,8 +212,9 @@ export const CoOwnerHandoverReviewPanel: React.FC<CoOwnerHandoverReviewPanelProp
       uniqueCount,
       totalRecords,
       requiredCount,
+      assessedRequiredCount,
     };
-  }, [handover?.inspections, handover?.requiredCheckpointsCount]);
+  }, [handover?.inspections, handover?.requiredCheckpointsCount, (handover as any)?.assessedRequiredCheckpointsCount]);
 
   // Checkpoints that have warnings or damages
   const attentionItems = useMemo(() => {
@@ -377,17 +388,18 @@ export const CoOwnerHandoverReviewPanel: React.FC<CoOwnerHandoverReviewPanelProp
       style={{
         position: 'fixed',
         top: '76px',
-        right: '24px',
-        width: '420px',
-        maxWidth: 'calc(100vw - 48px)',
+        right: '20px',
+        bottom: '20px',
+        width: 'clamp(440px, 28vw, 495px)',
+        maxWidth: 'min(495px, calc(100vw - 32px))',
         maxHeight: 'calc(100vh - 96px)',
         overflowY: 'auto',
         background: 'rgba(7, 20, 38, 0.94)',
         backdropFilter: 'blur(24px)',
         WebkitBackdropFilter: 'blur(24px)',
-        border: '1.5px solid rgba(0, 242, 254, 0.40)',
-        boxShadow: '0 20px 50px rgba(0, 0, 0, 0.75), 0 0 25px rgba(0, 242, 254, 0.20)',
-        borderRadius: '24px',
+        border: '1.5px solid rgba(0, 242, 254, 0.3)',
+        boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65), 0 0 30px rgba(0, 242, 254, 0.16)',
+        borderRadius: '20px',
         padding: '18px 20px',
         color: '#ffffff',
         fontFamily: 'var(--font-family, system-ui, sans-serif)',
@@ -577,8 +589,13 @@ export const CoOwnerHandoverReviewPanel: React.FC<CoOwnerHandoverReviewPanelProp
               Kiểm tra đạt chuẩn
             </span>
             <span style={{ fontSize: '12.5px', fontWeight: 900, color: '#34d399' }}>
-              {inspectionMetrics.uniqueCount} / {inspectionMetrics.requiredCount} bộ phận
+              {inspectionMetrics.assessedRequiredCount} / {inspectionMetrics.requiredCount} hạng mục bắt buộc
             </span>
+            {inspectionMetrics.uniqueCount > inspectionMetrics.assessedRequiredCount && (
+              <span style={{ fontSize: '10px', color: '#94a3b8' }}>
+                (Tổng kiểm tra: {inspectionMetrics.uniqueCount} linh kiện)
+              </span>
+            )}
           </div>
         </div>
       )}

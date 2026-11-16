@@ -1,0 +1,43 @@
+@startuml
+title QUY TRÌNH NẠP SẠC VÀ CẬP NHẬT TỒN KHO NĂNG LƯỢNG WAC (ACT-06)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+|Người Dùng (CoOwner / Staff)|
+start
+:Cắm súng sạc thông minh vào cổng nạp của xe;
+:Mở panel ChargingPanel trên giao diện 3D;
+:Chọn trụ sạc và bấm "Bắt Đầu Sạc";
+
+|Hệ Thống Backend (Spring Boot)|
+:Tạo bản ghi ChargingSession (status = CHARGING);
+:Chuyển trạng thái xe sang CHARGING;
+:Chuyển trạng thái trụ sạc sang OCCUPIED;
+
+|Tiến Trình Sạc Tự Động|
+:Mô phỏng dòng sạc theo đường cong CC/CV;
+:Tăng dần % Pin (SOC) và kWh điện nạp;
+
+|Người Dùng (CoOwner / Staff)|
+:Bấm nút "Dừng & Hoàn Tất Phiên Sạc";
+
+|Hệ Thống Backend (Spring Boot)|
+:Kiểm tra Idempotency chống ghi trùng lặp;
+:Lấy điện năng thực nạp: deliveredEnergy;
+:Tính điện lưu kho thực tế: storedEnergy = deliveredEnergy x 0.90;
+:Tính tổn hao truyền dẫn: energyLoss = deliveredEnergy x 0.10;
+:Lấy biểu giá điện trụ sạc: tariff;
+:Tính giá trị điện nạp mới: addedValue = storedEnergy x tariff;
+:Cập nhật tồn kho năng lượng (WAC):\nnewEnergy = prevEnergy + storedEnergy\nnewValue = prevValue + addedValue\nnewAvgCost = newValue / newEnergy;
+:Lưu bản ghi VehicleEnergyTransaction (CHARGING_INFLOW);
+:Cập nhật trạng thái xe về AVAILABLE;
+:Chuyển trạng thái trụ sạc về AVAILABLE;
+stop
+@enduml

@@ -1,0 +1,55 @@
+@startuml
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Times New Roman"
+skinparam defaultFontSize 12
+skinparam roundCorner 10
+
+title Kiến Trúc Bảo Mật, Lọc Yêu Cầu và Xác Thực JWT (Spring Security & RBAC)
+
+actor "Người Dùng (Client)" as Client
+participant "JwtAuthenticationFilter" as Filter
+participant "JwtTokenProvider" as Provider
+participant "UserDetailsService (Custom)" as UserDetails
+participant "SecurityContextHolder" as Context
+participant "REST Controller" as Controller
+database "MySQL Database" as DB
+
+Client -> Filter : Gửi HTTP Request kèm Header\nAuthorization: Bearer <accessToken>
+activate Filter
+
+Filter -> Provider : validateToken(jwt)
+activate Provider
+Provider --> Filter : Token hợp lệ (Chữ ký HMAC-SHA256 đúng, chưa hết hạn)
+deactivate Provider
+
+alt Token hợp lệ
+    Filter -> Provider : getUserIdFromJWT(jwt)
+    activate Provider
+    Provider --> Filter : userId (UUID)
+    deactivate Provider
+    
+    Filter -> UserDetails : loadUserById(userId)
+    activate UserDetails
+    UserDetails -> DB : SELECT * FROM users WHERE id = ?
+    activate DB
+    DB --> UserDetails : Thông tin User & Role (ADMIN/STAFF/CO_OWNER)
+    deactivate DB
+    UserDetails --> Filter : UserPrincipal (UserDetails)
+    deactivate UserDetails
+    
+    Filter -> Context : setAuthentication(UsernamePasswordAuthenticationToken)
+    Filter -> Controller : doFilter(request, response)
+    activate Controller
+    
+    note over Controller : Kiểm tra thẩm quyền phân quyền\n@PreAuthorize("hasRole('STAFF')")\nhoặc kiểm tra tính hợp lệ thành viên
+    
+    Controller --> Filter : Trả về dữ liệu kết quả (HTTP 200 OK / JSON)
+    deactivate Controller
+    Filter --> Client : HTTP 200 OK kèm dữ liệu
+else Token không hợp lệ / Hết hạn
+    Filter --> Client : HTTP 401 Unauthorized (Error JSON)
+end
+
+deactivate Filter
+
+@enduml

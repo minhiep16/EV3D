@@ -1,0 +1,65 @@
+@startuml
+title SƠ ĐỒ LỚP: CHI PHÍ VÀ THANH TOÁN CÁ NHÂN (CLASS-07)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam classAttributeIconSize 0
+
+
+class Expense {
+    - id: UUID
+    - amount: BigDecimal
+    - category: ExpenseCategory
+    - allocationPolicy: ExpenseAllocationPolicy
+    - status: ExpenseStatus
+    - invoiceNumber: String
+    - createdAt: Instant
+}
+
+enum ExpenseAllocationPolicy <<enumeration>> {
+    USER_RESPONSIBILITY
+    OWNERSHIP_RATIO
+}
+
+class ExpenseShare {
+    - id: UUID
+    - sharePercentage: BigDecimal
+    - shareAmount: BigDecimal
+    - status: ShareStatus
+    - dueDate: Instant
+}
+
+enum ShareStatus <<enumeration>> {
+    ALLOCATED
+    PARTIALLY_PAID
+    SETTLED
+}
+
+class PersonalExpensePayment {
+    - id: UUID
+    - amount: BigDecimal
+    - paymentMethod: String
+    - referenceCode: String
+    - status: PaymentStatus
+    - submittedAt: Instant
+    - verifiedAt: Instant
+}
+
+enum PaymentStatus <<enumeration>> {
+    PAYMENT_SUBMITTED
+    PAYMENT_VERIFIED
+    REJECTED
+}
+
+Expense --> ExpenseAllocationPolicy
+Expense "1" *-- "many" ExpenseShare
+ExpenseShare --> ShareStatus
+ExpenseShare "1" *-- "many" PersonalExpensePayment
+PersonalExpensePayment --> PaymentStatus
+
+@enduml

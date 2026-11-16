@@ -70,6 +70,7 @@ export interface CoOwnerTripPrerequisitesResult {
   isEligibleToStart: boolean;
   isInspectionOnlyCompleted: boolean;
   isWaitingForStaff: boolean;
+  isFutureBookingBeforeWindow: boolean;
   isLoading: boolean;
   isEligibilityError: boolean;
   eligibilityErrorMessage: string | null;
@@ -141,6 +142,26 @@ export function useCoOwnerTripPrerequisites(
       return null;
     }
 
+    // Temporal consistency check:
+    // Future bookings outside the preparation window (120 minutes prior to start) cannot have active completed handovers.
+    const now = Date.now();
+    const bookingStart = new Date(candidateBooking.startTime).getTime();
+    if (!isNaN(bookingStart)) {
+      const prepWindowStart = bookingStart - 120 * 60 * 1000;
+      if (now < prepWindowStart) {
+        return null;
+      }
+      // Handover timestamp anomaly: cannot predate preparation window by more than 1 minute buffer
+      const handoverTime = bookingHandover.staffHandedOverAt
+        ? new Date(bookingHandover.staffHandedOverAt).getTime()
+        : bookingHandover.confirmedAt
+        ? new Date(bookingHandover.confirmedAt).getTime()
+        : null;
+      if (handoverTime && handoverTime < prepWindowStart - 60 * 1000) {
+        return null;
+      }
+    }
+
     // Historical cancelled handovers never authorize Start Trip or show active success
     if (bookingHandover.status === 'CANCELLED') {
       return null;
@@ -173,10 +194,19 @@ export function useCoOwnerTripPrerequisites(
     return null;
   }, [bookingHandover, candidateBooking, user, vehicleId, bookingTrip]);
 
-  // 6. Pre-handover inspection completed, but staff handover still pending (Case B)
+  // 6. Check if candidate booking is in the future prior to preparation window (120 mins before startTime)
+  const isFutureBookingBeforeWindow = useMemo(() => {
+    if (!candidateBooking) return false;
+    const start = new Date(candidateBooking.startTime).getTime();
+    if (isNaN(start)) return false;
+    return Date.now() < start - 120 * 60 * 1000;
+  }, [candidateBooking]);
+
+  // 7. Pre-handover inspection completed, but staff handover still pending (Case B)
   const isInspectionOnlyCompleted = useMemo(() => {
     if (!bookingHandover || !candidateBooking) return false;
     if (bookingHandover.bookingId !== candidateBooking.id) return false;
+    if (isFutureBookingBeforeWindow) return false;
 
     // If already fully handed over by staff, it's not inspection-only
     if (completedHandover) return false;
@@ -199,13 +229,14 @@ export function useCoOwnerTripPrerequisites(
         bookingHandover.status !== 'OWNER_CONFIRMED');
 
     return Boolean(isInspectionReady);
-  }, [bookingHandover, candidateBooking, completedHandover]);
+  }, [bookingHandover, candidateBooking, isFutureBookingBeforeWindow, completedHandover]);
 
   const isWaitingForStaff = useMemo(() => {
     if (!candidateBooking) return false;
+    if (isFutureBookingBeforeWindow) return false;
     if (completedHandover || isInspectionOnlyCompleted) return false;
     return true;
-  }, [candidateBooking, completedHandover, isInspectionOnlyCompleted]);
+  }, [candidateBooking, isFutureBookingBeforeWindow, completedHandover, isInspectionOnlyCompleted]);
 
   // 7. Query trip start eligibility for stable bookingId (GET /api/bookings/{bookingId}/trip/start-eligibility)
   const {
@@ -250,6 +281,7 @@ export function useCoOwnerTripPrerequisites(
     isEligibleToStart,
     isInspectionOnlyCompleted,
     isWaitingForStaff,
+    isFutureBookingBeforeWindow,
     isLoading:
       isBookingsLoading ||
       (!!candidateBooking && isHandoverLoading) ||

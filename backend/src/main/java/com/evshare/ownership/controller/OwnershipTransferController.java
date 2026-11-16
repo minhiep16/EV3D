@@ -1,6 +1,14 @@
 package com.evshare.ownership.controller;
 
 import com.evshare.contract.dto.ContractVersionResponse;
+import com.evshare.ownership.dto.AcceptTransferConsentRequest;
+import com.evshare.ownership.dto.CreateTransferRequest;
+import com.evshare.ownership.dto.CreateWithdrawalRequest;
+import com.evshare.ownership.dto.MembershipWithdrawalResponse;
+import com.evshare.ownership.dto.OwnershipDistributionPreviewResponse;
+import com.evshare.ownership.dto.OwnershipHistoryResponse;
+import com.evshare.ownership.dto.OwnershipTransferResponse;
+import com.evshare.ownership.dto.RejectTransferRequest;
 import com.evshare.ownership.dto.*;
 import com.evshare.ownership.service.MembershipWithdrawalService;
 import com.evshare.ownership.service.OwnershipTransferService;
@@ -145,6 +153,12 @@ public class OwnershipTransferController {
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         return ResponseEntity.ok(transferService.completeTransfer(transferId, principal));
+    }
+
+    @PostMapping("/ownership-transfers/recover-eligible")
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
+    public ResponseEntity<List<OwnershipTransferResponse>> recoverEligibleTransfers() {
+        return ResponseEntity.ok(transferService.reEvaluateAndRecoverEligibleTransfers());
     }
 
     // ==========================================

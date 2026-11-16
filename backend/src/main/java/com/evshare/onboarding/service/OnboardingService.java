@@ -77,6 +77,9 @@ public class OnboardingService {
     private final ContractAcceptanceRepository contractAcceptanceRepository;
     private final ObjectMapper objectMapper;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.evshare.ownership.repository.MembershipInvitationRepository membershipInvitationRepository;
+
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final String ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final List<DraftStatus> ACTIVE_APPLICATION_STATUSES = List.of(
@@ -155,11 +158,93 @@ public class OnboardingService {
                         && m.getGroup().getStatus() == GroupStatus.ACTIVE)
                 .toList();
 
+        // Retroactive recovery for completed invitations where membership record is not yet linked
+        if (activeMemberships.isEmpty() && membershipInvitationRepository != null) {
+            List<com.evshare.ownership.entity.MembershipInvitation> completedInvs =
+                    membershipInvitationRepository.findByInviteeUserIdOrEmailIgnoreCaseAndStatusInOrderByCreatedAtDesc(
+                            userId,
+                            user.getEmail(),
+                            List.of(com.evshare.ownership.entity.InvitationStatus.COMPLETED)
+                    );
+            for (com.evshare.ownership.entity.MembershipInvitation inv : completedInvs) {
+                if (inv.getGroup() != null && inv.getGroup().getStatus() == GroupStatus.ACTIVE) {
+                    GroupMember member = memberRepository.findByGroupIdAndUserId(inv.getGroup().getId(), userId)
+                            .orElseGet(() -> new GroupMember(UUID.randomUUID(), inv.getGroup(), user, GroupMemberRole.MEMBER, MemberStatus.ACTIVE));
+                    member.setStatus(MemberStatus.ACTIVE);
+                    member.setRemovedAt(null);
+                    memberRepository.save(member);
+                }
+            }
+            activeMemberships = memberRepository.findByUserIdAndStatus(userId, MemberStatus.ACTIVE)
+                    .stream()
+                    .filter(m -> m.getRemovedAt() == null && m.getGroup() != null
+                            && m.getGroup().getStatus() == GroupStatus.ACTIVE)
+                    .toList();
+        }
+
         List<VehicleResponse> authorizedVehicles = vehicleService.getAllVehicles(principal);
         boolean hasActiveGroup = !activeMemberships.isEmpty() && !authorizedVehicles.isEmpty();
 
+        UUID joinedVehicleId = null;
+        String joinedVehicleName = null;
+        String joinedVehicleModel = null;
+        String joinedLicensePlate = null;
+        String joinedExteriorColor = null;
+        BigDecimal ownershipPercentage = null;
+        String contractStatus = null;
+        String groupName = null;
+        Integer contractVersionNumber = null;
+
+        if (hasActiveGroup && !authorizedVehicles.isEmpty()) {
+            VehicleResponse primaryVeh = authorizedVehicles.get(0);
+            joinedVehicleId = primaryVeh.getId();
+            joinedVehicleName = primaryVeh.getName();
+            joinedVehicleModel = primaryVeh.getModel();
+            joinedLicensePlate = primaryVeh.getLicensePlate();
+            joinedExteriorColor = primaryVeh.getExteriorColor();
+
+            GroupMember primaryMember = activeMemberships.get(0);
+            if (primaryMember.getGroup() != null) {
+                groupName = primaryMember.getGroup().getName();
+                UUID grpId = primaryMember.getGroup().getId();
+
+                List<OwnershipShare> shares = shareRepository.findByMemberId(primaryMember.getId());
+                if (!shares.isEmpty()) {
+                    ownershipPercentage = shares.get(0).getPercentage();
+                } else if (joinedVehicleId != null) {
+                    Optional<OwnershipShare> shareOpt = shareRepository.findByGroupIdAndVehicleIdAndUserId(grpId, joinedVehicleId, userId);
+                    if (shareOpt.isPresent()) {
+                        ownershipPercentage = shareOpt.get().getPercentage();
+                    }
+                }
+
+                Optional<CoOwnershipContract> contractOpt = contractRepository.findByGroupId(grpId);
+                if (contractOpt.isPresent()) {
+                    CoOwnershipContract c = contractOpt.get();
+                    if (c.getCurrentVersion() != null) {
+                        contractVersionNumber = c.getCurrentVersion().getVersionNumber();
+                    }
+                    contractStatus = "Hợp đồng đã có hiệu lực (Hoàn tất ký số)";
+                } else {
+                    contractStatus = "Hợp đồng đã có hiệu lực";
+                }
+            }
+        }
+
         long pendingInvitations = invitationRepository.countByInviteeEmailAndStatus(user.getEmail(),
                 InvitationStatus.PENDING);
+        if (membershipInvitationRepository != null) {
+            long pendingMembershipCount = membershipInvitationRepository
+                    .findByInviteeUserIdOrEmailIgnoreCaseAndStatusInOrderByCreatedAtDesc(
+                            userId,
+                            user.getEmail(),
+                            List.of(
+                                    com.evshare.ownership.entity.InvitationStatus.PENDING_INVITEE_RESPONSE,
+                                    com.evshare.ownership.entity.InvitationStatus.INVITED
+                            )
+                    ).size();
+            pendingInvitations += pendingMembershipCount;
+        }
         long pendingJoinRequests = joinRequestRepository.countByUserIdAndStatus(userId, JoinRequestStatus.PENDING);
         long draftsCount = draftRepository.countByUserIdAndStatus(userId, DraftStatus.DRAFT);
 
@@ -173,7 +258,16 @@ public class OnboardingService {
                 pendingJoinRequests,
                 draftsCount,
                 role.name(),
-                route);
+                route,
+                joinedVehicleId,
+                joinedVehicleName,
+                joinedVehicleModel,
+                joinedLicensePlate,
+                joinedExteriorColor,
+                ownershipPercentage,
+                contractStatus,
+                groupName,
+                contractVersionNumber);
     }
 
     // ==========================================
@@ -293,7 +387,7 @@ public class OnboardingService {
 
         DraftStatus currentStatus = draft.getStatus() != null ? draft.getStatus() : DraftStatus.DRAFT;
         if (currentStatus == DraftStatus.SUBMITTED || currentStatus == DraftStatus.UNDER_REVIEW) {
-            throw new IllegalStateException("Không thể xóa hồ sơ đã gửi và đang chờ nhân viên xét duyệt.");
+            throw new IllegalStateException("Không thể xóa hồ sơ đã gửi và đang chờ Quản trị viên (ADMIN) xét duyệt.");
         }
         if (currentStatus == DraftStatus.APPROVED) {
             throw new IllegalStateException("Không thể xóa hồ sơ đăng ký xe đã được phê duyệt.");
@@ -545,23 +639,23 @@ public class OnboardingService {
                     "REGISTRATION_SUBMITTED",
                     "Hồ sơ đăng ký xe đang chờ xét duyệt",
                     "Hồ sơ đăng ký xe " + finalVehicleName + " (Biển số: " + finalPlate + ") cho nhóm \""
-                            + finalGroupName + "\" đã được gửi và đang chờ nhân viên xét duyệt.",
+                            + finalGroupName + "\" đã được gửi và đang chờ Quản trị viên (ADMIN) xét duyệt.",
                     "INFO");
 
-            List<User> staffUsers = userRepository.findAll().stream()
-                    .filter(u -> (u.getRole() == Role.STAFF || u.getRole() == Role.ADMIN) && u.getStatus() == UserStatus.ACTIVE)
+            List<User> adminAndStaffUsers = userRepository.findAll().stream()
+                    .filter(u -> (u.getRole() == Role.ADMIN || u.getRole() == Role.STAFF) && u.getStatus() == UserStatus.ACTIVE)
                     .toList();
-            for (User staff : staffUsers) {
+            for (User reviewer : adminAndStaffUsers) {
                 notificationService.sendNotification(
-                        staff.getId(),
+                        reviewer.getId(),
                         null,
                         null,
                         "VEHICLE_REGISTRATION_APPLICATION",
                         appId,
-                        "STAFF_REGISTRATION_REVIEW_REQUIRED",
+                        "ADMIN_REGISTRATION_REVIEW_REQUIRED",
                         "Hồ sơ đăng ký xe mới chờ duyệt",
                         applicantName + " đã gửi hồ sơ đăng ký xe " + finalVehicleName + " (Biển số: " + finalPlate
-                                + ", Nhóm: " + finalGroupName + ") cần xét duyệt.",
+                                + ", Nhóm: " + finalGroupName + ") cần Quản trị viên xét duyệt.",
                         "WARNING");
             }
         });
@@ -656,7 +750,7 @@ public class OnboardingService {
                     appId,
                     "REGISTRATION_REJECTED",
                     "Hồ sơ đăng ký xe bị từ chối",
-                    "Hồ sơ đăng ký xe " + vName + " (Biển số: " + plate + ") đã bị từ chối. Lý do: " + finalReason,
+                    "Hồ sơ đăng ký xe " + vName + " (Biển số: " + plate + ") đã bị Quản trị viên từ chối. Lý do: " + finalReason,
                     "ERROR"));
 
             return mapDraftResponse(saved);
@@ -685,7 +779,7 @@ public class OnboardingService {
                     appId,
                     "REGISTRATION_CHANGES_REQUESTED",
                     "Yêu cầu bổ sung / chỉnh sửa hồ sơ đăng ký xe",
-                    "Nhân viên vận hành yêu cầu bổ sung/chỉnh sửa hồ sơ xe " + vName + " (Biển số: " + plate
+                    "Quản trị viên yêu cầu bổ sung/chỉnh sửa hồ sơ xe " + vName + " (Biển số: " + plate
                             + "). Nội dung: " + finalReason,
                     "WARNING"));
 
@@ -904,7 +998,7 @@ public class OnboardingService {
                     "REGISTRATION_COMPLETED",
                     "Hồ sơ đăng ký xe đã được phê duyệt",
                     "Hồ sơ đăng ký xe " + finalVName + " (Biển số: " + licPlate + ") và nhóm \""
-                            + finalGroupName + "\" đã được nhân viên phê duyệt thành công.",
+                            + finalGroupName + "\" đã được Quản trị viên phê duyệt thành công.",
                     "SUCCESS");
 
             for (GroupInvitation inv : finalInvitations) {

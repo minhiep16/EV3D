@@ -1,0 +1,43 @@
+@startuml
+title TIẾN TRÌNH THỰC HIỆN ĐỀ TÀI EVSHARE 3D (ROADMAP HOẠT ĐỘNG)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+start
+partition "Giai đoạn 1: Khảo sát & Thiết kế CSDL (Tuần 1 - 4)" {
+    :Khảo sát mô hình kinh tế đồng sở hữu xe điện;
+    :Xác định 3 tác nhân: ADMIN, STAFF, CO_OWNER;
+    :Thiết kế lược đồ ERD chuẩn 3NF;
+    :Viết 46 bản di chuyển Flyway Migrations;
+}
+
+partition "Giai đoạn 2: Phát triển Backend Cốt Lõi (Tuần 5 - 8)" {
+    :Cấu hình Spring Security 6 & chuỗi lọc JWT;
+    :Hiện thực hóa phân hệ Xe, Người dùng & Đặt lịch;
+    :Xây dựng thuật toán khử xung đột lịch đặt;
+    :Hiện thực hóa chu trình bàn giao & kiểm định kỹ thuật;
+}
+
+partition "Giai đoạn 3: Frontend 3D & Động Cơ Tài Chính (Tuần 9 - 12)" {
+    :Xây dựng Virtual Garage 3D trên Three.js & R3F;
+    :Nạp mô hình Digital Twin GLB, bóc tách phụ tùng, X-Ray Pin;
+    :Hiện thực hóa động cơ tồn kho WAC & tổn hao sạc 10%;
+    :Hiện thực hóa thuật toán phân chia chi phí Hare-Niemeyer;
+}
+
+partition "Giai đoạn 4: Tích hợp, Kiểm thử & Đóng gói (Tuần 13 - 16)" {
+    :Tích hợp Biểu quyết, Hợp đồng số & Khiếu nại;
+    :Thiết kế 100 ca kiểm thử chức năng & phi chức năng;
+    :Tối ưu hóa bộ nhớ GPU WebGL, dọn dẹp Geometry/Material;
+    :Biên soạn và hoàn thiện Báo cáo Thực tập Tốt nghiệp;
+}
+
+stop
+@enduml

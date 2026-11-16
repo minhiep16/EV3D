@@ -1,0 +1,63 @@
+@startuml
+title SƠ ĐỒ TUẦN TỰ: XÁC MINH BÀN GIAO XE KỸ THUẬT (SEQ-04)
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam sequenceMessageAlign center
+skinparam participant {
+    BackgroundColor #F8F9FA
+    BorderColor #2C3E50
+    FontColor #2C3E50
+}
+skinparam actor {
+    BackgroundColor #E8F4F8
+    BorderColor #1A5276
+}
+skinparam database {
+    BackgroundColor #FEF9E7
+    BorderColor #B7950B
+}
+
+autonumber
+actor "Nhân Viên (STAFF)" as Staff
+actor "Chủ Xe (CO_OWNER)" as CoOwner
+participant "StaffHandoverModal" as Modal
+participant "VehicleHandoverController" as Controller
+participant "VehicleHandoverService" as Service
+participant "VehicleRepository" as VehRepo
+database "MySQL Database" as DB
+
+Staff -> Modal : Nhập ODO xuất phát & % Pin xuất phát, bấm "Xác Nhận"
+activate Modal
+Modal -> Controller : POST /api/handovers/booking/{bookingId}/verify
+activate Controller
+
+Controller -> Service : verifyHandover(bookingId, staffId, request)
+activate Service
+
+Service -> VehRepo : Cập nhật trạng thái xe = RESERVED
+Service -> DB : INSERT INTO vehicle_handovers (status = COMPLETED)
+DB --> Service : OK
+Service --> Controller : VehicleHandoverResponse
+deactivate Service
+Controller --> Modal : HTTP 200 OK
+deactivate Controller
+Modal --> Staff : Bàn giao hoàn tất, chờ Co-Owner ký nhận
+deactivate Modal
+
+CoOwner -> Controller : POST /api/handovers/{id}/acknowledge
+activate Controller
+Controller -> Service : acknowledgeCondition(handoverId, userId)
+activate Service
+Service -> DB : UPDATE vehicle_handovers SET owner_condition_acknowledged_at = now()
+DB --> Service : OK
+Service --> Controller : VehicleHandoverResponse
+deactivate Service
+Controller --> CoOwner : HTTP 200 OK (Ký nhận thành công)
+deactivate Controller
+
+@enduml

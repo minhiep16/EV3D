@@ -8,7 +8,7 @@ import { resolveVehicleCode, sortStaffFleetVehicles, isMatchingVehicle } from '.
 import { FleetVehicleListItem } from './FleetVehicleListItem';
 import { fetchPendingReturnTrips } from '../../services/tripApi';
 import { TripData } from '../../types/trip';
-import { Search, X, AlertCircle, FileCheck2, Car, Wallet } from 'lucide-react';
+import { Search, X, AlertCircle, FileCheck2, Car, Wallet, Scale, Shield } from 'lucide-react';
 import { onboardingApi } from '../../services/onboardingApi';
 import { VehicleRegistrationDraftResponse } from '../../types/onboarding';
 import { fetchPendingPersonalPayments } from '../../services/fundApi';
@@ -24,6 +24,7 @@ import { fetchPendingPersonalPayments } from '../../services/fundApi';
 export const StaffGarageFleetSidebar: React.FC = () => {
   const user = useAuthStore((state) => state.user);
   const role = user?.role || 'STAFF';
+  const isAdmin = role === 'ADMIN';
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const accessToken = useAuthStore((state) => state.accessToken);
   const authReady = isAuthenticated && !!accessToken;
@@ -37,6 +38,9 @@ export const StaffGarageFleetSidebar: React.FC = () => {
   const setRegistrationReviewModalOpen = useWorldStore((state) => state.setRegistrationReviewModalOpen);
   const isRegistrationReviewModalOpen = useWorldStore((state) => state.isRegistrationReviewModalOpen);
   const setPaymentVerificationModalOpen = useWorldStore((state) => state.setPaymentVerificationModalOpen);
+  const setStaffDisputeDashboardOpen = useWorldStore((state) => state.setStaffDisputeDashboardOpen);
+  const isAdminManagementModalOpen = useWorldStore((state) => state.isAdminManagementModalOpen);
+  const setAdminManagementModalOpen = useWorldStore((state) => state.setAdminManagementModalOpen);
 
   // Default state: Closed (Section 2)
   const [isOpen, setIsOpen] = useState(false);
@@ -60,7 +64,7 @@ export const StaffGarageFleetSidebar: React.FC = () => {
   const { data: pendingReturns = [] } = useQuery<TripData[]>({
     queryKey: ['pendingReturns'],
     queryFn: fetchPendingReturnTrips,
-    enabled: authReady,
+    enabled: authReady && !isAdmin,
     refetchInterval: 4000,
   });
 
@@ -76,7 +80,7 @@ export const StaffGarageFleetSidebar: React.FC = () => {
   const { data: pendingPayments = [] } = useQuery({
     queryKey: ['pending-personal-payments'],
     queryFn: () => fetchPendingPersonalPayments(),
-    enabled: authReady && (role === 'STAFF' || role === 'ADMIN'),
+    enabled: authReady && !isAdmin,
     refetchInterval: 5000,
   });
 
@@ -139,8 +143,9 @@ export const StaffGarageFleetSidebar: React.FC = () => {
     setIsOpen(false);
   };
 
+  // Exclusively suppress fleet sidebar for ADMIN (Phase 3 Carousel requirement)
   // In inspection, damage mapping, or when review modal is active, hide fleet sidebar completely
-  if (isInspecting || isRegistrationReviewModalOpen) {
+  if (isAdmin || isInspecting || isRegistrationReviewModalOpen) {
     return null;
   }
 
@@ -377,6 +382,40 @@ export const StaffGarageFleetSidebar: React.FC = () => {
             </div>
           )}
 
+          {/* Admin Management Modal Trigger Button (ADMIN only) */}
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsOpen(false);
+                setAdminManagementModalOpen(true);
+              }}
+              style={{
+                marginBottom: '10px',
+                padding: '8px 10px',
+                borderRadius: '10px',
+                background: 'rgba(239, 68, 68, 0.16)',
+                border: '1.2px solid rgba(239, 68, 68, 0.55)',
+                color: '#f87171',
+                fontSize: '11px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '6px',
+                width: '100%',
+                boxSizing: 'border-box',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Shield size={14} />
+                <span>TRUNG TÂM QUẢN TRỊ ADMIN</span>
+              </span>
+            </button>
+          )}
+
           {/* Registration Review Queue Trigger Button */}
           <button
             type="button"
@@ -430,61 +469,97 @@ export const StaffGarageFleetSidebar: React.FC = () => {
             </span>
           </button>
 
-          {/* Personal Payment Verification Trigger Button */}
-          <button
-            type="button"
-            onClick={() => {
-              setIsOpen(false);
-              setPaymentVerificationModalOpen(true);
-            }}
-            style={{
-              marginBottom: '10px',
-              padding: '8px 10px',
-              borderRadius: '10px',
-              background:
-                pendingPayments.length > 0
-                  ? 'rgba(245, 158, 11, 0.16)'
-                  : 'rgba(0, 242, 254, 0.08)',
-              border:
-                pendingPayments.length > 0
-                  ? '1.2px solid rgba(245, 158, 11, 0.55)'
-                  : '1px solid rgba(0, 242, 254, 0.28)',
-              color: pendingPayments.length > 0 ? '#fbbf24' : '#38bdf8',
-              fontSize: '11px',
-              fontWeight: 800,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '6px',
-              width: '100%',
-              boxSizing: 'border-box',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Wallet size={14} />
-              <span>XÁC MINH THANH TOÁN</span>
-            </span>
-            <span
+          {/* Personal Payment Verification Trigger Button (STAFF only) */}
+          {!isAdmin && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsOpen(false);
+                setPaymentVerificationModalOpen(true);
+              }}
               style={{
-                fontSize: '10px',
-                padding: '1px 6px',
-                borderRadius: '999px',
+                marginBottom: '10px',
+                padding: '8px 10px',
+                borderRadius: '10px',
                 background:
                   pendingPayments.length > 0
-                    ? 'rgba(245, 158, 11, 0.3)'
-                    : 'rgba(148, 163, 184, 0.2)',
-                color: '#ffffff',
+                    ? 'rgba(245, 158, 11, 0.16)'
+                    : 'rgba(0, 242, 254, 0.08)',
+                border:
+                  pendingPayments.length > 0
+                    ? '1.2px solid rgba(245, 158, 11, 0.55)'
+                    : '1px solid rgba(0, 242, 254, 0.28)',
+                color: pendingPayments.length > 0 ? '#fbbf24' : '#38bdf8',
+                fontSize: '11px',
                 fontWeight: 800,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '6px',
+                width: '100%',
+                boxSizing: 'border-box',
+                transition: 'all 0.2s ease',
               }}
             >
-              {pendingPayments.length}
-            </span>
-          </button>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Wallet size={14} />
+                <span>XÁC MINH THANH TOÁN</span>
+              </span>
+              <span
+                style={{
+                  fontSize: '10px',
+                  padding: '1px 6px',
+                  borderRadius: '999px',
+                  background:
+                    pendingPayments.length > 0
+                      ? 'rgba(245, 158, 11, 0.3)'
+                      : 'rgba(148, 163, 184, 0.2)',
+                  color: '#ffffff',
+                  fontWeight: 800,
+                }}
+              >
+                {pendingPayments.length}
+              </span>
+            </button>
+          )}
 
-          {/* Pending Return Requests Alert (if any) */}
-          {pendingReturns.length > 0 && (
+          {/* Dispute Mediation Trigger Button (STAFF only) */}
+          {!isAdmin && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsOpen(false);
+                setStaffDisputeDashboardOpen(true);
+              }}
+              style={{
+                marginBottom: '10px',
+                padding: '8px 10px',
+                borderRadius: '10px',
+                background: 'rgba(168, 85, 247, 0.12)',
+                border: '1px solid rgba(168, 85, 247, 0.35)',
+                color: '#c084fc',
+                fontSize: '11px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '6px',
+                width: '100%',
+                boxSizing: 'border-box',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Scale size={14} />
+                <span>HÒA GIẢI TRANH CHẤP</span>
+              </span>
+            </button>
+          )}
+
+          {/* Pending Return Requests Alert (STAFF only, if any) */}
+          {!isAdmin && pendingReturns.length > 0 && (
             <div
               style={{
                 marginBottom: '10px',

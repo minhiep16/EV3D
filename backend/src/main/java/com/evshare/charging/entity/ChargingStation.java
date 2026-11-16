@@ -32,6 +32,9 @@ public class ChargingStation {
     @Column(name = "max_power_kw", precision = 6, scale = 2, nullable = false)
     private BigDecimal maxPowerKw;
 
+    @Column(name = "price_per_kwh", precision = 10, scale = 2, nullable = false)
+    private BigDecimal pricePerKwh = new BigDecimal("3850.00");
+
     @Enumerated(EnumType.STRING)
     @Column(name = "connector_type", length = 30, nullable = false)
     private ChargingConnectorType connectorType;
@@ -94,6 +97,17 @@ public class ChargingStation {
         if (this.connectorType == null) {
             this.connectorType = ChargingConnectorType.CCS2;
         }
+        if (this.pricePerKwh == null) {
+            this.pricePerKwh = new BigDecimal("3850.00");
+        }
+    }
+
+    public BigDecimal getPricePerKwh() {
+        return pricePerKwh != null ? pricePerKwh : new BigDecimal("3850.00");
+    }
+
+    public void setPricePerKwh(BigDecimal pricePerKwh) {
+        this.pricePerKwh = pricePerKwh;
     }
 
     public UUID getId() {

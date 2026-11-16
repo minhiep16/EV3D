@@ -1,0 +1,70 @@
+@startuml
+title LƯỢC ĐỒ CƠ SỞ DỮ LIỆU: PHƯƠNG TIỆN VÀ ĐỒNG SỞ HỮU (ERD-03)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+entity "vehicles" as vehicles {
+    * id : CHAR(36) [PK]
+    --
+    vin : VARCHAR(50) [UNIQUE]
+    license_plate : VARCHAR(20) [UNIQUE]
+    model_name : VARCHAR(100)
+    exterior_color : VARCHAR(50)
+    battery_capacity_kwh : DECIMAL(8,2)
+    current_battery_level : INT
+    current_odometer_km : DECIMAL(10,2)
+    status : VARCHAR(30)
+}
+
+entity "co_ownership_groups" as groups {
+    * id : CHAR(36) [PK]
+    --
+    group_code : VARCHAR(50) [UNIQUE]
+    group_name : VARCHAR(100)
+    max_members : INT
+    status : VARCHAR(20)
+}
+
+entity "group_members" as members {
+    * id : CHAR(36) [PK]
+    --
+    * group_id : CHAR(36) [FK]
+    * user_id : CHAR(36) [FK]
+    member_role : VARCHAR(20)
+    joined_at : TIMESTAMP
+    removed_at : TIMESTAMP
+}
+
+entity "ownership_shares" as shares {
+    * id : CHAR(36) [PK]
+    --
+    * member_id : CHAR(36) [FK]
+    * vehicle_id : CHAR(36) [FK]
+    percentage : DECIMAL(7,4)
+    capital_contribution : DECIMAL(15,2)
+}
+
+entity "ownership_change_histories" as histories {
+    * id : CHAR(36) [PK]
+    --
+    * share_id : CHAR(36) [FK]
+    change_type : VARCHAR(50)
+    old_percentage : DECIMAL(7,4)
+    new_percentage : DECIMAL(7,4)
+    recorded_at : TIMESTAMP
+}
+
+vehicles ||--|| groups
+groups ||--|{ members
+members ||--|{ shares
+vehicles ||--o{ shares
+shares ||--o{ histories
+
+@enduml

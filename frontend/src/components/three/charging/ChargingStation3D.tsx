@@ -10,6 +10,7 @@ import {
 import { useWorldStore } from '../../../store/worldStore';
 import { useAuthStore } from '../../../store/authStore';
 import { shouldShowChargingStationLabel } from '../../../config/garageZoneVisibility';
+import { isRecentDragInteraction } from '../globalInteractionState';
 import { Zap, Activity } from 'lucide-react';
 
 export interface ChargingStation3DProps {
@@ -53,22 +54,20 @@ export const ChargingStation3D: React.FC<ChargingStation3DProps> = ({
   const selectedChargingStationId = useWorldStore((state) => state.selectedChargingStationId);
   const activeFeature = useWorldStore((state) => state.activeFeature);
   const activePrimaryPanel = useWorldStore((state) => state.activePrimaryPanel);
+  const isVehicleDetailOpen = useWorldStore((state) => state.isVehicleDetailOpen);
+  const activeStaffOperationModule = useWorldStore((state) => state.activeStaffOperationModule);
+
+  const isOperationsPanelOpen = Boolean(
+    isOperationsRole &&
+    selectedVehicleId &&
+    ((user?.role === 'STAFF' ? Boolean(activeStaffOperationModule) : isVehicleDetailOpen) || vehicleInspectionMode || vehicleDamageMappingMode || vehicleHandoverMode) &&
+    !vehicleDamageHistoryMode &&
+    !vehicleMaintenanceMode &&
+    !vehicleBatteryXrayMode &&
+    !vehicleChargingMode
+  );
 
   const showLabel = useMemo(() => {
-    // Authoritative garage and vehicle focus state:
-    const isVehicleFocused = Boolean(selectedVehicleId) || Boolean(isVehicleSelected) || selectedZone === 'VEHICLE';
-    const isGarageOverview = activeFeature === 'NONE' && !isVehicleFocused;
-    const isChargingActive = activeFeature === 'CHARGING' || Boolean(vehicleChargingMode) || activePrimaryPanel === 'CHARGING';
-
-    // Positive allow-list condition for co-owners: show compact info ONLY in Garage Overview or when Charging is Active
-    if (!isOperationsRole) {
-      if (!isGarageOverview && !isChargingActive) {
-        return false;
-      }
-      if (isGarageOverview && !isSelected && !isHovered) {
-        return false;
-      }
-    }
     return shouldShowChargingStationLabel(
       station.id,
       {
@@ -90,11 +89,12 @@ export const ChargingStation3D: React.FC<ChargingStation3DProps> = ({
         selectedVehiclePartId,
         selectedVehiclePartCode,
         selectedChargingStationId,
+        isVehicleDetailOpen: isOperationsRole ? isOperationsPanelOpen : isVehicleDetailOpen,
+        isOperationsPanelOpen,
       },
       { isSelected, isHovered }
     );
   }, [
-    isOperationsRole,
     station.id,
     selectedZone,
     selectedVehicleId,
@@ -114,12 +114,25 @@ export const ChargingStation3D: React.FC<ChargingStation3DProps> = ({
     selectedVehiclePartId,
     selectedVehiclePartCode,
     selectedChargingStationId,
-    activePrimaryPanel,
+    isVehicleDetailOpen,
+    isOperationsPanelOpen,
     isSelected,
     isHovered,
   ]);
 
+  const isStaff = user?.role === 'STAFF';
+
   const visualConfig = useMemo(() => {
+    if (isStaff) {
+      const isCS02 = station.code === 'CS02' || station.name.includes('02');
+      return {
+        code: station.code,
+        bayId: isCS02 ? 'BAY_CHARGING_02' : 'BAY_CHARGING_01',
+        stationPosition: (isCS02 ? [4.8, 0.14, 0.5] : [3.6, 0.14, 0.5]) as [number, number, number],
+        kioskOffset: [0, 0, 0] as [number, number, number],
+        socketOffset: [0.42, 0.95, 0.05] as [number, number, number],
+      };
+    }
     return CHARGING_STATION_VISUALS[station.code] || {
       code: station.code,
       bayId: 'BAY_CHARGING_01',
@@ -131,7 +144,7 @@ export const ChargingStation3D: React.FC<ChargingStation3DProps> = ({
       kioskOffset: [0, 0, 0] as [number, number, number],
       socketOffset: [0.42, 0.95, 0.05] as [number, number, number],
     };
-  }, [station]);
+  }, [station, isStaff]);
 
   const effectiveStatus = isActiveSession ? 'OCCUPIED' : station.status;
   const theme = CHARGING_STATION_THEMES[effectiveStatus] || CHARGING_STATION_THEMES.AVAILABLE;
@@ -156,6 +169,7 @@ export const ChargingStation3D: React.FC<ChargingStation3DProps> = ({
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
+    if (e.delta !== undefined && e.delta > 6) return;
     if (onSelectStation) {
       onSelectStation(station.id);
     }
@@ -185,6 +199,17 @@ export const ChargingStation3D: React.FC<ChargingStation3DProps> = ({
       onPointerOut={handlePointerOut}
       name={`ChargingStation_${station.code}`}
     >
+      {/* 0. Dedicated Generous Interaction Hitbox */}
+      <mesh
+        position={[0, 0.95, 0]}
+        onClick={handleClick}
+        onPointerOver={handlePointerOver}
+        onPointerOut={handlePointerOut}
+      >
+        <boxGeometry args={[0.90, 2.05, 0.75]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
+
       {/* 1. Main White Tower Body */}
       <mesh position={[0, 0.95, 0]} castShadow receiveShadow>
         <boxGeometry args={[0.64, 1.88, 0.42]} />
@@ -252,18 +277,16 @@ export const ChargingStation3D: React.FC<ChargingStation3DProps> = ({
         />
       </mesh>
 
-      {/* 8. Selection Aura Ring at Base */}
-      {(isSelected || isHovered) && (
-        <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[0.52, 0.64, 32]} />
-          <meshBasicMaterial
-            color={theme.glow}
-            transparent
-            opacity={isSelected ? 0.8 : 0.45}
-            side={THREE.DoubleSide}
-          />
-        </mesh>
-      )}
+      {/* 8. Selection Aura Ring at Base (Always visibly indicates interactive station; brightly highlights on hover/select) */}
+      <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.52, 0.64, 32]} />
+        <meshBasicMaterial
+          color={theme.glow}
+          transparent
+          opacity={isSelected ? 0.85 : isHovered ? 0.55 : 0.22}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
 
       {/* 9. Floating Holographic Station HUD Badge (Staggered & Collision-Safe) */}
       {showLabel && (() => {
@@ -275,6 +298,7 @@ export const ChargingStation3D: React.FC<ChargingStation3DProps> = ({
             <Html
               center
               distanceFactor={8.2}
+              zIndexRange={[15, 0]}
               style={{ pointerEvents: 'none', userSelect: 'none' }}
             >
               <div

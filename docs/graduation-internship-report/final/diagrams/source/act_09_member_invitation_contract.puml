@@ -1,0 +1,53 @@
+@startuml
+title QUY TRÌNH MỜI THÀNH VIÊN MỚI VÀ KÝ KẾT HỢP ĐỒNG (ACT-09)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+|Trưởng Nhóm (LEADER)|
+start
+:Mở panel quản lý nhóm;
+:Nhập Email người nhận và % cổ phần dự kiến chuyển giao;
+:Bấm "Gửi Lời Mời Gia Nhập";
+
+|Hệ Thống Backend (Spring Boot)|
+:Tạo MembershipInvitation kèm hạn chót 7 ngày;
+:Gửi thư mời điện tử kèm đường dẫn xác nhận;
+
+|Người Được Mời (Invitee)|
+:Nhận thư mời, đăng nhập vào EVShare 3D;
+:Xem bảng minh họa quyền lợi và nghĩa vụ tài chính;
+if (Đồng ý tham gia?) then (Đồng ý)
+    :Bấm "Chấp Thuận Gia Nhập";
+    
+    |Hệ Thống Backend (Spring Boot)|
+    :Tự động thêm thành viên mới vào GroupMember;
+    :Sinh phiên bản hợp đồng mới CoOwnershipContractVersion (DRAFT);
+    :Thông báo cho toàn bộ thành viên nhóm vào ký số;
+    
+    |Toàn Bộ Thành Viên Nhóm|
+    :Đọc điều khoản hợp đồng trên CoOwnerContractPanel;
+    :Bấm "Ký Xác Nhận Hợp Đồng (DEMO Signature)";
+    
+    |Hệ Thống Backend (Spring Boot)|
+    :Lưu bản ghi chấp thuận ContractAcceptance;
+    if (Đủ 100% chữ ký thành viên?) then (Đủ 100%)
+        :Chuyển trạng thái hợp đồng mới sang ACTIVE;
+        :Đánh dấu hợp đồng cũ sang SUPERSEDED;
+        :Cấp quyền truy cập đầy đủ vào Virtual Garage 3D;
+    else (Chưa đủ chữ ký)
+        :Duy trì trạng thái PENDING_SIGNATURES;
+    endif
+else (Từ chối)
+    :Bấm "Từ Chối";
+    |Hệ Thống Backend (Spring Boot)|
+    :Hủy bỏ lời mời;
+endif
+stop
+@enduml

@@ -183,6 +183,17 @@ export async function completeTransfer(transferId: string): Promise<OwnershipTra
   }
 }
 
+export async function recoverEligibleTransfers(): Promise<OwnershipTransferResponse[]> {
+  try {
+    const res = await authenticatedFetch('/api/ownership-transfers/recover-eligible', {
+      method: 'POST',
+    });
+    return await safeParseResponse<OwnershipTransferResponse[]>(res);
+  } catch (err) {
+    return [];
+  }
+}
+
 export async function fetchOwnershipHistory(groupId: string): Promise<OwnershipHistoryResponse[]> {
   try {
     const res = await authenticatedFetch(`/api/groups/${groupId}/ownership-history`);

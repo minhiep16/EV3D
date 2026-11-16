@@ -1,0 +1,46 @@
+@startuml
+title SƠ ĐỒ TUẦN TỰ: TỪ CHỐI THANH TOÁN VÀ NỘP LẠI MINH CHỨNG (SEQ-23)
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam sequenceMessageAlign center
+
+autonumber
+actor "Chủ Xe (CO_OWNER)" as CoOwner
+actor "Nhân Viên (STAFF)" as Staff
+participant "FinanceZonePanel" as UI
+participant "PersonalPaymentController" as Controller
+participant "PersonalPaymentService" as Service
+database "MySQL Database" as DB
+
+Staff -> Controller : POST /api/personal-payments/{id}/verify {verified: false, rejectionReason: 'Biên lai mờ/sai STK'}
+activate Controller
+Controller -> Service : verifyPayment(paymentId, staffId, request)
+activate Service
+
+Service -> DB : UPDATE personal_expense_payments SET status = 'REJECTED', rejection_reason = ?, verified_by = staffId
+Service -> DB : UPDATE expense_shares SET status = 'ALLOCATED' (Giữ nguyên khoản nợ chưa thanh toán)
+Service --> Controller : PaymentResponse (REJECTED)
+deactivate Service
+Controller --> Staff : HTTP 200 OK (Đã từ chối thanh toán)
+deactivate Controller
+
+CoOwner -> UI : Xem thông báo từ chối thanh toán kèm lý do
+activate UI
+CoOwner -> UI : Tải lên ảnh biên lai chuyển khoản rõ nét mới, bấm "Nộp Lại"
+UI -> Controller : POST /api/expenses/{id}/personal-payments {amount, referenceCode: 'RE-DEMO-02', proofUrl}
+activate Controller
+Controller -> Service : submitPayment(expenseId, userId, request)
+activate Service
+Service -> DB : INSERT INTO personal_expense_payments (status = 'PAYMENT_SUBMITTED', retry_count = 1)
+Service --> Controller : PaymentResponse (SUBMITTED)
+deactivate Service
+Controller --> UI : HTTP 201 Created (Đã gửi lại minh chứng thanh toán)
+UI --> CoOwner : Chờ nhân viên đối soát lại
+deactivate UI
+deactivate Controller
+@enduml

@@ -345,6 +345,8 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
       await Promise.all([
         refetch(),
         refetchEligibility(),
+        queryClient.invalidateQueries({ queryKey: ['activeHandovers'] }),
+        queryClient.invalidateQueries({ queryKey: ['activeVehicleHandovers'] }),
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandovers', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['activeVehicleHandover', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['handoverHistory', vehicle.id] }),
@@ -355,6 +357,10 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
         queryClient.invalidateQueries({ queryKey: ['booking-trip'] }),
         queryClient.invalidateQueries({ queryKey: ['vehicleRelevantBooking', vehicle.id] }),
         queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['vehicleBookings'] }),
+        queryClient.invalidateQueries({ queryKey: ['vehicleBookings', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['vehicles'] }),
+        queryClient.invalidateQueries({ queryKey: ['activeTrip', vehicle.id] }),
       ]);
     } catch (err: any) {
       setErrorMessage(err.message || 'Không thể xác nhận giao xe.');
@@ -852,7 +858,7 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
                   </div>
 
                   {/* Active CTA: BẮT ĐẦU KIỂM TRA XE */}
-                  {isStaff ? (
+                  {(isStaff || isAdmin) ? (
                     <button
                       type="button"
                       onClick={() => handleStartInspection(eligibility?.bookingId || handover?.bookingId)}
@@ -1127,207 +1133,20 @@ export const VehicleHandoverWorld: React.FC<VehicleHandoverWorldProps> = ({ vehi
         />
       )}
 
-      {false && isAdmin && (
-        /* ADMIN Read-only Monitoring Panel (Section 11, 24) */
-        <group position={[2.7, 1.35, 0]}>
-          <Billboard follow={true}>
-            <HolographicPanelFrame3D width={2.65} height={3.6} color="#a855f7" />
-            <Html center distanceFactor={8.8} style={{ pointerEvents: 'none', userSelect: 'none' }}>
-              <div
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                  pointerEvents: 'auto',
-                  width: '350px',
-                  background: 'rgba(8, 12, 22, 0.95)',
-                  backdropFilter: 'blur(20px)',
-                  border: '1px solid rgba(168, 85, 247, 0.5)',
-                  boxShadow:
-                    '0 20px 50px rgba(0, 0, 0, 0.85), 0 0 30px rgba(168, 85, 247, 0.25)',
-                  borderRadius: '16px',
-                  padding: '22px',
-                  color: '#ffffff',
-                  fontFamily: 'var(--font-family)',
-                }}
-              >
-                <div
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    fontSize: '10.5px',
-                    fontWeight: 800,
-                    color: '#c084fc',
-                    letterSpacing: '0.08em',
-                    textTransform: 'uppercase',
-                    marginBottom: '10px',
-                  }}
-                >
-                  <Eye size={14} />
-                  THEO DÕI BÀN GIAO & CHECK-IN (ADMIN)
-                </div>
-
-                {/* Handover Status & Checkpoint Progress */}
-                <div
-                  style={{
-                    background: 'rgba(15, 23, 42, 0.65)',
-                    border: '1px solid rgba(168, 85, 247, 0.25)',
-                    borderRadius: '10px',
-                    padding: '10px 14px',
-                    marginBottom: '12px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                  }}
-                >
-                  <div>
-                    <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '2px' }}>
-                      Trạng thái hiện tại
-                    </div>
-                    <div
-                      style={{
-                        display: 'inline-block',
-                        fontSize: '12px',
-                        fontWeight: 800,
-                        color: HANDOVER_STATUS_CONFIG[handover.status].color,
-                        background: HANDOVER_STATUS_CONFIG[handover.status].badgeBg,
-                        padding: '2px 8px',
-                        borderRadius: '6px',
-                      }}
-                    >
-                      {HANDOVER_STATUS_CONFIG[handover.status].labelVi}
-                    </div>
-                  </div>
-
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '2px' }}>
-                      Tiến độ kiểm tra
-                    </div>
-                    <div style={{ fontSize: '13px', fontWeight: 800, color: '#c084fc' }}>
-                      {handover.totalInspectedCount} / {handover.requiredCheckpointsCount} điểm
-                    </div>
-                  </div>
-                </div>
-
-                {/* Handover Stakeholders */}
-                <div
-                  style={{
-                    background: 'rgba(30, 41, 59, 0.4)',
-                    border: '1px solid rgba(148, 163, 184, 0.15)',
-                    borderRadius: '10px',
-                    padding: '10px 14px',
-                    marginBottom: '12px',
-                    fontSize: '11.5px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '6px',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#94a3b8' }}>Người nhận xe:</span>
-                    <span style={{ fontWeight: 700, color: '#ffffff' }}>
-                      {handover.coOwnerName}
-                    </span>
-                  </div>
-                  {handover.coOwnerEmail && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#94a3b8' }}>Tài khoản:</span>
-                      <span style={{ fontWeight: 600, color: '#38bdf8' }}>
-                        {handover.coOwnerEmail}
-                      </span>
-                    </div>
-                  )}
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#94a3b8' }}>Nhân viên bàn giao:</span>
-                    <span style={{ fontWeight: 600, color: '#c084fc' }}>
-                      {handover.staffName || 'Chưa phân công'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Inspection Checkpoints Summary List */}
-                <div style={{ marginBottom: '14px' }}>
-                  <div
-                    style={{
-                      fontSize: '11px',
-                      color: '#94a3b8',
-                      fontWeight: 700,
-                      marginBottom: '6px',
-                    }}
-                  >
-                    DANH SÁCH 8 ĐIỂM KIỂM TRA:
-                  </div>
-                  <div
-                    style={{
-                      maxHeight: '140px',
-                      overflowY: 'auto',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '4px',
-                    }}
-                  >
-                    {HANDOVER_CHECKPOINTS.map((cp) => {
-                      const item = (handover.inspections || []).find(
-                        (i) => i.vehiclePartCode === cp.code
-                      );
-                      const cond = item?.conditionStatus;
-                      return (
-                        <div
-                          key={cp.code}
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            fontSize: '11px',
-                            background: 'rgba(15, 23, 42, 0.5)',
-                            padding: '4px 8px',
-                            borderRadius: '6px',
-                          }}
-                        >
-                          <span style={{ color: '#ffffff' }}>{cp.nameVi}</span>
-                          <span
-                            style={{
-                              fontSize: '10px',
-                              fontWeight: 700,
-                              color: cond === 'GOOD'
-                                ? '#34d399'
-                                : cond === 'WARNING'
-                                ? '#fbbf24'
-                                : cond === 'DAMAGED'
-                                ? '#f87171'
-                                : '#64748b',
-                            }}
-                          >
-                            {cond === 'GOOD'
-                              ? 'Tốt'
-                              : cond === 'WARNING'
-                              ? 'Cảnh báo'
-                              : cond === 'DAMAGED'
-                              ? 'Hư hỏng'
-                              : 'Chưa kiểm tra'}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    background: 'rgba(168, 85, 247, 0.1)',
-                    border: '1px solid rgba(168, 85, 247, 0.3)',
-                    borderRadius: '8px',
-                    padding: '8px',
-                    textAlign: 'center',
-                    fontSize: '10.5px',
-                    color: '#c084fc',
-                  }}
-                >
-                  Chế độ giám sát hệ thống (Read-Only) — Không có thao tác bàn giao trực tiếp.
-                </div>
-              </div>
-            </Html>
-          </Billboard>
-        </group>
+      {/* 3. Operational Inspection Panel (Rendered for STAFF & ADMIN when handover exists) */}
+      {(isStaff || isAdmin) && handover && (
+        <StaffInspectionPanel3D
+          handover={handover}
+          activeHandovers={activeHandovers}
+          onSelectBookingId={(bId) => setSelectedBookingId(bId)}
+          selectedCheckpoint={currentCheckpointObj}
+          onCloseCheckpoint={clearHandoverCheckpointSelection}
+          onStartInspection={handleStartInspection}
+          onSubmitInspection={handleSubmitInspection}
+          onMarkReady={handleMarkReady}
+          onConfirmHandover={handleConfirmHandover}
+          isSubmitting={isSubmitting}
+        />
       )}
     </group>
   );

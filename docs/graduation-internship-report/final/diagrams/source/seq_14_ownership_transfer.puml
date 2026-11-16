@@ -1,0 +1,68 @@
+@startuml
+title SƠ ĐỒ TUẦN TỰ: CHUYỂN NHƯỢNG CỔ PHẦN ĐỒNG SỞ HỮU (SEQ-14)
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam sequenceMessageAlign center
+skinparam participant {
+    BackgroundColor #F8F9FA
+    BorderColor #2C3E50
+    FontColor #2C3E50
+}
+skinparam actor {
+    BackgroundColor #E8F4F8
+    BorderColor #1A5276
+}
+skinparam database {
+    BackgroundColor #FEF9E7
+    BorderColor #B7950B
+}
+
+autonumber
+actor "Bên Chuyển" as Seller
+actor "Bên Nhận" as Buyer
+actor "Trưởng Nhóm" as Leader
+participant "CoOwnershipController" as Controller
+participant "CoOwnershipService" as Service
+database "MySQL Database" as DB
+
+Seller -> Controller : POST /api/co-ownership/transfers {toUserId, percentage}
+activate Controller
+Controller -> Service : requestTransfer(fromUserId, toUserId, percentage)
+activate Service
+Service -> DB : INSERT INTO ownership_transfer_requests (status = 'PENDING_CONSENT')
+Service --> Controller : TransferResponse
+deactivate Service
+Controller --> Seller : HTTP 201 Created
+deactivate Controller
+
+Buyer -> Controller : POST /api/co-ownership/transfers/{id}/consent {accept: true}
+activate Controller
+Controller -> Service : consentTransfer(transferId, buyerId)
+activate Service
+Service -> DB : UPDATE ownership_transfer_requests SET buyer_consented = true
+Service --> Controller : OK
+deactivate Service
+Controller --> Buyer : HTTP 200 OK
+deactivate Controller
+
+Leader -> Controller : POST /api/co-ownership/transfers/{id}/approve
+activate Controller
+Controller -> Service : executeTransfer(transferId, leaderId)
+activate Service
+note over Service : Giao dịch nguyên tử @Transactional
+Service -> DB : Trừ % của Bên Chuyển trong ownership_shares
+Service -> DB : Cộng % cho Bên Nhận trong ownership_shares
+Service -> DB : Kiểm tra Invariant: SUM(percentage) == 100.0000%
+Service -> DB : INSERT INTO ownership_change_histories ...
+Service -> DB : UPDATE ownership_transfer_requests SET status = 'COMPLETED'
+Service --> Controller : TransferResponse (COMPLETED)
+deactivate Service
+Controller --> Leader : HTTP 200 OK
+deactivate Controller
+
+@enduml

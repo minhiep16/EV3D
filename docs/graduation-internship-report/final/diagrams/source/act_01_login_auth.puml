@@ -1,0 +1,54 @@
+@startuml
+title QUY TRÌNH ĐĂNG NHẬP VÀ XÁC THỰC PHI TRẠNG THÁI JWT (ACT-01)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+|Người Dùng|
+start
+:Mở màn hình AuthScene.tsx;
+:Nhập địa chỉ Email và Mật khẩu;
+:Bấm nút "Đăng Nhập";
+
+|Giao Diện Web (React)|
+:Gửi yêu cầu POST /api/auth/login;
+
+|Hệ Thống Backend (Spring Boot)|
+:Tìm kiếm tài khoản theo Email;
+if (Tài khoản tồn tại và đang hoạt động?) then (Có)
+    :Đối chiếu mật khẩu qua BCryptPasswordEncoder;
+    if (Mật khẩu trùng khớp?) then (Đúng)
+        :Sinh Access Token JWT (HMAC-SHA256);
+        :Sinh Refresh Token ngẫu nhiên và lưu vào CSDL;
+        :Trả về HTTP 200 OK kèm cặp Token & Role;
+        
+        |Giao Diện Web (React)|
+        :Lưu Access Token & Refresh Token vào authStore;
+        :Cập nhật trạng thái người dùng;
+        :Chuyển hướng camera vào không gian /garage;
+        
+        |Người Dùng|
+        :Trải nghiệm không gian Virtual Garage 3D;
+        stop
+    else (Sai)
+        |Hệ Thống Backend (Spring Boot)|
+        :Ném ngoại lệ BadCredentialsException;
+        :Trả về HTTP 401 Unauthorized;
+    endif
+else (Không)
+    |Hệ Thống Backend (Spring Boot)|
+    :Trả về HTTP 401 Unauthorized;
+endif
+
+|Giao Diện Web (React)|
+:Hiển thị thông báo lỗi màu đỏ trên form;
+|Người Dùng|
+:Kiểm tra và nhập lại thông tin;
+stop
+@enduml

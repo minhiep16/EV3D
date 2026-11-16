@@ -13,11 +13,13 @@ import {
   History,
   Activity,
   Plus,
+  Info,
 } from 'lucide-react';
 import { VehicleResponse } from '../../../types/vehicle';
 import {
   ChargingSessionResponse,
   ChargingStationResponse,
+  VehicleEnergyInventoryResponse,
 } from '../../../types/charging';
 import {
   fetchChargingStations,
@@ -27,6 +29,7 @@ import {
   completeChargingSession,
   cancelChargingSession,
   progressChargingSession,
+  fetchVehicleEnergyInventory,
 } from '../../../services/chargingApi';
 import { CHARGING_STATION_THEMES } from '../../../config/chargingVisualConfig';
 import { useWorldStore } from '../../../store/worldStore';
@@ -109,10 +112,22 @@ export const ChargingPanel: React.FC<ChargingPanelProps> = ({
     enabled: Boolean(vehicle?.id && activeTab === 'HISTORY'),
   });
 
+  // 4. Authoritative TanStack Query: Vehicle Physical Energy Inventory & Dynamic Tariffs
+  const {
+    data: energyInventory,
+    refetch: refetchEnergyInventory,
+  } = useQuery<VehicleEnergyInventoryResponse | null>({
+    queryKey: ['vehicleEnergyInventory', vehicle?.id],
+    queryFn: () => (vehicle?.id ? fetchVehicleEnergyInventory(vehicle.id) : Promise.resolve(null)),
+    enabled: Boolean(vehicle?.id),
+    refetchInterval: 5000,
+  });
+
   const invalidateAllChargingQueries = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['activeChargingSession', vehicle.id] }),
       queryClient.invalidateQueries({ queryKey: ['chargingSessions', vehicle.id] }),
+      queryClient.invalidateQueries({ queryKey: ['vehicleEnergyInventory', vehicle.id] }),
       queryClient.invalidateQueries({ queryKey: ['chargingStations'] }),
       queryClient.invalidateQueries({ queryKey: ['vehicles'] }),
       queryClient.invalidateQueries({ queryKey: ['vehicle', vehicle.id] }),
@@ -137,12 +152,14 @@ export const ChargingPanel: React.FC<ChargingPanelProps> = ({
 
   // Start Charging Mutation
   const startMutation = useMutation({
-    mutationFn: () =>
-      createChargingSession(vehicle.id, {
-        chargingStationId: selectedStationId || selectedStationObj?.id || 'station-cs01-uuid',
+    mutationFn: () => {
+      const targetStationId = selectedStationObj?.id || selectedStationId || 'station-cs01-uuid';
+      return createChargingSession(vehicle.id, {
+        chargingStationId: targetStationId,
         targetSocPercent: targetSoc,
         startImmediately: true,
-      }),
+      });
+    },
     onSuccess: async () => {
       setActionError(null);
       await invalidateAllChargingQueries();
@@ -228,6 +245,30 @@ export const ChargingPanel: React.FC<ChargingPanelProps> = ({
 
   const isVehicleMaintenance = vehicle.status === 'MAINTENANCE';
   const isVehicleInUse = vehicle.status === 'IN_USE';
+  const isOperationsRole = user?.role === 'STAFF' || user?.role === 'ADMIN';
+
+  // Authoritative session control permission from activeSession (or derived fallback)
+  const canControlSession = useMemo(() => {
+    if (!activeSession) return true;
+    if (activeSession.canControl !== undefined && activeSession.canControl !== null) {
+      return Boolean(activeSession.canControl);
+    }
+    if (isOperationsRole) return true;
+    if (user?.id && activeSession.startedByUserId) {
+      return user.id === activeSession.startedByUserId;
+    }
+    return false;
+  }, [activeSession, isOperationsRole, user?.id]);
+
+  const isStaffSession = useMemo(() => {
+    if (!activeSession) return false;
+    return Boolean(
+      activeSession.isStaffCharging ||
+      activeSession.isExemptFromFee ||
+      activeSession.startedByUserRole === 'STAFF' ||
+      activeSession.startedByUserRole === 'ADMIN'
+    );
+  }, [activeSession]);
 
   const effectiveStations = useMemo(() => {
     if (stations.length > 0) return stations;
@@ -238,6 +279,7 @@ export const ChargingPanel: React.FC<ChargingPanelProps> = ({
         name: 'Trụ sạc Siêu tốc 01',
         status: 'AVAILABLE' as const,
         maxPowerKw: 150,
+        pricePerKwh: 3850,
         connectorType: 'CCS2' as const,
         locationLabel: 'Khu vực Sạc Nhanh - Bay CS-01',
         posX: 3.5,
@@ -252,6 +294,7 @@ export const ChargingPanel: React.FC<ChargingPanelProps> = ({
         name: 'Trụ sạc Tiêu chuẩn 02',
         status: 'AVAILABLE' as const,
         maxPowerKw: 60,
+        pricePerKwh: 3850,
         connectorType: 'CCS2' as const,
         locationLabel: 'Khu vực Sạc Nhanh - Bay CS-02',
         posX: 4.5,
@@ -284,6 +327,18 @@ export const ChargingPanel: React.FC<ChargingPanelProps> = ({
     ? `${activeSession?.powerKw || selectedStationObj.maxPowerKw} kW DC`
     : '0 kW';
 
+  // Physical Energy Inventory & Tariff Calculation
+  const stationPricePerKwh = selectedStationObj?.pricePerKwh ?? 3850;
+  const deltaSoc = Math.max(0, targetSoc - currentSoc);
+  const expectedEnergyKwh = Number(((deltaSoc * totalCapacityKwh) / 100).toFixed(1));
+  const estimatedChargingCost = Math.round(expectedEnergyKwh * stationPricePerKwh);
+  const weightedAverageTariff = energyInventory?.weightedAverageCostPerKwh ?? 3850;
+  const totalStoredEnergyCost = energyInventory?.totalInventoryCost ?? Math.round(availableKwh * weightedAverageTariff);
+
+  const operationalExplanatoryNote = isOperationsRole
+    ? 'Nhân viên thực hiện sạc xe. Chi phí điện được phân bổ theo mức tiêu thụ của thành viên sử dụng phương tiện.'
+    : 'Chi phí điện được phân bổ theo lượng điện sử dụng trong chuyến đi, không phụ thuộc vào người thực hiện sạc.';
+
   return (
     <div
       data-ui-interactive="true"
@@ -293,23 +348,22 @@ export const ChargingPanel: React.FC<ChargingPanelProps> = ({
       style={{
         position: 'fixed',
         top: '76px',
-        right: '24px',
-        width: 'min(440px, calc(100vw - 32px))',
-        maxWidth: 'calc(100vw - 32px)',
-        height: 'auto',
+        right: '20px',
+        bottom: '20px',
+        width: 'clamp(440px, 28vw, 495px)',
+        maxWidth: 'min(495px, calc(100vw - 32px))',
         maxHeight: 'calc(100vh - 96px)',
         zIndex: 40,
         pointerEvents: 'auto',
         display: 'flex',
         flexDirection: 'column',
-        background: 'linear-gradient(180deg, rgba(8, 26, 48, 0.96) 0%, rgba(4, 14, 28, 0.98) 100%)',
+        background: 'rgba(7, 20, 38, 0.94)',
         backdropFilter: 'blur(24px)',
         WebkitBackdropFilter: 'blur(24px)',
-        border: '1.5px solid rgba(0, 242, 254, 0.48)',
+        border: '1.5px solid rgba(0, 242, 254, 0.3)',
         borderRadius: '20px',
         padding: '12px 16px 14px 16px',
-        boxShadow:
-          '0 24px 60px rgba(0, 0, 0, 0.85), 0 0 35px rgba(0, 242, 254, 0.22), inset 0 1.5px 1px rgba(255, 255, 255, 0.15)',
+        boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65), 0 0 30px rgba(0, 242, 254, 0.16)',
         color: '#f8fafc',
         boxSizing: 'border-box',
         overflow: 'hidden',
@@ -413,8 +467,12 @@ export const ChargingPanel: React.FC<ChargingPanelProps> = ({
             <button
               type="button"
               onClick={() => {
-                if (onClose) onClose();
-                else returnToVehicleOverview();
+                if (onClose) {
+                  onClose();
+                } else {
+                  useWorldStore.getState().closeGaragePanel('CHARGING');
+                  useWorldStore.getState().exitChargingMode();
+                }
               }}
               title="Đóng bảng điều khiển sạc"
               style={{
@@ -632,10 +690,113 @@ export const ChargingPanel: React.FC<ChargingPanelProps> = ({
                       {activeSession.chargingStationName}
                     </div>
                   </div>
+                  <div style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '6px 8px', borderRadius: '6px', gridColumn: 'span 2' }}>
+                    <div style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span>Người vận hành sạc</span>
+                      <span
+                        style={{
+                          fontSize: '8.5px',
+                          fontWeight: 700,
+                          padding: '1px 5px',
+                          borderRadius: '4px',
+                          background:
+                            activeSession.startedByUserRole === 'STAFF' || activeSession.startedByUserRole === 'ADMIN'
+                              ? 'rgba(56, 189, 248, 0.2)'
+                              : 'rgba(16, 185, 129, 0.2)',
+                          color:
+                            activeSession.startedByUserRole === 'STAFF' || activeSession.startedByUserRole === 'ADMIN'
+                              ? '#38bdf8'
+                              : '#34d399',
+                        }}
+                      >
+                        {activeSession.startedByUserRole === 'STAFF'
+                          ? 'NHÂN VIÊN'
+                          : activeSession.startedByUserRole === 'ADMIN'
+                          ? 'QUẢN TRỊ VIÊN'
+                          : 'ĐỒNG SỞ HỮU'}
+                      </span>
+                    </div>
+                    <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '11px', marginTop: '2px' }}>
+                      {activeSession.startedByUserName || 'Người vận hành hệ thống'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Session Cost & Tariff Info */}
+                <div
+                  style={{
+                    background: isStaffSession ? 'rgba(56, 189, 248, 0.08)' : 'rgba(0, 242, 254, 0.06)',
+                    border: isStaffSession ? '1px solid rgba(56, 189, 248, 0.35)' : '1px solid rgba(0, 242, 254, 0.2)',
+                    borderRadius: '8px',
+                    padding: '8px 10px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                    fontSize: '10px',
+                  }}
+                >
+                  {isStaffSession ? (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontWeight: 800, color: '#38bdf8', letterSpacing: '0.04em' }}>
+                          NHÂN VIÊN SẠC XE
+                        </span>
+                        <span
+                          style={{
+                            fontSize: '9px',
+                            color: '#34d399',
+                            fontWeight: 800,
+                            background: 'rgba(52, 211, 153, 0.15)',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            border: '1px solid rgba(52, 211, 153, 0.3)',
+                          }}
+                        >
+                          Miễn phí sạc — Phục vụ vận hành
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '3px' }}>
+                        <span style={{ color: '#94a3b8' }}>Đơn giá định mức trạm:</span>
+                        <strong style={{ color: '#ffffff' }}>
+                          {(activeSession.tariffPerKwh || stationPricePerKwh).toLocaleString('vi-VN')} đ/kWh
+                        </strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#94a3b8' }}>Phí phát sinh phiên sạc:</span>
+                        <strong style={{ color: '#34d399' }}>0 đ (Miễn phí vận hành)</strong>
+                      </div>
+                      <div style={{ fontSize: '9px', color: '#38bdf8', fontStyle: 'italic', marginTop: '2px', lineHeight: 1.3 }}>
+                        {isOperationsRole
+                          ? 'Hoạt động chuẩn bị xe vận hành: Không phát sinh nghĩa vụ tài chính cá nhân hoặc chia sẻ chi phí.'
+                          : 'Xe đang được nhân viên sạc để chuẩn bị cho các chuyến đi tiếp theo.'}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#94a3b8' }}>Đơn giá trụ sạc:</span>
+                        <strong style={{ color: '#ffffff' }}>
+                          {(activeSession.tariffPerKwh || stationPricePerKwh).toLocaleString('vi-VN')} đ/kWh
+                        </strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#94a3b8' }}>Chi phí phiên sạc tạm tính:</span>
+                        <strong style={{ color: '#10b981' }}>
+                          {(activeSession.chargingCost != null
+                            ? Number(activeSession.chargingCost)
+                            : Math.round((activeSession.energyDeliveredKwh || 0) * (activeSession.tariffPerKwh || stationPricePerKwh))
+                          ).toLocaleString('vi-VN')} đ
+                        </strong>
+                      </div>
+                      <div style={{ fontSize: '9px', color: '#38bdf8', fontStyle: 'italic', marginTop: '2px', lineHeight: 1.3 }}>
+                        {operationalExplanatoryNote}
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 {/* DEV simulation helper */}
-                {Boolean((import.meta as any)?.env?.DEV) && sessionSoc < sessionTarget && (
+                {Boolean((import.meta as any)?.env?.DEV) && sessionSoc < sessionTarget && canControlSession && (
                   <button
                     type="button"
                     onClick={() => progressMutation.mutate(Math.min(sessionTarget, sessionSoc + 5))}
@@ -681,6 +842,21 @@ export const ChargingPanel: React.FC<ChargingPanelProps> = ({
                 </div>
                 <div style={{ fontSize: '10.5px', color: '#94a3b8' }}>
                   Đã nạp {activeSession.energyDeliveredKwh || 0} kWh tại trụ {activeSession.chargingStationCode}. Xe sẵn sàng khởi hành.
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#cbd5e1' }}>
+                  <span>Chi phí phiên sạc:</span>
+                  <strong style={{ color: isStaffSession ? '#34d399' : '#10b981' }}>
+                    {isStaffSession
+                      ? '0 đ (Miễn phí vận hành)'
+                      : activeSession.chargingCost != null
+                      ? `${Number(activeSession.chargingCost).toLocaleString('vi-VN')} đ`
+                      : '0 đ'}
+                  </strong>
+                </div>
+                <div style={{ fontSize: '9px', color: '#38bdf8', fontStyle: 'italic', lineHeight: 1.3 }}>
+                  {isStaffSession
+                    ? 'Hoạt động vận hành chuẩn bị xe: Không phát sinh chi phí thanh toán.'
+                    : operationalExplanatoryNote}
                 </div>
               </div>
             ) : (
@@ -942,12 +1118,17 @@ export const ChargingPanel: React.FC<ChargingPanelProps> = ({
                             </span>
                           </div>
 
-                          <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-                            <span style={{ fontSize: '13px', fontWeight: 900, color: '#ffffff' }}>
-                              {st.maxPowerKw} kW
-                            </span>
-                            <span style={{ fontSize: '9px', color: '#94a3b8' }}>
-                              {st.connectorType}
+                          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '4px' }}>
+                            <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                              <span style={{ fontSize: '13px', fontWeight: 900, color: '#ffffff' }}>
+                                {st.maxPowerKw} kW
+                              </span>
+                              <span style={{ fontSize: '9px', color: '#94a3b8' }}>
+                                {st.connectorType}
+                              </span>
+                            </div>
+                            <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#38bdf8' }}>
+                              {(st.pricePerKwh ?? 3850).toLocaleString('vi-VN')} đ/kWh
                             </span>
                           </div>
 
@@ -969,31 +1150,80 @@ export const ChargingPanel: React.FC<ChargingPanelProps> = ({
                   </div>
                 </div>
 
-                {/* 4. Session Estimation Info */}
+                {/* 4. Session Estimation & Energy Cost Allocation Breakdown */}
                 <div
                   style={{
                     display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    background: 'rgba(10, 30, 56, 0.65)',
-                    borderRadius: '8px',
-                    padding: '6px 10px',
-                    border: '1px solid rgba(0, 242, 254, 0.2)',
-                    fontSize: '10.5px',
+                    flexDirection: 'column',
+                    gap: '6px',
+                    background: 'rgba(10, 30, 56, 0.75)',
+                    borderRadius: '10px',
+                    padding: '8px 10px',
+                    border: '1px solid rgba(0, 242, 254, 0.28)',
+                    fontSize: '10px',
                     color: '#cbd5e1',
                   }}
                 >
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    <Clock size={12} color="#00f2fe" />
-                    <span>Dự kiến đến {targetSoc}%:</span>
-                  </span>
-                  <span style={{ color: '#00f2fe', fontWeight: 800 }}>
-                    {estimatedRemainingMinutes != null && estimatedRemainingMinutes > 0
-                      ? `~${estimatedRemainingMinutes} phút`
-                      : currentSoc >= targetSoc
-                      ? 'Đã đạt mục tiêu'
-                      : 'Đang tính...'}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '4px', borderBottom: '1px solid rgba(255, 255, 255, 0.07)' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <Clock size={12} color="#00f2fe" />
+                      <span>Dự kiến đến {targetSoc}%:</span>
+                    </span>
+                    <span style={{ color: '#00f2fe', fontWeight: 800 }}>
+                      {estimatedRemainingMinutes != null && estimatedRemainingMinutes > 0
+                        ? `~${estimatedRemainingMinutes} phút`
+                        : currentSoc >= targetSoc
+                        ? 'Đã đạt mục tiêu'
+                        : 'Đang tính...'}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#94a3b8' }}>Dự kiến điện nạp:</span>
+                    <strong style={{ color: '#ffffff' }}>{expectedEnergyKwh} kWh</strong>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#94a3b8' }}>Đơn giá trụ sạc áp dụng:</span>
+                    <strong style={{ color: '#38bdf8' }}>{stationPricePerKwh.toLocaleString('vi-VN')} đ/kWh</strong>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#94a3b8' }}>Ước tính chi phí phiên nạp:</span>
+                    <strong style={{ color: '#10b981' }}>{estimatedChargingCost.toLocaleString('vi-VN')} đ</strong>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#94a3b8' }}>Đơn giá bình quân pin xe:</span>
+                    <strong style={{ color: '#fbbf24' }}>{weightedAverageTariff.toLocaleString('vi-VN')} đ/kWh</strong>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#94a3b8' }}>Giá trị điện còn lại trong xe:</span>
+                    <strong style={{ color: '#00f2fe' }}>{totalStoredEnergyCost.toLocaleString('vi-VN')} đ</strong>
+                  </div>
+
+                  {/* Mandatory Explanatory Note */}
+                  <div
+                    style={{
+                      background: 'rgba(0, 242, 254, 0.08)',
+                      border: '1px solid rgba(0, 242, 254, 0.25)',
+                      borderRadius: '6px',
+                      padding: '6px 8px',
+                      fontSize: '9.5px',
+                      color: '#bae6fd',
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '5px',
+                      lineHeight: 1.35,
+                      marginTop: '2px',
+                    }}
+                  >
+                    <Info size={12} color="#00f2fe" style={{ flexShrink: 0, marginTop: '2px' }} />
+                    <span>
+                      {operationalExplanatoryNote}
+                    </span>
+                  </div>
                 </div>
               </>
             )}
@@ -1001,6 +1231,27 @@ export const ChargingPanel: React.FC<ChargingPanelProps> = ({
         ) : (
           /* Tab Content: HISTORY */
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {/* Informative Note for History */}
+            <div
+              style={{
+                background: 'rgba(0, 242, 254, 0.08)',
+                border: '1px solid rgba(0, 242, 254, 0.25)',
+                borderRadius: '8px',
+                padding: '6px 8px',
+                fontSize: '9.5px',
+                color: '#bae6fd',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '6px',
+                lineHeight: 1.35,
+              }}
+            >
+              <Info size={12} color="#00f2fe" style={{ flexShrink: 0, marginTop: '2px' }} />
+              <span>
+                Chi phí phiên sạc được lưu trữ vào kho điện năng của xe và phân bổ cho người sử dụng trong chuyến đi.
+              </span>
+            </div>
+
             {isLoadingHistory ? (
               <div style={{ textAlign: 'center', padding: '16px', color: '#38bdf8', fontSize: '11px' }}>
                 Đang tải lịch sử sạc...
@@ -1019,48 +1270,79 @@ export const ChargingPanel: React.FC<ChargingPanelProps> = ({
                 Xe chưa có lịch sử sạc.
               </div>
             ) : (
-              sessionHistory.map((sess) => (
-                <div
-                  key={sess.id}
-                  style={{
-                    background: 'rgba(15, 23, 42, 0.75)',
-                    border: '1px solid rgba(56, 189, 248, 0.15)',
-                    borderRadius: '8px',
-                    padding: '6px 9px',
-                    fontSize: '10.5px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '3px',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontWeight: 700, color: '#ffffff' }}>
-                      {sess.chargingStationName}
-                    </span>
-                    <span
-                      style={{
-                        fontSize: '8.5px',
-                        fontWeight: 700,
-                        color: sess.status === 'COMPLETED' ? '#10b981' : sess.status === 'ACTIVE' ? '#00f2fe' : '#94a3b8',
-                        background: 'rgba(255, 255, 255, 0.05)',
-                        padding: '1px 5px',
-                        borderRadius: '3px',
-                      }}
-                    >
-                      {sess.status === 'COMPLETED' ? 'HOÀN TẤT' : sess.status === 'ACTIVE' ? 'ĐANG SẠC' : 'ĐÃ HỦY'}
-                    </span>
-                  </div>
+              sessionHistory.map((sess) => {
+                const sessionCost =
+                  sess.chargingCost != null
+                    ? Number(sess.chargingCost)
+                    : sess.tariffPerKwh && sess.energyDeliveredKwh
+                    ? Math.round(sess.energyDeliveredKwh * sess.tariffPerKwh)
+                    : null;
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#cbd5e1', fontSize: '9.5px' }}>
-                    <span>
-                      SOC: <strong style={{ color: '#38bdf8' }}>{sess.startSocPercent}%</strong> → <strong style={{ color: '#10b981' }}>{sess.currentSocPercent}%</strong>
-                    </span>
-                    <span>
-                      Điện năng: <strong style={{ color: '#ffffff' }}>{sess.energyDeliveredKwh || 0} kWh</strong>
-                    </span>
+                return (
+                  <div
+                    key={sess.id}
+                    style={{
+                      background: 'rgba(15, 23, 42, 0.75)',
+                      border: '1px solid rgba(56, 189, 248, 0.15)',
+                      borderRadius: '8px',
+                      padding: '8px 10px',
+                      fontSize: '10.5px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontWeight: 700, color: '#ffffff' }}>
+                        {sess.chargingStationName}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '8.5px',
+                          fontWeight: 700,
+                          color: sess.status === 'COMPLETED' ? '#10b981' : sess.status === 'ACTIVE' ? '#00f2fe' : '#94a3b8',
+                          background: 'rgba(255, 255, 255, 0.05)',
+                          padding: '1px 5px',
+                          borderRadius: '3px',
+                        }}
+                      >
+                        {sess.status === 'COMPLETED' ? 'HOÀN TẤT' : sess.status === 'ACTIVE' ? 'ĐANG SẠC' : 'ĐÃ HỦY'}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#cbd5e1', fontSize: '9.5px' }}>
+                      <span>
+                        Người nạp: <strong style={{ color: '#38bdf8' }}>{sess.startedByUserName || 'Người vận hành'}</strong>
+                      </span>
+                      <span>
+                        SOC: <strong style={{ color: '#38bdf8' }}>{sess.startSocPercent}%</strong> → <strong style={{ color: '#10b981' }}>{sess.currentSocPercent}%</strong>
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#cbd5e1', fontSize: '9.5px' }}>
+                      <span>
+                        Điện nạp: <strong style={{ color: '#ffffff' }}>{sess.energyDeliveredKwh || 0} kWh</strong>
+                      </span>
+                      <span>
+                        Chi phí: <strong style={{ color: (sess.isStaffCharging || sess.isExemptFromFee || sess.startedByUserRole === 'STAFF' || sess.startedByUserRole === 'ADMIN') ? '#34d399' : '#10b981' }}>
+                          {(sess.isStaffCharging || sess.isExemptFromFee || sess.startedByUserRole === 'STAFF' || sess.startedByUserRole === 'ADMIN')
+                            ? '0 đ (Miễn phí vận hành)'
+                            : sessionCost != null
+                            ? `${sessionCost.toLocaleString('vi-VN')} đ`
+                            : 'Chờ hoàn tất'}
+                        </strong>
+                      </span>
+                    </div>
+
+                    {sess.startedAt && (
+                      <div style={{ fontSize: '9px', color: '#64748b', display: 'flex', justifyContent: 'space-between', borderTop: '1px solid rgba(255, 255, 255, 0.04)', paddingTop: '2px', marginTop: '1px' }}>
+                        <span>Thời gian: {new Date(sess.startedAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}</span>
+                        {sess.durationSeconds != null && <span>{Math.round(sess.durationSeconds / 60)} phút</span>}
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         )}
@@ -1083,54 +1365,92 @@ export const ChargingPanel: React.FC<ChargingPanelProps> = ({
         {activeTab === 'OPERATION' ? (
           isVehicleCharging && activeSession ? (
             /* Action Buttons for ACTIVE session */
-            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '6px' }}>
-              <button
-                type="button"
-                onClick={() => completeMutation.mutate(activeSession.id)}
-                disabled={completeMutation.isPending}
-                style={{
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  border: 'none',
-                  color: '#ffffff',
-                  borderRadius: '10px',
-                  padding: '9px 10px',
-                  fontSize: '11px',
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '5px',
-                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
-                }}
-              >
-                <CheckCircle2 size={13} />
-                <span>HOÀN TẤT SẠC</span>
-              </button>
+            canControlSession ? (
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => completeMutation.mutate(activeSession.id)}
+                  disabled={completeMutation.isPending}
+                  style={{
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    border: 'none',
+                    color: '#ffffff',
+                    borderRadius: '10px',
+                    padding: '9px 10px',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '5px',
+                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
+                  }}
+                >
+                  <CheckCircle2 size={13} />
+                  <span>HOÀN TẤT SẠC</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => cancelMutation.mutate(activeSession.id)}
-                disabled={cancelMutation.isPending}
+                <button
+                  type="button"
+                  onClick={() => cancelMutation.mutate(activeSession.id)}
+                  disabled={cancelMutation.isPending}
+                  style={{
+                    background: 'rgba(239, 68, 68, 0.2)',
+                    border: '1px solid #ef4444',
+                    color: '#fca5a5',
+                    borderRadius: '10px',
+                    padding: '9px 8px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  <Square size={11} />
+                  <span>DỪNG SẠC</span>
+                </button>
+              </div>
+            ) : (
+              /* READ-ONLY MONITORING INTERFACE FOR NON-OPERATOR CO-OWNERS */
+              <div
                 style={{
-                  background: 'rgba(239, 68, 68, 0.2)',
-                  border: '1px solid #ef4444',
-                  color: '#fca5a5',
+                  background: 'rgba(15, 32, 60, 0.85)',
+                  border: '1px solid rgba(56, 189, 248, 0.35)',
                   borderRadius: '10px',
-                  padding: '9px 8px',
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  cursor: 'pointer',
+                  padding: '10px 12px',
                   display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '4px',
+                  flexDirection: 'column',
+                  gap: '6px',
                 }}
               >
-                <Square size={11} />
-                <span>DỪNG SẠC</span>
-              </button>
-            </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <div
+                      style={{
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '50%',
+                        background: '#38bdf8',
+                        boxShadow: '0 0 8px #38bdf8',
+                      }}
+                    />
+                    <span style={{ fontSize: '11px', fontWeight: 800, color: '#38bdf8', letterSpacing: '0.04em' }}>
+                      ĐANG SẠC — CHỈ THEO DÕI
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '9.5px', color: '#94a3b8' }}>Chế độ xem</span>
+                </div>
+                <div style={{ fontSize: '10.5px', color: '#cbd5e1', lineHeight: 1.4 }}>
+                  {isStaffSession
+                    ? 'Xe đang được nhân viên sạc để chuẩn bị cho các chuyến đi tiếp theo.'
+                    : `Xe đang được ${activeSession.startedByUserName || 'đồng sở hữu khác'} sạc. Bạn có thể theo dõi tiến độ nhưng không thể điều khiển phiên sạc này.`}
+                </div>
+              </div>
+            )
           ) : activeSession && activeSession.status === 'COMPLETED' ? (
             /* Button for COMPLETED session */
             <button

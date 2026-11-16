@@ -33,20 +33,24 @@ export interface StaffGarageLayoutConfig {
 }
 
 export const STAFF_GARAGE_LAYOUT: StaffGarageLayoutConfig = {
-  heroAnchor: [0.2, 0.14, 0.5],
+  heroAnchor: [0.0, 0.14, 0.5],
   previewRowY: 0.52,
   previewRowZ: -3.5,
   previewSpacingX: 2.85,
   previewScale: 0.54,
   maxPreviewVehicles: 4,
   camera: {
-    // Optical center of usable 3D area between 240px left sidebar and 360px right panel
-    target: [0.2, 0.92, 0.5],
-    position: [0.2, 3.2, 9.6],
-    fov: 40,
-    minDistance: 5.5,
-    maxDistance: 18.0,
-    minPolarAngle: 0.45,
+    // Authoritative front-facing showroom overview relative to heroAnchor [0.0, 0.14, 0.5]
+    // Scaled +5% along identical viewing vector: target + (prev - target) * 1.05
+    // target:   [0.0, 1.19, 0.5]
+    // position: [0.0, 2.810, 9.974]
+    // fov: 38
+    target: [0.0, 1.19, 0.5],
+    position: [0.0, 2.810, 9.974],
+    fov: 38,
+    minDistance: 6.0,
+    maxDistance: 15.0,
+    minPolarAngle: 0.40,
     maxPolarAngle: 1.42,
   },
 };

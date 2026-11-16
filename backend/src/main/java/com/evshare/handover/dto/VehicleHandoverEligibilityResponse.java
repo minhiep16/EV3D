@@ -15,6 +15,11 @@ public class VehicleHandoverEligibilityResponse {
     private Instant inspectionCompletedAt;
     private boolean inspectionFresh;
     private Integer inspectedPartsCount;
+    private Integer totalAssessmentRecords;
+    private Integer uniqueAssessedComponents;
+    private Integer requiredComponentCount;
+    private Integer assessedRequiredComponentCount;
+    private Integer unresolvedCriticalDamageCount;
     private String inspectorName;
     private UUID vehicleId;
     private String vehicleName;
@@ -31,7 +36,22 @@ public class VehicleHandoverEligibilityResponse {
     private String handoverStatus;
     private VehicleHandoverResponse handover;
 
+    private boolean previousCustodyUnresolved;
+    private String currentCustodianName;
+    private UUID currentCustodianBookingId;
+    private Instant currentCustodianExpectedReturnTime;
+    private Boolean currentCustodianOverdue;
+
     public VehicleHandoverEligibilityResponse() {
+    }
+
+    public static VehicleHandoverEligibilityResponse notFound(String message) {
+        VehicleHandoverEligibilityResponse resp = new VehicleHandoverEligibilityResponse();
+        resp.setReason(HandoverEligibilityReason.NO_BOOKING);
+        resp.setMessage(message != null ? message : "Không tìm thấy phương tiện với mã định danh cung cấp.");
+        resp.setHandoverAllowed(false);
+        resp.setEligibleForInspection(false);
+        return resp;
     }
 
     public HandoverEligibilityReason getReason() {
@@ -52,6 +72,10 @@ public class VehicleHandoverEligibilityResponse {
 
     public boolean isEligibleForInspection() {
         return eligibleForInspection;
+    }
+
+    public boolean isEligible() {
+        return Boolean.TRUE.equals(this.handoverAllowed);
     }
 
     public void setEligibleForInspection(boolean eligibleForInspection) {
@@ -236,5 +260,85 @@ public class VehicleHandoverEligibilityResponse {
 
     public void setInspectorName(String inspectorName) {
         this.inspectorName = inspectorName;
+    }
+
+    public Integer getTotalAssessmentRecords() {
+        return totalAssessmentRecords;
+    }
+
+    public void setTotalAssessmentRecords(Integer totalAssessmentRecords) {
+        this.totalAssessmentRecords = totalAssessmentRecords;
+    }
+
+    public Integer getUniqueAssessedComponents() {
+        return uniqueAssessedComponents;
+    }
+
+    public void setUniqueAssessedComponents(Integer uniqueAssessedComponents) {
+        this.uniqueAssessedComponents = uniqueAssessedComponents;
+    }
+
+    public Integer getRequiredComponentCount() {
+        return requiredComponentCount;
+    }
+
+    public void setRequiredComponentCount(Integer requiredComponentCount) {
+        this.requiredComponentCount = requiredComponentCount;
+    }
+
+    public Integer getAssessedRequiredComponentCount() {
+        return assessedRequiredComponentCount;
+    }
+
+    public void setAssessedRequiredComponentCount(Integer assessedRequiredComponentCount) {
+        this.assessedRequiredComponentCount = assessedRequiredComponentCount;
+    }
+
+    public Integer getUnresolvedCriticalDamageCount() {
+        return unresolvedCriticalDamageCount;
+    }
+
+    public void setUnresolvedCriticalDamageCount(Integer unresolvedCriticalDamageCount) {
+        this.unresolvedCriticalDamageCount = unresolvedCriticalDamageCount;
+    }
+
+    public boolean isPreviousCustodyUnresolved() {
+        return previousCustodyUnresolved;
+    }
+
+    public void setPreviousCustodyUnresolved(boolean previousCustodyUnresolved) {
+        this.previousCustodyUnresolved = previousCustodyUnresolved;
+    }
+
+    public String getCurrentCustodianName() {
+        return currentCustodianName;
+    }
+
+    public void setCurrentCustodianName(String currentCustodianName) {
+        this.currentCustodianName = currentCustodianName;
+    }
+
+    public UUID getCurrentCustodianBookingId() {
+        return currentCustodianBookingId;
+    }
+
+    public void setCurrentCustodianBookingId(UUID currentCustodianBookingId) {
+        this.currentCustodianBookingId = currentCustodianBookingId;
+    }
+
+    public Instant getCurrentCustodianExpectedReturnTime() {
+        return currentCustodianExpectedReturnTime;
+    }
+
+    public void setCurrentCustodianExpectedReturnTime(Instant currentCustodianExpectedReturnTime) {
+        this.currentCustodianExpectedReturnTime = currentCustodianExpectedReturnTime;
+    }
+
+    public Boolean getCurrentCustodianOverdue() {
+        return currentCustodianOverdue;
+    }
+
+    public void setCurrentCustodianOverdue(Boolean currentCustodianOverdue) {
+        this.currentCustodianOverdue = currentCustodianOverdue;
     }
 }

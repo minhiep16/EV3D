@@ -1,0 +1,23 @@
+@startuml
+title MÁY TRẠNG THÁI: PHIÊN BẢN HỢP ĐỒNG ĐỒNG SỞ HỮU (STATE-07)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+[*] --> DRAFT : Tự động sinh khi có biến động cổ đông/vốn
+
+DRAFT --> PENDING_SIGNATURES : Ban hành dự thảo đến toàn bộ thành viên
+PENDING_SIGNATURES --> ACTIVE : Nhận đủ 100% chữ ký số chấp thuận
+PENDING_SIGNATURES --> CANCELLED : Đàm phán đổ vỡ hoặc hủy mời
+
+ACTIVE --> SUPERSEDED : Khi có phiên bản hợp đồng mới thay thế
+SUPERSEDED --> [*]
+CANCELLED --> [*]
+
+@enduml

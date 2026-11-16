@@ -1,0 +1,66 @@
+@startuml
+title SƠ ĐỒ TUẦN TỰ: KÝ ĐIỆN TỬ HỢP ĐỒNG ĐỒNG SỞ HỮU (SEQ-15)
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam sequenceMessageAlign center
+skinparam participant {
+    BackgroundColor #F8F9FA
+    BorderColor #2C3E50
+    FontColor #2C3E50
+}
+skinparam actor {
+    BackgroundColor #E8F4F8
+    BorderColor #1A5276
+}
+skinparam database {
+    BackgroundColor #FEF9E7
+    BorderColor #B7950B
+}
+
+autonumber
+actor "Chủ Xe (CO_OWNER)" as CoOwner
+participant "ContractUI" as UI
+participant "ContractController" as Controller
+participant "ContractService" as Service
+participant "ContractSignatureRepository" as SigRepo
+database "MySQL Database" as DB
+
+CoOwner -> UI : Xem điều khoản hợp đồng, nhập mã OTP / chữ ký số, bấm "Ký Hợp Đồng"
+activate UI
+UI -> Controller : POST /api/contracts/{id}/sign {signatureData, otpCode}
+activate Controller
+
+Controller -> Service : signContract(contractId, userId, request)
+activate Service
+
+Service -> Service : verifySignatureOtp(userId, otpCode)
+Service -> SigRepo : save(ContractSignature(contractId, userId, signatureHash, signedAt = now()))
+activate SigRepo
+SigRepo -> DB : INSERT INTO contract_signatures ...
+deactivate SigRepo
+
+Service -> DB : SELECT COUNT(*) FROM contract_signatures WHERE contract_id = ?
+DB --> Service : signedCount
+Service -> DB : SELECT COUNT(*) FROM contract_parties WHERE contract_id = ?
+DB --> Service : totalParties
+
+alt signedCount == totalParties
+    Service -> DB : UPDATE contracts SET status = 'FULLY_EXECUTED', executed_at = now()
+    Service --> Controller : ContractResponse (status = FULLY_EXECUTED)
+else signedCount < totalParties
+    Service -> DB : UPDATE contracts SET status = 'PARTIALLY_SIGNED'
+    Service --> Controller : ContractResponse (status = PARTIALLY_SIGNED)
+end
+deactivate Service
+
+Controller --> UI : HTTP 200 OK + ContractResponse
+deactivate Controller
+UI --> CoOwner : Thông báo đã hoàn tất ký nhận
+deactivate UI
+
+@enduml

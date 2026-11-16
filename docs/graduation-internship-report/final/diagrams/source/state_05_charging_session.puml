@@ -1,0 +1,22 @@
+@startuml
+title MÁY TRẠNG THÁI: PHIÊN SẠC PIN PHƯƠNG TIỆN (STATE-05)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+[*] --> INITIALIZING : Cắm súng sạc vào xe
+
+INITIALIZING --> CHARGING : Kích hoạt dòng điện nạp thành công
+CHARGING --> COMPLETED : Người dùng bấm dừng hoặc pin đạt 100%
+CHARGING --> ABORTED : Mất kết nối trụ sạc hoặc sự cố điện lưới
+
+COMPLETED --> [*]
+ABORTED --> [*]
+
+@enduml

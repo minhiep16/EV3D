@@ -1,0 +1,75 @@
+@startuml
+title SƠ ĐỒ TUẦN TỰ: ĐẶT LỊCH XE VÀ XỬ LÝ KHỬ XUNG ĐỘT (SEQ-03)
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam sequenceMessageAlign center
+skinparam participant {
+    BackgroundColor #F8F9FA
+    BorderColor #2C3E50
+    FontColor #2C3E50
+}
+skinparam actor {
+    BackgroundColor #E8F4F8
+    BorderColor #1A5276
+}
+skinparam database {
+    BackgroundColor #FEF9E7
+    BorderColor #B7950B
+}
+
+autonumber
+actor "Chủ Đồng Sở Hữu" as CoOwner
+participant "CoOwnerBookingPanel" as UI
+participant "BookingController" as Controller
+participant "BookingService" as Service
+participant "CoOwnershipService" as OwnershipSvc
+participant "BookingRepository" as BookingRepo
+database "MySQL Database" as DB
+
+CoOwner -> UI : Chọn xe, chọn startTime & endTime, bấm "Đặt Xe"
+activate UI
+UI -> Controller : POST /api/bookings/vehicle/{vehicleId}
+activate Controller
+
+Controller -> Service : createBooking(vehicleId, userId, request)
+activate Service
+
+Service -> Service : Kiểm tra startTime < endTime VÀ startTime >= now - 120s
+Service -> OwnershipSvc : isUserActiveMemberForVehicle(userId, vehicleId)
+activate OwnershipSvc
+OwnershipSvc --> Service : true (Thành viên hợp lệ)
+deactivate OwnershipSvc
+
+Service -> BookingRepo : findConflictingBookings(vehicleId, startTime, endTime, statuses)
+activate BookingRepo
+BookingRepo -> DB : SELECT * FROM bookings WHERE vehicle_id = ?\nAND status IN ('CONFIRMED', 'PENDING')\nAND (start_time < :endTime AND end_time > :startTime)
+DB --> BookingRepo : Danh sách lịch xung đột
+BookingRepo --> Service : List<Booking> conflicts
+deactivate BookingRepo
+
+alt Không có lịch xung đột (conflicts is empty)
+    Service -> BookingRepo : save(new Booking(CONFIRMED))
+    activate BookingRepo
+    BookingRepo -> DB : INSERT INTO bookings ...
+    DB --> BookingRepo : Booking persisted
+    BookingRepo --> Service : Booking entity
+    deactivate BookingRepo
+    
+    Service --> Controller : BookingResponse
+    Controller --> UI : HTTP 201 Created + BookingResponse JSON
+    UI --> CoOwner : Hiển thị thông báo đặt xe thành công
+else Phát hiện xung đột thời gian (conflicts NOT empty)
+    Service --> Controller : throw IllegalArgumentException("Khung giờ này đã được đặt")
+    deactivate Service
+    Controller --> UI : HTTP 400 Bad Request {error: "Khung giờ này đã được đặt"}
+    deactivate Controller
+    UI --> CoOwner : Hiển thị cảnh báo đỏ trên form đặt lịch
+end
+deactivate UI
+
+@enduml

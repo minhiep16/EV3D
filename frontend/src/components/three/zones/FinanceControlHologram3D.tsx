@@ -50,7 +50,13 @@ import {
   useDisburseCommonExpense,
 } from '../../../hooks/useFund';
 import { fetchMyPersonalPayments, submitPersonalPayment, verifyPersonalPayment } from '../../../services/fundApi';
-import { ExpenseCategory, EXPENSE_CATEGORY_METADATA, EXPENSE_STATUS_METADATA } from '../../../types/expense';
+import {
+  ExpenseCategory,
+  ExpenseResponse,
+  ExpenseAllocationPolicy,
+  EXPENSE_CATEGORY_METADATA,
+  EXPENSE_STATUS_METADATA,
+} from '../../../types/expense';
 import { ExpenseItemShares } from '../../zones/ExpenseItemShares';
 import { ExpenseVerificationSection } from '../../zones/ExpenseVerificationSection';
 import { VehicleResponse } from '../../../types/vehicle';

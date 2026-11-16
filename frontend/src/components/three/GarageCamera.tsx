@@ -60,6 +60,12 @@ export const GarageCamera: React.FC = () => {
   const selectedDamageId = useWorldStore((state) => state.selectedDamageId);
   const isDamageDetailModalOpen = useWorldStore((state) => state.isDamageDetailModalOpen);
   const isVehicleDetailOpen = useWorldStore((state) => state.isVehicleDetailOpen);
+  const adminActiveModule = useWorldStore((state) => state.adminActiveModule);
+  const isAdminVehicleGalleryOpen = useWorldStore((state) => state.isAdminVehicleGalleryOpen);
+  const isAdminManagementModalOpen = useWorldStore((state) => state.isAdminManagementModalOpen);
+  const isCoOwnerOperationsCarouselOpen = useWorldStore((state) => state.isCoOwnerOperationsCarouselOpen);
+  const isStaffOperationsCarouselOpen = useWorldStore((state) => state.isStaffOperationsCarouselOpen);
+  const cameraResetTrigger = useWorldStore((state) => state.cameraResetTrigger);
   // Only subscribe to dynamic turntable yaw updates when inspecting a specific vehicle part or checkpoint
   const vehicleYaw = useWorldStore((state) =>
     state.selectedVehiclePartCode || state.selectedVehiclePartId || state.selectedHandoverCheckpoint
@@ -132,10 +138,19 @@ export const GarageCamera: React.FC = () => {
   const initialPreset = getVehicleCameraPreset('OVERVIEW', role, size.width);
   const targetLookAt = useRef(new THREE.Vector3(...initialPreset.target));
   const targetCamPos = useRef<THREE.Vector3 | null>(null);
+  const targetFovRef = useRef<number>(initialPreset.fov ?? (role === 'ADMIN' ? 38 : 40));
   const isTransitioning = useRef(false);
   const lastPresetSignatureRef = useRef<string>('');
+  const lastCameraResetTriggerRef = useRef<number>(cameraResetTrigger);
   const activeModeKeyRef = useRef<string>('');
   const isInitializedRef = useRef(false);
+  const prevIsVehicleDetailOpenRef = useRef(isVehicleDetailOpen);
+  const prevSelectedVehicleIdRef = useRef(selectedVehicleId);
+  const prevAdminActiveModuleRef = useRef(adminActiveModule);
+  const prevIsAdminVehicleGalleryOpenRef = useRef(isAdminVehicleGalleryOpen);
+  const prevIsAdminManagementModalOpenRef = useRef(isAdminManagementModalOpen);
+  const prevIsCoOwnerOperationsCarouselOpenRef = useRef(isCoOwnerOperationsCarouselOpen);
+  const prevIsStaffOperationsCarouselOpenRef = useRef(isStaffOperationsCarouselOpen);
 
   // Dynamic OrbitControls constraints resolved from active camera preset
   const [controlsLimits, setControlsLimits] = useState<{
@@ -226,31 +241,37 @@ export const GarageCamera: React.FC = () => {
       };
     } else if (isVehicleMode) {
       // Resolve active vehicle mode preset key
-      const presetKey = resolveActiveCameraPresetKey({
-        selectedZone,
-        selectedVehicleId,
-        selectedVehiclePartId: activePartCode,
-        selectedVehiclePartCode: activePartCode,
-        selectedDamageId,
-        isDamageDetailModalOpen,
-        vehicleCoOwnershipMode,
-        vehicleBookingMode,
-        vehicleHandoverMode,
-        vehicleReceiptReviewMode,
-        vehicleTripStartMode,
-        vehicleTripVisualizationMode,
-        vehicleDamageMappingMode,
-        vehicleDamageHistoryMode,
-        vehicleMaintenanceMode,
-        vehicleBatteryXrayMode,
-        vehicleChargingMode,
-        vehicleInspectionMode,
-        isExplorationMode,
-        isVehicleDetailOpen,
-      });
+      const presetKey = resolveActiveCameraPresetKey(
+        {
+          selectedZone,
+          selectedVehicleId,
+          selectedVehiclePartId: activePartCode,
+          selectedVehiclePartCode: activePartCode,
+          selectedDamageId,
+          isDamageDetailModalOpen,
+          vehicleCoOwnershipMode,
+          vehicleBookingMode,
+          vehicleHandoverMode,
+          vehicleReceiptReviewMode,
+          vehicleTripStartMode,
+          vehicleTripVisualizationMode,
+          vehicleDamageMappingMode,
+          vehicleDamageHistoryMode,
+          vehicleMaintenanceMode,
+          vehicleBatteryXrayMode,
+          vehicleChargingMode,
+          vehicleInspectionMode,
+          isExplorationMode,
+          isVehicleDetailOpen,
+          adminActiveModule,
+        } as any,
+        role
+      );
       activePresetKey = presetKey;
 
-      if (
+      if (presetKey === 'OVERVIEW') {
+        preset = getVehicleCameraPreset('OVERVIEW', role, size.width);
+      } else if (
         (presetKey === 'VEHICLE_PART_INSPECTION' ||
           isExplorationMode ||
           vehicleDamageMappingMode ||
@@ -270,9 +291,9 @@ export const GarageCamera: React.FC = () => {
           vehicleYaw,
           resolvedVehicleCode
         );
-      } else if (isExplorationMode) {
-        // Co-Owner Exploration Overview: centered hero view without lateral panel offset
-        preset = getVehicleCameraPreset('VEHICLE_FOCUS', role, size.width, resolvedVehicleCode);
+      } else if (isExplorationMode && !activePartCode) {
+        // Co-Owner Exploration Overview: enter exploration without unnecessary zoom, stay at OVERVIEW
+        preset = getVehicleCameraPreset('OVERVIEW', role, size.width);
       } else if (
         (vehicleHandoverMode || vehicleReceiptReviewMode) &&
         selectedHandoverCheckpoint
@@ -286,24 +307,87 @@ export const GarageCamera: React.FC = () => {
           resolvedVehicleCode
         );
       } else {
-        preset = getVehicleCameraPreset(presetKey, role, size.width, resolvedVehicleCode);
+        preset = getVehicleCameraPreset(presetKey, role, size.width, currentVehicle || resolvedVehicleCode);
       }
     } else {
       // Default Garage Overview
       preset = getVehicleCameraPreset('OVERVIEW', role, size.width);
     }
 
-    const currentModeKey = `${role || 'CO_OWNER'}_${activePresetKey}_${selectedVehicleId || ''}_${activePartCode || ''}_${selectedHandoverCheckpoint || ''}_${isVehicleDetailOpen}`;
+    const currentModeKey =
+      role === 'ADMIN'
+        ? `ADMIN_${activePresetKey}_${adminActiveModule || 'NONE'}_${isAdminVehicleGalleryOpen ? 'GALLERY' : 'IDLE'}_${isAdminManagementModalOpen ? 'MODAL' : 'IDLE'}`
+        : activePresetKey === 'OVERVIEW'
+        ? `${role || 'CO_OWNER'}_OVERVIEW`
+        : `${role || 'CO_OWNER'}_${activePresetKey}_${activePartCode || ''}_${selectedHandoverCheckpoint || ''}`;
     const modeChanged = activeModeKeyRef.current !== currentModeKey;
     const nextSignature = `${preset.target.join(',')}|${preset.position.join(',')}|${preset.fov ?? 40}`;
 
-    // Only initiate animated camera transition when the logical mode or target changes
-    if (modeChanged && lastPresetSignatureRef.current !== nextSignature) {
+    const prevIsDetailOpen = prevIsVehicleDetailOpenRef.current;
+    prevIsVehicleDetailOpenRef.current = isVehicleDetailOpen;
+
+    const prevVehicleId = prevSelectedVehicleIdRef.current;
+    prevSelectedVehicleIdRef.current = selectedVehicleId;
+
+    const prevAdminModule = prevAdminActiveModuleRef.current;
+    prevAdminActiveModuleRef.current = adminActiveModule;
+
+    const prevGalleryOpen = prevIsAdminVehicleGalleryOpenRef.current;
+    prevIsAdminVehicleGalleryOpenRef.current = isAdminVehicleGalleryOpen;
+
+    const prevModalOpen = prevIsAdminManagementModalOpenRef.current;
+    prevIsAdminManagementModalOpenRef.current = isAdminManagementModalOpen;
+
+    const prevCoOwnerCarouselOpen = prevIsCoOwnerOperationsCarouselOpenRef.current;
+    prevIsCoOwnerOperationsCarouselOpenRef.current = isCoOwnerOperationsCarouselOpen;
+
+    const prevStaffCarouselOpen = prevIsStaffOperationsCarouselOpenRef.current;
+    prevIsStaffOperationsCarouselOpenRef.current = isStaffOperationsCarouselOpen;
+
+    const staffDetailClosed = isOperations && prevIsDetailOpen && !isVehicleDetailOpen;
+    const coOwnerDetailClosed = !isOperations && prevIsDetailOpen && !isVehicleDetailOpen;
+    const staffOverviewReset = isOperations && prevVehicleId != null && selectedVehicleId == null;
+    const staffCarouselClosed = prevStaffCarouselOpen && !isStaffOperationsCarouselOpen;
+    const coOwnerCarouselClosed = prevCoOwnerCarouselOpen && !isCoOwnerOperationsCarouselOpen;
+    const adminModuleClosed = role === 'ADMIN' && prevAdminModule !== 'NONE' && adminActiveModule === 'NONE';
+    const adminGalleryToggled = role === 'ADMIN' && prevGalleryOpen !== isAdminVehicleGalleryOpen;
+    const adminModalClosed = role === 'ADMIN' && prevModalOpen && !isAdminManagementModalOpen;
+    const isResetTriggered = lastCameraResetTriggerRef.current !== cameraResetTrigger;
+    lastCameraResetTriggerRef.current = cameraResetTrigger;
+
+    // Only initiate animated camera transition when:
+    // 1. Explicit camera reset triggered across the application
+    // 2. ADMIN/STAFF/CO_OWNER explicitly closed a functional module/panel, carousel or gallery
+    // 3. The logical mode changed (e.g. entering/exiting part inspection)
+    // 4. Or the target preset signature changed
+    if (
+      isResetTriggered ||
+      adminModuleClosed ||
+      adminGalleryToggled ||
+      adminModalClosed ||
+      staffDetailClosed ||
+      coOwnerDetailClosed ||
+      staffOverviewReset ||
+      staffCarouselClosed ||
+      coOwnerCarouselClosed ||
+      modeChanged ||
+      lastPresetSignatureRef.current !== nextSignature
+    ) {
       activeModeKeyRef.current = currentModeKey;
       lastPresetSignatureRef.current = nextSignature;
       targetLookAt.current.set(...preset.target);
       targetCamPos.current = new THREE.Vector3(...preset.position);
+      targetFovRef.current = preset.fov ?? (role === 'ADMIN' ? 38 : 40);
       isTransitioning.current = true;
+
+      // Cancel obsolete damping momentum from OrbitControls so residual pan/rotations do not fight reset
+      if (controlsRef.current) {
+        const ctrl = controlsRef.current as any;
+        if (ctrl._sphericalDelta) ctrl._sphericalDelta.set(0, 0, 0);
+        if (ctrl.sphericalDelta) ctrl.sphericalDelta.set(0, 0, 0);
+        if (ctrl._panOffset) ctrl._panOffset.set(0, 0, 0);
+        if (ctrl.panOffset) ctrl.panOffset.set(0, 0, 0);
+      }
 
       // Synchronize FOV if preset specifies custom FOV
       if (preset.fov && (camera as THREE.PerspectiveCamera).isPerspectiveCamera) {
@@ -381,6 +465,12 @@ export const GarageCamera: React.FC = () => {
     vehicleInspectionMode,
     isExplorationMode,
     vehicleYaw,
+    adminActiveModule,
+    isAdminVehicleGalleryOpen,
+    isAdminManagementModalOpen,
+    isCoOwnerOperationsCarouselOpen,
+    isStaffOperationsCarouselOpen,
+    cameraResetTrigger,
     role,
     size.width,
   ]);
@@ -423,23 +513,49 @@ export const GarageCamera: React.FC = () => {
     }
 
     if (isTransitioning.current && targetCamPos.current) {
-      // Smoothly glide controls target towards vehicle preset target
-      controlsRef.current.target.lerp(targetLookAt.current, delta * 3.8);
+      // Clear residual damping deltas during transition to prevent competing camera drift
+      const ctrl = controlsRef.current as any;
+      if (ctrl._sphericalDelta) ctrl._sphericalDelta.set(0, 0, 0);
+      if (ctrl.sphericalDelta) ctrl.sphericalDelta.set(0, 0, 0);
+      if (ctrl._panOffset) ctrl._panOffset.set(0, 0, 0);
+      if (ctrl.panOffset) ctrl.panOffset.set(0, 0, 0);
+
+      // Smoothly glide controls target towards vehicle preset target (500–700ms glide duration)
+      controlsRef.current.target.lerp(targetLookAt.current, delta * 5.5);
 
       // Smoothly glide camera position towards vehicle preset position
-      camera.position.lerp(targetCamPos.current, delta * 3.4);
+      camera.position.lerp(targetCamPos.current, delta * 5.0);
+
+      // Smoothly interpolate FOV if perspective camera
+      if ((camera as THREE.PerspectiveCamera).isPerspectiveCamera && targetFovRef.current) {
+        const pCam = camera as THREE.PerspectiveCamera;
+        if (Math.abs(pCam.fov - targetFovRef.current) > 0.05) {
+          pCam.fov = THREE.MathUtils.lerp(pCam.fov, targetFovRef.current, delta * 5.0);
+          pCam.updateProjectionMatrix();
+        }
+      }
 
       // Floor clearance clamp during transition: never allow camera to dip below floor level
       camera.position.y = Math.max(0.45, camera.position.y);
       controlsRef.current.target.y = Math.max(0.15, controlsRef.current.target.y);
 
-      // When close enough, end transition to yield full orbit control to user
+      // When close enough, snap to target and end transition to yield full orbit control to user
       if (
-        camera.position.distanceTo(targetCamPos.current) < 0.15 &&
-        controlsRef.current.target.distanceTo(targetLookAt.current) < 0.1
+        camera.position.distanceTo(targetCamPos.current) < 0.08 &&
+        controlsRef.current.target.distanceTo(targetLookAt.current) < 0.06
       ) {
         controlsRef.current.target.copy(targetLookAt.current);
         camera.position.copy(targetCamPos.current);
+        if ((camera as THREE.PerspectiveCamera).isPerspectiveCamera && targetFovRef.current) {
+          const pCam = camera as THREE.PerspectiveCamera;
+          pCam.fov = targetFovRef.current;
+          pCam.updateProjectionMatrix();
+        }
+        if (ctrl._sphericalDelta) ctrl._sphericalDelta.set(0, 0, 0);
+        if (ctrl.sphericalDelta) ctrl.sphericalDelta.set(0, 0, 0);
+        if (ctrl._panOffset) ctrl._panOffset.set(0, 0, 0);
+        if (ctrl.panOffset) ctrl.panOffset.set(0, 0, 0);
+        controlsRef.current.update();
         isTransitioning.current = false;
         targetCamPos.current = null;
       }

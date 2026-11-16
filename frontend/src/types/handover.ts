@@ -67,6 +67,11 @@ export interface VehicleHandoverData {
   expired?: boolean;
   eligibilityReason?: HandoverEligibilityReason;
   eligibilityMessage?: string;
+  previousCustodyUnresolved?: boolean;
+  currentCustodianName?: string;
+  currentCustodianBookingId?: string;
+  currentCustodianExpectedReturnTime?: string;
+  currentCustodianOverdue?: boolean;
 }
 
 export type HandoverEligibilityReason =
@@ -75,7 +80,12 @@ export type HandoverEligibilityReason =
   | 'TOO_EARLY'
   | 'READY_FOR_PREPARATION'
   | 'HANDED_OVER'
+  | 'AWAITING_DEPARTURE'
+  | 'DEPARTURE_OVERDUE'
+  | 'NO_SHOW_VIOLATION'
+  | 'RECOVERY_PENDING'
   | 'VEHICLE_IN_USE'
+  | 'PREVIOUS_CUSTODY_UNRESOLVED'
   | 'NO_INSPECTION'
   | 'INSPECTION_EXPIRED'
   | 'INSPECTION_FAILED'
@@ -116,6 +126,11 @@ export interface VehicleHandoverEligibilityResponse {
   handoverId?: string;
   handoverStatus?: HandoverStatus;
   handover?: VehicleHandoverData;
+  previousCustodyUnresolved?: boolean;
+  currentCustodianName?: string;
+  currentCustodianBookingId?: string;
+  currentCustodianExpectedReturnTime?: string;
+  currentCustodianOverdue?: boolean;
 }
 
 export interface VehicleInspectionSubmitRequest {
@@ -158,11 +173,41 @@ export const HANDOVER_ELIGIBILITY_CONFIG: Record<
     badgeBg: 'rgba(168, 85, 247, 0.2)',
     border: 'rgba(168, 85, 247, 0.4)',
   },
+  AWAITING_DEPARTURE: {
+    labelVi: 'ĐÃ BÀN GIAO - CHỜ KHỞI HÀNH',
+    color: '#38bdf8',
+    badgeBg: 'rgba(56, 189, 248, 0.2)',
+    border: 'rgba(56, 189, 248, 0.4)',
+  },
+  DEPARTURE_OVERDUE: {
+    labelVi: 'QUÁ GIỜ KHỞI HÀNH',
+    color: '#f97316',
+    badgeBg: 'rgba(249, 115, 22, 0.2)',
+    border: 'rgba(249, 115, 22, 0.4)',
+  },
+  NO_SHOW_VIOLATION: {
+    labelVi: 'VI PHẠM NO-SHOW (KHÔNG ĐẾN NHẬN XE)',
+    color: '#ef4444',
+    badgeBg: 'rgba(239, 68, 68, 0.2)',
+    border: 'rgba(239, 68, 68, 0.4)',
+  },
+  RECOVERY_PENDING: {
+    labelVi: 'CẦN THU HỒI XE VÀO BÃI',
+    color: '#dc2626',
+    badgeBg: 'rgba(220, 38, 38, 0.25)',
+    border: 'rgba(220, 38, 38, 0.5)',
+  },
   VEHICLE_IN_USE: {
     labelVi: 'XE ĐANG ĐƯỢC SỬ DỤNG',
     color: '#00f2fe',
     badgeBg: 'rgba(0, 242, 254, 0.2)',
     border: 'rgba(0, 242, 254, 0.4)',
+  },
+  PREVIOUS_CUSTODY_UNRESOLVED: {
+    labelVi: 'CHỜ THÀNH VIÊN TRƯỚC TRẢ XE',
+    color: '#f87171',
+    badgeBg: 'rgba(239, 68, 68, 0.15)',
+    border: 'rgba(239, 68, 68, 0.45)',
   },
   NO_INSPECTION: {
     labelVi: 'CHƯA CÓ KIỂM TRA HỢP LỆ',

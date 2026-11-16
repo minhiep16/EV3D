@@ -6,7 +6,7 @@ import { Environment, Lightformer } from '@react-three/drei';
  * Generates an in-memory high-dynamic-range reflection cubemap (rendered once at startup, 0 network overhead)
  * so vehicle automotive paint, glass, metal columns, podium trim, and showroom floor receive authentic reflections.
  */
-export const WorldEnvironment: React.FC = () => {
+const WorldEnvironmentComponent: React.FC = () => {
   return (
     <>
       {/* Bright, high-key architectural showroom daylight background */}
@@ -84,4 +84,6 @@ export const WorldEnvironment: React.FC = () => {
     </>
   );
 };
+
+export const WorldEnvironment = React.memo(WorldEnvironmentComponent);
 

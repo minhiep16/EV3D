@@ -2,7 +2,9 @@ package com.evshare.ownership.repository;
 
 import com.evshare.ownership.entity.OwnershipTransferRequest;
 import com.evshare.ownership.entity.TransferStatus;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -16,6 +18,10 @@ import java.util.UUID;
 @Repository
 public interface OwnershipTransferRequestRepository extends JpaRepository<OwnershipTransferRequest, UUID> {
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT r FROM OwnershipTransferRequest r WHERE r.id = :id")
+    Optional<OwnershipTransferRequest> findByIdForUpdate(@Param("id") UUID id);
+
     List<OwnershipTransferRequest> findByGroupIdOrderByCreatedAtDesc(UUID groupId);
 
     List<OwnershipTransferRequest> findByVehicleIdOrderByCreatedAtDesc(UUID vehicleId);
@@ -25,6 +31,8 @@ public interface OwnershipTransferRequestRepository extends JpaRepository<Owners
     List<OwnershipTransferRequest> findByToUserIdOrderByCreatedAtDesc(UUID toUserId);
 
     List<OwnershipTransferRequest> findByFromUserIdOrderByCreatedAtDesc(UUID fromUserId);
+
+    List<OwnershipTransferRequest> findByStatusIn(Collection<TransferStatus> statuses);
 
     @Query("SELECT r FROM OwnershipTransferRequest r WHERE r.fromUser.id = :fromUserId AND r.status IN :statuses")
     List<OwnershipTransferRequest> findByFromUserIdAndStatusIn(@Param("fromUserId") UUID fromUserId, @Param("statuses") Collection<TransferStatus> statuses);

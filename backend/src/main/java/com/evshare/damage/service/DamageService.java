@@ -43,7 +43,7 @@ public class DamageService {
     public DamageService(DamageRecordRepository damageRecordRepository,
                          TripRepository tripRepository,
                          VehicleRepository vehicleRepository,
-                         VehicleHandoverRepository handoverRepository,
+                         @org.springframework.context.annotation.Lazy VehicleHandoverRepository handoverRepository,
                          UserRepository userRepository) {
         this(damageRecordRepository, tripRepository, vehicleRepository, handoverRepository, userRepository, null);
     }
@@ -52,7 +52,7 @@ public class DamageService {
     public DamageService(DamageRecordRepository damageRecordRepository,
                          TripRepository tripRepository,
                          VehicleRepository vehicleRepository,
-                         VehicleHandoverRepository handoverRepository,
+                         @org.springframework.context.annotation.Lazy VehicleHandoverRepository handoverRepository,
                          UserRepository userRepository,
                          @org.springframework.context.annotation.Lazy com.evshare.vehicle.service.VehicleService vehicleService) {
         this.damageRecordRepository = damageRecordRepository;
@@ -98,7 +98,7 @@ public class DamageService {
             throw new IllegalStateException("Chuyến đi thiếu thông tin lịch đặt");
         }
 
-        VehicleHandover handover = handoverRepository.findByBookingId(booking.getId()).orElse(null);
+        VehicleHandover handover = handoverRepository != null ? handoverRepository.findByBookingId(booking.getId()).orElse(null) : null;
 
         User author = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy người dùng tạo ghi nhận"));
@@ -147,9 +147,55 @@ public class DamageService {
 
         Trip recentTrip = tripRepository.findFirstByVehicleIdAndStatusOrderByEndedAtDesc(vehicleId, TripStatus.COMPLETED)
                 .or(() -> tripRepository.findFirstByVehicleIdOrderByCreatedAtDesc(vehicleId))
-                .orElseThrow(() -> new IllegalStateException("Phương tiện chưa có dữ liệu chuyến đi để ghi nhận hư hỏng"));
+                .orElse(null);
 
-        return createDamage(recentTrip.getId(), request, currentUserId, currentUserRole);
+        if (recentTrip != null) {
+            return createDamage(recentTrip.getId(), request, currentUserId, currentUserRole);
+        }
+
+        Vehicle vehicle = vehicleRepository.findById(vehicleId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy phương tiện với mã: " + vehicleId));
+
+        String partCode = request.getVehiclePartCode() != null ? request.getVehiclePartCode().trim().toUpperCase() : "";
+        if (!VehiclePartCode.isValid(partCode)) {
+            throw new IllegalArgumentException("Mã bộ phận phương tiện không hợp lệ: " + request.getVehiclePartCode());
+        }
+
+        validateCoordinates(request);
+
+        User author = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy người dùng tạo ghi nhận"));
+
+        DamageRecord record = new DamageRecord(
+                UUID.randomUUID(),
+                vehicle,
+                null,
+                null,
+                null,
+                partCode,
+                request.getDamageType(),
+                request.getSeverity(),
+                request.getNote(),
+                request.getLocalPositionX(),
+                request.getLocalPositionY(),
+                request.getLocalPositionZ(),
+                author
+        );
+
+        DamageRecord saved = damageRecordRepository.save(record);
+
+        if (notificationService != null) {
+            notificationService.notifyCoOwnersOfDamageRecorded(
+                    vehicle.getId(),
+                    vehicle.getLicensePlate(),
+                    saved.getVehiclePartCode(),
+                    saved.getDamageType() != null ? saved.getDamageType().name() : null,
+                    saved.getSeverity() != null ? saved.getSeverity().name() : null,
+                    saved.getId()
+            );
+        }
+
+        return DamageRecordResponse.fromEntity(saved);
     }
 
     /**

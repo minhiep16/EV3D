@@ -105,8 +105,8 @@ public class OnboardingController {
         return ResponseEntity.ok(onboardingService.submitRegistration(draftId, principal));
     }
 
-    // 2B. Staff Registration Review Workflow
-    @GetMapping("/staff/applications")
+    // 2B. Staff & Admin Registration Review Workflow
+    @GetMapping({"/staff/applications", "/admin/applications"})
     public ResponseEntity<List<VehicleRegistrationDraftResponse>> getStaffApplications(
             @RequestParam(required = false) String status,
             @AuthenticationPrincipal UserPrincipal principal
@@ -114,7 +114,7 @@ public class OnboardingController {
         return ResponseEntity.ok(onboardingService.getStaffApplications(status, principal));
     }
 
-    @GetMapping("/staff/applications/{applicationId}")
+    @GetMapping({"/staff/applications/{applicationId}", "/admin/applications/{applicationId}"})
     public ResponseEntity<VehicleRegistrationDraftResponse> getStaffApplicationById(
             @PathVariable UUID applicationId,
             @AuthenticationPrincipal UserPrincipal principal
@@ -122,7 +122,7 @@ public class OnboardingController {
         return ResponseEntity.ok(onboardingService.getStaffApplicationById(applicationId, principal));
     }
 
-    @PostMapping("/staff/applications/{applicationId}/review")
+    @PostMapping({"/staff/applications/{applicationId}/review", "/admin/applications/{applicationId}/review"})
     public ResponseEntity<VehicleRegistrationDraftResponse> reviewVehicleRegistration(
             @PathVariable UUID applicationId,
             @RequestBody ReviewVehicleRegistrationRequest request,

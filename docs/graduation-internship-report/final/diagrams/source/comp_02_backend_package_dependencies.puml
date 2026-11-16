@@ -1,0 +1,64 @@
+@startuml
+title KIẾN TRÚC GÓI MÃ NGUỒN VÀ PHỤ THUỘC BACKEND SPRING BOOT
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+package "com.evshare" #F8F9FA {
+    package "config & security" #EBF5FB {
+        [SecurityConfig]
+        [JwtTokenProvider]
+        [JwtAuthenticationFilter]
+    }
+    
+    package "user & auth" #D4E6F1 {
+        [AuthService]
+        [UserService]
+        [UserRepository]
+    }
+    
+    package "vehicle & ownership" #E8F8F5 {
+        [VehicleService]
+        [CoOwnershipService]
+        [OwnershipShareRepository]
+    }
+    
+    package "booking & trip" #D1F2EB {
+        [BookingService]
+        [TripService]
+        [VehicleHandoverService]
+    }
+    
+    package "energy & charging" #FEF9E7 {
+        [ChargingSessionService]
+        [VehicleEnergyInventoryService]
+    }
+    
+    package "expense & fund" #FCF3CF {
+        [ExpenseShareService]
+        [PersonalPaymentService]
+    }
+    
+    package "governance" #FADBD8 {
+        [CoOwnershipContractService]
+        [VoteProposalService]
+        [DisputeService]
+    }
+}
+
+[user & auth] ..> [config & security] : uses
+[booking & trip] ..> [vehicle & ownership] : verifies membership
+[booking & trip] ..> [user & auth] : links driver
+[booking & trip] ..> [energy & charging] : deducts energy
+[booking & trip] ..> [expense & fund] : creates charging expense
+[energy & charging] ..> [vehicle & ownership] : updates vehicle battery
+[expense & fund] ..> [vehicle & ownership] : checks shares
+[governance] ..> [vehicle & ownership] : contract & voting
+
+@enduml

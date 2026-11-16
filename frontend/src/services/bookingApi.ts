@@ -53,7 +53,27 @@ export async function createVehicleBooking(
 export async function cancelBooking(bookingId: string): Promise<Booking> {
   try {
     const res = await authenticatedFetch(`/api/bookings/${bookingId}/cancel`, {
-      method: 'PATCH',
+      method: 'POST',
+    });
+    return await safeParseResponse<Booking>(res);
+  } catch (err) {
+    if (err instanceof ApiError) throw err;
+    if (err instanceof TypeError || (err instanceof Error && err.message.includes('fetch'))) {
+      throw new ApiError(0, 'Không thể kết nối đến máy chủ.');
+    }
+    throw err;
+  }
+}
+
+export async function extendBookingApi(
+  bookingId: string,
+  newEndTime: string,
+  reason?: string
+): Promise<Booking> {
+  try {
+    const res = await authenticatedFetch(`/api/bookings/${bookingId}/extend`, {
+      method: 'POST',
+      body: JSON.stringify({ newEndTime, reason }),
     });
     return await safeParseResponse<Booking>(res);
   } catch (err) {

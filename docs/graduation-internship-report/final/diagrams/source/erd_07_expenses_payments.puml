@@ -1,0 +1,53 @@
+@startuml
+title LƯỢC ĐỒ CƠ SỞ DỮ LIỆU: CHI PHÍ VÀ THANH TOÁN CÁ NHÂN (ERD-07)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+entity "expenses" as expenses {
+    * id : CHAR(36) [PK]
+    --
+    * vehicle_id : CHAR(36) [FK]
+    group_id : CHAR(36) [FK]
+    created_by_user_id : CHAR(36) [FK]
+    amount : DECIMAL(15,2)
+    category : VARCHAR(50)
+    allocation_policy : VARCHAR(50)
+    status : VARCHAR(30)
+    created_at : TIMESTAMP
+}
+
+entity "expense_shares" as shares {
+    * id : CHAR(36) [PK]
+    --
+    * expense_id : CHAR(36) [FK]
+    * user_id : CHAR(36) [FK]
+    share_percentage : DECIMAL(7,4)
+    share_amount : DECIMAL(15,2)
+    status : VARCHAR(30)
+}
+
+entity "personal_expense_payments" as payments {
+    * id : CHAR(36) [PK]
+    --
+    * expense_share_id : CHAR(36) [FK]
+    * user_id : CHAR(36) [FK]
+    amount : DECIMAL(15,2)
+    payment_method : VARCHAR(50)
+    reference_code : VARCHAR(100)
+    status : VARCHAR(30)
+    verified_by_user_id : CHAR(36) [FK]
+    submitted_at : TIMESTAMP
+    verified_at : TIMESTAMP
+}
+
+expenses ||--|{ shares
+shares ||--o{ payments
+
+@enduml

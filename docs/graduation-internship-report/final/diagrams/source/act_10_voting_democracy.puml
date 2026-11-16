@@ -1,0 +1,48 @@
+@startuml
+title QUY TRÌNH BIỂU QUYẾT TẬP THỂ VÀ THỰC THI NGHỊ QUYẾT (ACT-10)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+|Thành Viên (CO_OWNER)|
+start
+:Mở panel CoOwnerVotingPanel;
+:Tạo đề xuất mới (Bảo dưỡng, Sửa chữa, Mua bảo hiểm);
+:Thiết lập thời hạn bình chọn và phương thức biểu quyết;
+:Bấm "Phát Động Biểu Quyết";
+
+|Hệ Thống Backend (Spring Boot)|
+:Lưu VoteProposal (status = OPEN);
+:Gửi thông báo đến toàn bộ đồng sở hữu trong nhóm;
+
+|Các Thành Viên Nhóm|
+:Mở danh sách đề xuất đang mở;
+:Bấm chọn Bỏ phiếu (FOR - Đồng ý, AGAINST - Phản đối);
+
+|Hệ Thống Backend (Spring Boot)|
+:Kiểm tra: Thành viên đã bỏ phiếu cho đề xuất này chưa?;
+if (Chưa bỏ phiếu) then (Hợp lệ)
+    :Lưu ProposalVote kèm trọng số = % sở hữu của thành viên;
+else (Đã bỏ phiếu rồi)
+    :Từ chối: Mỗi thành viên chỉ bỏ phiếu 1 lần;
+endif
+
+|Hệ Thống Tự Động (Scheduler)|
+:Kiểm tra khi hết thời hạn biểu quyết;
+:Tổng hợp tổng trọng số phiếu FOR và AGAINST;
+if (Tỷ lệ phiếu FOR > 50.00%?) then (Thông qua)
+    :Cập nhật đề xuất status = APPROVED;
+    :Tự động tạo lệnh công việc tương ứng cho Staff;
+    :Thông báo kết quả: Đề xuất đã được duyệt;
+else (Không đủ quá bán)
+    :Cập nhật đề xuất status = REJECTED;
+    :Thông báo kết quả: Đề xuất bị bác bỏ;
+endif
+stop
+@enduml

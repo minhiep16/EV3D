@@ -769,10 +769,11 @@ export const CoOwnerReceiptPanel3D: React.FC<CoOwnerReceiptPanel3DProps> = ({
                     NHÂN VIÊN ĐANG KIỂM TRA XE
                   </div>
                   <div style={{ color: '#38bdf8', fontSize: '11.5px', fontWeight: 700, marginBottom: '2px' }}>
-                    Tiến độ kiểm tra: {handover.totalInspectedCount} / {handover.requiredCheckpointsCount} điểm
+                    Tiến độ kiểm tra: {(handover as any)?.assessedRequiredCheckpointsCount ?? Math.min(handover.uniqueInspectedCount ?? handover.totalInspectedCount, handover.requiredCheckpointsCount)} / {handover.requiredCheckpointsCount} điểm bắt buộc
+                    {handover.uniqueInspectedCount && handover.uniqueInspectedCount > handover.requiredCheckpointsCount ? ` (Tổng: ${handover.uniqueInspectedCount})` : ''}
                   </div>
                   <div style={{ color: '#94a3b8', fontSize: '10.5px' }}>
-                    Vui lòng chờ nhân viên hoàn tất kiểm định 8 bộ phận của xe.
+                    Vui lòng chờ nhân viên hoàn tất kiểm định {handover.requiredCheckpointsCount || 8} bộ phận bắt buộc của xe.
                   </div>
                 </div>
               ) : handover.status === 'READY_FOR_HANDOVER' ? (

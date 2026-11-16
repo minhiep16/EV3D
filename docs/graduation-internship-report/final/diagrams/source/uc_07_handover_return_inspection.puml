@@ -1,0 +1,41 @@
+@startuml
+title USE CASE: BÀN GIAO, TRẢ XE VÀ KIỂM TRA KỸ THUẬT (UC-07)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam actorStyle awesome
+
+
+left to right direction
+
+actor "Nhân Viên (STAFF)" as Staff
+actor "Chủ Xe (CO_OWNER)" as CoOwner
+
+package "Kiểm Tra & Bàn Giao Kỹ Thuật" #F8F9FA {
+    usecase "Lập Biên Bản Bàn Giao Xe Kỹ Thuật" as UC_GenHandover
+    usecase "Ký Xác Nhận Tình Trạng Lúc Nhận Xe" as UC_SignHandover
+    usecase "Gửi Chỉ Số ODO & Pin Lúc Đỗ Xe" as UC_SendReturnMetrics
+    usecase "Kiểm Tra Checklist Kỹ Thuật Lúc Trả" as UC_Checklist
+    usecase "So Sánh Hiện Trạng & Ghi Nhận Hư Hỏng Mới" as UC_CompareDamage
+    usecase "Ký Chốt Biên Bản Nghiệm Thu Hoàn Tất" as UC_CloseTrip
+}
+
+Staff --> UC_GenHandover
+Staff --> UC_Checklist
+Staff --> UC_CompareDamage
+Staff --> UC_CloseTrip
+
+CoOwner --> UC_SignHandover
+CoOwner --> UC_SendReturnMetrics
+
+UC_GenHandover ..> UC_SignHandover : <<include>>
+UC_SendReturnMetrics <.. UC_Checklist : <<include>>
+UC_Checklist ..> UC_CompareDamage : <<extend>>
+UC_Checklist ..> UC_CloseTrip : <<include>>
+
+@enduml

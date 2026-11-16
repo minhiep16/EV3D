@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   ShieldCheck,
   Coins,
@@ -24,6 +25,8 @@ import { JoinGroupModal } from './JoinGroupModal';
 import { InviteCodeModal } from './InviteCodeModal';
 import { MyInvitationsModal } from './MyInvitationsModal';
 import { StaffRegistrationReviewModal } from '../fleet/StaffRegistrationReviewModal';
+import { NotificationBell } from '../common/NotificationBell';
+import { useWorldStore } from '../../store/worldStore';
 
 type OnboardingModal = 'NONE' | 'WIZARD' | 'JOIN_GROUP' | 'INVITE_CODE' | 'MY_INVITATIONS';
 
@@ -45,11 +48,13 @@ export const OnboardingOverlay: React.FC<OnboardingOverlayProps> = ({
   onModelChange,
 }) => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { user, logout } = useAuthStore();
 
   const [status, setStatus] = useState<OnboardingStatusResponse | null>(null);
   const [drafts, setDrafts] = useState<VehicleRegistrationDraftResponse[]>([]);
   const [, setLoading] = useState(true);
+  const [isEnteringGarage, setIsEnteringGarage] = useState(false);
 
   // Single authoritative workflow modal state
   const [activeModal, setActiveModal] = useState<OnboardingModal>('NONE');
@@ -82,8 +87,16 @@ export const OnboardingOverlay: React.FC<OnboardingOverlayProps> = ({
       ? (workspaceMode as OnboardingModal)
       : activeModal;
 
+  const reviewingInvitationId = useWorldStore((state) => state.reviewingInvitationId);
+  const invitationPreviewVehicle = useWorldStore((state) => state.invitationPreviewVehicle);
+  const selectVehicle = useWorldStore((state) => state.selectVehicle);
+  const setInvitationPreviewVehicle = useWorldStore((state) => state.setInvitationPreviewVehicle);
+  const setReviewingInvitationId = useWorldStore((state) => state.setReviewingInvitationId);
+  const isReviewingInvitation = Boolean(reviewingInvitationId);
+
   const isInvitationsOpen = effectiveModal === 'MY_INVITATIONS';
   const isLanding =
+    !isReviewingInvitation &&
     (!workspaceMode || workspaceMode === 'LANDING' || workspaceMode === 'MY_INVITATIONS') &&
     (effectiveModal === 'NONE' || effectiveModal === 'MY_INVITATIONS');
 
@@ -95,6 +108,25 @@ export const OnboardingOverlay: React.FC<OnboardingOverlayProps> = ({
       ]);
       setStatus(statusData);
       setDrafts(draftsData);
+
+      if (statusData.hasActiveGroup || (statusData.vehicleCount ?? 0) > 0) {
+        if (statusData.joinedExteriorColor && onColorChange) {
+          onColorChange(statusData.joinedExteriorColor);
+        }
+        if (statusData.joinedVehicleModel && onModelChange) {
+          onModelChange(statusData.joinedVehicleModel);
+        }
+        if (statusData.joinedVehicleName || statusData.joinedVehicleModel) {
+          setInvitationPreviewVehicle({
+            id: statusData.joinedVehicleId,
+            name: statusData.joinedVehicleName,
+            code: 'EV01',
+            model: statusData.joinedVehicleModel,
+            licensePlate: statusData.joinedLicensePlate,
+            exteriorColor: statusData.joinedExteriorColor,
+          });
+        }
+      }
     } catch (err) {
       console.error('Failed to load onboarding status:', err);
     } finally {
@@ -105,6 +137,43 @@ export const OnboardingOverlay: React.FC<OnboardingOverlayProps> = ({
   useEffect(() => {
     loadOnboardingData();
   }, []);
+
+  // Real-time synchronization & conditional auto-detection while in onboarding
+  useEffect(() => {
+    if (status?.hasActiveGroup || (status?.vehicleCount ?? 0) > 0) return;
+
+    const intervalId = window.setInterval(async () => {
+      try {
+        const nextStatus = await onboardingApi.getStatus();
+        if (nextStatus.hasActiveGroup || (nextStatus.vehicleCount ?? 0) > 0) {
+          setStatus(nextStatus);
+          if (nextStatus.joinedExteriorColor && onColorChange) {
+            onColorChange(nextStatus.joinedExteriorColor);
+          }
+          if (nextStatus.joinedVehicleModel && onModelChange) {
+            onModelChange(nextStatus.joinedVehicleModel);
+          }
+          if (nextStatus.joinedVehicleName || nextStatus.joinedVehicleModel) {
+            setInvitationPreviewVehicle({
+              id: nextStatus.joinedVehicleId,
+              name: nextStatus.joinedVehicleName,
+              code: 'EV01',
+              model: nextStatus.joinedVehicleModel,
+              licensePlate: nextStatus.joinedLicensePlate,
+              exteriorColor: nextStatus.joinedExteriorColor,
+            });
+          }
+          queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+          queryClient.invalidateQueries({ queryKey: ['coOwnership'] });
+          queryClient.invalidateQueries({ queryKey: ['onboardingStatus'] });
+        }
+      } catch {
+        // Silently ignore transient network polling errors
+      }
+    }, 3500);
+
+    return () => window.clearInterval(intervalId);
+  }, [status?.hasActiveGroup, status?.vehicleCount, onColorChange, onModelChange, setInvitationPreviewVehicle, queryClient]);
 
   useEffect(() => {
     if (!draftFeedback) return;
@@ -175,6 +244,28 @@ export const OnboardingOverlay: React.FC<OnboardingOverlayProps> = ({
     loadOnboardingData();
   };
 
+  const handleEnterGarage = async () => {
+    setIsEnteringGarage(true);
+    try {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['vehicles'] }),
+        queryClient.invalidateQueries({ queryKey: ['coOwnership'] }),
+        queryClient.invalidateQueries({ queryKey: ['onboardingStatus'] }),
+      ]);
+      const targetVehicleId = status?.joinedVehicleId || status?.activeVehicles?.[0]?.id;
+      if (targetVehicleId) {
+        selectVehicle(targetVehicleId);
+      }
+      setInvitationPreviewVehicle(null);
+      setReviewingInvitationId(null);
+      navigate('/garage');
+    } catch {
+      navigate('/garage');
+    } finally {
+      setIsEnteringGarage(false);
+    }
+  };
+
   const handleSuccess = async () => {
     try {
       const [statusData, draftsData] = await Promise.all([
@@ -184,9 +275,20 @@ export const OnboardingOverlay: React.FC<OnboardingOverlayProps> = ({
       setStatus(statusData);
       setDrafts(draftsData);
       if (statusData.hasActiveGroup || statusData.vehicleCount > 0) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['vehicles'] }),
+          queryClient.invalidateQueries({ queryKey: ['coOwnership'] }),
+          queryClient.invalidateQueries({ queryKey: ['onboardingStatus'] }),
+        ]);
+        const targetVehicleId = statusData.joinedVehicleId || statusData.activeVehicles?.[0]?.id;
+        if (targetVehicleId) {
+          selectVehicle(targetVehicleId);
+        }
+        setInvitationPreviewVehicle(null);
+        setReviewingInvitationId(null);
         setTimeout(() => {
           navigate('/garage');
-        }, 1200);
+        }, 800);
       }
     } catch {
       loadOnboardingData();
@@ -281,29 +383,32 @@ export const OnboardingOverlay: React.FC<OnboardingOverlayProps> = ({
                   transition: 'all 0.2s',
                 }}
               >
-                📋 Duyệt hồ sơ đăng ký xe (Staff)
+                📋 Duyệt hồ sơ đăng ký xe (Admin / Staff)
               </button>
             )}
 
-            {status && status.vehicleCount > 0 && (
+            {status && (status.hasActiveGroup || status.vehicleCount > 0) && (
               <button
-                onClick={() => navigate('/garage')}
+                onClick={handleEnterGarage}
+                disabled={isEnteringGarage}
                 style={{
                   padding: '7px 16px',
                   borderRadius: '9999px',
-                  background: 'rgba(0, 201, 216, 0.12)',
+                  background: 'linear-gradient(135deg, rgba(0, 201, 216, 0.18) 0%, rgba(0, 158, 157, 0.18) 100%)',
                   border: '1.2px solid #00c9d8',
                   color: '#009e9d',
-                  fontWeight: 700,
+                  fontWeight: 800,
                   fontSize: '12px',
-                  cursor: 'pointer',
+                  cursor: isEnteringGarage ? 'wait' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
                   transition: 'all 0.2s',
+                  boxShadow: '0 2px 10px rgba(0, 201, 216, 0.2)',
+                  opacity: isEnteringGarage ? 0.8 : 1,
                 }}
               >
-                🚗 Vào Garage ({status.vehicleCount} xe)
+                🚗 {isEnteringGarage ? 'Đang kết nối...' : `Vào Garage (${status.vehicleCount || 1} xe)`}
               </button>
             )}
 
@@ -350,6 +455,11 @@ export const OnboardingOverlay: React.FC<OnboardingOverlayProps> = ({
                 />
               )}
             </button>
+
+            {/* Real-time Notifications Bell */}
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              <NotificationBell />
+            </div>
 
             {/* User Profile Pill */}
             <div
@@ -408,6 +518,102 @@ export const OnboardingOverlay: React.FC<OnboardingOverlayProps> = ({
             </button>
           </div>
         </header>
+      )}
+
+      {/* 2b. DEDICATED INVITATION REVIEW STATE: LEFT VEHICLE IDENTITY PILL */}
+      {isReviewingInvitation && (
+        <aside
+          role="complementary"
+          aria-label="Thông tin phương tiện được mời"
+          style={{
+            position: 'fixed',
+            top: '84px',
+            left: '32px',
+            background: 'rgba(255, 255, 255, 0.94)',
+            backdropFilter: 'blur(24px)',
+            WebkitBackdropFilter: 'blur(24px)',
+            borderRadius: '20px',
+            border: '1.2px solid rgba(0, 201, 216, 0.4)',
+            boxShadow: '0 12px 36px rgba(0, 180, 200, 0.12), 0 2px 10px rgba(0, 0, 0, 0.03)',
+            padding: '14px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '14px',
+            zIndex: 40,
+            pointerEvents: 'auto',
+            animation: 'slideInLeft 0.22s ease-out',
+          }}
+        >
+          <div
+            style={{
+              width: '42px',
+              height: '42px',
+              borderRadius: '12px',
+              background: 'rgba(0, 201, 216, 0.12)',
+              border: '1.2px solid rgba(0, 201, 216, 0.4)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#009e9d',
+              boxShadow: '0 2px 10px rgba(0, 201, 216, 0.15)',
+              flexShrink: 0,
+            }}
+          >
+            <Car size={22} />
+          </div>
+
+          <div>
+            <div
+              style={{
+                fontSize: '11px',
+                fontWeight: 800,
+                color: '#009e9d',
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em',
+              }}
+            >
+              PHƯƠNG TIỆN ĐƯỢC MỜI
+            </div>
+            <div
+              style={{
+                fontSize: '16px',
+                fontWeight: 900,
+                color: '#0f172a',
+                marginTop: '1px',
+                letterSpacing: '-0.01em',
+              }}
+            >
+              {invitationPreviewVehicle?.name || invitationPreviewVehicle?.model || 'VinFast VF8 Plus'}
+            </div>
+            <div
+              style={{
+                fontSize: '11.5px',
+                color: '#64748b',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                marginTop: '2px',
+              }}
+            >
+              <span
+                style={{
+                  padding: '2px 7px',
+                  borderRadius: '9999px',
+                  background: 'rgba(0, 201, 216, 0.14)',
+                  color: '#009e9d',
+                  fontWeight: 800,
+                  fontSize: '10.5px',
+                }}
+              >
+                {invitationPreviewVehicle?.code || 'EV01'}
+              </span>
+              <span>•</span>
+              <span>
+                Biển số: <strong style={{ color: '#0284c7' }}>{invitationPreviewVehicle?.licensePlate || '30A-888.88'}</strong>
+              </span>
+            </div>
+          </div>
+        </aside>
       )}
 
       {/* 2. MAIN VIEWPORT AREA: LEFT WELCOME + RIGHT GLASS PANEL (LANDING ONLY) */}
@@ -611,6 +817,194 @@ export const OnboardingOverlay: React.FC<OnboardingOverlayProps> = ({
 
           {/* RIGHT COLUMN: PREMIUM TRANSLUCENT FROSTED GLASS PANEL */}
           {!isInvitationsOpen && (
+            status && (status.hasActiveGroup || status.vehicleCount > 0) ? (
+              <section
+                style={{
+                  pointerEvents: 'auto',
+                  width: '510px',
+                  maxWidth: 'min(510px, 92vw)',
+                  maxHeight: 'calc(100vh - 130px)',
+                  overflowY: 'auto',
+                  background: 'rgba(255, 255, 255, 0.78)',
+                  backdropFilter: 'blur(24px)',
+                  WebkitBackdropFilter: 'blur(24px)',
+                  border: '1.5px solid rgba(255, 255, 255, 0.95)',
+                  borderRadius: '24px',
+                  boxShadow:
+                    '0 20px 50px rgba(0, 160, 190, 0.14), 0 4px 20px rgba(0, 0, 0, 0.04), inset 0 1px 1px rgba(255, 255, 255, 0.8)',
+                  padding: '28px 24px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '20px',
+                }}
+              >
+                {/* 1. Header with Celebration Pill */}
+                <div>
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '5px 12px',
+                      borderRadius: '9999px',
+                      background: 'rgba(16, 185, 129, 0.12)',
+                      border: '1px solid rgba(16, 185, 129, 0.35)',
+                      color: '#047857',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      letterSpacing: '0.5px',
+                    }}
+                  >
+                    <CheckCircle2 size={13} color="#10b981" />
+                    <span>KẾT NẠP THÀNH VIÊN HOÀN TẤT</span>
+                  </div>
+                  <h2
+                    style={{
+                      margin: '10px 0 6px 0',
+                      fontSize: '26px',
+                      fontWeight: 900,
+                      letterSpacing: '-0.3px',
+                      color: '#0f172a',
+                    }}
+                  >
+                    CHÀO MỪNG THÀNH VIÊN MỚI!
+                  </h2>
+                  <p style={{ margin: 0, fontSize: '13px', color: '#475569', lineHeight: 1.55 }}>
+                    Hợp đồng đồng sở hữu phương tiện đã hoàn tất ký số giữa các thành viên. Bạn đã chính thức là đồng sở hữu hợp pháp của chiếc xe này.
+                  </p>
+                </div>
+
+                {/* 2. Dedicated Vehicle & Co-Ownership Details Card */}
+                <div
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.92)',
+                    borderRadius: '18px',
+                    border: '1.5px solid rgba(0, 201, 216, 0.35)',
+                    padding: '20px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '14px',
+                    boxShadow: '0 8px 24px rgba(0, 180, 200, 0.10)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div>
+                      <div style={{ fontSize: '11px', fontWeight: 800, color: '#009e9d', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        {status.groupName || 'NHÓM ĐỒNG SỞ HỮU'}
+                      </div>
+                      <div style={{ fontSize: '18px', fontWeight: 900, color: '#0f172a', marginTop: '2px' }}>
+                        {status.joinedVehicleName || status.activeVehicles?.[0]?.name || 'VinFast VF8 - ECO 2024'}
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        padding: '4px 12px',
+                        borderRadius: '9999px',
+                        background: 'rgba(0, 201, 216, 0.14)',
+                        border: '1px solid rgba(0, 201, 216, 0.4)',
+                        color: '#009e9d',
+                        fontWeight: 800,
+                        fontSize: '12px',
+                      }}
+                    >
+                      {status.joinedVehicleModel || status.activeVehicles?.[0]?.model || 'VF8'}
+                    </div>
+                  </div>
+
+                  {/* Metadata Grid */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <div style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Biển số xe</div>
+                      <div style={{ fontSize: '14.5px', fontWeight: 800, color: '#0284c7', marginTop: '3px' }}>
+                        {status.joinedLicensePlate || status.activeVehicles?.[0]?.licensePlate || '30A-888.88'}
+                      </div>
+                    </div>
+
+                    <div style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Tỷ lệ sở hữu</div>
+                      <div style={{ fontSize: '14.5px', fontWeight: 800, color: '#10b981', marginTop: '3px' }}>
+                        {status.ownershipPercentage != null ? `${status.ownershipPercentage}%` : '25.00%'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Contract Status Banner */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      padding: '10px 14px',
+                      borderRadius: '12px',
+                      background: 'rgba(16, 185, 129, 0.08)',
+                      border: '1px solid rgba(16, 185, 129, 0.28)',
+                    }}
+                  >
+                    <ShieldCheck size={18} color="#10b981" style={{ flexShrink: 0 }} />
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#047857' }}>
+                      {status.contractStatus || 'Hợp đồng đã có hiệu lực (Hoàn tất ký số)'}
+                      {status.contractVersionNumber ? ` • Phụ lục v${status.contractVersionNumber}` : ''}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Operational Privileges Guide */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#1e293b' }}>
+                    Đặc quyền đồng sở hữu trong Garage 3D:
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '9px', fontSize: '12.5px', color: '#475569' }}>
+                      <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'rgba(0, 201, 216, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <CheckCircle2 size={12} color="#009e9d" />
+                      </div>
+                      <span>Đặt lịch di chuyển thông minh & phân bổ khung giờ công bằng</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '9px', fontSize: '12.5px', color: '#475569' }}>
+                      <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'rgba(0, 201, 216, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <CheckCircle2 size={12} color="#009e9d" />
+                      </div>
+                      <span>Giám sát sạc pin 3D, tình trạng sức khỏe pin và trạm sạc</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '9px', fontSize: '12.5px', color: '#475569' }}>
+                      <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'rgba(0, 201, 216, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <CheckCircle2 size={12} color="#009e9d" />
+                      </div>
+                      <span>Quản lý chi phí minh bạch, quỹ nhóm và biểu quyết dân chủ</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4. Primary Button: VÀO GARAGE 3D */}
+                <button
+                  onClick={handleEnterGarage}
+                  disabled={isEnteringGarage}
+                  style={{
+                    width: '100%',
+                    padding: '14px 24px',
+                    borderRadius: '9999px',
+                    background: 'linear-gradient(90deg, #00c9d8 0%, #009e9d 100%)',
+                    border: 'none',
+                    color: '#ffffff',
+                    fontWeight: 900,
+                    fontSize: '14px',
+                    letterSpacing: '0.5px',
+                    cursor: isEnteringGarage ? 'wait' : 'pointer',
+                    boxShadow: '0 6px 22px rgba(0, 180, 190, 0.45)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '10px',
+                    transition: 'all 0.2s',
+                    opacity: isEnteringGarage ? 0.8 : 1,
+                  }}
+                >
+                  <Car size={18} />
+                  <span>{isEnteringGarage ? 'ĐANG KẾT NỐI GARAGE 3D...' : 'VÀO GARAGE 3D'}</span>
+                  <ChevronRight size={18} strokeWidth={3} />
+                </button>
+              </section>
+            ) : (
             <section
               style={{
                 pointerEvents: 'auto',
@@ -824,7 +1218,7 @@ export const OnboardingOverlay: React.FC<OnboardingOverlayProps> = ({
                               }}
                             >
                               {isPending
-                                ? `⏳ Chờ nhân viên xét duyệt: ${displayVehicleTitle} (${d.plateNumber})`
+                                ? `⏳ Chờ Quản trị viên (ADMIN) xét duyệt: ${displayVehicleTitle} (${d.plateNumber})`
                                 : isChangesRequested
                                 ? `⚠️ Cần bổ sung hồ sơ: ${displayVehicleTitle} (${d.plateNumber})`
                                 : isRejected
@@ -926,7 +1320,7 @@ export const OnboardingOverlay: React.FC<OnboardingOverlayProps> = ({
                               fontWeight: 600,
                             }}
                           >
-                            Phản hồi Staff: {d.reviewReason || d.adminReviewNotes}
+                            Ý kiến Quản trị viên: {d.reviewReason || d.adminReviewNotes}
                           </div>
                         )}
                       </div>
@@ -1053,6 +1447,7 @@ export const OnboardingOverlay: React.FC<OnboardingOverlayProps> = ({
               </div>
             </div>
           </section>
+            )
           )}
         </main>
       )}

@@ -9,7 +9,11 @@ export type NotificationEntityType =
   | 'SYSTEM'
   | 'BOOKING'
   | 'HANDOVER'
-  | 'TRIP';
+  | 'TRIP'
+  | 'OWNERSHIP'
+  | 'INVITATION'
+  | 'DISPUTE'
+  | 'CHARGING';
 
 export interface NotificationResponse {
   id: string;

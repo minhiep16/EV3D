@@ -1,0 +1,54 @@
+@startuml
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Times New Roman"
+skinparam defaultFontSize 12
+skinparam roundCorner 10
+
+title Quy Trình Hoạt Động Nghiệp Vụ: Trả Xe, Kiểm Tra Kỹ Thuật và Đối Soát Năng Lượng
+
+|Chủ Đồng Sở Hữu (CO_OWNER)|
+start
+:Yêu cầu trả xe trên giao diện 3D\n(requestTripReturn);
+:Nhập chỉ số đồng hồ ODO và % Pin kết thúc;
+
+|Hệ Thống Backend (Spring Boot)|
+:Ghi nhận thời điểm yêu cầu trả (returnRequestedAt);
+:Chuyển trạng thái chờ nhân viên kiểm tra;
+:Gửi thông báo đến Nhân viên trực trạm (STAFF);
+
+|Nhân Viên Vận Hành (STAFF)|
+:Tiếp nhận xe thực tế tại trạm điều hành;
+:Mở màn hình kiểm tra kỹ thuật (Inspection Checklist);
+:Đối chiếu chỉ số ODO thực tế và dung lượng pin SOC;
+:Kiểm tra thân vỏ & phát hiện vết xước/hư hỏng mới;
+
+if (Phát hiện hư hỏng mới?) then (Có)
+    :Lập bản ghi DamageRecord mới;
+    :Gắn tọa độ Hotspot 3D trên mô hình xe;
+    :Chụp/tải ảnh bằng chứng hư hại;
+else (Không)
+endif
+
+:Lập biên bản hoàn tất kiểm tra (VehicleInspection);\n(InspectionOverallResult: PASSED / FAILED / CONDITIONALLY_PASSED);
+:Gửi xác nhận trả xe (confirmTripReturn);
+
+|Hệ Thống Backend (Spring Boot)|
+:Xác thực chữ ký kiểm tra của Nhân viên;
+:Cập nhật Trạng thái Chuyến đi: COMPLETED;
+:Cập nhật Trạng thái Phương tiện: AVAILABLE (hoặc MAINTENANCE nếu hư hỏng nặng);
+:Cập nhật ODO xe và % Pin mới nhất;
+
+|Động Cơ Năng Lượng & Chi Phí|
+:Tính toán điện năng tiêu thụ thực tế (kWh);\nConsumed_kWh = (Start_SOC - End_SOC) * UsableCapacity;
+:Trừ tồn kho năng lượng (VehicleEnergyInventoryService);\nGiảm kWh khả dụng & tổng giá trị tồn kho;
+:Áp dụng giá điện bình quân gia quyền tại thời điểm chuyến đi;
+:Tự động khởi tạo khoản chi điện (ExpenseCategory: CHARGING/TRIP_ELECTRICITY);
+:Phân bổ trực tiếp nghĩa vụ chi phí cho người lái (USER_RESPONSIBILITY);
+:Gửi thông báo đối soát tài chính đến Co-Owner;
+
+|Chủ Đồng Sở Hữu (CO_OWNER)|
+:Nhận biên bản trả xe & chi tiết chi phí năng lượng;
+:Xem vị trí hư hỏng 3D (nếu có phát sinh);
+stop
+
+@enduml

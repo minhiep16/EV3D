@@ -1,0 +1,66 @@
+@startuml
+title SƠ ĐỒ LỚP: TRẠM SẠC VÀ KHO NĂNG LƯỢNG WAC (CLASS-06)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam classAttributeIconSize 0
+
+
+class ChargingStation {
+    - id: UUID
+    - stationCode: String
+    - powerKw: BigDecimal
+    - pricePerKwh: BigDecimal
+    - status: StationStatus
+}
+
+class ChargingSession {
+    - id: UUID
+    - startedAt: Instant
+    - endedAt: Instant
+    - startBatteryLevel: int
+    - endBatteryLevel: int
+    - energyDeliveredKwh: BigDecimal
+    - storedEnergyKwh: BigDecimal
+    - energyLossKwh: BigDecimal
+    - sessionCost: BigDecimal
+    - status: ChargingSessionStatus
+}
+
+class VehicleEnergyInventory {
+    - id: UUID
+    - availableEnergyKwh: BigDecimal
+    - totalInventoryCost: BigDecimal
+    - weightedAverageCostPerKwh: BigDecimal
+    - totalEnergyChargedKwh: BigDecimal
+    - totalEnergyConsumedKwh: BigDecimal
+    - isReconciliationRequired: boolean
+    + recalculateWAC(storedEnergy, tariff): void
+}
+
+class VehicleEnergyTransaction {
+    - id: UUID
+    - transactionType: EnergyTxType
+    - energyAmountKwh: BigDecimal
+    - unitPriceVnd: BigDecimal
+    - totalAmountVnd: BigDecimal
+    - recordedAt: Instant
+}
+
+enum EnergyTxType <<enumeration>> {
+    CHARGING_INFLOW
+    TRIP_CONSUMPTION
+    RECONCILIATION_ADJUSTMENT
+}
+
+ChargingStation "1" *-- "many" ChargingSession
+VehicleEnergyInventory "1" *-- "many" VehicleEnergyTransaction
+VehicleEnergyTransaction --> EnergyTxType
+ChargingSession ..> VehicleEnergyInventory : updates
+
+@enduml

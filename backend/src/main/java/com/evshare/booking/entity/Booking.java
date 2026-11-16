@@ -34,6 +34,12 @@ public class Booking {
     @Column(name = "end_time", nullable = false)
     private Instant endTime;
 
+    @Column(name = "original_start_time")
+    private Instant originalStartTime;
+
+    @Column(name = "original_end_time")
+    private Instant originalEndTime;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", length = 30, nullable = false)
     private BookingStatus status = BookingStatus.CONFIRMED;
@@ -58,6 +64,8 @@ public class Booking {
         this.user = user;
         this.startTime = startTime;
         this.endTime = endTime;
+        this.originalStartTime = startTime;
+        this.originalEndTime = endTime;
         this.status = status != null ? status : BookingStatus.CONFIRMED;
         this.purpose = purpose;
     }
@@ -69,6 +77,12 @@ public class Booking {
         }
         if (this.status == null) {
             this.status = BookingStatus.CONFIRMED;
+        }
+        if (this.originalStartTime == null) {
+            this.originalStartTime = this.startTime;
+        }
+        if (this.originalEndTime == null) {
+            this.originalEndTime = this.endTime;
         }
     }
 
@@ -110,6 +124,22 @@ public class Booking {
 
     public void setEndTime(Instant endTime) {
         this.endTime = endTime;
+    }
+
+    public Instant getOriginalStartTime() {
+        return originalStartTime != null ? originalStartTime : startTime;
+    }
+
+    public void setOriginalStartTime(Instant originalStartTime) {
+        this.originalStartTime = originalStartTime;
+    }
+
+    public Instant getOriginalEndTime() {
+        return originalEndTime != null ? originalEndTime : endTime;
+    }
+
+    public void setOriginalEndTime(Instant originalEndTime) {
+        this.originalEndTime = originalEndTime;
     }
 
     public BookingStatus getStatus() {

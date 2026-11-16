@@ -77,8 +77,27 @@ public class MaintenanceService {
     private final SharedFundService sharedFundService;
     private final SharedFundRepository sharedFundRepository;
 
+    @org.springframework.context.annotation.Lazy
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.evshare.voting.service.VoteProposalService voteProposalService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.evshare.voting.repository.VoteProposalRepository voteProposalRepository;
+
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.evshare.notification.service.NotificationService notificationService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.evshare.inspection.repository.VehicleInspectionRepository vehicleInspectionRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.evshare.inspection.repository.VehicleInspectionItemRepository vehicleInspectionItemRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.evshare.charging.repository.ChargingSessionRepository chargingSessionRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.evshare.handover.repository.VehicleHandoverRepository vehicleHandoverRepository;
 
     public MaintenanceService(
             MaintenanceRequestRepository maintenanceRequestRepository,
@@ -115,12 +134,20 @@ public class MaintenanceService {
     /**
      * Get all maintenance requests for a vehicle, sorted newest first.
      */
-    @Transactional(readOnly = true)
+    @Transactional
     public List<MaintenanceResponse> getVehicleMaintenance(UUID vehicleId, UserPrincipal principal) {
         validateVehicleAccess(vehicleId, principal);
 
         if (!vehicleRepository.existsById(vehicleId)) {
             throw new ResourceNotFoundException("Xe không tồn tại trong hệ thống: " + vehicleId);
+        }
+
+        // Idempotently reconcile any approved voting maintenance proposals missing execution records
+        if (voteProposalService != null) {
+            try {
+                voteProposalService.reconcileApprovedProposals(vehicleId);
+            } catch (Exception ignored) {
+            }
         }
 
         return maintenanceRequestRepository.findByVehicleIdOrderByCreatedAtDesc(vehicleId)
@@ -200,7 +227,7 @@ public class MaintenanceService {
         MaintenanceRequest maintenance = new MaintenanceRequest(
                 UUID.randomUUID(),
                 vehicle,
-                actorRole == Role.CO_OWNER ? MaintenanceStatus.PENDING : MaintenanceStatus.PENDING_APPROVAL,
+                MaintenanceStatus.PENDING_APPROVAL,
                 request.getPriority() != null ? request.getPriority() : MaintenancePriority.MEDIUM,
                 request.getMaintenanceType() != null ? request.getMaintenanceType() : MaintenanceType.PREVENTIVE,
                 request.getTitle().trim(),
@@ -211,12 +238,12 @@ public class MaintenanceService {
         );
 
         // Associate damage records if provided
+        Set<DamageRecord> validDamages = new HashSet<>();
         if (request.getDamageRecordIds() != null && !request.getDamageRecordIds().isEmpty()) {
             List<DamageRecord> damages = damageRecordRepository.findAllById(request.getDamageRecordIds());
             if (damages.size() != request.getDamageRecordIds().size()) {
                 throw new ResourceNotFoundException("Một hoặc nhiều bản ghi hư hỏng không tồn tại trong hệ thống.");
             }
-            Set<DamageRecord> validDamages = new HashSet<>();
             for (DamageRecord damage : damages) {
                 if (damage.getVehicle() == null || !damage.getVehicle().getId().equals(vehicleId)) {
                     throw new IllegalArgumentException("Hư hỏng không thuộc về phương tiện đã chọn: " + damage.getId());
@@ -226,10 +253,82 @@ public class MaintenanceService {
                 }
                 validDamages.add(damage);
             }
+        }
+
+        // Support preliminary findings (VehicleInspectionItem) directly
+        if (request.getInspectionItemIds() != null && !request.getInspectionItemIds().isEmpty() && vehicleInspectionItemRepository != null) {
+            List<com.evshare.inspection.entity.VehicleInspectionItem> items = vehicleInspectionItemRepository.findAllById(request.getInspectionItemIds());
+            for (com.evshare.inspection.entity.VehicleInspectionItem item : items) {
+                if (item.getConditionStatus() == null || item.getConditionStatus() == com.evshare.inspection.entity.InspectionItemCondition.GOOD) {
+                    continue;
+                }
+                String canonicalCode = com.evshare.inspection.service.VehicleInspectionService.normalizeCanonicalPartCode(item.getVehiclePartCode());
+                List<DamageRecord> existingUnresolved = damageRecordRepository
+                        .findByVehicleIdAndVehiclePartCodeAndStatusNot(vehicleId, canonicalCode, DamageStatus.RESOLVED);
+                if (!existingUnresolved.isEmpty()) {
+                    validDamages.addAll(existingUnresolved);
+                } else {
+                    com.evshare.damage.entity.DamageType damageType = switch (item.getConditionStatus()) {
+                        case CRACK -> com.evshare.damage.entity.DamageType.CRACK;
+                        case DENT -> com.evshare.damage.entity.DamageType.DENT;
+                        case SCRATCH -> com.evshare.damage.entity.DamageType.SCRATCH;
+                        default -> com.evshare.damage.entity.DamageType.OTHER;
+                    };
+                    com.evshare.damage.entity.DamageSeverity severity = switch (item.getConditionStatus()) {
+                        case CRACK -> com.evshare.damage.entity.DamageSeverity.SEVERE;
+                        case DENT -> com.evshare.damage.entity.DamageSeverity.MODERATE;
+                        case SCRATCH -> com.evshare.damage.entity.DamageSeverity.MINOR;
+                        default -> com.evshare.damage.entity.DamageSeverity.MODERATE;
+                    };
+                    BigDecimal[] coords = com.evshare.inspection.service.VehicleInspectionService.getCanonicalPartCoordinates(canonicalCode);
+                    String note = (item.getNote() != null && !item.getNote().isBlank())
+                            ? item.getNote().trim()
+                            : "Ghi nhận từ phát hiện sơ bộ 3D (" + item.getConditionStatus().name() + ")";
+                    if (note.length() > 1000) {
+                        note = note.substring(0, 1000);
+                    }
+                    DamageRecord newDamage = new DamageRecord(
+                            UUID.randomUUID(),
+                            vehicle,
+                            null,
+                            null,
+                            null,
+                            canonicalCode,
+                            damageType,
+                            severity,
+                            note,
+                            coords[0],
+                            coords[1],
+                            coords[2],
+                            creator
+                    );
+                    newDamage.setStatus(DamageStatus.OPEN);
+                    DamageRecord savedDamage = damageRecordRepository.save(newDamage);
+                    validDamages.add(savedDamage);
+                }
+            }
+        }
+
+        if (!validDamages.isEmpty()) {
             maintenance.setDamageRecords(validDamages);
         }
 
         MaintenanceRequest saved = maintenanceRequestRepository.save(maintenance);
+
+        // Unify with Central Voting System: auto-create and link authoritative VoteProposal when pending approval
+        if (saved.getStatus() == MaintenanceStatus.PENDING_APPROVAL) {
+            try {
+                if (voteProposalService != null) {
+                    UserPrincipal creatorPrincipal = new UserPrincipal(creator);
+                    com.evshare.voting.dto.VoteProposalResponse propRes = voteProposalService.createVoteForMaintenance(saved.getId(), creatorPrincipal);
+                    if (propRes != null) {
+                        saved.setRelatedProposalId(propRes.id());
+                        saved = maintenanceRequestRepository.save(saved);
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
 
         if (notificationService != null) {
             try {
@@ -251,6 +350,7 @@ public class MaintenanceService {
 
     /**
      * Get approval summary and votes for a maintenance request.
+     * Uses authoritative VoteProposal data if linked.
      */
     @Transactional(readOnly = true)
     public MaintenanceApprovalResponse getMaintenanceApproval(UUID maintenanceId, UserPrincipal principal) {
@@ -261,14 +361,22 @@ public class MaintenanceService {
 
         UUID vehicleId = maintenance.getVehicle().getId();
         CoOwnershipGroup group = getActiveGroupForVehicle(vehicleId);
-
         UUID currentUserId = principal != null ? principal.getId() : null;
+
+        // If linked to authoritative VoteProposal, build response from central VoteProposal data
+        if (maintenance.getRelatedProposalId() != null && voteProposalRepository != null) {
+            Optional<com.evshare.voting.entity.VoteProposal> propOpt = voteProposalRepository.findById(maintenance.getRelatedProposalId());
+            if (propOpt.isPresent()) {
+                return buildApprovalResponseFromProposal(maintenance, propOpt.get(), group.getId(), vehicleId, currentUserId);
+            }
+        }
+
         return buildApprovalResponse(maintenance, group.getId(), vehicleId, currentUserId);
     }
 
     /**
      * CO_OWNER casts or updates their approval vote on a maintenance request.
-     * Enforces dynamic ownership share weighting and authorization.
+     * Delegates to authoritative VoteProposalService as Single Source of Truth.
      */
     @Transactional
     public MaintenanceApprovalResponse castVote(UUID maintenanceId, CastMaintenanceVoteRequest voteRequest, UserPrincipal principal) {
@@ -290,34 +398,63 @@ public class MaintenanceService {
 
         UUID vehicleId = maintenance.getVehicle().getId();
         CoOwnershipGroup group = getActiveGroupForVehicle(vehicleId);
-        GroupMember member = getActiveGroupMember(group.getId(), principal.getId());
-        OwnershipShare share = getActiveOwnershipShare(group.getId(), vehicleId, member.getId());
 
-        // Check if vote already exists for this member
-        Optional<MaintenanceApprovalVote> existingOpt = voteRepository.findByMaintenanceRequestIdAndMemberId(maintenanceId, member.getId());
-        MaintenanceApprovalVote vote;
-        if (existingOpt.isPresent()) {
-            vote = existingOpt.get();
-            vote.setDecision(voteRequest.getDecision());
-            vote.setVotingWeight(share.getPercentage());
-            vote.setComment(voteRequest.getComment() != null ? voteRequest.getComment().trim() : null);
-            vote.setUpdatedAt(Instant.now());
-        } else {
-            vote = new MaintenanceApprovalVote(
-                    UUID.randomUUID(),
-                    maintenance,
-                    group,
-                    member,
-                    principal.getUser(),
-                    voteRequest.getDecision(),
-                    share.getPercentage(),
-                    voteRequest.getComment() != null ? voteRequest.getComment().trim() : null
-            );
+        // Delegate to authoritative VoteProposalService as Single Source of Truth
+        if (voteProposalService != null) {
+            UUID proposalId = maintenance.getRelatedProposalId();
+            if (proposalId == null) {
+                try {
+                    com.evshare.voting.dto.VoteProposalResponse propRes = voteProposalService.createVoteForMaintenance(maintenanceId, principal);
+                    if (propRes != null) {
+                        proposalId = propRes.id();
+                        maintenance.setRelatedProposalId(proposalId);
+                        maintenance = maintenanceRequestRepository.save(maintenance);
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+
+            if (proposalId != null) {
+                com.evshare.voting.entity.ProposalVoteChoice choice = switch (voteRequest.getDecision()) {
+                    case APPROVE -> com.evshare.voting.entity.ProposalVoteChoice.APPROVE;
+                    case REJECT -> com.evshare.voting.entity.ProposalVoteChoice.REJECT;
+                    case ABSTAIN -> com.evshare.voting.entity.ProposalVoteChoice.ABSTAIN;
+                };
+
+                voteProposalService.castVote(proposalId, new com.evshare.voting.dto.CastProposalVoteRequest(choice, voteRequest.getComment()), principal);
+            }
         }
-        voteRepository.save(vote);
 
-        // Recalculate weights, evaluate threshold, update request status if reached
-        return recalculateApprovalState(maintenance, group.getId(), vehicleId, principal.getId());
+        // Also synchronize legacy MaintenanceApprovalVote for backward compatibility
+        try {
+            GroupMember member = getActiveGroupMember(group.getId(), principal.getId());
+            OwnershipShare share = getActiveOwnershipShare(group.getId(), vehicleId, member.getId());
+
+            Optional<MaintenanceApprovalVote> existingOpt = voteRepository.findByMaintenanceRequestIdAndMemberId(maintenanceId, member.getId());
+            MaintenanceApprovalVote vote;
+            if (existingOpt.isPresent()) {
+                vote = existingOpt.get();
+                vote.setDecision(voteRequest.getDecision());
+                vote.setVotingWeight(share.getPercentage());
+                vote.setComment(voteRequest.getComment() != null ? voteRequest.getComment().trim() : null);
+                vote.setUpdatedAt(Instant.now());
+            } else {
+                vote = new MaintenanceApprovalVote(
+                        UUID.randomUUID(),
+                        maintenance,
+                        group,
+                        member,
+                        principal.getUser(),
+                        voteRequest.getDecision(),
+                        share.getPercentage(),
+                        voteRequest.getComment() != null ? voteRequest.getComment().trim() : null
+                );
+            }
+            voteRepository.save(vote);
+        } catch (Exception ignored) {
+        }
+
+        return getMaintenanceApproval(maintenanceId, principal);
     }
 
     /**
@@ -373,6 +510,81 @@ public class MaintenanceService {
         }
 
         return MaintenanceResponse.fromEntity(saved);
+    }
+
+    /**
+     * Authoritative vehicle status resolver based on business conditions:
+     * - Active maintenance restrictions -> MAINTENANCE
+     * - Active trip -> IN_USE
+     * - Active charging session -> CHARGING
+     * - Active handover (HANDED_OVER -> IN_USE; READY/PREP/INSPECTION -> RESERVED)
+     * - Unresolved safety-critical damage -> UNAVAILABLE
+     * - Otherwise -> AVAILABLE
+     */
+    @Transactional
+    public VehicleStatus resolveAndApplyVehicleStatus(Vehicle vehicle) {
+        if (vehicle == null) return VehicleStatus.AVAILABLE;
+        UUID vId = vehicle.getId();
+
+        // 1. Maintenance restrictions
+        boolean hasActiveMaintenance = maintenanceRequestRepository.existsByVehicleIdAndStatus(vId, MaintenanceStatus.IN_PROGRESS);
+        if (hasActiveMaintenance) {
+            vehicle.setStatus(VehicleStatus.MAINTENANCE);
+            vehicleRepository.save(vehicle);
+            return VehicleStatus.MAINTENANCE;
+        }
+
+        // 2. Active Trip
+        boolean hasActiveTrip = tripRepository.existsByVehicleIdAndStatus(vId, TripStatus.ACTIVE);
+        if (hasActiveTrip) {
+            vehicle.setStatus(VehicleStatus.IN_USE);
+            vehicleRepository.save(vehicle);
+            return VehicleStatus.IN_USE;
+        }
+
+        // 3. Charging Session
+        if (chargingSessionRepository != null) {
+            boolean hasActiveCharging = chargingSessionRepository.existsByVehicleIdAndStatus(vId, com.evshare.charging.entity.ChargingSessionStatus.ACTIVE);
+            if (hasActiveCharging) {
+                vehicle.setStatus(VehicleStatus.CHARGING);
+                vehicleRepository.save(vehicle);
+                return VehicleStatus.CHARGING;
+            }
+        }
+
+        // 4. Active Handover
+        if (vehicleHandoverRepository != null) {
+            List<com.evshare.handover.entity.VehicleHandover> activeHandovers = vehicleHandoverRepository.findActiveByVehicleId(vId);
+            if (!activeHandovers.isEmpty()) {
+                com.evshare.handover.entity.VehicleHandover ho = activeHandovers.get(0);
+                if (ho.getStatus() == com.evshare.handover.entity.HandoverStatus.HANDED_OVER
+                        || ho.getStatus() == com.evshare.handover.entity.HandoverStatus.OWNER_CONFIRMED) {
+                    vehicle.setStatus(VehicleStatus.IN_USE);
+                    vehicleRepository.save(vehicle);
+                    return VehicleStatus.IN_USE;
+                } else if (ho.getStatus() == com.evshare.handover.entity.HandoverStatus.READY_FOR_HANDOVER
+                        || ho.getStatus() == com.evshare.handover.entity.HandoverStatus.INSPECTION_IN_PROGRESS
+                        || ho.getStatus() == com.evshare.handover.entity.HandoverStatus.PENDING_PREPARATION) {
+                    vehicle.setStatus(VehicleStatus.RESERVED);
+                    vehicleRepository.save(vehicle);
+                    return VehicleStatus.RESERVED;
+                }
+            }
+        }
+
+        // 5. Unresolved safety-critical damage
+        List<DamageRecord> unresolved = damageRecordRepository.findByVehicleIdAndStatusNot(vId, DamageStatus.RESOLVED);
+        boolean hasSevereDamage = unresolved.stream().anyMatch(d -> d.getSeverity() == com.evshare.damage.entity.DamageSeverity.SEVERE);
+        if (hasSevereDamage) {
+            vehicle.setStatus(VehicleStatus.UNAVAILABLE);
+            vehicleRepository.save(vehicle);
+            return VehicleStatus.UNAVAILABLE;
+        }
+
+        // 6. Otherwise Available
+        vehicle.setStatus(VehicleStatus.AVAILABLE);
+        vehicleRepository.save(vehicle);
+        return VehicleStatus.AVAILABLE;
     }
 
     /**
@@ -536,14 +748,23 @@ public class MaintenanceService {
         }
         maintenance.setCompletionNote(noteBuilder.toString());
 
-        // Transactionally resolve all linked damage records (Requirement 18: DO NOT delete rows)
+        // Transactionally resolve explicitly linked damage records (Requirement 18: DO NOT delete rows)
+        java.util.Set<String> resolvedExplicitParts = new java.util.HashSet<>();
+
         if (maintenance.getDamageRecords() != null) {
             for (DamageRecord damage : maintenance.getDamageRecords()) {
+                // Temporal integrity: Do not resolve newer defects created after maintenance completion
+                if (damage.getCreatedAt() != null && damage.getCreatedAt().isAfter(now)) {
+                    continue;
+                }
                 if (damage.getStatus() == DamageStatus.UNDER_MAINTENANCE || damage.getStatus() == DamageStatus.OPEN) {
                     damage.setStatus(DamageStatus.RESOLVED);
                     damage.setResolvedAt(now);
                     damage.setResolvedByMaintenanceRequestId(maintenance.getId());
                     damageRecordRepository.save(damage);
+                    if (damage.getVehiclePartCode() != null) {
+                        resolvedExplicitParts.add(com.evshare.inspection.service.VehicleInspectionService.normalizeCanonicalPartCode(damage.getVehiclePartCode()));
+                    }
                 }
             }
         }
@@ -553,16 +774,64 @@ public class MaintenanceService {
             List<DamageRecord> explicitDamages = damageRecordRepository.findAllById(request.getResolvedDamageIds());
             for (DamageRecord damage : explicitDamages) {
                 if (damage.getVehicle() != null && damage.getVehicle().getId().equals(maintenance.getVehicle().getId())) {
+                    if (damage.getCreatedAt() != null && damage.getCreatedAt().isAfter(now)) {
+                        continue;
+                    }
                     if (damage.getStatus() != DamageStatus.RESOLVED) {
                         damage.setStatus(DamageStatus.RESOLVED);
                         damage.setResolvedAt(now);
                         damage.setResolvedByMaintenanceRequestId(maintenance.getId());
                         damageRecordRepository.save(damage);
-                        if (maintenance.getDamageRecords() != null) {
+                        if (damage.getVehiclePartCode() != null) {
+                            resolvedExplicitParts.add(com.evshare.inspection.service.VehicleInspectionService.normalizeCanonicalPartCode(damage.getVehiclePartCode()));
+                        }
+                        if (maintenance.getDamageRecords() != null && !maintenance.getDamageRecords().contains(damage)) {
                             maintenance.getDamageRecords().add(damage);
                         }
                     }
                 }
+            }
+        }
+
+        // Support explicitly passed resolvedInspectionItemIds in CompleteMaintenanceRequest
+        if (request != null && request.getResolvedInspectionItemIds() != null && !request.getResolvedInspectionItemIds().isEmpty() && vehicleInspectionItemRepository != null) {
+            List<com.evshare.inspection.entity.VehicleInspectionItem> explicitItems = vehicleInspectionItemRepository.findAllById(request.getResolvedInspectionItemIds());
+            for (com.evshare.inspection.entity.VehicleInspectionItem item : explicitItems) {
+                if (item.getConditionStatus() != com.evshare.inspection.entity.InspectionItemCondition.GOOD) {
+                    item.setConditionStatus(com.evshare.inspection.entity.InspectionItemCondition.GOOD);
+                    String curNote = item.getNote() != null ? item.getNote().trim() : "";
+                    item.setNote((curNote.isEmpty() ? "" : curNote + " | ") + "[Đã khắc phục qua bảo dưỡng #" + maintenance.getId().toString().substring(0, 8) + "]");
+                    vehicleInspectionItemRepository.save(item);
+                    if (item.getVehiclePartCode() != null) {
+                        resolvedExplicitParts.add(com.evshare.inspection.service.VehicleInspectionService.normalizeCanonicalPartCode(item.getVehiclePartCode()));
+                    }
+                }
+            }
+        }
+
+        // Automatic preliminary inspection finding resolution for explicitly resolved parts in draft session:
+        // Update in-progress draft inspection items created prior to repair completion to GOOD
+        if (vehicleInspectionRepository != null && vehicleInspectionItemRepository != null && !resolvedExplicitParts.isEmpty()) {
+            try {
+                List<com.evshare.inspection.entity.VehicleInspection> inProgressList =
+                        vehicleInspectionRepository.findInProgressByVehicleIdOrderByStartedAtDesc(maintenance.getVehicle().getId());
+                for (com.evshare.inspection.entity.VehicleInspection activeInsp : inProgressList) {
+                    if (activeInsp.getItems() != null) {
+                        for (com.evshare.inspection.entity.VehicleInspectionItem item : activeInsp.getItems()) {
+                            if (item.getVehiclePartCode() != null) {
+                                String norm = com.evshare.inspection.service.VehicleInspectionService.normalizeCanonicalPartCode(item.getVehiclePartCode());
+                                boolean isPriorOrDuring = item.getCreatedAt() == null || !item.getCreatedAt().isAfter(now);
+                                if (resolvedExplicitParts.contains(norm) && isPriorOrDuring && item.getConditionStatus() != com.evshare.inspection.entity.InspectionItemCondition.GOOD) {
+                                    item.setConditionStatus(com.evshare.inspection.entity.InspectionItemCondition.GOOD);
+                                    String curNote = item.getNote() != null ? item.getNote().trim() : "";
+                                    item.setNote((curNote.isEmpty() ? "" : curNote + " | ") + "[Đã khắc phục qua bảo dưỡng #" + maintenance.getId().toString().substring(0, 8) + "]");
+                                    vehicleInspectionItemRepository.save(item);
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
             }
         }
 
@@ -630,60 +899,14 @@ public class MaintenanceService {
                     }
                 }
 
-                // Section 22 & 23: Authorized Shared Fund spending
-                if (Boolean.TRUE.equals(request.getUseSharedFund())) {
-                    try {
-                        SharedFund sharedFund = sharedFundRepository.findByGroupId(group.getId()).orElse(null);
-                        if (sharedFund != null) {
-                            BigDecimal disburseAmt = request.getSharedFundDisburseAmount() != null && request.getSharedFundDisburseAmount().compareTo(BigDecimal.ZERO) > 0
-                                    ? request.getSharedFundDisburseAmount().min(request.getActualCost())
-                                    : request.getActualCost();
-
-                            UserPrincipal staffPrincipal = new UserPrincipal(staffUser);
-                            sharedFundService.disburseCommonExpense(
-                                    sharedFund.getId(),
-                                    new CommonDisbursementRequest(
-                                            savedExpense.getId(),
-                                            disburseAmt,
-                                            "Trích Quỹ chung bảo dưỡng xe " + saved.getVehicle().getName()
-                                    ),
-                                    staffPrincipal
-                            );
-
-                            if (notificationService != null) {
-                                String expenseDisplay = (savedExpense.getDescription() != null && !savedExpense.getDescription().isBlank())
-                                        ? savedExpense.getDescription()
-                                        : saved.getTitle();
-                                notificationService.notifyFinancialSettled(
-                                        group.getId(),
-                                        savedExpense.getId(),
-                                        expenseDisplay
-                                );
-                            }
-                        }
-                    } catch (Exception ignored) {
-                    }
-                }
+                // Direct Co-owner Allocation: Maintenance expenses are allocated directly to co-owners as payment obligations
+                // Shared Fund automatic disbursement is disabled in accordance with direct expense allocation model.
+                // Each co-owner receives individual payment obligation for their share.
             }
         }
 
-        // Vehicle availability check: verify no other active IN_PROGRESS maintenance
-        Vehicle vehicle = maintenance.getVehicle();
-        List<MaintenanceRequest> activeRequests = maintenanceRequestRepository.findByVehicleIdAndStatus(
-                vehicle.getId(),
-                MaintenanceStatus.IN_PROGRESS
-        );
-
-        boolean hasOtherActive = activeRequests.stream().anyMatch(r -> !r.getId().equals(maintenance.getId()));
-        if (!hasOtherActive) {
-            boolean hasActiveTrip = tripRepository.existsByVehicleIdAndStatus(vehicle.getId(), TripStatus.ACTIVE);
-            if (hasActiveTrip) {
-                vehicle.setStatus(VehicleStatus.IN_USE);
-            } else {
-                vehicle.setStatus(VehicleStatus.AVAILABLE);
-            }
-            vehicleRepository.save(vehicle);
-        }
+        // Vehicle status integrity validation (Section 5)
+        resolveAndApplyVehicleStatus(maintenance.getVehicle());
 
         if (notificationService != null) {
             try {
@@ -907,6 +1130,98 @@ public class MaintenanceService {
         return response;
     }
 
+    private MaintenanceApprovalResponse buildApprovalResponseFromProposal(
+            MaintenanceRequest maintenance,
+            com.evshare.voting.entity.VoteProposal proposal,
+            UUID groupId,
+            UUID vehicleId,
+            UUID currentUserId
+    ) {
+        MaintenanceApprovalResponse response = new MaintenanceApprovalResponse();
+        response.setMaintenanceRequestId(maintenance.getId());
+        response.setVehicleId(vehicleId);
+        response.setStatus(maintenance.getStatus());
+
+        List<com.evshare.voting.entity.ProposalVote> votes = proposal.getVotes() != null ? proposal.getVotes() : Collections.emptyList();
+        List<com.evshare.voting.entity.ProposalVoteEligibility> eligibilities = proposal.getEligibilities() != null ? proposal.getEligibilities() : Collections.emptyList();
+
+        BigDecimal approveWeight = BigDecimal.ZERO;
+        BigDecimal rejectWeight = BigDecimal.ZERO;
+        BigDecimal abstainWeight = BigDecimal.ZERO;
+
+        for (com.evshare.voting.entity.ProposalVote v : votes) {
+            if (v.getChoice() == com.evshare.voting.entity.ProposalVoteChoice.APPROVE) {
+                approveWeight = approveWeight.add(v.getVotingWeightSnapshot());
+            } else if (v.getChoice() == com.evshare.voting.entity.ProposalVoteChoice.REJECT) {
+                rejectWeight = rejectWeight.add(v.getVotingWeightSnapshot());
+            } else if (v.getChoice() == com.evshare.voting.entity.ProposalVoteChoice.ABSTAIN) {
+                abstainWeight = abstainWeight.add(v.getVotingWeightSnapshot());
+            }
+        }
+
+        BigDecimal totalEligibleWeight = eligibilities.stream()
+                .map(com.evshare.voting.entity.ProposalVoteEligibility::getVotingWeight)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        if (totalEligibleWeight.compareTo(BigDecimal.ZERO) <= 0) {
+            totalEligibleWeight = new BigDecimal("100.00");
+        }
+
+        BigDecimal pendingWeight = totalEligibleWeight.subtract(approveWeight).subtract(rejectWeight).subtract(abstainWeight);
+        if (pendingWeight.compareTo(BigDecimal.ZERO) < 0) {
+            pendingWeight = BigDecimal.ZERO;
+        }
+
+        response.setApproveWeight(approveWeight);
+        response.setRejectWeight(rejectWeight);
+        response.setPendingWeight(pendingWeight);
+        response.setRequiredThreshold(proposal.getRequiredThresholdPercentage());
+        response.setApprovedAt(proposal.getFinalizedAt());
+        response.setApprovedWeight(proposal.getStatus() == com.evshare.voting.entity.VoteProposalStatus.APPROVED ? approveWeight : maintenance.getApprovedWeight());
+
+        if (currentUserId != null) {
+            Optional<com.evshare.voting.entity.ProposalVote> myVote = votes.stream()
+                    .filter(v -> v.getVoterUser() != null && currentUserId.equals(v.getVoterUser().getId()))
+                    .findFirst();
+            if (myVote.isPresent()) {
+                VoteDecision decision = switch (myVote.get().getChoice()) {
+                    case APPROVE -> VoteDecision.APPROVE;
+                    case REJECT -> VoteDecision.REJECT;
+                    case ABSTAIN -> VoteDecision.ABSTAIN;
+                };
+                response.setCurrentUserVote(decision);
+                response.setCurrentUserWeight(myVote.get().getVotingWeightSnapshot());
+                response.setEligibleToVote(true);
+            } else {
+                Optional<com.evshare.voting.entity.ProposalVoteEligibility> myElig = eligibilities.stream()
+                        .filter(e -> e.getUser() != null && currentUserId.equals(e.getUser().getId()))
+                        .findFirst();
+                if (myElig.isPresent()) {
+                    response.setCurrentUserWeight(myElig.get().getVotingWeight());
+                    response.setEligibleToVote(true);
+                }
+            }
+        }
+
+        List<MaintenanceVoteSummaryDto> voteDtos = new ArrayList<>();
+        for (com.evshare.voting.entity.ProposalVote pv : votes) {
+            MaintenanceVoteSummaryDto dto = MaintenanceVoteSummaryDto.fromProposalVote(pv);
+            if (dto != null) {
+                if (dto.getMemberId() == null && pv.getVoterUser() != null && groupId != null) {
+                    try {
+                        memberRepository.findByGroupIdAndUserId(groupId, pv.getVoterUser().getId())
+                                .ifPresent(m -> dto.setMemberId(m.getId()));
+                    } catch (Exception ignored) {
+                    }
+                }
+                voteDtos.add(dto);
+            }
+        }
+        response.setVotes(voteDtos);
+
+        return response;
+    }
+
     private CoOwnershipGroup getActiveGroupForVehicle(UUID vehicleId) {
         return coOwnershipGroupRepository.findByVehicleId(vehicleId)
                 .or(() -> {
@@ -980,8 +1295,9 @@ public class MaintenanceService {
     }
 
     /**
-     * Audited reconciliation: Reconciles verified damage records whose repairs were completed
-     * and PASSED inspection in previous maintenance requests, but were not linked in the join table.
+     * Audited reconciliation: Safely reconciles verified damage records with unambiguous associations
+     * (explicit join-table linkage) for completed repairs.
+     * Never resolves newer damages or ambiguous records.
      */
     @Transactional
     public List<DamageRecordResponse> reconcileCompletedRepairDamages(UUID vehicleId, UserPrincipal principal) {
@@ -993,53 +1309,23 @@ public class MaintenanceService {
                 .filter(m -> m.getCompletionNote() == null || (!m.getCompletionNote().contains("FAILED") && !m.getCompletionNote().contains("KHÔNG ĐẠT")))
                 .toList();
 
-        List<DamageRecord> vehicleDamages = damageRecordRepository.findByVehicleIdOrderByCreatedAtDesc(vehicleId);
         List<DamageRecordResponse> reconciled = new java.util.ArrayList<>();
         Instant now = Instant.now();
 
         for (MaintenanceRequest maint : completedRequests) {
-            // 1. Direct join-table damages that remained OPEN/UNDER_MAINTENANCE
+            // Unambiguous association: Direct join-table damages linked to the completed repair
             if (maint.getDamageRecords() != null) {
                 for (DamageRecord damage : maint.getDamageRecords()) {
+                    // Temporal integrity: Never resolve newer defects created after maintenance completion
+                    if (damage.getCreatedAt() != null && maint.getCompletedAt() != null && damage.getCreatedAt().isAfter(maint.getCompletedAt())) {
+                        continue;
+                    }
                     if (damage.getStatus() != DamageStatus.RESOLVED) {
                         damage.setStatus(DamageStatus.RESOLVED);
                         damage.setResolvedAt(maint.getCompletedAt() != null ? maint.getCompletedAt() : now);
                         damage.setResolvedByMaintenanceRequestId(maint.getId());
                         damageRecordRepository.save(damage);
                         reconciled.add(DamageRecordResponse.fromEntity(damage));
-                    }
-                }
-            }
-
-            // 2. Damage matching by part from title/description if join table was empty
-            String title = (maint.getTitle() != null ? maint.getTitle().toUpperCase() : "");
-            String desc = (maint.getDescription() != null ? maint.getDescription().toUpperCase() : "");
-
-            for (DamageRecord damage : vehicleDamages) {
-                if (damage.getStatus() != DamageStatus.RESOLVED && damage.getVehiclePartCode() != null) {
-                    String part = damage.getVehiclePartCode().toUpperCase();
-                    boolean partMatched = title.contains(part) || desc.contains(part);
-                    if (!partMatched) {
-                        if (part.equals("DOOR_RL") && (title.contains("CỬA SAU TRÁI") || desc.contains("CỬA SAU TRÁI") || title.contains("CỬA SAU T") || title.contains("DOOR_RL"))) {
-                            partMatched = true;
-                        } else if (part.equals("DOOR_FR") && (title.contains("CỬA TRƯỚC PHẢI") || desc.contains("CỬA TRƯỚC PHẢI") || title.contains("CỬA TRƯỚC P") || title.contains("DOOR_FR"))) {
-                            partMatched = true;
-                        } else if (part.equals("DOOR_FL") && (title.contains("CỬA TRƯỚC TRÁI") || desc.contains("CỬA TRƯỚC TRÁI"))) {
-                            partMatched = true;
-                        } else if (part.equals("DOOR_RR") && (title.contains("CỬA SAU PHẢI") || desc.contains("CỬA SAU PHẢI"))) {
-                            partMatched = true;
-                        }
-                    }
-
-                    if (partMatched) {
-                        damage.setStatus(DamageStatus.RESOLVED);
-                        damage.setResolvedAt(maint.getCompletedAt() != null ? maint.getCompletedAt() : now);
-                        damage.setResolvedByMaintenanceRequestId(maint.getId());
-                        DamageRecord savedDmg = damageRecordRepository.save(damage);
-                        if (maint.getDamageRecords() != null) {
-                            maint.getDamageRecords().add(savedDmg);
-                        }
-                        reconciled.add(DamageRecordResponse.fromEntity(savedDmg));
                     }
                 }
             }

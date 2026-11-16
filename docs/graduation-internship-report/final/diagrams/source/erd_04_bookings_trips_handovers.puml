@@ -1,0 +1,67 @@
+@startuml
+title LƯỢC ĐỒ CƠ SỞ DỮ LIỆU: ĐẶT LỊCH, BÀN GIAO VÀ CHUYẾN ĐI (ERD-04)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+entity "bookings" as bookings {
+    * id : CHAR(36) [PK]
+    --
+    * vehicle_id : CHAR(36) [FK]
+    * user_id : CHAR(36) [FK]
+    start_time : TIMESTAMP
+    end_time : TIMESTAMP
+    status : VARCHAR(30)
+    purpose : VARCHAR(255)
+    created_at : TIMESTAMP
+}
+
+entity "vehicle_handovers" as handovers {
+    * id : CHAR(36) [PK]
+    --
+    * booking_id : CHAR(36) [FK, UNIQUE]
+    * staff_user_id : CHAR(36) [FK]
+    start_odometer : DECIMAL(10,2)
+    start_battery_level : INT
+    owner_condition_acknowledged_at : TIMESTAMP
+    status : VARCHAR(30)
+}
+
+entity "trips" as trips {
+    * id : CHAR(36) [PK]
+    --
+    * booking_id : CHAR(36) [FK, UNIQUE]
+    * vehicle_id : CHAR(36) [FK]
+    * user_id : CHAR(36) [FK]
+    started_at : TIMESTAMP
+    ended_at : TIMESTAMP
+    start_odometer : DECIMAL(10,2)
+    end_odometer : DECIMAL(10,2)
+    start_battery_level : INT
+    end_battery_level : INT
+    energy_consumed_kwh : DECIMAL(8,3)
+    return_requested_at : TIMESTAMP
+    return_verified_by_user_id : CHAR(36) [FK]
+    status : VARCHAR(30)
+}
+
+entity "trip_extension_requests" as extensions {
+    * id : CHAR(36) [PK]
+    --
+    * trip_id : CHAR(36) [FK]
+    requested_minutes : INT
+    status : VARCHAR(30)
+    reason : VARCHAR(255)
+}
+
+bookings ||--|| handovers
+bookings ||--o| trips
+trips ||--o{ extensions
+
+@enduml

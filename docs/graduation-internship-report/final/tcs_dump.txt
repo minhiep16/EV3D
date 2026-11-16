@@ -1,0 +1,100 @@
+TC-AUTH-01: req=FR-AUTH-01 | uc=UC-AUTH-01 | Đăng nhập thành công với thông tin hợp lệ
+TC-AUTH-02: req=FR-AUTH-02 | uc=UC-AUTH-02 | Đăng nhập thất bại với sai mật khẩu
+TC-AUTH-03: req=FR-AUTH-03 | uc=UC-AUTH-03 | Làm mới Access Token khi token cũ hết hạn
+TC-AUTH-04: req=FR-AUTH-04 | uc=UC-AUTH-04 | Đăng xuất và vô hiệu hóa phiên làm việc
+TC-AUTH-05: req=FR-AUTH-05 | uc=UC-AUTH-05 | Chặn truy cập API trái quyền (RBAC)
+TC-BOOK-01: req=FR-BOOK-01 | uc=UC-BOOK-01 | Đặt lịch xe thành công trong khung giờ trống
+TC-BOOK-02: req=FR-BOOK-02 | uc=UC-BOOK-02 | Chặn đặt lịch có thời gian kết thúc trước bắt đầu
+TC-BOOK-03: req=FR-BOOK-03 | uc=UC-BOOK-03 | Chặn đặt lịch trong quá khứ
+TC-BOOK-04: req=FR-BOOK-04 | uc=UC-BOOK-04 | Chặn đặt lịch trùng lặp với lịch người khác
+TC-BOOK-05: req=FR-BOOK-05 | uc=UC-BOOK-05 | Chặn đặt lịch trùng lặp biên chồng lấn
+TC-BOOK-06: req=FR-BOOK-06 | uc=UC-BOOK-06 | Chặn đặt lịch khi xe đang bảo dưỡng (MAINTENANCE)
+TC-BOOK-07: req=FR-BOOK-07 | uc=UC-BOOK-07 | Chặn người ngoài nhóm đặt xe của nhóm khác
+TC-BOOK-08: req=FR-BOOK-08 | uc=UC-BOOK-08 | Hủy lịch đặt xe hợp lệ trước giờ khởi hành
+TC-HAND-01: req=FR-HAND-01 | uc=UC-AUTH-01 | Nhân viên ghi nhận bàn giao xe thành công
+TC-HAND-02: req=FR-HAND-02 | uc=UC-AUTH-01 | Chặn bàn giao khi người thực hiện không phải STAFF
+TC-HAND-03: req=FR-HAND-03 | uc=UC-AUTH-01 | Co-Owner xác nhận biên bản tình trạng bàn giao
+TC-TRIP-01: req=FR-TRIP-01 | uc=UC-TRIP-01 | Khởi hành chuyến đi hợp lệ trong khung giờ
+TC-TRIP-02: req=FR-TRIP-02 | uc=UC-TRIP-02 | Chặn khởi hành chuyến đi quá sớm so với giờ đặt
+TC-TRIP-03: req=FR-TRIP-03 | uc=UC-TRIP-03 | Chặn khởi hành khi nhân viên chưa bàn giao xe
+TC-TRIP-04: req=FR-TRIP-04 | uc=UC-TRIP-04 | Chặn Co-Owner khác bấm bắt đầu chuyến đi của người khác
+TC-TRIP-05: req=FR-TRIP-05 | uc=UC-TRIP-05 | Yêu cầu gia hạn chuyến đi không có xung đột
+TC-TRIP-06: req=FR-TRIP-06 | uc=UC-TRIP-06 | Yêu cầu gia hạn khi có lịch người khác liền kề
+TC-TRIP-07: req=FR-TRIP-06 | uc=UC-TRIP-07 | Co-Owner gửi yêu cầu trả xe kết thúc hành trình
+TC-TRIP-08: req=FR-TRIP-06 | uc=UC-TRIP-08 | Chặn trả xe với chỉ số ODO nhỏ hơn lúc xuất phát
+TC-TRIP-09: req=FR-TRIP-06 | uc=UC-TRIP-09 | Nhân viên đối soát và xác nhận hoàn tất trả xe
+TC-INSP-01: req=FR-INS-01 | uc=UC-AUTH-01 | Tạo biên bản kiểm tra kỹ thuật đạt chuẩn
+TC-INSP-02: req=FR-INS-02 | uc=UC-AUTH-01 | Tạo biên bản kiểm tra phát hiện lỗi kỹ thuật
+TC-DAMG-01: req=FR-DAMG-01 | uc=UC-AUTH-01 | Ghi nhận hư hỏng mới gắn tọa độ Hotspot 3D
+TC-DAMG-02: req=FR-DAMG-02 | uc=UC-AUTH-01 | Cập nhật giải quyết hư hại sau khi sửa chữa
+TC-MAINT-01: req=FR-MAINT-01 | uc=UC-AUTH-01 | Co-Owner tạo yêu cầu bảo dưỡng định kỳ
+TC-MAINT-02: req=FR-MAINT-02 | uc=UC-AUTH-01 | Biểu quyết thông qua yêu cầu bảo dưỡng
+TC-MAINT-03: req=FR-MAINT-03 | uc=UC-AUTH-01 | Nhân viên chuyển xe sang trạng thái MAINTENANCE
+TC-MAINT-04: req=FR-MAINT-04 | uc=UC-AUTH-01 | Hoàn tất bảo dưỡng và đưa xe trở lại sẵn sàng
+TC-CHRG-01: req=FR-CHARGE-01 | uc=UC-AUTH-01 | Bắt đầu phiên sạc điện tại trụ thông minh
+TC-CHRG-02: req=FR-CHARGE-02 | uc=UC-AUTH-01 | Dừng phiên sạc và cập nhật mức năng lượng nạp
+TC-CHRG-03: req=FR-CHARGE-03 | uc=UC-AUTH-01 | Nhân viên thực hiện sạc xe phục vụ vận hành
+TC-ENER-01: req=FR-ENERGY-01 | uc=UC-AUTH-01 | Tính toán điện năng lưu kho thực tế sau tổn hao
+TC-ENER-02: req=FR-ENERGY-02 | uc=UC-AUTH-01 | Tính đơn giá điện bình quân gia quyền mới (WAC)
+TC-ENER-04: req=FR-ENERGY-04 | uc=UC-AUTH-01 | Trừ tồn kho năng lượng sau chuyến đi hoàn tất
+TC-FIN-01: req=FR-FIN-01 | uc=UC-AUTH-01 | Tạo khoản chi phí theo tỷ lệ sở hữu (OWNERSHIP_RATIO)
+TC-FIN-02: req=FR-FIN-02 | uc=UC-AUTH-01 | Phân bổ chi phí với thuật toán phần dư Hare-Niemeyer
+TC-FIN-03: req=FR-FIN-03 | uc=UC-AUTH-01 | Phân bổ tiền điện chuyến đi theo người dùng (USER_RESPONSIBILITY)
+TC-FIN-04: req=FR-FIN-04 | uc=UC-AUTH-01 | Gửi thông tin thanh toán chi phí cá nhân (DEMO Payment)
+TC-FIN-05: req=FR-FIN-05 | uc=UC-AUTH-01 | Chặn nộp thanh toán trùng lặp khi đang có yêu cầu chờ duyệt
+TC-FIN-06: req=FR-FIN-06 | uc=UC-AUTH-01 | Nhân viên phê duyệt xác minh thanh toán thành công
+TC-FIN-07: req=FR-FIN-07 | uc=UC-AUTH-01 | Chặn Co-Owner tự duyệt xác minh thanh toán của chính mình
+TC-OWN-01: req=FR-OWN-01 | uc=UC-AUTH-01 | Kiểm tra tính toàn vẹn: Tổng tỷ lệ sở hữu nhóm phải đủ 100%
+TC-OWN-02: req=FR-OWN-02 | uc=UC-AUTH-01 | Tạo yêu cầu chuyển nhượng tỷ lệ sở hữu xe
+TC-OWN-03: req=FR-OWN-03 | uc=UC-AUTH-01 | Chặn chuyển nhượng vượt quá số cổ phần đang nắm giữ
+TC-OWN-04: req=FR-OWN-04 | uc=UC-AUTH-01 | Thực thi chuyển nhượng sau khi tất cả thành viên đồng thuận
+TC-INV-01: req=FR-INV-01 | uc=UC-AUTH-01 | Mời thành viên mới tham gia nhóm đồng sở hữu
+TC-INV-02: req=FR-INV-02 | uc=UC-AUTH-01 | Người được mời chấp thuận lời mời gia nhập
+TC-CON-02: req=FR-CON-02 | uc=UC-AUTH-01 | Ký kết hợp đồng điện tử mô phỏng (DEMO Digital Signature)
+TC-CON-03: req=FR-CON-03 | uc=UC-AUTH-01 | Kích hoạt hiệu lực hợp đồng khi tất cả thành viên ký đủ
+TC-VOTE-01: req=FR-VOTE-01 | uc=UC-VOTE-01 | Tạo đề xuất biểu quyết mua gói bảo hiểm thân vỏ
+TC-VOTE-02: req=FR-VOTE-02 | uc=UC-VOTE-02 | Bỏ phiếu biểu quyết (Đồng ý / Từ chối)
+TC-VOTE-03: req=FR-VOTE-03 | uc=UC-VOTE-03 | Chặn bỏ phiếu lần thứ hai trên cùng một đề xuất
+TC-VOTE-04: req=FR-VOTE-04 | uc=UC-VOTE-04 | Đóng đề xuất và xác định kết quả biểu quyết
+TC-DISP-01: req=FR-DISP-01 | uc=UC-DISP-01 | Tạo khiếu nại tranh chấp sau sự cố chuyến đi
+TC-DISP-02: req=FR-DISP-02 | uc=UC-DISP-02 | Thêm bằng chứng hình ảnh vào hồ sơ tranh chấp
+TC-DISP-03: req=FR-DISP-03 | uc=UC-DISP-03 | Nhân viên ghi nhận kết luận điều tra sự cố
+TC-DISP-04: req=FR-DISP-04 | uc=UC-DISP-04 | Thực thi giải pháp bồi thường mô phỏng (DEMO Compensation)
+TC-3D-01: req=FR-3D-01 | uc=UC-3D-01 | Khởi tạo khung nhìn 3D Garage và nạp mô hình xe chính
+TC-3D-02: req=FR-3D-02 | uc=UC-3D-02 | Chuyển đổi màu ngoại thất xe theo dữ liệu CSDL
+TC-3D-04: req=FR-3D-04 | uc=UC-3D-04 | Hiển thị điểm cảnh báo hư hỏng (Damage Hotspot) 3D
+TC-3D-05: req=FR-3D-05 | uc=UC-3D-05 | Chuyển đổi xe trong đội xe qua Carousel hoặc Sidebar
+TC-NOTI-01: req=FR-NOTI-01 | uc=UC-AUTH-01 | Nhận thông báo thời gian thực khi có người đặt xe
+TC-NOTI-02: req=FR-NOTI-02 | uc=UC-AUTH-01 | Đánh dấu thông báo đã đọc
+TC-SEC-01: req=NFR-SEC-01 | uc=UC-AUTH-01 | Ngăn ngừa tấn công SQL Injection trên các trường truy vấn
+TC-REG-01: req=FR-3D-01 | uc=UC-3D-01 | Kiểm tra cấu trúc phân cấp thẻ JSX không bị lồng sai thẻ
+TC-REG-02: req=FR-3D-01 | uc=UC-TRIP-02 | Ngăn chặn lỗi undefined activeTripFormattedDuration khi chưa có chuyến đi
+TC-REG-03: req=FR-AUTH-05 | uc=UC-ADM-01 | Đồng bộ bộ truy xuất (Accessor) VehicleResponse giữa Frontend và DTO
+TC-REG-04: req=FR-3D-01 | uc=UC-3D-01 | Đồng bộ trạng thái xe tức thời giữa CSDL và giao diện 3D
+TC-REG-05: req=FR-3D-01 | uc=UC-3D-01 | Kiểm tra kết xuất mượt mà bảng điều khiển tổng quan CO_OWNER Overview
+TC-REG-06: req=FR-CHG-04 | uc=UC-CHG-03 | Ngăn chặn phân bổ chi phí sạc trùng lặp cho cùng một phiên sạc
+TC-REG-07: req=FR-CHG-04 | uc=UC-CHG-05 | Kiểm tra quyền sạc phục vụ vận hành của STAFF không bị gán nợ
+TC-REG-08: req=FR-CHG-04 | uc=UC-CHG-06 | Chặn người dùng lạ tự ý bấm dừng phiên sạc xe người khác
+TC-REG-09: req=FR-CO-07 | uc=UC-CO-07 | Xử lý tất toán chuyển nhượng cổ phần có giá trị bằng 0 (Zero-Value)
+TC-REG-10: req=FR-CO-07 | uc=UC-CO-03 | Kích hoạt tư cách thành viên mới sau khi đủ 100% điều kiện chữ ký
+TC-REG-11: req=FR-CO-07 | uc=UC-CO-07 | Bảo đảm tính nhất quán phiên bản hợp đồng (Contract Version Consistency)
+TC-REG-12: req=FR-3D-01 | uc=UC-3D-07 | Kiểm tra phục hồi góc nhìn camera mặc định sau khi xoay lật tự do
+TC-REG-13: req=FR-3D-01 | uc=UC-3D-01 | Ngăn chặn hiện tượng chồng lấn giữa Panel nghiệp vụ và Carousel chọn xe
+TC-REG-14: req=FR-AUTH-02 | uc=UC-AUTH-02 | Kiểm tra phân quyền chéo vai trò (Cross-Role Authorization Guard)
+TC-REG-15: req=FR-TRIP-01 | uc=UC-TRIP-01 | Chặn bắt đầu chuyến đi khi mức pin xe dưới ngưỡng an toàn (< 20%)
+TC-REG-16: req=FR-TRIP-01 | uc=UC-TRIP-02 | Tự động tính toán lượng điện tiêu thụ thực tế bằng chênh lệch SOC đầu cuối
+TC-REG-17: req=FR-EXP-02 | uc=UC-EXP-02 | Kiểm toán tổng giá trị phân bổ nợ khớp 100% số tiền hóa đơn phát sinh
+TC-REG-18: req=FR-EXP-02 | uc=UC-EXP-06 | Chặn duyệt thanh toán khi chứng từ bị nhân viên từ chối
+TC-REG-19: req=FR-CO-07 | uc=UC-CO-07 | Bảo toàn bất biến tổng tỷ lệ sở hữu bằng đúng 100.0000% sau chuyển nhượng
+TC-REG-20: req=FR-VOTE-02 | uc=UC-VOTE-02 | Tính đúng tỷ lệ biểu quyết theo trọng số cổ phần nắm giữ
+TC-REG-21: req=FR-DISP-06 | uc=UC-DISP-06 | Tự động trừ nghĩa vụ tài chính sau khi bồi thường hòa giải được duyệt
+TC-REG-22: req=FR-3D-01 | uc=UC-3D-03 | Kiểm tra hiệu ứng Raycaster bắt điểm va chạm Mesh không bị trôi lệch
+TC-REG-23: req=FR-VOTE-02 | uc=UC-VOTE-01 | Phát sinh thông báo đẩy khi có đề xuất biểu quyết mới trong nhóm
+TC-REG-24: req=FR-BOOK-02 | uc=UC-BOOK-02 | Tự động khóa lịch đặt xe khi xe chuyển sang trạng thái MAINTENANCE
+TC-REG-25: req=FR-AUTH-02 | uc=UC-AUTH-04 | Kiểm tra vô hiệu hóa mã token JWT khi người dùng thực hiện đăng xuất
+TC-REG-26: req=FR-AUTH-05 | uc=UC-AUTH-05 | Bảo vệ thông tin cá nhân: Không để lộ hash mật khẩu trong các API trả về
+TC-REG-27: req=FR-3D-01 | uc=UC-3D-01 | Kiểm tra xử lý Timeout khi gọi mô hình Trợ lý ảo AI
+TC-REG-28: req=FR-BOOK-07 | uc=UC-BOOK-07 | Kiểm tra giới hạn số lượng ảnh chụp đính kèm trong biên bản kiểm định
+TC-REG-29: req=FR-AUTH-05 | uc=UC-AUTH-02 | Kiểm tra định dạng ngày giờ chuẩn ISO 8601 UTC trên các trường thời gian
+TC-REG-30: req=FR-TRIP-01 | uc=UC-TRIP-02 | Kiểm tra phân trang kết quả tìm kiếm danh sách lịch sử chuyến đi
+TC-REG-31: req=FR-AUTH-05 | uc=UC-AUTH-01 | Kiểm tra phản hồi thân thiện của GlobalExceptionHandler khi nhận mã lỗi 400

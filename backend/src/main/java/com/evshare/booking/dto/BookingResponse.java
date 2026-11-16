@@ -14,6 +14,8 @@ public class BookingResponse {
     private String userEmail;
     private Instant startTime;
     private Instant endTime;
+    private Instant originalStartTime;
+    private Instant originalEndTime;
     private BookingStatus status;
     private String purpose;
     private Instant createdAt;
@@ -36,6 +38,8 @@ public class BookingResponse {
         this.userEmail = userEmail;
         this.startTime = startTime;
         this.endTime = endTime;
+        this.originalStartTime = startTime;
+        this.originalEndTime = endTime;
         this.status = status;
         this.purpose = purpose;
         this.createdAt = createdAt;
@@ -46,7 +50,7 @@ public class BookingResponse {
         boolean expired = booking.isExpired();
         BookingStatus effectiveStatus = (expired && booking.getStatus() == BookingStatus.CONFIRMED) ? BookingStatus.EXPIRED : booking.getStatus();
 
-        return new BookingResponse(
+        BookingResponse resp = new BookingResponse(
                 booking.getId(),
                 booking.getVehicle().getId(),
                 booking.getUser().getId(),
@@ -59,6 +63,9 @@ public class BookingResponse {
                 booking.getCreatedAt(),
                 expired
         );
+        resp.setOriginalStartTime(booking.getOriginalStartTime());
+        resp.setOriginalEndTime(booking.getOriginalEndTime());
+        return resp;
     }
 
     public UUID getId() {
@@ -87,6 +94,26 @@ public class BookingResponse {
 
     public Instant getEndTime() {
         return endTime;
+    }
+
+    public void setEndTime(Instant endTime) {
+        this.endTime = endTime;
+    }
+
+    public Instant getOriginalStartTime() {
+        return originalStartTime != null ? originalStartTime : startTime;
+    }
+
+    public void setOriginalStartTime(Instant originalStartTime) {
+        this.originalStartTime = originalStartTime;
+    }
+
+    public Instant getOriginalEndTime() {
+        return originalEndTime != null ? originalEndTime : endTime;
+    }
+
+    public void setOriginalEndTime(Instant originalEndTime) {
+        this.originalEndTime = originalEndTime;
     }
 
     public BookingStatus getStatus() {

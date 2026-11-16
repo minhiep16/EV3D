@@ -1,0 +1,47 @@
+@startuml
+title USE CASE: ĐẶT LỊCH VÀ QUẢN LÝ CHUYẾN ĐI (UC-06)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam actorStyle awesome
+
+
+left to right direction
+
+actor "CO_OWNER" as CoOwner
+actor "STAFF" as Staff
+actor "Hệ Thống Tự Động" as System
+
+package "Quản Lý Đặt Lịch & Hành Trình" #F8F9FA {
+    usecase "Xem Lịch Trình Xe Theo Trục Thời Gian" as UC_ViewTimeline
+    usecase "Tạo Lịch Đặt Mới (Create Booking)" as UC_CreateBooking
+    usecase "Kiểm Tra Khử Xung Đột Thời Gian" as UC_ConflictCheck
+    usecase "Hủy Lịch Đặt Hợp Lệ" as UC_CancelBooking
+    usecase "Khởi Hành Chuyến Đi" as UC_StartTrip
+    usecase "Gia Hạn Chuyến Đi Tự Động (Không Trùng)" as UC_ExtendDirect
+    usecase "Gia Hạn Cần Đàm Phán Đồng Thuận" as UC_ExtendNegotiate
+    usecase "Gửi Yêu Cầu Trả Xe" as UC_ReqReturn
+    usecase "Chốt Hoàn Tất Chuyến Đi" as UC_ConfirmReturn
+}
+
+CoOwner --> UC_ViewTimeline
+CoOwner --> UC_CreateBooking
+CoOwner --> UC_CancelBooking
+CoOwner --> UC_StartTrip
+CoOwner --> UC_ExtendDirect
+CoOwner --> UC_ExtendNegotiate
+CoOwner --> UC_ReqReturn
+
+Staff --> UC_ConfirmReturn
+System --> UC_ConflictCheck
+
+UC_CreateBooking ..> UC_ConflictCheck : <<include>>
+UC_ExtendDirect ..> UC_ConflictCheck : <<include>>
+UC_ReqReturn <.. UC_ConfirmReturn : <<include>>
+
+@enduml

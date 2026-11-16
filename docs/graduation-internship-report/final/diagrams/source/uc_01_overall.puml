@@ -1,0 +1,73 @@
+@startuml
+title SƠ ĐỒ USE CASE TỔNG QUÁT TOÀN HỆ THỐNG EVSHARE 3D (LEVEL 0)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam actorStyle awesome
+
+
+left to right direction
+
+actor "Quản Trị Viên\n(ADMIN)" as Admin #D4E6F1
+actor "Nhân Viên Điều Hành\n(STAFF)" as Staff #D1F2EB
+actor "Chủ Đồng Sở Hữu\n(CO_OWNER)" as CoOwner #FCF3CF
+
+package "Hệ Thống EVShare 3D" #F8F9FA {
+    package "Phân Hệ Xác Thực & Tài Khoản" {
+        usecase "Đăng Nhập & Đăng Xuất" as UC_Auth
+        usecase "Quản Lý Tài Khoản & Phân Quyền" as UC_UserMgmt
+    }
+    package "Phân Hệ Đặt Xe & Vận Hành" {
+        usecase "Đặt Lịch Sử Dụng Xe" as UC_Booking
+        usecase "Bàn Giao & Kiểm Tra Xe" as UC_Handover
+        usecase "Vận Hành Chuyến Đi & Trả Xe" as UC_Trip
+    }
+    package "Phân Hệ Năng Lượng & Trạm Sạc" {
+        usecase "Nạp Sạc Pin Xe Điện" as UC_Charging
+        usecase "Quản Trị Tồn Kho Năng Lượng (WAC)" as UC_Energy
+    }
+    package "Phân Hệ Tài Chính & Chi Phí" {
+        usecase "Phân Bổ Chi Phí Trực Tiếp" as UC_Expense
+        usecase "Thanh Toán Cá Nhân (DEMO)" as UC_Payment
+    }
+    package "Phân Hệ Quản Trị Nhóm & Pháp Lý" {
+        usecase "Quản Lý Cổ Phần & Chuyển Nhượng" as UC_Ownership
+        usecase "Ký Hợp Đồng Điện Tử (DEMO)" as UC_Contract
+        usecase "Biểu Quyết Tập Thể" as UC_Voting
+        usecase "Khiếu Nại & Tranh Chấp" as UC_Dispute
+    }
+    package "Phân Hệ Không Gian 3D" {
+        usecase "Tương Tác Virtual Garage 3D" as UC_Garage3D
+    }
+}
+
+Admin --> UC_UserMgmt
+Admin --> UC_Ownership
+Admin --> UC_Dispute
+Admin --> UC_Garage3D
+
+Staff --> UC_Handover
+Staff --> UC_Charging
+Staff --> UC_Expense
+Staff --> UC_Dispute
+Staff --> UC_Garage3D
+
+CoOwner --> UC_Booking
+CoOwner --> UC_Trip
+CoOwner --> UC_Charging
+CoOwner --> UC_Payment
+CoOwner --> UC_Contract
+CoOwner --> UC_Voting
+CoOwner --> UC_Dispute
+CoOwner --> UC_Garage3D
+
+Admin --|> UC_Auth
+Staff --|> UC_Auth
+CoOwner --|> UC_Auth
+
+@enduml

@@ -1,0 +1,60 @@
+@startuml
+title SƠ ĐỒ TUẦN TỰ: PHÂN BỔ CHI PHÍ ĐỊNH KỲ THEO TỶ LỆ CỔ PHẦN (SEQ-11)
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam sequenceMessageAlign center
+skinparam participant {
+    BackgroundColor #F8F9FA
+    BorderColor #2C3E50
+    FontColor #2C3E50
+}
+skinparam actor {
+    BackgroundColor #E8F4F8
+    BorderColor #1A5276
+}
+skinparam database {
+    BackgroundColor #FEF9E7
+    BorderColor #B7950B
+}
+
+autonumber
+actor "Quản Trị Viên (ADMIN)" as Admin
+participant "ExpenseAllocationController" as Controller
+participant "ExpenseAllocationService" as AllocSvc
+participant "CoOwnershipService" as OwnerSvc
+participant "ExpenseShareRepository" as ShareRepo
+database "MySQL Database" as DB
+
+Admin -> Controller : POST /api/expenses/{id}/allocate
+activate Controller
+Controller -> AllocSvc : allocateExpense(expenseId)
+activate AllocSvc
+
+AllocSvc -> DB : SELECT * FROM expenses WHERE id = ?
+DB --> AllocSvc : Expense (category = INSURANCE, amount = 10,000,000, policy = EQUITY_RATIO)
+
+AllocSvc -> OwnerSvc : getActiveOwnershipShares(expense.vehicleId)
+activate OwnerSvc
+OwnerSvc --> AllocSvc : List<OwnershipShare> [UserA: 40%, UserB: 35%, UserC: 25%]
+deactivate OwnerSvc
+
+loop Mỗi thành viên sở hữu
+    AllocSvc -> AllocSvc : userShare = totalAmount * (sharePercentage / 100.0)
+    AllocSvc -> ShareRepo : save(ExpenseShare(userId, userShare, status = 'PENDING'))
+    ShareRepo -> DB : INSERT INTO expense_shares ...
+end
+
+AllocSvc -> DB : UPDATE expenses SET status = 'ALLOCATED', allocated_at = now()
+DB --> AllocSvc : OK
+
+AllocSvc --> Controller : ExpenseAllocationResult
+deactivate AllocSvc
+Controller --> Admin : HTTP 200 OK (Phân bổ hoàn tất cho 3 chủ xe)
+deactivate Controller
+
+@enduml

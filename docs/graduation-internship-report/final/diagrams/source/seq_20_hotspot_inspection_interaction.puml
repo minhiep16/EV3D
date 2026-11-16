@@ -1,0 +1,54 @@
+@startuml
+title SƠ ĐỒ TUẦN TỰ: TƯƠNG TÁC TỔN HẠI 3D VỚI RAYCASTING (SEQ-20)
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam sequenceMessageAlign center
+skinparam participant {
+    BackgroundColor #F8F9FA
+    BorderColor #2C3E50
+    FontColor #2C3E50
+}
+skinparam actor {
+    BackgroundColor #E8F4F8
+    BorderColor #1A5276
+}
+skinparam database {
+    BackgroundColor #FEF9E7
+    BorderColor #B7950B
+}
+
+autonumber
+actor "Người Dùng / Giám Định Viên" as User
+participant "GarageCanvas" as Canvas
+participant "Three.js Raycaster" as Raycaster
+participant "DamageHotspot (React Component)" as Hotspot
+participant "InspectionDetailModal" as Modal
+
+User -> Canvas : Di chuột và click vào điểm trên bề mặt xe 3D
+activate Canvas
+Canvas -> Raycaster : setFromCamera(pointerCoords, camera)
+Raycaster -> Canvas : intersectObjects(scene.children, true)
+Canvas --> Raycaster : intersects[0] (Point, Mesh: "Bumper_Front")
+
+alt Trúng tọa độ gắn Hotspot đã lưu
+    Canvas -> Hotspot : onSelectHotspot(hotspotId)
+    activate Hotspot
+    Hotspot -> Modal : openDamageDetail(damageInfo)
+    deactivate Hotspot
+    activate Modal
+    Modal --> User : Hiển thị bảng chi tiết vết xước, ảnh thực tế và mức độ nghiêm trọng
+    deactivate Modal
+else Click vào vị trí mới trong chế độ Tạo Kiểm Định
+    Canvas -> Modal : openCreateDamageHotspot(point.x, point.y, point.z, meshName)
+    activate Modal
+    Modal --> User : Mở form đính kèm thông tin tổn hại tại tọa độ 3D
+    deactivate Modal
+end
+deactivate Canvas
+
+@enduml

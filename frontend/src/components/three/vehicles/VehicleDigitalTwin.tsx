@@ -7,7 +7,10 @@ import { queryClient } from '../../../services/queryClient';
 import { useAuthStore } from '../../../store/authStore';
 import { useWorldStore, VEHICLE_STATUS_LABELS, GarageZone } from '../../../store/worldStore';
 import { fetchVehicles } from '../../../services/vehicleApi';
-import { VehicleResponse } from '../../../types/vehicle';
+import { VehicleResponse, VehicleStatus } from '../../../types/vehicle';
+import { TripData } from '../../../types/trip';
+import { fetchActiveTripForVehicle } from '../../../services/tripApi';
+import { isValidUuid } from '../../../utils/formatUtils';
 import { VehicleModel } from './VehicleModel';
 import { VehicleInteractionHitboxes } from './VehicleInteractionHitboxes';
 import {
@@ -39,6 +42,8 @@ import { TripStartWorld } from '../trip/TripStartWorld';
 import { TripVisualizationWorld } from '../trip/TripVisualizationWorld';
 import { VehicleDamageWorld } from '../damage/VehicleDamageWorld';
 import { VehicleDamageHistoryWorld } from '../damage/VehicleDamageHistoryWorld';
+import { fetchVehicleDamages } from '../../../services/damageApi';
+import { fetchActiveInspection } from '../../../services/inspectionApi';
 import { BatteryPack3D } from '../battery/BatteryPack3D';
 import { ChargingPortVisual3D } from '../charging/ChargingPortVisual3D';
 import { fetchVehicleBatteryHealth } from '../../../services/batteryApi';
@@ -54,6 +59,8 @@ import {
   AlertTriangle,
   RefreshCw,
   Zap,
+  Gauge,
+  ShieldCheck,
 } from 'lucide-react';
 import { VEHICLE_INTERACTION_CONFIG } from '../../../config/interactionConfig';
 import {
@@ -132,7 +139,7 @@ const VehicleBayPlatformPad: React.FC<{
 
 interface VehicleBayProps {
   vehicle: VehicleResponse;
-  vehicleCode: 'EV01' | 'EV02';
+  vehicleCode: string;
   vehicleSlot?: GarageSlotDef;
   slot?: GarageSlotDef;
   position?: [number, number, number];
@@ -225,17 +232,110 @@ const VehicleBayComponent: React.FC<VehicleBayProps> = ({
   const visibleVehicleLabelId = useWorldStore((state) => state.visibleVehicleLabelId);
   const isRegistrationReviewModalOpen = useWorldStore((state) => state.isRegistrationReviewModalOpen);
   const isExplorationMode = useWorldStore((state) => state.isExplorationMode);
+  const activePrimaryPanel = useWorldStore((state) => state.activePrimaryPanel);
+  const isStaffDisputeDashboardOpen = useWorldStore((state) => state.isStaffDisputeDashboardOpen);
+  const isStaff = role === 'STAFF';
+  const isAdmin = role === 'ADMIN';
+
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const accessToken = useAuthStore((state) => state.accessToken);
+  const authReady = isAuthenticated && !!accessToken;
+
+  const isApplicationPreview = Boolean((vehicle as any)?.isApplicationPreview);
+  const isValidVehicleUuid = vehicle?.id ? isValidUuid(vehicle.id) : false;
+  const canQueryVehicleTelemetry = Boolean(authReady && isValidVehicleUuid && !isApplicationPreview);
+
+  // Authoritative query for active trip to ensure floating 3D banner is synchronized with backend operational state
+  const { data: activeTrip } = useQuery<TripData | null>({
+    queryKey: ['activeTrip', vehicle?.id],
+    queryFn: () => (vehicle?.id && isValidVehicleUuid ? fetchActiveTripForVehicle(vehicle.id) : Promise.resolve(null)),
+    enabled: Boolean(canQueryVehicleTelemetry && vehicle?.id),
+    staleTime: 4000,
+    refetchInterval: 4000,
+  });
+
+  const isTripActive = Boolean(activeTrip && activeTrip.status === 'ACTIVE');
+  const effectiveStatus: VehicleStatus = isTripActive ? 'IN_USE' : vehicle.status;
+
+  const vehicleStatusConfig = useMemo(() => {
+    if (isApplicationPreview) {
+      return {
+        label: 'Hồ sơ chờ duyệt',
+        color: '#f59e0b',
+        bg: 'rgba(245, 158, 11, 0.2)',
+        border: '#f59e0b',
+      };
+    }
+    if (isTripActive) {
+      if (activeTrip?.returnRequestedAt) {
+        return {
+          label: 'Chờ tiếp nhận',
+          color: '#f59e0b',
+          bg: 'rgba(245, 158, 11, 0.16)',
+          border: '#f59e0b',
+        };
+      }
+      return {
+        label: 'Đang sử dụng',
+        color: '#00f2fe',
+        bg: 'rgba(0, 242, 254, 0.16)',
+        border: '#00f2fe',
+      };
+    }
+    return (
+      VEHICLE_STATUS_LABELS[effectiveStatus] || {
+        label: 'Sẵn sàng',
+        color: '#10b981',
+        bg: 'rgba(16, 185, 129, 0.16)',
+        border: '#10b981',
+      }
+    );
+  }, [isTripActive, activeTrip?.returnRequestedAt, effectiveStatus, isApplicationPreview]);
 
   // Authoritative TanStack Query for technical battery health in X-Ray mode
   const { data: batteryHealth } = useQuery<BatteryHealthResponse | null>({
     queryKey: ['vehicleBatteryHealth', vehicle?.id],
-    queryFn: () => (vehicle?.id ? fetchVehicleBatteryHealth(vehicle.id) : Promise.resolve(null)),
-    enabled: Boolean(vehicle?.id && isSelected && vehicleBatteryXrayMode),
+    queryFn: () => (vehicle?.id && isValidVehicleUuid ? fetchVehicleBatteryHealth(vehicle.id) : Promise.resolve(null)),
+    enabled: Boolean(canQueryVehicleTelemetry && vehicle?.id && isSelected && vehicleBatteryXrayMode),
   });
+
+  // Authoritative query for vehicle damages to display actual technical condition on floating plaque
+  const { data: vehicleDamages = [] } = useQuery<any[]>({
+    queryKey: ['vehicleDamages', vehicle?.id],
+    queryFn: () => (vehicle?.id && isValidVehicleUuid ? fetchVehicleDamages(vehicle.id) : Promise.resolve([])),
+    enabled: Boolean(canQueryVehicleTelemetry && isSelected && vehicle?.id),
+    staleTime: 10000,
+  });
+
+  // Authoritative query for active inspection to observe preliminary findings
+  const { data: activeInspection } = useQuery<any>({
+    queryKey: ['activeInspection', vehicle?.id],
+    queryFn: () => (vehicle?.id && isValidVehicleUuid ? fetchActiveInspection(vehicle.id) : Promise.resolve(null)),
+    enabled: Boolean(canQueryVehicleTelemetry && isSelected && vehicle?.id),
+    staleTime: 4000,
+    refetchInterval: 5000,
+  });
+
+  const unresolvedDamagesCount = useMemo(
+    () => vehicleDamages.filter((d: any) => d.status !== 'RESOLVED' && d.status !== 'REPAIRED').length,
+    [vehicleDamages]
+  );
+
+  const preliminaryFindingsCount = useMemo(() => {
+    if (!activeInspection?.items || !Array.isArray(activeInspection.items)) return 0;
+    return activeInspection.items.filter(
+      (item: any) => item.conditionStatus && item.conditionStatus !== 'GOOD'
+    ).length;
+  }, [activeInspection]);
+
+  const socLevel = vehicle?.currentBatteryLevel != null ? Number(vehicle.currentBatteryLevel) : null;
+  const odometerVal = vehicle?.odometer != null ? Number(vehicle.odometer) : null;
 
   const defaultYaw = isCoOwner
     ? VEHICLE_INTERACTION_CONFIG.defaultCoOwnerYaw
     : VEHICLE_INTERACTION_CONFIG.defaultOperationsYaw;
+
+  const resolvedInitialYaw = vehicleYaw ?? defaultYaw;
 
   const modelDef = VEHICLE_MODEL_CONFIGS[vehicleCode] || VEHICLE_MODEL_CONFIGS.EV01;
   const proxySize: [number, number, number] = useMemo(
@@ -256,8 +356,8 @@ const VehicleBayComponent: React.FC<VehicleBayProps> = ({
   );
 
   const turntableRef = useRef<THREE.Group>(null);
-  const targetYaw = useRef(vehicleYaw ?? defaultYaw);
-  const currentYaw = useRef(vehicleYaw ?? defaultYaw);
+  const targetYaw = useRef(resolvedInitialYaw);
+  const currentYaw = useRef(resolvedInitialYaw);
   const isVehicleDraggingRef = useRef(false);
   const pointerDownPos = useRef<{ x: number; y: number } | null>(null);
   const lastPointerX = useRef(0);
@@ -335,6 +435,7 @@ const VehicleBayComponent: React.FC<VehicleBayProps> = ({
     if (isBusinessModeActive) return;
     // When a dedicated showroom zone like FINANCE is active, zone presentation owns the screen
     if (selectedZone && selectedZone !== 'VEHICLE') return;
+    if ((vehicle as any)?.isApplicationPreview) return;
     e.stopPropagation();
     onSelect(vehicle);
   };
@@ -372,20 +473,20 @@ const VehicleBayComponent: React.FC<VehicleBayProps> = ({
   const shouldRenderAdminPanel =
     role === 'ADMIN' &&
     selectedVehicleId != null &&
-    vehicleMode === 'ADMIN_VEHICLE_OVERVIEW';
+    vehicleMode === 'ADMIN_VEHICLE_OVERVIEW' &&
+    !isApplicationPreview;
 
   const shouldRenderVehicleOverview =
     (shouldRenderCoOwnerPanel ||
       shouldRenderStaffPanel ||
       shouldRenderAdminPanel) &&
     !isBusinessModeActive &&
-    !isExplorationMode;
+    !isExplorationMode &&
+    !isRegistrationReviewModalOpen &&
+    !isStaffDisputeDashboardOpen &&
+    activePrimaryPanel !== 'DISPUTE';
 
   const displayName = resolveVehicleDisplayName(vehicle, vehicleCode);
-  const vehicleStatusConfig = VEHICLE_STATUS_LABELS[vehicle.status] || {
-    label: 'Sẵn sàng',
-    color: '#10b981',
-  };
 
   return (
     <group position={effectivePosition} name={`${vehicleCode}Bay`}>
@@ -465,8 +566,8 @@ const VehicleBayComponent: React.FC<VehicleBayProps> = ({
           />
         )}
 
-        {/* CO-OWNER ONLY: Direct Interactive 3D Educational Exploration Layer (rotates with car) */}
-        {isSelected && isCoOwner && !isBusinessModeActive && (
+        {/* CO-OWNER & ADMIN: Direct Interactive 3D Educational Exploration Layer (rotates with car) */}
+        {isSelected && (isCoOwner || (isAdmin && !vehicleInspectionMode && !isApplicationPreview)) && !isBusinessModeActive && (
           <CoOwnerVehicleExploration3D
             vehicle={vehicle}
             vehicleCode={vehicleCode as any}
@@ -487,6 +588,7 @@ const VehicleBayComponent: React.FC<VehicleBayProps> = ({
         !isSelected &&
         !vehicleInspectionMode &&
         !vehicleCoOwnershipMode &&
+        !(vehicle as any)?.isApplicationPreview &&
         shouldShowVehicleStatusLabel({
           selectedZone,
           selectedVehicleId,
@@ -504,7 +606,7 @@ const VehicleBayComponent: React.FC<VehicleBayProps> = ({
           <VehicleStatusLabel
             id={vehicleCode}
             name={displayName}
-            status={vehicle.status}
+            status={effectiveStatus}
             batteryLevel={vehicle.currentBatteryLevel}
             isSelected={isSelected}
             isHovered={isHovered}
@@ -637,6 +739,183 @@ const VehicleBayComponent: React.FC<VehicleBayProps> = ({
         </group>
       )}
 
+      {/* STAFF MODE ONLY: Top-Anchored Consolidated Floating Vehicle Information Panel */}
+      {isStaff && isSelected && !vehicleInspectionMode && (
+        <group position={[0, 2.95, 0]}>
+          <Billboard follow={true}>
+            <Html
+              center
+              distanceFactor={9.8}
+              style={{ pointerEvents: 'none', userSelect: 'none' }}
+            >
+              <div
+                style={{
+                  background: 'rgba(7, 20, 38, 0.94)',
+                  backdropFilter: 'blur(20px)',
+                  WebkitBackdropFilter: 'blur(20px)',
+                  border: '1.5px solid rgba(0, 217, 255, 0.5)',
+                  boxShadow: '0 12px 35px rgba(0, 0, 0, 0.65), 0 0 25px rgba(0, 217, 255, 0.28)',
+                  borderRadius: '16px',
+                  padding: '10px 18px',
+                  color: '#ffffff',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                  whiteSpace: 'nowrap',
+                  pointerEvents: 'none',
+                  userSelect: 'none',
+                  minWidth: '340px',
+                }}
+              >
+                {/* Top Row: Icon + Vehicle Identity + Status Badge */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div
+                      style={{
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '50%',
+                        background: 'rgba(0, 217, 255, 0.16)',
+                        border: '1.5px solid #00D9FF',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 0 10px rgba(0, 217, 255, 0.35)',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Car size={16} color="#00D9FF" />
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <div style={{ fontSize: '13.5px', fontWeight: 900, color: '#ffffff', letterSpacing: '0.02em', lineHeight: 1.2 }}>
+                        {displayName}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#00D9FF', letterSpacing: '0.04em' }}>
+                          {vehicleCode}
+                        </span>
+                        <span style={{ fontSize: '9px', color: '#64748b' }}>•</span>
+                        <span style={{ fontSize: '10.5px', color: '#cbd5e1', fontWeight: 600 }}>
+                          {vehicle.licensePlate || '30A-999.83'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Status Badge */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      fontSize: '10px',
+                      fontWeight: 800,
+                      color: vehicleStatusConfig.color,
+                      background: vehicleStatusConfig.bg,
+                      padding: '3px 9px',
+                      borderRadius: '9999px',
+                      border: `1px solid ${vehicleStatusConfig.border}`,
+                      letterSpacing: '0.03em',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: '6px',
+                        height: '6px',
+                        borderRadius: '50%',
+                        background: vehicleStatusConfig.color,
+                        boxShadow: `0 0 6px ${vehicleStatusConfig.color}`,
+                      }}
+                    />
+                    <span>{vehicleStatusConfig.label}</span>
+                  </div>
+                </div>
+
+                {/* Subtle Divider */}
+                <div style={{ height: '1px', background: 'rgba(0, 217, 255, 0.2)', width: '100%' }} />
+
+                {/* Metrics Row: Battery SOC + Odometer + Technical Condition */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1.1fr 1fr 1fr',
+                    gap: '12px',
+                    alignItems: 'center',
+                  }}
+                >
+                  {/* 1. Battery SOC & Progress Bar */}
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#38bdf8', fontSize: '9.5px', fontWeight: 700 }}>
+                        <Zap size={10} color="#00f2fe" />
+                        <span>PIN (SOC)</span>
+                      </div>
+                      <span style={{ fontSize: '11px', fontWeight: 900, color: '#00f2fe' }}>
+                        {socLevel != null ? `${socLevel}%` : 'Chưa có'}
+                      </span>
+                    </div>
+                    <div style={{ width: '100%', height: '4px', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '2px', overflow: 'hidden', marginTop: '3px' }}>
+                      <div
+                        style={{
+                          width: `${Math.min(100, Math.max(0, socLevel ?? 0))}%`,
+                          height: '100%',
+                          background: (socLevel ?? 0) > 20 ? 'linear-gradient(90deg, #00f2fe, #38bdf8)' : '#ef4444',
+                          boxShadow: '0 0 6px #00f2fe',
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* 2. Odometer */}
+                  <div style={{ borderLeft: '1px solid rgba(255, 255, 255, 0.12)', paddingLeft: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#94a3b8', fontSize: '9.5px', fontWeight: 700 }}>
+                      <Gauge size={10} color="#38bdf8" />
+                      <span>ODOMETER</span>
+                    </div>
+                    <div style={{ fontSize: '11.5px', fontWeight: 800, color: '#f8fafc', marginTop: '2px' }}>
+                      {odometerVal != null ? (
+                        <>
+                          {odometerVal.toLocaleString()} <span style={{ fontSize: '9px', color: '#94a3b8' }}>km</span>
+                        </>
+                      ) : (
+                        <span style={{ fontSize: '9.5px', color: '#64748b' }}>Chưa ghi nhận</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 3. Technical Condition */}
+                  <div style={{ borderLeft: '1px solid rgba(255, 255, 255, 0.12)', paddingLeft: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#94a3b8', fontSize: '9.5px', fontWeight: 700 }}>
+                      <ShieldCheck size={10} color={unresolvedDamagesCount > 0 ? '#ef4444' : preliminaryFindingsCount > 0 ? '#f59e0b' : '#10b981'} />
+                      <span>TÌNH TRẠNG</span>
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        color: unresolvedDamagesCount > 0 ? '#f87171' : preliminaryFindingsCount > 0 ? '#fbbf24' : '#34d399',
+                        marginTop: '2px',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {unresolvedDamagesCount > 0
+                        ? `${unresolvedDamagesCount} lỗi hỏng`
+                        : preliminaryFindingsCount > 0
+                        ? `${preliminaryFindingsCount} lưu ý sơ bộ`
+                        : 'Đạt chuẩn (PASS)'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Html>
+          </Billboard>
+        </group>
+      )}
+
       {/* Sub-Worlds rendered ONLY for the selected vehicle (Spatial HTML cards only for CO_OWNER) */}
       {isSelected && isCoOwner && (!isBusinessModeActive || vehicleInspectionMode) && (
         <VehicleInspectionGuide vehicle={vehicle} vehicleCode={vehicleCode} />
@@ -666,7 +945,7 @@ const VehicleBayComponent: React.FC<VehicleBayProps> = ({
         <TripVisualizationWorld vehicle={vehicle} />
       )}
 
-      {isSelected && vehicleDamageMappingMode && (
+      {isSelected && (vehicleDamageMappingMode || vehicleInspectionMode) && (
         <VehicleDamageWorld vehicle={vehicle} />
       )}
 
@@ -763,13 +1042,18 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
   const clearSelection = useWorldStore((state) => state.clearSelection);
   const isVehicleSelected = useWorldStore((state) => state.isVehicleSelected);
   const vehicleVotingMode = useWorldStore((state) => state.vehicleVotingMode);
+  const activePrimaryPanel = useWorldStore((state) => state.activePrimaryPanel);
+  const isStaffDisputeDashboardOpen = useWorldStore((state) => state.isStaffDisputeDashboardOpen);
+  const adminActiveModule = useWorldStore((state) => state.adminActiveModule);
+  const adminApplicationPreviewVehicle = useWorldStore((state) => state.adminApplicationPreviewVehicle);
 
   // TanStack Query: Fetch vehicles from Spring Boot API / MySQL (scoped per role and user)
   const { data: vehicles = [], isLoading, isError, error, refetch } = useQuery<VehicleResponse[]>({
     queryKey: ['vehicles', user?.role, user?.id],
     queryFn: fetchVehicles,
     enabled: authReady,
-    staleTime: 10000,
+    staleTime: 4000,
+    refetchInterval: 4000,
   });
 
   // Fixed Showroom Capacity: Exactly FOUR maximum showroom slots (Slot 1, 2, 3, 4)
@@ -778,7 +1062,12 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
   // Showroom Display Data (Separated from Fleet Inventory per Section 10):
   // 1. In CO_OWNER mode: exactly ONE vehicle is rendered in 3D space.
   // 2. In operations mode (STAFF/ADMIN): exactly at most FOUR eligible showroom vehicles in stable deterministic order.
+  // 3. In ADMIN Application Review mode: preview the exact application vehicle in isolated preview mode.
   const showroomDisplayVehicles = useMemo(() => {
+    if (isAdmin && adminActiveModule === 'APPLICATION_REVIEW' && adminApplicationPreviewVehicle) {
+      return [adminApplicationPreviewVehicle as VehicleResponse];
+    }
+
     if (!vehicles || vehicles.length === 0) return [];
 
     if (!isOperationsRole) {
@@ -791,7 +1080,7 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
 
     const sorted = sortStaffFleetVehicles(vehicles);
     return sorted.slice(0, MAX_SHOWROOM_DISPLAY_SLOTS);
-  }, [vehicles, isOperationsRole, selectedVehicleId]);
+  }, [vehicles, isOperationsRole, selectedVehicleId, isAdmin, adminActiveModule, adminApplicationPreviewVehicle]);
 
   // Synchronize selection: If selected vehicle is not in authorized backend vehicles, reset selection
   useEffect(() => {
@@ -816,15 +1105,49 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
     vehicleMaintenanceMode ||
     vehicleBatteryXrayMode ||
     vehicleChargingMode ||
-    vehicleVotingMode;
+    vehicleVotingMode ||
+    activePrimaryPanel === 'DISPUTE' ||
+    isStaffDisputeDashboardOpen;
 
   const handleVehicleSelect = (selectedVehicle: VehicleResponse) => {
+    if (isAdmin) {
+      if (adminActiveModule === 'APPLICATION_REVIEW' || (selectedVehicle as any)?.isApplicationPreview) return;
+      useWorldStore.getState().setAdminVehicleGalleryOpen(true);
+      return;
+    }
+    if (role === 'STAFF') {
+      selectVehicle(selectedVehicle.id, role, false);
+      useWorldStore.getState().setAdminVehicleGalleryOpen(false);
+      useWorldStore.getState().setStaffOperationsCarouselOpen(true);
+      return;
+    }
+    // For CO_OWNER, clicking the central vehicle activates VEHICLE_OVERVIEW state:
+    // Displays both the eight-function carousel and the right-side overview panel (TỔNG QUAN)
     selectVehicle(selectedVehicle.id, role, true);
     openVehicleDetail();
+    useWorldStore.getState().setCoOwnerOperationsCarouselOpen(true);
   };
 
   const handleDirectVehicleClick = (selectedVehicle: VehicleResponse) => {
-    selectVehicle(selectedVehicle.id, role);
+    if (isAdmin) {
+      if (adminActiveModule === 'APPLICATION_REVIEW' || (selectedVehicle as any)?.isApplicationPreview) return;
+      useWorldStore.getState().setAdminVehicleGalleryOpen(true);
+      return;
+    }
+    selectVehicle(selectedVehicle.id, role, false);
+    // For STAFF, clicking the central vehicle reveals the 8-function operational hologram carousel
+    // without opening the redundant old vehicle overview panel.
+    if (role === 'STAFF') {
+      useWorldStore.getState().setAdminVehicleGalleryOpen(false);
+      useWorldStore.getState().setStaffOperationsCarouselOpen(true);
+      return;
+    }
+    if (isCoOwner) {
+      selectVehicle(selectedVehicle.id, role, true);
+      openVehicleDetail();
+      useWorldStore.getState().setCoOwnerOperationsCarouselOpen(true);
+      return;
+    }
     if (isOperationsRole) {
       openVehicleDetail();
     }
@@ -833,9 +1156,12 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
   // For operations role, derive the foreground hero vehicle using the Single Source of Truth
   // All hooks must execute unconditionally BEFORE any early returns
   const heroVehicle = useMemo(() => {
+    if (isAdmin && adminActiveModule === 'APPLICATION_REVIEW' && adminApplicationPreviewVehicle) {
+      return adminApplicationPreviewVehicle as VehicleResponse;
+    }
     if (!vehicles || vehicles.length === 0) return null;
     return resolveAuthoritativeHeroVehicle(vehicles, selectedVehicleId);
-  }, [vehicles, selectedVehicleId]);
+  }, [vehicles, selectedVehicleId, isAdmin, adminActiveModule, adminApplicationPreviewVehicle]);
 
   // Loading State in 3D Space (all hooks have now been called unconditionally)
   if (!authReady || isLoading) {
@@ -975,14 +1301,6 @@ export const VehicleDigitalTwin: React.FC<VehicleDigitalTwinProps> = ({ renderPa
 
     return (
       <group name="StaffFleetHeroAndPreviewContainer">
-        {/* Horizontal Secondary Fleet Preview Row (Limited strictly to at most 4 background slots) */}
-        <FleetPreviewRow3D
-          vehicles={showroomDisplayVehicles}
-          selectedVehicleId={heroVehicle.id}
-          onSelectVehicle={handleVehicleSelect}
-          visible={!isBusinessModeActive && !isRegistrationReviewModalOpen}
-        />
-
         {/* Large Foreground Hero Vehicle (Interactive Turntable, Full Detail) */}
         <VehicleBay
           key={heroVehicle.id || heroCode}

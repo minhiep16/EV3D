@@ -1,0 +1,72 @@
+@startuml
+title SƠ ĐỒ LỚP: ĐẶT LỊCH, BÀN GIAO VÀ CHUYẾN ĐI (CLASS-04)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam classAttributeIconSize 0
+
+
+class Booking {
+    - id: UUID
+    - startTime: Instant
+    - endTime: Instant
+    - status: BookingStatus
+    - purpose: String
+    - createdAt: Instant
+}
+
+enum BookingStatus <<enumeration>> {
+    PENDING
+    CONFIRMED
+    COMPLETED
+    CANCELLED
+}
+
+class VehicleHandover {
+    - id: UUID
+    - startOdometer: BigDecimal
+    - startBatteryLevel: int
+    - staffSignature: String
+    - ownerAcknowledgedAt: Instant
+    - status: HandoverStatus
+}
+
+class Trip {
+    - id: UUID
+    - startedAt: Instant
+    - endedAt: Instant
+    - startOdometer: BigDecimal
+    - endOdometer: BigDecimal
+    - startBatteryLevel: int
+    - endBatteryLevel: int
+    - energyConsumedKwh: BigDecimal
+    - returnRequestedAt: Instant
+    - status: TripStatus
+}
+
+enum TripStatus <<enumeration>> {
+    NOT_STARTED
+    ACTIVE
+    RETURN_REQUESTED
+    COMPLETED
+}
+
+class TripExtensionRequest {
+    - id: UUID
+    - requestedAdditionalMinutes: int
+    - status: ExtensionStatus
+    - reason: String
+}
+
+Booking --> BookingStatus
+Booking "1" -- "1" VehicleHandover
+Booking "1" -- "0..1" Trip
+Trip --> TripStatus
+Trip "1" *-- "many" TripExtensionRequest
+
+@enduml

@@ -1,0 +1,22 @@
+@startuml
+title MÁY TRẠNG THÁI: KHIẾU NẠI VÀ HÒA GIẢI TRANH CHẤP (STATE-09)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+[*] --> LODGED : Thành viên nộp hồ sơ khiếu nại
+
+LODGED --> UNDER_INVESTIGATION : Nhân viên tiếp nhận và đối soát nhật ký
+UNDER_INVESTIGATION --> RESOLVED : Đạt được thỏa thuận / Bồi thường DEMO
+UNDER_INVESTIGATION --> DISMISSED : Bác bỏ do thiếu căn cứ xác đáng
+
+RESOLVED --> [*]
+DISMISSED --> [*]
+
+@enduml

@@ -1,0 +1,54 @@
+@startuml
+title SƠ ĐỒ TUẦN TỰ: MÔ PHỎNG THỰC THI SMART CONTRACT (SEQ-16)
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam sequenceMessageAlign center
+skinparam participant {
+    BackgroundColor #F8F9FA
+    BorderColor #2C3E50
+    FontColor #2C3E50
+}
+skinparam actor {
+    BackgroundColor #E8F4F8
+    BorderColor #1A5276
+}
+skinparam database {
+    BackgroundColor #FEF9E7
+    BorderColor #B7950B
+}
+
+autonumber
+actor "Hệ Thống (Trigger)" as System
+participant "SmartContractExecutionScheduler" as Scheduler
+participant "SmartContractSimulatorService" as Service
+participant "LedgerBlockRepository" as LedgerRepo
+database "MySQL Database" as DB
+
+System -> Scheduler : triggerPeriodicExecution()
+activate Scheduler
+Scheduler -> Service : executePendingRules()
+activate Service
+
+Service -> DB : SELECT * FROM smart_contracts WHERE status = 'ACTIVE'
+DB --> Service : List<SmartContract>
+
+loop Mỗi hợp đồng thông minh
+    Service -> Service : evaluateCondition(contract.ruleExpression, vehicleData)
+    alt Điều kiện thỏa mãn (e.g. Quá hạn thanh toán 7 ngày)
+        Service -> Service : executeAction(DISALLOW_BOOKING, vehicleId)
+        Service -> Service : generateBlockHash(previousHash, payload, timestamp)
+        Service -> LedgerRepo : save(LedgerBlock(blockHash, previousHash, payload))
+        LedgerRepo -> DB : INSERT INTO ledger_blocks ...
+    end
+end
+
+Service --> Scheduler : SimulationResult (executedRulesCount)
+deactivate Service
+deactivate Scheduler
+
+@enduml

@@ -5,11 +5,9 @@ import { useAuthStore } from '../../../store/authStore';
 import { fetchVehicles } from '../../../services/vehicleApi';
 import { fetchVehicleCoOwnership } from '../../../services/coOwnershipApi';
 import { useCostSharingSummary } from '../../../hooks/useExpenses';
-import { useFundSummary } from '../../../hooks/useFund';
 import { VehicleResponse } from '../../../types/vehicle';
 import { FinanceHeroHologram } from './FinanceHeroHologram';
 import { FinanceControlHologram3D } from './FinanceControlHologram3D';
-import { AiControlHologram3D } from './AiControlHologram3D';
 import { ChargingControlHologram3D } from './ChargingControlHologram3D';
 
 interface ZoneHologramDisplayProps {
@@ -65,20 +63,6 @@ export const ZoneHologramDisplay: React.FC<ZoneHologramDisplayProps> = ({ overri
     { enabled: !!activeVehicleId }
   );
 
-  // Authoritative Shared Fund query (shared TanStack Query cache)
-  const {
-    data: fundSummary,
-    isLoading: isFundLoading,
-    isError: isFundError,
-  } = useFundSummary(activeVehicleId);
-
-  const fundDisplay = useMemo(() => {
-    if (isFundLoading) return 'ĐANG TẢI SỐ DƯ QUỸ...';
-    if (isFundError) return 'KHÔNG THỂ TẢI SỐ DƯ QUỸ';
-    if (!fundSummary) return 'CHƯA CÓ QUỸ CHUNG';
-    return `${Number(fundSummary.availableBalance).toLocaleString('vi-VN')}đ`;
-  }, [fundSummary, isFundLoading, isFundError]);
-
   // Authoritative current user ownership resolution
   const userPercentage = useMemo(() => {
     // 1. Authoritative backend CostSharingSummary for authenticated user
@@ -112,12 +96,12 @@ export const ZoneHologramDisplay: React.FC<ZoneHologramDisplayProps> = ({ overri
     ? overrideZone === 'FINANCE'
       ? 'FINANCE'
       : overrideZone === 'AI'
-      ? 'AI_ASSISTANT'
-      : overrideZone === 'ANALYTICS'
-      ? 'ANALYTICS'
-      : overrideZone === 'CHARGING'
-      ? 'CHARGING'
-      : 'NONE'
+        ? 'AI_ASSISTANT'
+        : overrideZone === 'ANALYTICS'
+          ? 'ANALYTICS'
+          : overrideZone === 'CHARGING'
+            ? 'CHARGING'
+            : 'NONE'
     : activeFeature;
 
   // Render dedicated zone hologram for CO_OWNER showroom view
@@ -133,7 +117,6 @@ export const ZoneHologramDisplay: React.FC<ZoneHologramDisplayProps> = ({ overri
           {/* Top Holographic Visor Canopy above Vehicle: ONLY RENDERS IN FINANCE MODE */}
           <FinanceHeroHologram
             position={[0.0, 2.70, 1.8]}
-            fundTotal={fundDisplay}
             userPercentage={userPercentage}
             vehicleId={activeVehicleId}
           />
@@ -149,15 +132,9 @@ export const ZoneHologramDisplay: React.FC<ZoneHologramDisplayProps> = ({ overri
       );
 
     case 'AI_ASSISTANT':
-      return (
-        <group name="AiSpatialHologramCluster">
-          {/* Right-Side 3D World-Space Holographic AI Assistant Console */}
-          <AiControlHologram3D
-            position={[6.5, 1.5, 2.80]}
-            rotation={[0, -0.1745, 0]}
-          />
-        </group>
-      );
+      // Authoritative screen-space DOM panel (AiZonePanel) is mounted in GarageScene.
+      // Eliminates 3D world-space perspective skew, rotation, and camera transform inheritance.
+      return null;
 
     case 'ANALYTICS':
       // Authoritative front-facing screen-space DOM panel (AnalyticsPanel) is mounted in GarageScene.

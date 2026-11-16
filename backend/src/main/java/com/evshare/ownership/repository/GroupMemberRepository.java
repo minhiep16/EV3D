@@ -13,6 +13,7 @@ import java.util.UUID;
 public interface GroupMemberRepository extends JpaRepository<GroupMember, UUID> {
     List<GroupMember> findByGroupId(UUID groupId);
     List<GroupMember> findByGroupIdAndStatus(UUID groupId, MemberStatus status);
+    List<GroupMember> findByUserId(UUID userId);
     List<GroupMember> findByUserIdAndStatus(UUID userId, MemberStatus status);
     List<GroupMember> findByStatus(MemberStatus status);
     Optional<GroupMember> findByGroupIdAndUserId(UUID groupId, UUID userId);

@@ -47,9 +47,32 @@ public class MembershipInvitation implements Persistable<UUID> {
     @Column(name = "proposed_percentage", precision = 5, scale = 2)
     private BigDecimal proposedPercentage = BigDecimal.ZERO;
 
+    @Column(name = "leader_transfer_percentage", precision = 5, scale = 2)
+    private BigDecimal leaderTransferPercentage = BigDecimal.ZERO;
+
+    @Column(name = "additional_contributions_json", columnDefinition = "TEXT")
+    private String additionalContributionsJson;
+
+    @Column(name = "total_offered_percentage", precision = 5, scale = 2)
+    private BigDecimal totalOfferedPercentage = BigDecimal.ZERO;
+
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "contract_version_id", length = 36, columnDefinition = "CHAR(36)")
+    private UUID contractVersionId;
+
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "contract_id", length = 36, columnDefinition = "CHAR(36)")
+    private UUID contractId;
+
+    @Column(name = "rejection_reason", columnDefinition = "TEXT")
+    private String rejectionReason;
+
+    @Column(name = "signatures_json", columnDefinition = "TEXT")
+    private String signaturesJson;
+
     @Enumerated(EnumType.STRING)
-    @Column(name = "status", length = 30, nullable = false)
-    private InvitationStatus status = InvitationStatus.INVITED;
+    @Column(name = "status", length = 35, nullable = false)
+    private InvitationStatus status = InvitationStatus.PENDING_INVITEE_RESPONSE;
 
     @Column(name = "invitation_note", columnDefinition = "TEXT")
     private String invitationNote;
@@ -60,6 +83,15 @@ public class MembershipInvitation implements Persistable<UUID> {
 
     @Column(name = "accepted_at")
     private Instant acceptedAt;
+
+    @Column(name = "completed_at")
+    private Instant completedAt;
+
+    @Column(name = "rejected_at")
+    private Instant rejectedAt;
+
+    @Column(name = "cancelled_at")
+    private Instant cancelledAt;
 
     @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;
@@ -163,6 +195,62 @@ public class MembershipInvitation implements Persistable<UUID> {
         this.proposedPercentage = proposedPercentage;
     }
 
+    public BigDecimal getLeaderTransferPercentage() {
+        return leaderTransferPercentage;
+    }
+
+    public void setLeaderTransferPercentage(BigDecimal leaderTransferPercentage) {
+        this.leaderTransferPercentage = leaderTransferPercentage;
+    }
+
+    public String getAdditionalContributionsJson() {
+        return additionalContributionsJson;
+    }
+
+    public void setAdditionalContributionsJson(String additionalContributionsJson) {
+        this.additionalContributionsJson = additionalContributionsJson;
+    }
+
+    public BigDecimal getTotalOfferedPercentage() {
+        return totalOfferedPercentage;
+    }
+
+    public void setTotalOfferedPercentage(BigDecimal totalOfferedPercentage) {
+        this.totalOfferedPercentage = totalOfferedPercentage;
+    }
+
+    public UUID getContractVersionId() {
+        return contractVersionId;
+    }
+
+    public void setContractVersionId(UUID contractVersionId) {
+        this.contractVersionId = contractVersionId;
+    }
+
+    public UUID getContractId() {
+        return contractId;
+    }
+
+    public void setContractId(UUID contractId) {
+        this.contractId = contractId;
+    }
+
+    public String getRejectionReason() {
+        return rejectionReason;
+    }
+
+    public void setRejectionReason(String rejectionReason) {
+        this.rejectionReason = rejectionReason;
+    }
+
+    public String getSignaturesJson() {
+        return signaturesJson;
+    }
+
+    public void setSignaturesJson(String signaturesJson) {
+        this.signaturesJson = signaturesJson;
+    }
+
     public InvitationStatus getStatus() {
         return status;
     }
@@ -193,6 +281,30 @@ public class MembershipInvitation implements Persistable<UUID> {
 
     public void setAcceptedAt(Instant acceptedAt) {
         this.acceptedAt = acceptedAt;
+    }
+
+    public Instant getCompletedAt() {
+        return completedAt;
+    }
+
+    public void setCompletedAt(Instant completedAt) {
+        this.completedAt = completedAt;
+    }
+
+    public Instant getRejectedAt() {
+        return rejectedAt;
+    }
+
+    public void setRejectedAt(Instant rejectedAt) {
+        this.rejectedAt = rejectedAt;
+    }
+
+    public Instant getCancelledAt() {
+        return cancelledAt;
+    }
+
+    public void setCancelledAt(Instant cancelledAt) {
+        this.cancelledAt = cancelledAt;
     }
 
     public Instant getExpiresAt() {

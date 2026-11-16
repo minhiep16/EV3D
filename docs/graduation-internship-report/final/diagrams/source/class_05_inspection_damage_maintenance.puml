@@ -1,0 +1,76 @@
+@startuml
+title SƠ ĐỒ LỚP: KIỂM ĐỊNH KỸ THUẬT VÀ HƯ HỎNG 3D (CLASS-05)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam classAttributeIconSize 0
+
+
+class VehicleInspection {
+    - id: UUID
+    - inspectionType: InspectionType
+    - overallResult: InspectionResult
+    - verifiedOdometer: BigDecimal
+    - verifiedBatteryLevel: int
+    - inspectedAt: Instant
+}
+
+enum InspectionResult <<enumeration>> {
+    PASSED
+    FAILED
+    CONDITIONALLY_PASSED
+}
+
+class InspectionItem {
+    - id: UUID
+    - itemCode: String
+    - itemName: String
+    - isPassed: boolean
+    - notes: String
+}
+
+class DamageRecord {
+    - id: UUID
+    - partCode: String
+    - severity: DamageSeverity
+    - description: String
+    - hotspotX: BigDecimal
+    - hotspotY: BigDecimal
+    - hotspotZ: BigDecimal
+    - status: DamageStatus
+    - reportedAt: Instant
+}
+
+enum DamageSeverity <<enumeration>> {
+    LOW
+    MEDIUM
+    HIGH
+}
+
+enum DamageStatus <<enumeration>> {
+    REPORTED
+    IN_PROGRESS
+    RESOLVED
+}
+
+class MaintenanceRecord {
+    - id: UUID
+    - scheduledAt: Instant
+    - completedAt: Instant
+    - totalCost: BigDecimal
+    - status: MaintenanceStatus
+}
+
+VehicleInspection --> InspectionResult
+VehicleInspection "1" *-- "many" InspectionItem
+VehicleInspection "1" *-- "many" DamageRecord
+DamageRecord --> DamageSeverity
+DamageRecord --> DamageStatus
+MaintenanceRecord "1" *-- "many" DamageRecord
+
+@enduml

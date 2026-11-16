@@ -1,0 +1,54 @@
+@startuml
+title LƯỢC ĐỒ CƠ SỞ DỮ LIỆU: KIỂM ĐỊNH VÀ HƯ HỎNG 3D (ERD-05)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+entity "vehicle_inspections" as inspections {
+    * id : CHAR(36) [PK]
+    --
+    * vehicle_id : CHAR(36) [FK]
+    * staff_user_id : CHAR(36) [FK]
+    trip_id : CHAR(36) [FK]
+    inspection_type : VARCHAR(30)
+    overall_result : VARCHAR(30)
+    verified_odometer : DECIMAL(10,2)
+    verified_battery_level : INT
+    inspected_at : TIMESTAMP
+}
+
+entity "vehicle_inspection_items" as items {
+    * id : CHAR(36) [PK]
+    --
+    * inspection_id : CHAR(36) [FK]
+    item_code : VARCHAR(50)
+    item_name : VARCHAR(100)
+    is_passed : BOOLEAN
+    notes : VARCHAR(255)
+}
+
+entity "damage_records" as damages {
+    * id : CHAR(36) [PK]
+    --
+    * vehicle_id : CHAR(36) [FK]
+    inspection_id : CHAR(36) [FK]
+    part_code : VARCHAR(50)
+    severity : VARCHAR(20)
+    description : VARCHAR(500)
+    hotspot_x : DECIMAL(8,4)
+    hotspot_y : DECIMAL(8,4)
+    hotspot_z : DECIMAL(8,4)
+    status : VARCHAR(30)
+    reported_by_user_id : CHAR(36) [FK]
+}
+
+inspections ||--|{ items
+inspections ||--o{ damages
+
+@enduml

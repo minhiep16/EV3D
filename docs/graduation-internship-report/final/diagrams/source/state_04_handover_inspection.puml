@@ -1,0 +1,22 @@
+@startuml
+title MÁY TRẠNG THÁI: BÀN GIAO VÀ KIỂM ĐỊNH KỸ THUẬT (STATE-04)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+[*] --> PENDING_VERIFICATION : Khởi tạo trước giờ khởi hành
+
+PENDING_VERIFICATION --> STAFF_VERIFIED : Nhân viên ghi nhận ODO/Pin xuất phát
+STAFF_VERIFIED --> COMPLETED : Co-Owner ký xác nhận hiện trạng xe
+PENDING_VERIFICATION --> CANCELLED : Lịch đặt xe bị hủy
+
+COMPLETED --> [*]
+CANCELLED --> [*]
+
+@enduml

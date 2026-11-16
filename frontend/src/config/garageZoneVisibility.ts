@@ -39,6 +39,8 @@ export interface GarageFocusState {
   selectedVehiclePartId?: string | null;
   selectedVehiclePartCode?: string | null;
   selectedChargingStationId?: string | null;
+  isVehicleDetailOpen?: boolean;
+  isOperationsPanelOpen?: boolean;
 }
 
 /**
@@ -191,12 +193,19 @@ export function shouldShowChargingStationLabel(
     return true;
   }
 
-  // If another showroom zone is focused (not CHARGING):
-  if (state.selectedZone && state.selectedZone !== 'CHARGING') {
+  // When vehicle detail / operational dashboard panel is active on screen:
+  // Strictly prevent 3D world labels from visually colliding with dashboard UI cards ("PIN & SẠC", "BẢO DƯỠNG", etc.)
+  if (state.isOperationsPanelOpen || state.isVehicleDetailOpen) {
+    // Only display if user explicitly hovers or clicks this specific charging station in the 3D scene
+    return Boolean(options?.isSelected || options?.isHovered);
+  }
+
+  // If another dedicated showroom zone is focused (e.g. FINANCE, ANALYTICS, AI, GOVERNANCE):
+  if (state.selectedZone && state.selectedZone !== 'CHARGING' && state.selectedZone !== 'VEHICLE') {
     return false;
   }
 
-  // In Garage Overview: visible
+  // In Garage / Vehicle Overview: visible
   return true;
 }
 
@@ -225,7 +234,11 @@ export function shouldShowAnyChargingStationLabels(state: GarageFocusState): boo
     return true;
   }
 
-  if (state.selectedZone && state.selectedZone !== 'CHARGING') {
+  if (state.isOperationsPanelOpen || state.isVehicleDetailOpen) {
+    return false;
+  }
+
+  if (state.selectedZone && state.selectedZone !== 'CHARGING' && state.selectedZone !== 'VEHICLE') {
     return false;
   }
 

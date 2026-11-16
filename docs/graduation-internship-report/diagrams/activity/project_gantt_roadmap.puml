@@ -1,0 +1,32 @@
+@startgantt
+title LỘ TRÌNH VÀ TIẾN ĐỘ THỰC HIỆN ĐỀ TÀI EVSHARE 3D (GANTT CHART)
+language vi
+printscale weekly
+today is 2026-11-16
+
+Project starts 2026-08-03
+
+[Giai đoạn 1: Tiếp nhận đề tài & Thiết kế CSDL] as [G1] starts 2026-08-03 and ends 2026-08-28
+[Khảo sát nghiệp vụ đồng sở hữu xe điện] as [T1_1] starts 2026-08-03 and ends 2026-08-14
+[Thiết kế lược đồ ERD & 46 migration Flyway] as [T1_2] starts 2026-08-15 and ends 2026-08-28
+
+[Giai đoạn 2: Phát triển Backend lõi & Khử xung đột] as [G2] starts 2026-08-31 and ends 2026-09-25
+[Cấu hình Spring Security 6 & JWT Auth] as [T2_1] starts 2026-08-31 and ends 2026-09-11
+[Động cơ Đặt lịch & Khử xung đột thời gian] as [T2_2] starts 2026-09-12 and ends 2026-09-25
+
+[Giai đoạn 3: Phát triển Virtual Garage 3D & Tài chính] as [G3] starts 2026-09-28 and ends 2026-10-23
+[Xây dựng Virtual Garage 3D (Three.js & R3F)] as [T3_1] starts 2026-09-28 and ends 2026-10-09
+[Động cơ WAC & Phân chia chi phí Hare-Niemeyer] as [T3_2] starts 2026-10-10 and ends 2026-10-23
+
+[Giai đoạn 4: Tích hợp, Kiểm thử & Viết Báo cáo] as [G4] starts 2026-10-26 and ends 2026-11-20
+[Tích hợp Hợp đồng, Biểu quyết & Tranh chấp] as [T4_1] starts 2026-10-26 and ends 2026-11-06
+[Thiết kế 100 ca kiểm thử & Hoàn thiện Báo cáo] as [T4_2] starts 2026-11-07 and ends 2026-11-20
+
+[T1_1] -> [T1_2]
+[T1_2] -> [T2_1]
+[T2_1] -> [T2_2]
+[T2_2] -> [T3_1]
+[T3_1] -> [T3_2]
+[T3_2] -> [T4_1]
+[T4_1] -> [T4_2]
+@endgantt

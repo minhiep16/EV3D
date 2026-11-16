@@ -1,0 +1,53 @@
+@startuml
+title KIẾN TRÚC TỔNG THỂ FULL-STACK HỆ THỐNG EVSHARE 3D
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+package "Client Tier (Trình duyệt Web Khách)" as ClientTier #EBF5FB {
+    [Single Page Application (React 18 + TS)] as ReactApp #D4E6F1
+    [Three.js Engine r173 / WebGL 2.0] as ThreeEngine #AED6F1
+    [React Three Fiber & Drei Canvas] as R3F #AED6F1
+    [Zustand State Store (authStore, worldStore)] as Zustand #D4E6F1
+    [TanStack Query & Axios HTTP Client] as ApiClient #D4E6F1
+    
+    ReactApp --> R3F : Khởi tạo Canvas & Spatial UI
+    R3F --> ThreeEngine : Render Scene Graph qua WebGL
+    ReactApp --> Zustand : Quản lý trạng thái toàn cục
+    ReactApp --> ApiClient : Điều phối truy vấn API
+}
+
+cloud "Mạng Truyền Thông HTTPS (SSL/TLS)" as Network #F4F6F7 {
+    interface "RESTful API JSON / Bearer Token" as RestEndpoint
+}
+
+ApiClient --> RestEndpoint : HTTPS POST/GET/PUT
+
+package "Server Tier (Máy chủ Spring Boot 3.3.4 LTS)" as ServerTier #E8F8F5 {
+    [JwtAuthenticationFilter] as JwtFilter #D1F2EB
+    [REST Controllers (27 Controllers)] as Controllers #A3E4D7
+    [Service Layer (25+ Services)] as Services #76D7C4
+    [Spring Data JPA / Hibernate ORM 6.5] as ORM #48C9B0
+    [GlobalExceptionHandler & Auditing] as CommonMod #D1F2EB
+    
+    RestEndpoint --> JwtFilter : Lọc xác thực Bearer Token
+    JwtFilter --> Controllers : Chuyển tiếp Request đã xác thực
+    Controllers --> Services : Thực thi Logic Nghiệp Vụ
+    Services --> ORM : Thao tác ánh xạ quan hệ
+    Services ..> CommonMod : Bắt ngoại lệ tập trung
+}
+
+package "Data & Storage Tier" as DataTier #FEF9E7 {
+    database "MySQL 8.0 Community Database\n(46 Bảng thực thể, Flyway V1-V46)" as MySQL #FAD7A0
+    folder "Static Public 3D Assets\n(.glb Models: EV01, EV02, VF3)" as StaticAssets #FCF3CF
+}
+
+ORM --> MySQL : JDBC / HikariCP Pool (ACID Enforced)
+ThreeEngine ..> StaticAssets : Tải nhị phân useGLTF.preload()
+@enduml

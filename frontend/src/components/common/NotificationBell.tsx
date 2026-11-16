@@ -21,6 +21,7 @@ import {
   Car,
   Loader2,
   RefreshCw,
+  Users,
 } from 'lucide-react';
 import {
   fetchNotifications,
@@ -34,6 +35,8 @@ import {
 import { NotificationResponse, NotificationSeverity, NotificationEntityType } from '../../types/notification';
 import { useWorldStore } from '../../store/worldStore';
 import { useAuthStore } from '../../store/authStore';
+import { InvitationReviewModal } from '../three/ownership/InvitationReviewModal';
+import { recoverPendingInvitations } from '../../services/coOwnershipApi';
 
 function formatRelativeTime(isoString?: string | null): string {
   if (!isoString) return '';
@@ -79,6 +82,9 @@ function getEntityIcon(entityType: NotificationEntityType, severity: Notificatio
       return <ShieldCheck size={14} color="#10b981" />;
     case 'TRIP':
       return <Car size={14} color="#00f2fe" />;
+    case 'OWNERSHIP':
+    case 'INVITATION':
+      return <Users size={14} color="#22e6ff" />;
     default:
       return <Info size={14} color="#94a3b8" />;
   }
@@ -91,6 +97,7 @@ export const NotificationBell: React.FC = () => {
 
   const [filter, setFilter] = useState<'ALL' | 'UNREAD'>('ALL');
   const [showActionsMenu, setShowActionsMenu] = useState(false);
+  const [reviewingInvitationId, setReviewingInvitationId] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const activePrimaryPanel = useWorldStore((state) => state.activePrimaryPanel);
@@ -103,6 +110,22 @@ export const NotificationBell: React.FC = () => {
   const selectVehicle = useWorldStore((state) => state.selectVehicle);
   const selectedVehicleId = useWorldStore((state) => state.selectedVehicleId);
   const setPaymentVerificationModalOpen = useWorldStore((state) => state.setPaymentVerificationModalOpen);
+
+  // Idempotent recovery for pending membership invitations (Section 6)
+  useEffect(() => {
+    if (isAuthenticated && user?.id) {
+      recoverPendingInvitations()
+        .then((recovered) => {
+          if (recovered && recovered.length > 0) {
+            queryClient.invalidateQueries({ queryKey: ['notifications', user.id] });
+            queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count', user.id] });
+          }
+        })
+        .catch(() => {
+          // Non-blocking background recovery
+        });
+    }
+  }, [isAuthenticated, user?.id, queryClient]);
 
   // Authoritative Query: Fetch notifications (full list needed when panel is open or on manual refresh)
   const {
@@ -269,7 +292,11 @@ export const NotificationBell: React.FC = () => {
         useWorldStore.getState().enterVehicleTripStartMode();
       }
     } else if (item.entityType === 'TRIP') {
-      if (item.eventType === 'TRIP_RETURN_REQUESTED') {
+      if (item.eventType === 'TRIP_EXTENSION_REQUEST' && item.entityId) {
+        useWorldStore.getState().openExtensionNegotiationModal(item.entityId);
+        closeGaragePanel();
+        return;
+      } else if (item.eventType === 'TRIP_RETURN_REQUESTED') {
         if (user?.role === 'STAFF' || user?.role === 'ADMIN') {
           selectVehicle(targetVehicleId);
           useWorldStore.getState().setActiveStaffOperationModule('RETURN');
@@ -287,6 +314,35 @@ export const NotificationBell: React.FC = () => {
       } else {
         selectVehicle(targetVehicleId);
         openGaragePanel('VEHICLE_DETAIL', { vehicleId: targetVehicleId });
+      }
+    } else if (item.eventType === 'MEMBERSHIP_INVITATION_RECEIVED' || item.entityType === 'INVITATION') {
+      if (item.entityId) {
+        setReviewingInvitationId(item.entityId);
+        closeGaragePanel();
+        return;
+      }
+      if (targetVehicleId && selectedVehicleId !== targetVehicleId) {
+        selectVehicle(targetVehicleId);
+      }
+      openGaragePanel('CO_OWNERSHIP', { vehicleId: targetVehicleId });
+    } else if (item.entityType === 'OWNERSHIP') {
+      if (item.eventType === 'MEMBERSHIP_INVITATION_RECEIVED' && item.entityId) {
+        setReviewingInvitationId(item.entityId);
+        closeGaragePanel();
+        return;
+      }
+      if (selectedVehicleId !== targetVehicleId) {
+        selectVehicle(targetVehicleId);
+      }
+      openGaragePanel('CO_OWNERSHIP', { vehicleId: targetVehicleId });
+    } else if (item.entityType === 'DISPUTE') {
+      if (selectedVehicleId !== targetVehicleId) {
+        selectVehicle(targetVehicleId);
+      }
+      if (user?.role === 'STAFF' || user?.role === 'ADMIN') {
+        useWorldStore.getState().setStaffDisputeDashboardOpen(true);
+      } else {
+        openGaragePanel('DISPUTE', { vehicleId: targetVehicleId });
       }
     } else {
       if (selectedVehicleId !== targetVehicleId) {
@@ -832,6 +888,37 @@ export const NotificationBell: React.FC = () => {
                       {item.message}
                     </div>
 
+                    {(item.eventType === 'MEMBERSHIP_INVITATION_RECEIVED' || item.entityType === 'INVITATION') && item.entityId && (
+                      <div style={{ marginTop: '8px' }}>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!item.isRead) markReadMutation.mutate(item.id);
+                            setReviewingInvitationId(item.entityId!);
+                            closeGaragePanel();
+                          }}
+                          style={{
+                            background: 'rgba(34, 230, 255, 0.16)',
+                            border: '1px solid rgba(34, 230, 255, 0.45)',
+                            borderRadius: '6px',
+                            color: '#22e6ff',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            padding: '4px 10px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          <Users size={12} />
+                          <span>Xem và phản hồi lời mời</span>
+                        </button>
+                      </div>
+                    )}
+
                     <div
                       style={{
                         display: 'flex',
@@ -893,6 +980,20 @@ export const NotificationBell: React.FC = () => {
             )}
           </div>
         </div>
+      )}
+
+      {reviewingInvitationId && (
+        <InvitationReviewModal
+          invitationId={reviewingInvitationId}
+          onClose={() => setReviewingInvitationId(null)}
+          onSuccess={() => {
+            setReviewingInvitationId(null);
+            refetchNotifs();
+            queryClient.invalidateQueries({ queryKey: ['myPendingInvitations'] });
+            queryClient.invalidateQueries({ queryKey: ['coOwnership'] });
+            queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+          }}
+        />
       )}
     </div>
   );

@@ -1,0 +1,27 @@
+@startuml
+title MÁY TRẠNG THÁI: KHOẢN CHI VÀ NGHĨA VỤ THANH TOÁN (STATE-06)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+[*] --> PENDING_APPROVAL : Tạo khoản chi phí thô
+
+PENDING_APPROVAL --> ALLOCATED : Phê duyệt chi phí & Phân chia nghĩa vụ (Hare-Niemeyer)
+PENDING_APPROVAL --> REJECTED : Từ chối hóa đơn sai lệch
+
+ALLOCATED --> PAYMENT_SUBMITTED : Thành viên nộp mã chuyển khoản DEMO
+PAYMENT_SUBMITTED --> PAYMENT_VERIFIED : Nhân viên đối soát biến động số dư
+PAYMENT_SUBMITTED --> REJECTED : Chứng từ giả mạo / Không nhận được tiền
+
+REJECTED --> ALLOCATED : Cho phép nộp lại mã thanh toán đúng
+PAYMENT_VERIFIED --> SETTLED : Tất toán dứt điểm nghĩa vụ tài chính
+
+SETTLED --> [*]
+
+@enduml

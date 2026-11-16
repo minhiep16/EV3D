@@ -1,0 +1,80 @@
+@startuml
+title SƠ ĐỒ TUẦN TỰ: TRẢ XE, KIỂM ĐỊNH VÀ ĐỐI SOÁT NĂNG LƯỢNG (SEQ-07)
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam sequenceMessageAlign center
+skinparam participant {
+    BackgroundColor #F8F9FA
+    BorderColor #2C3E50
+    FontColor #2C3E50
+}
+skinparam actor {
+    BackgroundColor #E8F4F8
+    BorderColor #1A5276
+}
+skinparam database {
+    BackgroundColor #FEF9E7
+    BorderColor #B7950B
+}
+
+autonumber
+actor "Chủ Xe (CO_OWNER)" as CoOwner
+actor "Nhân Viên (STAFF)" as Staff
+participant "TripController" as Controller
+participant "TripService" as TripSvc
+participant "VehicleInspectionService" as InspSvc
+participant "VehicleEnergyInventoryService" as EnergySvc
+participant "ExpenseService" as ExpSvc
+database "MySQL Database" as DB
+
+CoOwner -> Controller : POST /api/trips/{id}/request-return {endOdometer, endBatteryLevel}
+activate Controller
+Controller -> TripSvc : requestTripReturn(tripId, userId, request)
+activate TripSvc
+TripSvc -> DB : UPDATE trips SET status = 'RETURN_REQUESTED', return_requested_at = now()
+DB --> TripSvc : OK
+TripSvc --> Controller : TripResponse
+deactivate TripSvc
+Controller --> CoOwner : HTTP 200 OK (Yêu cầu trả xe đã gửi)
+deactivate Controller
+
+Staff -> Controller : POST /api/trips/{id}/confirm-return {verifiedOdo, verifiedBattery, checklist}
+activate Controller
+Controller -> TripSvc : confirmTripReturn(tripId, staffId, request)
+activate TripSvc
+
+TripSvc -> InspSvc : createInspection(vehicleId, staffId, checklist)
+activate InspSvc
+InspSvc -> DB : INSERT INTO vehicle_inspections ...
+DB --> InspSvc : VehicleInspection entity
+InspSvc --> TripSvc : Inspection result
+deactivate InspSvc
+
+TripSvc -> DB : UPDATE trips SET status = 'COMPLETED', ended_at = now()
+TripSvc -> DB : UPDATE vehicles SET status = 'AVAILABLE', odometer = ?, battery_level = ?
+
+TripSvc -> EnergySvc : recordTripConsumption(vehicle, startSoc, endSoc, tripId)
+activate EnergySvc
+EnergySvc -> DB : Trừ số kWh điện tiêu thụ trong vehicle_energy_inventories
+EnergySvc -> DB : INSERT INTO vehicle_energy_transactions (TRIP_CONSUMPTION)
+EnergySvc --> TripSvc : EnergyConsumptionResult (kWhConsumed, totalCost)
+deactivate EnergySvc
+
+TripSvc -> ExpSvc : createTripChargingExpense(vehicle, driverUser, totalCost)
+activate ExpSvc
+ExpSvc -> DB : INSERT INTO expenses (category = 'CHARGING', policy = 'USER_RESPONSIBILITY')
+ExpSvc -> DB : INSERT INTO expense_shares (share_amount = totalCost, status = 'ALLOCATED')
+ExpSvc --> TripSvc : Expense created
+deactivate ExpSvc
+
+TripSvc --> Controller : TripResponse (Hoàn tất)
+deactivate TripSvc
+Controller --> Staff : HTTP 200 OK (Đã chốt hoàn tất trả xe)
+deactivate Controller
+
+@enduml

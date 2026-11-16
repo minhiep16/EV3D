@@ -18,6 +18,7 @@ import { useQuery } from '@tanstack/react-query';
 import { fetchVehicleAnalytics } from '../../../services/analyticsApi';
 import { VehicleResponse } from '../../../types/vehicle';
 import { VehicleAnalyticsResponse } from '../../../types/analytics';
+import { EVCarLoader } from '../../common/EVCarLoader';
 
 interface AnalyticsPanelProps {
   vehicle?: VehicleResponse | null;
@@ -207,21 +208,21 @@ export const AnalyticsPanel: React.FC<AnalyticsPanelProps> = ({ vehicle, onClose
       style={{
         position: 'fixed',
         top: '76px',
-        right: '24px',
-        width: '420px',
-        maxWidth: 'calc(100vw - 48px)',
+        right: '20px',
+        bottom: '20px',
+        width: 'clamp(440px, 28vw, 495px)',
+        maxWidth: 'min(495px, calc(100vw - 32px))',
         maxHeight: 'calc(100vh - 96px)',
         display: 'flex',
         flexDirection: 'column',
         zIndex: 40,
         pointerEvents: 'auto',
-        background: 'linear-gradient(180deg, rgba(8, 24, 46, 0.96) 0%, rgba(4, 14, 28, 0.98) 100%)',
+        background: 'rgba(7, 20, 38, 0.94)',
         backdropFilter: 'blur(24px)',
         WebkitBackdropFilter: 'blur(24px)',
-        border: '1.5px solid rgba(0, 242, 254, 0.40)',
+        border: '1.5px solid rgba(0, 242, 254, 0.3)',
         borderRadius: '20px',
-        boxShadow:
-          '0 24px 60px rgba(0, 0, 0, 0.85), 0 0 35px rgba(0, 242, 254, 0.20), inset 0 1.5px 1px rgba(255, 255, 255, 0.12)',
+        boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65), 0 0 30px rgba(0, 242, 254, 0.16)',
         color: '#f8fafc',
         boxSizing: 'border-box',
         overflow: 'hidden',
@@ -386,34 +387,9 @@ export const AnalyticsPanel: React.FC<AnalyticsPanelProps> = ({ vehicle, onClose
           gap: '14px',
         }}
       >
-        {/* LOADING SKELETON */}
+        {/* LOADING STATE */}
         {isLoading && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <div
-              style={{
-                height: '110px',
-                borderRadius: '12px',
-                background: 'rgba(255, 255, 255, 0.04)',
-                animation: 'pulse 1.5s infinite',
-              }}
-            />
-            <div
-              style={{
-                height: '80px',
-                borderRadius: '12px',
-                background: 'rgba(255, 255, 255, 0.04)',
-                animation: 'pulse 1.5s infinite',
-              }}
-            />
-            <div
-              style={{
-                height: '160px',
-                borderRadius: '12px',
-                background: 'rgba(255, 255, 255, 0.04)',
-                animation: 'pulse 1.5s infinite',
-              }}
-            />
-          </div>
+          <EVCarLoader variant="panel" message="Đang phân tích dữ liệu vận hành xe..." minHeight="300px" />
         )}
 
         {/* ERROR STATE */}
@@ -579,7 +555,7 @@ export const AnalyticsPanel: React.FC<AnalyticsPanelProps> = ({ vehicle, onClose
                 <span style={{ fontSize: '10px', color: '#94a3b8' }}>
                   {analytics.costPerKm != null ? `Điện: ${formatVnd(analytics.costPerKm)}/km` : 'Chưa có chi phí'}
                   {analytics.sharedOperatingExpenses && analytics.sharedOperatingExpenses > 0
-                    ? ` • Quỹ: ${formatVnd(analytics.sharedOperatingExpenses)}`
+                    ? ` • Phân bổ chung: ${formatVnd(analytics.sharedOperatingExpenses)}`
                     : ''}
                 </span>
               </div>

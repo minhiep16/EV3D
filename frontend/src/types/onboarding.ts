@@ -23,10 +23,23 @@ export interface OnboardingUserSearchResult {
 export interface OnboardingStatusResponse {
   hasActiveGroup: boolean;
   vehicleCount: number;
+  activeVehiclesCount?: number;
+  activeVehicles?: any[];
   pendingInvitationsCount: number;
   pendingJoinRequestsCount: number;
   draftsCount: number;
-  recommendedAction: 'ROUTE_TO_GARAGE' | 'ROUTE_TO_ONBOARDING';
+  recommendedAction?: 'ROUTE_TO_GARAGE' | 'ROUTE_TO_ONBOARDING';
+  userRole?: string;
+  primaryNavigationRoute?: string;
+  joinedVehicleId?: string;
+  joinedVehicleName?: string;
+  joinedVehicleModel?: string;
+  joinedLicensePlate?: string;
+  joinedExteriorColor?: string;
+  ownershipPercentage?: number;
+  contractStatus?: string;
+  groupName?: string;
+  contractVersionNumber?: number;
 }
 
 export interface VehicleRegistrationDraftRequest {
@@ -97,6 +110,7 @@ export interface VehicleRegistrationDraftResponse {
 
 export interface ReviewVehicleRegistrationRequest {
   decision: 'APPROVE' | 'REJECT' | 'REQUEST_CHANGES';
+  action?: 'APPROVE' | 'REJECT' | 'REQUEST_CHANGES';
   reason?: string;
 }
 

@@ -831,7 +831,7 @@ export const ContractBookReaderModal: React.FC<ContractBookReaderModalProps> = (
                     color: '#0f172a',
                   }}
                 >
-                  Điều 6. Quy trình thẩm định của Nhân viên vận hành &amp; Hiệu lực
+                  Điều 6. Quy trình thẩm định của Quản trị viên (ADMIN) &amp; Hiệu lực
                 </h3>
               </div>
 
@@ -844,9 +844,9 @@ export const ContractBookReaderModal: React.FC<ContractBookReaderModalProps> = (
               >
                 Sau khi Người đại diện hoàn tất xác nhận điều khoản và nhấn{' '}
                 <strong>&ldquo;ĐĂNG KÝ XE&rdquo;</strong>, hồ sơ đăng ký phương tiện sẽ chuyển vào hàng đợi thẩm
-                định với trạng thái <strong>SUBMITTED (Chờ nhân viên xét duyệt)</strong>. Phương tiện, nhóm
-                đồng sở hữu và lời mời các thành viên sẽ chính thức kích hoạt ngay sau khi Nhân viên vận hành (
-                <strong>STAFF</strong>) kiểm tra hợp lệ biển số <strong>{plateNumber}</strong> và phê duyệt
+                định với trạng thái <strong>SUBMITTED (Chờ Quản trị viên xét duyệt)</strong>. Phương tiện, nhóm
+                đồng sở hữu và lời mời các thành viên sẽ chính thức kích hoạt ngay sau khi Quản trị viên (
+                <strong>ADMIN</strong>) kiểm tra hợp lệ biển số <strong>{plateNumber}</strong> và phê duyệt
                 hồ sơ.
               </div>
 

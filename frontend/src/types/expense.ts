@@ -32,7 +32,7 @@ export type ExpenseAllocationPolicy =
 
 export const EXPENSE_ALLOCATION_POLICY_LABELS: Record<ExpenseAllocationPolicy, string> = {
   USER_RESPONSIBILITY: 'Theo người sử dụng',
-  USAGE_AND_CAPITAL: 'Theo km sử dụng và tỷ lệ vốn',
+  USAGE_AND_CAPITAL: '50% theo sở hữu nghịch đảo + 50% theo km sử dụng',
   OWNERSHIP_RATIO: 'Theo tỷ lệ sở hữu',
   CUSTOM_AGREEMENT: 'Theo thỏa thuận riêng',
 };
@@ -106,6 +106,12 @@ export interface ExpenseResponse {
   isFullySettled?: boolean | null;
   settlementStatus?: string | null;
   settlementStatusLabel?: string | null;
+  currentUserPaymentStatus?: 'UNPAID' | 'PENDING_VERIFICATION' | 'PARTIALLY_PAID' | 'PAID' | 'NOT_INVOLVED' | 'STAFF_VIEW';
+  currentUserPaymentStatusLabel?: string;
+  currentUserAllocatedAmount?: number;
+  currentUserPaidAmount?: number;
+  currentUserPendingAmount?: number;
+  currentUserRemainingAmount?: number;
 }
 
 export interface ExpenseSummaryResponse {

@@ -13,17 +13,24 @@ import {
   CHARGING_STATION_VISUALS,
   VEHICLE_CHARGE_PORT_ANCHORS,
 } from '../../../config/chargingVisualConfig';
-import { resolveVehicleCode } from '../vehicles/vehicleModelConfig';
+import { resolveVehicleCode, resolveAuthoritativeHeroVehicle } from '../vehicles/vehicleModelConfig';
 import { STAFF_GARAGE_LAYOUT } from '../../../config/staffGarageLayout';
 
 export const ChargingWorld: React.FC = () => {
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
-  const isOperationsRole = user?.role === 'STAFF' || user?.role === 'ADMIN';
+  const isAdmin = user?.role === 'ADMIN';
+  const isOperationsRole = user?.role === 'STAFF' || isAdmin;
+
+  // Section 3: For ADMIN mode only: Hide physical charging station models, labels, interaction rings, hitboxes and charging control entry points.
+  if (isAdmin) {
+    return null;
+  }
 
   const selectedVehicleId = useWorldStore((state) => state.selectedVehicleId);
   const selectedChargingStationId = useWorldStore((state) => state.selectedChargingStationId);
   const setSelectedChargingStation = useWorldStore((state) => state.setSelectedChargingStation);
+  const enterChargingMode = useWorldStore((state) => state.enterChargingMode);
   const vehicleChargingMode = useWorldStore((state) => state.vehicleChargingMode);
   const vehicleYaw = useWorldStore((state) => state.vehicleYaw);
 
@@ -44,6 +51,9 @@ export const ChargingWorld: React.FC = () => {
   // Derive target vehicle
   const activeVehicle = useMemo(() => {
     if (!vehicles || vehicles.length === 0) return null;
+    if (isOperationsRole) {
+      return resolveAuthoritativeHeroVehicle(vehicles, selectedVehicleId);
+    }
     if (selectedVehicleId) {
       const match = vehicles.find((v) => {
         const code = resolveVehicleCode(v);
@@ -52,7 +62,7 @@ export const ChargingWorld: React.FC = () => {
       if (match) return match;
     }
     return vehicles[0];
-  }, [vehicles, selectedVehicleId]);
+  }, [vehicles, selectedVehicleId, isOperationsRole]);
 
   // Query active charging session for active vehicle (polls every 3s only when actively charging)
   const { data: activeSession = null } = useQuery<ChargingSessionResponse | null>({
@@ -136,10 +146,16 @@ export const ChargingWorld: React.FC = () => {
   }, [activeSession, vehicleChargingMode, selectedChargingStationId, effectiveStations]);
 
   // Compute World-Space Anchors for Charging Cable
+  const isStaff = user?.role === 'STAFF';
   const cableAnchors = useMemo(() => {
     if (!connectedStation || !activeVehicle) return null;
 
-    const visual = CHARGING_STATION_VISUALS[connectedStation.code] || {
+    const visual = (isStaff
+      ? {
+          stationPosition: (connectedStation.code === 'CS02' ? [4.8, 0.14, 0.5] : [3.6, 0.14, 0.5]) as [number, number, number],
+          socketOffset: [0.42, 0.95, 0.05] as [number, number, number],
+        }
+      : CHARGING_STATION_VISUALS[connectedStation.code]) || {
       stationPosition: [connectedStation.posX ?? 3.5, connectedStation.posY ?? 0.14, connectedStation.posZ ?? 3.2] as [number, number, number],
       socketOffset: [0.42, 0.95, 0.05] as [number, number, number],
     };
@@ -185,7 +201,10 @@ export const ChargingWorld: React.FC = () => {
             station={station}
             isSelected={isSelected}
             isActiveSession={isActive}
-            onSelectStation={(id) => setSelectedChargingStation(id)}
+            onSelectStation={(id) => {
+              setSelectedChargingStation(id);
+              enterChargingMode(activeVehicle?.id, id);
+            }}
           />
         );
       })}

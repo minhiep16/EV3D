@@ -1,5 +1,6 @@
 package com.evshare.trip.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.evshare.trip.entity.Trip;
 import com.evshare.trip.entity.TripStatus;
 
@@ -43,8 +44,12 @@ public class TripResponse {
     private String returnNote;
     private Instant returnRequestedAt;
     private BigDecimal verifiedExpenseAmount;
+    private BigDecimal appliedEnergyTariff;
+    private String expenseStatus;
     private UUID returnInspectionId;
     private String returnInspectionResult;
+    @JsonProperty("isAcknowledged")
+    private Boolean isAcknowledged;
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -295,6 +300,10 @@ public class TripResponse {
         return distanceTraveled;
     }
 
+    public BigDecimal getDistanceKm() {
+        return distanceTraveled;
+    }
+
     public void setDistanceTraveled(BigDecimal distanceTraveled) {
         this.distanceTraveled = distanceTraveled;
     }
@@ -403,6 +412,22 @@ public class TripResponse {
         this.verifiedExpenseAmount = verifiedExpenseAmount;
     }
 
+    public BigDecimal getAppliedEnergyTariff() {
+        return appliedEnergyTariff;
+    }
+
+    public void setAppliedEnergyTariff(BigDecimal appliedEnergyTariff) {
+        this.appliedEnergyTariff = appliedEnergyTariff;
+    }
+
+    public String getExpenseStatus() {
+        return expenseStatus;
+    }
+
+    public void setExpenseStatus(String expenseStatus) {
+        this.expenseStatus = expenseStatus;
+    }
+
     public UUID getReturnInspectionId() {
         return returnInspectionId;
     }
@@ -417,5 +442,20 @@ public class TripResponse {
 
     public void setReturnInspectionResult(String returnInspectionResult) {
         this.returnInspectionResult = returnInspectionResult;
+    }
+
+    @JsonProperty("isAcknowledged")
+    public Boolean getIsAcknowledged() {
+        return isAcknowledged;
+    }
+
+    @JsonProperty("isAcknowledged")
+    public void setIsAcknowledged(Boolean isAcknowledged) {
+        this.isAcknowledged = isAcknowledged;
+    }
+
+    @JsonProperty("acknowledged")
+    public Boolean isAcknowledged() {
+        return isAcknowledged;
     }
 }

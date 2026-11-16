@@ -30,7 +30,23 @@ public class VehicleInspectionResponse {
     private Instant updatedAt;
     private int totalInspectedCount;
     private int abnormalCount;
+    private Integer totalAssessmentRecords;
+    private Integer uniqueAssessedComponents;
+    private Integer requiredComponentCount;
+    private Integer assessedRequiredComponentCount;
+    private Integer unresolvedCriticalDamageCount;
     private List<VehicleInspectionItemResponse> items = new ArrayList<>();
+
+    public static final java.util.Set<String> REQUIRED_CHECKPOINTS = java.util.Set.of(
+            "BODY",
+            "WHEEL_FL",
+            "WHEEL_FR",
+            "WHEEL_RL",
+            "WHEEL_RR",
+            "WINDSHIELD",
+            "BATTERY",
+            "CHARGING_PORT"
+    );
 
     public VehicleInspectionResponse() {
     }
@@ -62,10 +78,30 @@ public class VehicleInspectionResponse {
                     .collect(Collectors.toList());
             resp.setItems(itemResponses);
             resp.setTotalInspectedCount(itemResponses.size());
+            resp.setTotalAssessmentRecords(itemResponses.size());
+
+            java.util.Set<String> uniqueParts = new java.util.HashSet<>();
+            for (com.evshare.inspection.entity.VehicleInspectionItem item : entity.getItems()) {
+                if (item.getVehiclePartCode() != null) {
+                    uniqueParts.add(com.evshare.inspection.service.VehicleInspectionService.normalizeCanonicalPartCode(item.getVehiclePartCode()));
+                }
+            }
+            resp.setUniqueAssessedComponents(uniqueParts.size());
+            resp.setRequiredComponentCount(REQUIRED_CHECKPOINTS.size());
+            long reqCount = uniqueParts.stream().filter(REQUIRED_CHECKPOINTS::contains).count();
+            resp.setAssessedRequiredComponentCount((int) reqCount);
+
             long abnormalities = itemResponses.stream()
                     .filter(i -> i.getConditionStatus() != InspectionItemCondition.GOOD)
                     .count();
             resp.setAbnormalCount((int) abnormalities);
+        } else {
+            resp.setTotalInspectedCount(0);
+            resp.setTotalAssessmentRecords(0);
+            resp.setUniqueAssessedComponents(0);
+            resp.setRequiredComponentCount(REQUIRED_CHECKPOINTS.size());
+            resp.setAssessedRequiredComponentCount(0);
+            resp.setAbnormalCount(0);
         }
 
         return resp;
@@ -205,5 +241,45 @@ public class VehicleInspectionResponse {
 
     public void setItems(List<VehicleInspectionItemResponse> items) {
         this.items = items;
+    }
+
+    public Integer getTotalAssessmentRecords() {
+        return totalAssessmentRecords;
+    }
+
+    public void setTotalAssessmentRecords(Integer totalAssessmentRecords) {
+        this.totalAssessmentRecords = totalAssessmentRecords;
+    }
+
+    public Integer getUniqueAssessedComponents() {
+        return uniqueAssessedComponents;
+    }
+
+    public void setUniqueAssessedComponents(Integer uniqueAssessedComponents) {
+        this.uniqueAssessedComponents = uniqueAssessedComponents;
+    }
+
+    public Integer getRequiredComponentCount() {
+        return requiredComponentCount;
+    }
+
+    public void setRequiredComponentCount(Integer requiredComponentCount) {
+        this.requiredComponentCount = requiredComponentCount;
+    }
+
+    public Integer getAssessedRequiredComponentCount() {
+        return assessedRequiredComponentCount;
+    }
+
+    public void setAssessedRequiredComponentCount(Integer assessedRequiredComponentCount) {
+        this.assessedRequiredComponentCount = assessedRequiredComponentCount;
+    }
+
+    public Integer getUnresolvedCriticalDamageCount() {
+        return unresolvedCriticalDamageCount;
+    }
+
+    public void setUnresolvedCriticalDamageCount(Integer unresolvedCriticalDamageCount) {
+        this.unresolvedCriticalDamageCount = unresolvedCriticalDamageCount;
     }
 }

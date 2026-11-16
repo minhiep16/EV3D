@@ -1,0 +1,43 @@
+@startuml
+title USE CASE: BIỂU QUYẾT TẬP THỂ VÀ GIẢI QUYẾT TRANH CHẤP (UC-12)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam actorStyle awesome
+
+
+left to right direction
+
+actor "Thành Viên (CO_OWNER)" as Member
+actor "Nhân Viên (STAFF)" as Staff
+
+package "Dân Chủ & Giải Quyết Tranh Chấp" #F8F9FA {
+    usecase "Tạo Đề Xuất Biểu Quyết Mới" as UC_CreateVote
+    usecase "Bỏ Phiếu Đề Xuất (FOR / AGAINST)" as UC_CastVote
+    usecase "Tự Động Kiểm Phiếu Theo Tỷ Lệ Vốn" as UC_TallyVote
+    usecase "Mở Hồ Sơ Khiếu Nại Tranh Chấp" as UC_CreateDispute
+    usecase "Tải Lên Bằng Chứng Ảnh / Hóa Đơn" as UC_UploadEvidence
+    usecase "Điều Tra & Ghi Nhận Kết Luận Hòa Giải" as UC_Investigate
+    usecase "Thực Thi Khoản Bồi Hoàn (DEMO Compensation)" as UC_Compensate
+}
+
+Member --> UC_CreateVote
+Member --> UC_CastVote
+Member --> UC_CreateDispute
+Member --> UC_UploadEvidence
+
+Staff --> UC_Investigate
+Staff --> UC_Compensate
+
+UC_CreateVote ..> UC_CastVote : <<include>>
+UC_CastVote ..> UC_TallyVote : <<include>>
+UC_CreateDispute ..> UC_UploadEvidence : <<extend>>
+UC_CreateDispute <.. UC_Investigate : <<include>>
+UC_Investigate ..> UC_Compensate : <<extend>>
+
+@enduml

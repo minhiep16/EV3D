@@ -31,6 +31,8 @@ public class CreateMaintenanceRequest {
 
     private List<UUID> damageRecordIds;
 
+    private List<UUID> inspectionItemIds;
+
     private BigDecimal estimatedCost;
 
     public CreateMaintenanceRequest() {
@@ -98,5 +100,13 @@ public class CreateMaintenanceRequest {
 
     public void setDamageRecordIds(List<UUID> damageRecordIds) {
         this.damageRecordIds = damageRecordIds;
+    }
+
+    public List<UUID> getInspectionItemIds() {
+        return inspectionItemIds;
+    }
+
+    public void setInspectionItemIds(List<UUID> inspectionItemIds) {
+        this.inspectionItemIds = inspectionItemIds;
     }
 }

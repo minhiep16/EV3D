@@ -1,0 +1,64 @@
+@startuml
+title LƯỢC ĐỒ CƠ SỞ DỮ LIỆU: TRẠM SẠC VÀ KHO NĂNG LƯỢNG WAC (ERD-06)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+entity "charging_stations" as stations {
+    * id : CHAR(36) [PK]
+    --
+    station_code : VARCHAR(50) [UNIQUE]
+    power_kw : DECIMAL(8,2)
+    price_per_kwh : DECIMAL(10,2)
+    status : VARCHAR(20)
+}
+
+entity "charging_sessions" as sessions {
+    * id : CHAR(36) [PK]
+    --
+    * station_id : CHAR(36) [FK]
+    * vehicle_id : CHAR(36) [FK]
+    * user_id : CHAR(36) [FK]
+    started_at : TIMESTAMP
+    ended_at : TIMESTAMP
+    energy_delivered_kwh : DECIMAL(8,3)
+    stored_energy_kwh : DECIMAL(8,3)
+    energy_loss_kwh : DECIMAL(8,3)
+    session_cost : DECIMAL(15,2)
+    status : VARCHAR(30)
+}
+
+entity "vehicle_energy_inventories" as inventories {
+    * id : CHAR(36) [PK]
+    --
+    * vehicle_id : CHAR(36) [FK, UNIQUE]
+    available_energy_kwh : DECIMAL(12,3)
+    total_inventory_cost : DECIMAL(15,2)
+    weighted_avg_cost_per_kwh : DECIMAL(10,2)
+    total_energy_charged_kwh : DECIMAL(12,3)
+    total_energy_consumed_kwh : DECIMAL(12,3)
+    is_reconciliation_required : BOOLEAN
+}
+
+entity "vehicle_energy_transactions" as transactions {
+    * id : CHAR(36) [PK]
+    --
+    * inventory_id : CHAR(36) [FK]
+    source_reference_id : CHAR(36)
+    transaction_type : VARCHAR(50)
+    energy_amount_kwh : DECIMAL(8,3)
+    unit_price_vnd : DECIMAL(10,2)
+    total_amount_vnd : DECIMAL(15,2)
+    recorded_at : TIMESTAMP
+}
+
+stations ||--o{ sessions
+inventories ||--o{ transactions
+
+@enduml

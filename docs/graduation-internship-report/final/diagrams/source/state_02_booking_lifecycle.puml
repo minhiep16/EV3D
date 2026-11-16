@@ -1,0 +1,24 @@
+@startuml
+title MÁY TRẠNG THÁI: VÒNG ĐỜI LỊCH ĐẶT XE (STATE-02)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+[*] --> PENDING : Co-Owner gửi yêu cầu đặt xe
+
+PENDING --> CONFIRMED : Khử xung đột thành công & hệ thống xác nhận
+PENDING --> CANCELLED : Xung đột thời gian hoặc lỗi xác thực
+
+CONFIRMED --> COMPLETED : Chuyến đi thực tế đã hoàn tất đối soát trả xe
+CONFIRMED --> CANCELLED : Co-Owner / Admin hủy trước giờ khởi hành
+
+COMPLETED --> [*]
+CANCELLED --> [*]
+
+@enduml

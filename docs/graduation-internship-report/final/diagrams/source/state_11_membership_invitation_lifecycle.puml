@@ -1,0 +1,29 @@
+@startuml
+title VÒNG ĐỜI TRẠNG THÁI THƯ MỜI GIA NHẬP NHÓM ĐỒNG SỞ HỮU (STATE-11)
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+[*] --> PENDING : Trưởng nhóm gửi thư mời gia nhập
+
+PENDING --> CONTRIBUTOR_CONSENT_PENDING : Người được mời chấp thuận sơ bộ,\nchờ các cổ đông hiện hữu đồng thuận trích vốn
+CONTRIBUTOR_CONSENT_PENDING --> SIGNING_PENDING : Đủ 100% cổ đông hiện hữu đồng thuận trích % vốn
+CONTRIBUTOR_CONSENT_PENDING --> REJECTED : Có cổ đông từ chối trích vốn
+
+SIGNING_PENDING --> SIGNED : Người được mời ký điều khoản hợp đồng gia nhập
+SIGNING_PENDING --> CANCELLED : Hết hạn 7 ngày không ký
+
+SIGNED --> ACTIVATED : Kích hoạt tư cách thành viên, tái cân bằng danh bạ cổ đông
+ACTIVATED --> [*]
+
+PENDING --> DECLINED : Người được mời từ chối
+PENDING --> EXPIRED : Quá hạn phản hồi (14 ngày)
+DECLINED --> [*]
+REJECTED --> [*]
+EXPIRED --> [*]
+CANCELLED --> [*]
+@enduml

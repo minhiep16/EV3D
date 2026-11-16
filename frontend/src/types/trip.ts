@@ -30,6 +30,7 @@ export interface TripData {
   energyConsumedKwh?: number | null;
   socConsumedPercent?: number | null;
   energyConsumptionKwhPer100Km?: number | null;
+  appliedEnergyTariff?: number | null;
   usableBatteryCapacityKwh?: number | null;
   grossBatteryCapacityKwh?: number | null;
   returnRequestedAt?: string | null;
@@ -40,6 +41,9 @@ export interface TripData {
   returnInspectionId?: string | null;
   returnInspectionResult?: string | null;
   verifiedExpenseAmount?: number | null;
+  expenseStatus?: string | null;
+  isAcknowledged?: boolean | null;
+  acknowledged?: boolean | null;
 }
 
 export interface TripStartEligibilityData {
@@ -64,3 +68,48 @@ export interface TripRouteNode {
   statusLabel?: string;
   status?: string;
 }
+
+export type TripExtensionStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED' | 'EXPIRED';
+
+export interface TripExtensionCheckData {
+  eligible: boolean;
+  canDirectExtend: boolean;
+  hasConflict: boolean;
+  canNegotiate: boolean;
+  additionalMinutes: number;
+  currentEndTime: string;
+  proposedEndTime: string;
+  message?: string;
+  affectedBookingId?: string | null;
+  affectedOwnerId?: string | null;
+  affectedOwnerName?: string | null;
+  affectedOriginalStartTime?: string | null;
+  affectedOriginalEndTime?: string | null;
+  proposedAffectedStartTime?: string | null;
+}
+
+export interface TripExtensionRequestData {
+  id: string;
+  tripId: string;
+  vehicleId: string;
+  vehicleName: string;
+  licensePlate: string;
+  requesterId: string;
+  requesterName: string;
+  currentBookingId: string;
+  originalEndTime: string;
+  proposedEndTime: string;
+  additionalMinutes: number;
+  affectedBookingId?: string | null;
+  affectedOwnerId?: string | null;
+  affectedOwnerName?: string | null;
+  originalAffectedStartTime?: string | null;
+  proposedAffectedStartTime?: string | null;
+  affectedEndTime?: string | null;
+  reason?: string | null;
+  status: TripExtensionStatus;
+  responseDeadline: string;
+  createdAt: string;
+  message?: string | null;
+}
+

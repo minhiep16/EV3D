@@ -168,18 +168,16 @@ export const DamageDetailModal: React.FC<DamageDetailModalProps> = ({
   // Create voting session for linked maintenance proposal
   const createVoteMutation = useMutation({
     mutationFn: (maintenanceId: string) => createVoteForMaintenance(maintenanceId),
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['vehicleMaintenance', vehicle?.id] });
       queryClient.invalidateQueries({ queryKey: ['vehicleDamages', vehicle?.id] });
       queryClient.invalidateQueries({ queryKey: ['vote-proposals'] });
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
       handleClose();
-      if (linkedMaintenance) {
-        selectMaintenanceRecord(linkedMaintenance.id);
-      }
-      openGaragePanel('MAINTENANCE', {
+      const targetProposalId = data?.relatedProposalId || linkedMaintenance?.relatedProposalId;
+      openGaragePanel('VOTING', {
         vehicleId: vehicle.id,
-        maintenanceId: linkedMaintenance?.id,
+        proposalId: targetProposalId || undefined,
       });
     },
     onError: () => {
@@ -312,13 +310,17 @@ export const DamageDetailModal: React.FC<DamageDetailModalProps> = ({
     }
 
     handleClose();
-    enterVehicleMaintenanceMode({
-      vehicleId: vehicle.id,
-      preselectedDamageId: damage?.id,
-      preselectedPartCode: damage?.vehiclePartCode,
-    });
     if (!isStaff) {
-      openGaragePanel('MAINTENANCE');
+      openGaragePanel('VOTING', {
+        vehicleId: vehicle.id,
+        preselectedDamageId: damage?.id,
+      });
+    } else {
+      enterVehicleMaintenanceMode({
+        vehicleId: vehicle.id,
+        preselectedDamageId: damage?.id,
+        preselectedPartCode: damage?.vehiclePartCode,
+      });
     }
   };
 
@@ -335,12 +337,19 @@ export const DamageDetailModal: React.FC<DamageDetailModalProps> = ({
         selectMaintenanceRecord(linkedMaintenance.id);
       }
     } else {
-      openGaragePanel('MAINTENANCE', {
-        vehicleId: vehicle.id,
-        maintenanceId: linkedMaintenance?.id,
-      });
-      if (linkedMaintenance) {
-        selectMaintenanceRecord(linkedMaintenance.id);
+      if (linkedMaintenance?.status === 'PENDING_APPROVAL' && linkedMaintenance?.relatedProposalId) {
+        openGaragePanel('VOTING', {
+          vehicleId: vehicle.id,
+          proposalId: linkedMaintenance.relatedProposalId,
+        });
+      } else {
+        openGaragePanel('MAINTENANCE', {
+          vehicleId: vehicle.id,
+          maintenanceId: linkedMaintenance?.id,
+        });
+        if (linkedMaintenance) {
+          selectMaintenanceRecord(linkedMaintenance.id);
+        }
       }
     }
   };

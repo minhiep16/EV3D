@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -17,10 +18,15 @@ import {
   X,
   Pause,
   Play,
+  AlertTriangle,
 } from 'lucide-react';
 import { VehicleResponse } from '../../../types/vehicle';
 import { useWorldStore } from '../../../store/worldStore';
 import { useAuthStore } from '../../../store/authStore';
+import { fetchVehicleDamages } from '../../../services/damageApi';
+import { fetchActiveInspection } from '../../../services/inspectionApi';
+import { DamageRecordData, DamageSeverity, DAMAGE_TYPE_LABELS } from '../../../types/damage';
+import { VehicleInspectionResponse, InspectionItemCondition, resolveHotspotSemanticColor } from '../../../types/inspection';
 import {
   resolveVehicleHotspots,
   VehicleHotspotItem,
@@ -28,6 +34,53 @@ import {
   DEFAULT_ROTATION_INTERVAL_MS,
   DEFAULT_TYPEWRITER_CHAR_MS,
 } from '../../../data/vehicleHotspotConfig';
+import {
+  CANONICAL_VEHICLE_COMPONENTS,
+  normalizeComponentId,
+  resolveVehicleComponentAnchor,
+  resolveVehicleCalloutOffset,
+  resolveSeverityColor,
+  resolveSeverityLabelVi,
+  getSeverityRank,
+  aggregateDamageHotspots,
+  AggregatedDamageHotspot,
+} from '../../../services/vehicleDamageMappingService';
+
+export interface PreliminaryInspectionFinding {
+  canonicalCode: string;
+  componentNameVi: string;
+  conditionStatus: InspectionItemCondition | string;
+  conditionVi: string;
+  note?: string;
+  anchor: [number, number, number];
+  inspectionId: string;
+}
+
+export function mapInspectionConditionToVi(condition?: string | null): string {
+  switch (condition) {
+    case 'SCRATCH':
+      return 'Trầy xước';
+    case 'DENT':
+      return 'Móp méo';
+    case 'CRACK':
+      return 'Nứt vỡ';
+    case 'OTHER_DAMAGE':
+      return 'Hư hỏng khác';
+    case 'GOOD':
+      return 'Bình thường';
+    default:
+      return condition || 'Lưu ý kiểm tra';
+  }
+}
+
+export function normalizeHotspotPartCode(raw?: string | null): string {
+  const norm = normalizeComponentId(raw);
+  return norm || (raw ? raw.trim().toUpperCase().replace(/[-\s]/g, '_') : '');
+}
+
+export function resolveDamageColor(severity?: DamageSeverity | string | null): string {
+  return resolveSeverityColor(getSeverityRank(severity));
+}
 
 interface VehicleHotspotLayerProps {
   vehicle: VehicleResponse;
@@ -142,6 +195,18 @@ export const HolographicHotspotInfoCard: React.FC<
   const [isHoverPaused, setIsHoverPaused] = useState<boolean>(false);
   const [isFocusPaused, setIsFocusPaused] = useState<boolean>(false);
   const [skipTypewriter, setSkipTypewriter] = useState<boolean>(false);
+  const [isDocumentHidden, setIsDocumentHidden] = useState<boolean>(
+    () => typeof document !== 'undefined' && document.hidden
+  );
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const handleVisibilityChange = () => {
+      setIsDocumentHidden(document.hidden);
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
 
   const rotationTimerRef = useRef<number | null>(null);
   const typewriterTimerRef = useRef<number | null>(null);
@@ -221,7 +286,7 @@ export const HolographicHotspotInfoCard: React.FC<
   ]);
 
   // Automatic 2000ms rotation interval measured strictly between content transitions
-  const isEffectivePaused = isManualPaused || isHoverPaused || isFocusPaused;
+  const isEffectivePaused = isManualPaused || isHoverPaused || isFocusPaused || isDocumentHidden;
 
   useEffect(() => {
     clearRotationTimer();
@@ -581,14 +646,19 @@ interface SingleHotspotNodeProps {
   index: number;
   isSelected: boolean;
   isHovered: boolean;
+  aggregatedDamage?: AggregatedDamageHotspot | null;
+  preliminaryFinding?: PreliminaryInspectionFinding | null;
   onSelect: (hotspot: VehicleHotspotItem) => void;
   onHover: (id: VehicleHotspotItem['id'] | null) => void;
 }
 
 /**
- * Refined, subtle 3D Hotspot Marker (Section 6):
+ * Refined, subtle 3D Hotspot Marker (Damage & Preliminary Finding Synchronized):
  * - Visible marker diameter: 14px default, 16px hover, 18px active
- * - Small cyan glowing core dot (5-6px) + thin luminous ring
+ * - Small glowing core dot (5-6px) + thin luminous ring
+ * - When active confirmed damage is present: RED (#ef4444)
+ * - When saved preliminary inspection finding awaiting confirmation: AMBER (#f59e0b)
+ * - When clean or repaired: CYAN (#00f2fe)
  * - Comfortable invisible click target: 30px x 30px
  * - Only the active hotspot has stronger illumination
  */
@@ -597,6 +667,8 @@ const SingleHotspotNode: React.FC<SingleHotspotNodeProps> = ({
   index,
   isSelected,
   isHovered,
+  aggregatedDamage,
+  preliminaryFinding,
   onSelect,
   onHover,
 }) => {
@@ -615,12 +687,25 @@ const SingleHotspotNode: React.FC<SingleHotspotNodeProps> = ({
     }
   });
 
-  const accentColor = isSelected
-    ? '#00f2fe'
-    : isHovered
-    ? '#38bdf8'
-    : '#00e5ff';
+  const hasDamage = Boolean(aggregatedDamage);
+  const hasPreliminary = !hasDamage && Boolean(preliminaryFinding);
 
+  // Authoritative defect condition (SCRATCH / DENT / CRACK / GOOD)
+  const defectCondition = hasDamage
+    ? (aggregatedDamage?.records?.[0]?.damageType || aggregatedDamage?.primaryConditionVi)
+    : hasPreliminary
+    ? preliminaryFinding?.conditionStatus
+    : 'GOOD';
+
+  // Centralized semantic color: SCRATCH -> #facc15 (Yellow), DENT -> #f97316 (Orange), CRACK -> #ef4444 (Red), GOOD -> #00f2fe (Cyan)
+  const statusColor = resolveHotspotSemanticColor(defectCondition, true);
+  const isUnderMaintenance = Boolean(aggregatedDamage?.isUnderMaintenance);
+
+  const accentColor = isSelected
+    ? '#ffffff'
+    : statusColor;
+
+  const recordCount = aggregatedDamage?.recordCount || 0;
   const visibleRingSize = isSelected ? '18px' : isHovered ? '16px' : '14px';
   const coreDotSize = isSelected ? '7px' : isHovered ? '6px' : '5px';
 
@@ -629,21 +714,21 @@ const SingleHotspotNode: React.FC<SingleHotspotNodeProps> = ({
       <group ref={floatGroupRef}>
         {/* Subtle 3D Glowing Core Sphere attached to vehicle surface */}
         <mesh raycast={() => null}>
-          <sphereGeometry args={[isSelected ? 0.026 : 0.018, 14, 14]} />
+          <sphereGeometry args={[isSelected ? 0.026 : (hasDamage || hasPreliminary) ? 0.022 : 0.018, 14, 14]} />
           <meshStandardMaterial
-            color={accentColor}
-            emissive={accentColor}
-            emissiveIntensity={isSelected ? 2.6 : isHovered ? 1.8 : 1.1}
+            color={statusColor}
+            emissive={statusColor}
+            emissiveIntensity={isSelected ? 2.8 : (hasDamage || hasPreliminary) ? 2.4 : isHovered ? 1.8 : 1.1}
           />
         </mesh>
 
         {/* Subtle 3D Pulsing Halo Sphere */}
         <mesh ref={pulseRingRef} raycast={() => null}>
-          <sphereGeometry args={[0.038, 14, 14]} />
+          <sphereGeometry args={[(hasDamage || hasPreliminary) ? 0.046 : 0.038, 14, 14]} />
           <meshBasicMaterial
-            color={accentColor}
+            color={statusColor}
             transparent
-            opacity={isSelected ? 0.32 : isHovered ? 0.2 : 0.1}
+            opacity={isSelected ? 0.35 : (hasDamage || hasPreliminary) ? 0.28 : isHovered ? 0.2 : 0.1}
             depthWrite={false}
           />
         </mesh>
@@ -662,31 +747,42 @@ const SingleHotspotNode: React.FC<SingleHotspotNodeProps> = ({
               alignItems: 'center',
             }}
           >
-            {/* Subtle Hover / Active Mini Tooltip Pill */}
+            {/* Subtle Hover / Active Mini Tooltip Pill — Strictly only on hover or active selection to prevent overlapping */}
             {(isHovered || isSelected) && (
               <div
                 style={{
                   position: 'absolute',
                   bottom: '28px',
                   background: isSelected
-                    ? 'rgba(0, 242, 254, 0.94)'
-                    : 'rgba(6, 16, 32, 0.92)',
-                  color: isSelected ? '#041325' : '#e0f2fe',
-                  border: `1px solid ${
-                    isSelected ? '#ffffff' : 'rgba(0, 242, 254, 0.7)'
-                  }`,
+                    ? 'rgba(7, 20, 38, 0.98)'
+                    : 'rgba(7, 20, 38, 0.92)',
+                  color: '#ffffff',
+                  border: `1.5px solid ${isSelected ? '#ffffff' : statusColor}`,
                   borderRadius: '9999px',
                   padding: '2px 8px',
                   fontSize: '9.5px',
                   fontWeight: 800,
                   whiteSpace: 'nowrap',
                   letterSpacing: '0.02em',
-                  boxShadow:
-                    '0 4px 12px rgba(0, 0, 0, 0.6), 0 0 10px rgba(0, 242, 254, 0.35)',
+                  boxShadow: `0 4px 12px rgba(0, 0, 0, 0.7), 0 0 10px ${statusColor}66`,
                   pointerEvents: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  zIndex: 100,
                 }}
               >
-                {hotspot.title}
+                {(hasDamage || hasPreliminary) && (
+                  <AlertTriangle size={10} color={statusColor} />
+                )}
+                <span>
+                  {hotspot.title}
+                  {hasDamage
+                    ? ` • ${aggregatedDamage!.primaryConditionVi} (${isUnderMaintenance ? 'Đang sửa chữa' : 'Hư hỏng chưa xử lý'}${recordCount > 1 ? ` +${recordCount - 1}` : ''})`
+                    : hasPreliminary
+                    ? ` • ${preliminaryFinding!.conditionVi} (Phát hiện sơ bộ - Chờ xác nhận)`
+                    : ' • Bình thường'}
+                </span>
               </div>
             )}
 
@@ -696,6 +792,12 @@ const SingleHotspotNode: React.FC<SingleHotspotNodeProps> = ({
               data-ui-interactive="true"
               aria-label={`Khám phá bộ phận: ${hotspot.title} - ${
                 hotspot.subtitle || hotspot.shortDescription
+              }${
+                hasDamage
+                  ? ` - Hư hỏng đã xác nhận: ${aggregatedDamage!.primaryConditionVi} (${recordCount} ghi nhận)`
+                  : hasPreliminary
+                  ? ` - Phát hiện sơ bộ: ${preliminaryFinding!.conditionVi} (Chờ xác nhận)`
+                  : ''
               }`}
               aria-pressed={isSelected}
               tabIndex={0}
@@ -736,24 +838,27 @@ const SingleHotspotNode: React.FC<SingleHotspotNodeProps> = ({
                   height: visibleRingSize,
                   borderRadius: '50%',
                   background: isSelected
-                    ? 'radial-gradient(circle, rgba(0, 242, 254, 0.38) 0%, rgba(6, 18, 36, 0.88) 78%)'
+                    ? `radial-gradient(circle, ${statusColor}66 0%, rgba(6, 18, 36, 0.92) 78%)`
+                    : `radial-gradient(circle, ${statusColor}33 0%, rgba(6, 18, 36, 0.8) 80%)`,
+                  border: hasPreliminary
+                    ? `1.75px dashed ${isSelected ? '#ffffff' : statusColor}`
+                    : hasDamage
+                    ? `1.75px solid ${isSelected ? '#ffffff' : statusColor}`
+                    : isSelected
+                    ? '1.75px solid #ffffff'
                     : isHovered
-                    ? 'radial-gradient(circle, rgba(56, 189, 248, 0.28) 0%, rgba(6, 18, 36, 0.82) 78%)'
-                    : 'radial-gradient(circle, rgba(0, 242, 254, 0.16) 0%, rgba(6, 18, 36, 0.72) 80%)',
-                  border: isSelected
-                    ? '1.75px solid #00f2fe'
-                    : isHovered
-                    ? '1.5px solid #38bdf8'
-                    : '1.25px solid rgba(0, 242, 254, 0.65)',
+                    ? `1.5px solid ${statusColor}`
+                    : `1.25px solid ${statusColor}aa`,
                   boxShadow: isSelected
-                    ? '0 0 0 4px rgba(0, 242, 254, 0.22), 0 0 16px rgba(0, 242, 254, 0.85)'
+                    ? `0 0 0 4px ${statusColor}44, 0 0 16px ${statusColor}`
                     : isHovered
-                    ? '0 0 0 3px rgba(56, 189, 248, 0.16), 0 0 12px rgba(56, 189, 248, 0.6)'
-                    : '0 0 8px rgba(0, 242, 254, 0.35)',
+                    ? `0 0 0 3px ${statusColor}33, 0 0 12px ${statusColor}aa`
+                    : `0 0 8px ${statusColor}66`,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
+                  position: 'relative',
                 }}
               >
                 <span
@@ -761,12 +866,36 @@ const SingleHotspotNode: React.FC<SingleHotspotNodeProps> = ({
                     width: coreDotSize,
                     height: coreDotSize,
                     borderRadius: '50%',
-                    background: isSelected ? '#ffffff' : '#00f2fe',
-                    boxShadow: isSelected
-                      ? '0 0 8px #ffffff, 0 0 12px #00f2fe'
-                      : '0 0 6px #00f2fe',
+                    background: accentColor,
+                    boxShadow: `0 0 8px ${statusColor}`,
                   }}
                 />
+                {/* Damage / preliminary finding mini badge */}
+                {(hasDamage || hasPreliminary) && !isSelected && (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: '-5px',
+                      right: '-5px',
+                      minWidth: '10px',
+                      height: '10px',
+                      padding: recordCount > 1 ? '0 2px' : 0,
+                      borderRadius: '5px',
+                      background: hasDamage ? '#ef4444' : '#f59e0b',
+                      border: '1px solid #ffffff',
+                      boxShadow: `0 0 4px ${statusColor}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '7px',
+                      fontWeight: 900,
+                      color: '#ffffff',
+                      lineHeight: 1,
+                    }}
+                  >
+                    {hasDamage && recordCount > 1 ? recordCount : '!'}
+                  </span>
+                )}
               </span>
             </button>
           </div>
@@ -781,10 +910,10 @@ export const VehicleHotspotLayer: React.FC<VehicleHotspotLayerProps> = ({
   vehicleCode,
 }) => {
   const user = useAuthStore((state) => state.user);
-  const isCoOwner = !user?.role || user?.role === 'CO_OWNER';
+  const isAuthorized = !user?.role || user?.role === 'CO_OWNER' || user?.role === 'ADMIN';
 
-  // Strict Role Isolation: Educational exploration is strictly for CO_OWNER
-  if (!isCoOwner) {
+  // Role Authorization: 3D component exploration is available for CO_OWNER and ADMIN
+  if (!isAuthorized) {
     return null;
   }
 
@@ -802,10 +931,65 @@ export const VehicleHotspotLayer: React.FC<VehicleHotspotLayerProps> = ({
     (state) => state.isDamageDetailModalOpen
   );
   const selectVehiclePart = useWorldStore((state) => state.selectVehiclePart);
+  const selectVehiclePartCode = useWorldStore((state) => state.selectVehiclePartCode);
   const hoverVehiclePart = useWorldStore((state) => state.hoverVehiclePart);
   const clearVehiclePartSelection = useWorldStore(
     (state) => state.clearVehiclePartSelection
   );
+
+  // Authoritative vehicle damage records query for CO_OWNER 3D exploration
+  const { data: damages = [] } = useQuery<DamageRecordData[]>({
+    queryKey: ['vehicleDamages', vehicle.id],
+    queryFn: () => (vehicle?.id ? fetchVehicleDamages(vehicle.id) : Promise.resolve([])),
+    enabled: Boolean(vehicle?.id),
+    staleTime: 5000,
+    refetchInterval: 5000,
+  });
+
+  // Filter active, unresolved damages (respect repair status: resolved damages return to normal)
+  const unresolvedDamages = useMemo(() => {
+    return damages.filter(
+      (d) => d.status !== 'RESOLVED' && (d.status as string) !== 'REPAIRED'
+    );
+  }, [damages]);
+
+  // Authoritative active inspection query for the active vehicle to observe preliminary findings
+  const { data: activeInspection } = useQuery<VehicleInspectionResponse | null>({
+    queryKey: ['activeInspection', vehicle?.id],
+    queryFn: () => (vehicle?.id ? fetchActiveInspection(vehicle.id) : Promise.resolve(null)),
+    enabled: Boolean(vehicle?.id),
+    staleTime: 4000,
+    refetchInterval: 5000,
+  });
+
+  const preliminaryFindingsMap = useMemo(() => {
+    const map = new Map<string, PreliminaryInspectionFinding>();
+    if (!activeInspection?.items || !Array.isArray(activeInspection.items)) {
+      return map;
+    }
+
+    for (const item of activeInspection.items) {
+      if (!item.conditionStatus || item.conditionStatus === 'GOOD') {
+        continue;
+      }
+      const canonicalCode = normalizeComponentId(item.vehiclePartCode) || item.vehiclePartCode;
+      const componentMeta = CANONICAL_VEHICLE_COMPONENTS[canonicalCode as any];
+      const componentNameVi = componentMeta?.nameVi || item.vehiclePartCode;
+      const anchor = resolveVehicleComponentAnchor(vehicle, canonicalCode) || [0, 0.7, 0];
+
+      map.set(canonicalCode, {
+        canonicalCode,
+        componentNameVi,
+        conditionStatus: item.conditionStatus,
+        conditionVi: mapInspectionConditionToVi(item.conditionStatus),
+        note: item.note,
+        anchor: [anchor[0], anchor[1], anchor[2]],
+        inspectionId: item.inspectionId || activeInspection.id,
+      });
+    }
+
+    return map;
+  }, [activeInspection, vehicle]);
 
   const layerGroupRef = useRef<THREE.Group>(null);
   const connectorLineRef = useRef<SVGLineElement>(null);
@@ -835,11 +1019,166 @@ export const VehicleHotspotLayer: React.FC<VehicleHotspotLayerProps> = ({
   const isMobileViewport = viewport.width < 768;
   const isTabletViewport = viewport.width >= 768 && viewport.width < 1100;
 
-  // Resolve model-aware 10-hotspot list
-  const hotspots = useMemo(
+  // Resolve base model-aware hotspots
+  const baseHotspots = useMemo(
     () => resolveVehicleHotspots(vehicle, vehicleCode),
     [vehicle, vehicleCode]
   );
+
+  // Aggregate unresolved damages across components using centralized architecture
+  const aggregatedDamages = useMemo(
+    () => aggregateDamageHotspots(vehicle, unresolvedDamages),
+    [vehicle, unresolvedDamages]
+  );
+
+  const aggregatedDamageMap = useMemo(() => {
+    const map = new Map<string, AggregatedDamageHotspot>();
+    for (const agg of aggregatedDamages) {
+      map.set(agg.componentId, agg);
+    }
+    return map;
+  }, [aggregatedDamages]);
+
+  // Combine base educational hotspots with dynamically mapped damage hotspots and preliminary findings
+  const hotspots = useMemo(() => {
+    const list: VehicleHotspotItem[] = [];
+    const presentIds = new Set<string>();
+
+    for (const b of baseHotspots) {
+      const canonicalId = normalizeComponentId(b.id) || b.id;
+      const agg = aggregatedDamageMap.get(canonicalId);
+      const prel = preliminaryFindingsMap.get(canonicalId);
+
+      if (agg) {
+        list.push({
+          ...b,
+          subtitle: `Hư hỏng đã xác nhận: ${agg.primaryConditionVi}`,
+          infoFrames: [
+            {
+              label: 'Tình trạng',
+              value: `${agg.primaryConditionVi} (Đã xác nhận)`,
+              text: `Tình trạng: ${agg.primaryConditionVi} (Đã xác nhận)`,
+            },
+            {
+              label: 'Mức độ',
+              value: resolveSeverityLabelVi(agg.highestSeverity),
+              text: `Mức độ: ${resolveSeverityLabelVi(agg.highestSeverity)}`,
+            },
+            {
+              label: 'Số lượng ghi nhận',
+              value: `${agg.recordCount} sự cố`,
+              text: `Số lượng ghi nhận: ${agg.recordCount} sự cố`,
+            },
+            ...(b.infoFrames || []),
+          ],
+        });
+      } else if (prel) {
+        list.push({
+          ...b,
+          subtitle: `Phát hiện sơ bộ: ${prel.conditionVi} (Chờ xác nhận)`,
+          infoFrames: [
+            {
+              label: 'Phát hiện sơ bộ',
+              value: `${prel.conditionVi} (Chờ xác nhận)`,
+              text: `Phát hiện sơ bộ: ${prel.conditionVi} (Chờ xác nhận)`,
+            },
+            {
+              label: 'Trạng thái',
+              value: 'Đang kiểm tra - Chờ hoàn tất biên bản',
+              text: 'Trạng thái: Đang kiểm tra - Chờ hoàn tất biên bản',
+            },
+            ...(prel.note ? [{
+              label: 'Ghi chú kiểm tra',
+              value: prel.note,
+              text: `Ghi chú kiểm tra: ${prel.note}`,
+            }] : []),
+            ...(b.infoFrames || []),
+          ],
+        });
+      } else {
+        list.push(b);
+      }
+      presentIds.add(canonicalId);
+    }
+
+    // Synthesize confirmed damage components not in baseHotspots
+    for (const agg of aggregatedDamages) {
+      if (!presentIds.has(agg.componentId)) {
+        list.push({
+          id: agg.componentId as any,
+          title: agg.componentNameVi,
+          subtitle: `Hư hỏng đã xác nhận: ${agg.primaryConditionVi}`,
+          shortDescription: `Phát hiện ${agg.recordCount} điểm bất thường tại ${agg.componentNameVi}. Mức độ: ${agg.highestSeverity}.`,
+          position: agg.anchor,
+          calloutOffset: resolveVehicleCalloutOffset(vehicle, agg.componentId),
+          icon: 'shield',
+          infoFrames: [
+            {
+              label: 'Tình trạng',
+              value: `${agg.primaryConditionVi} (Đã xác nhận)`,
+              text: `Tình trạng: ${agg.primaryConditionVi} (Đã xác nhận)`,
+            },
+            {
+              label: 'Mức độ',
+              value: resolveSeverityLabelVi(agg.highestSeverity),
+              text: `Mức độ: ${resolveSeverityLabelVi(agg.highestSeverity)}`,
+            },
+            {
+              label: 'Số lượng ghi nhận',
+              value: `${agg.recordCount} sự cố đang chờ xử lý`,
+              text: `Số lượng ghi nhận: ${agg.recordCount} sự cố đang chờ xử lý`,
+            },
+            {
+              label: 'Mã linh kiện',
+              value: agg.componentId,
+              text: `Mã linh kiện: ${agg.componentId}`,
+            },
+          ],
+        });
+        presentIds.add(agg.componentId);
+      }
+    }
+
+    // Synthesize preliminary findings not in baseHotspots and not in aggregatedDamages
+    for (const [canonicalId, prel] of preliminaryFindingsMap.entries()) {
+      if (!presentIds.has(canonicalId)) {
+        list.push({
+          id: canonicalId as any,
+          title: prel.componentNameVi,
+          subtitle: `Phát hiện sơ bộ: ${prel.conditionVi} (Chờ xác nhận)`,
+          shortDescription: `Đang có đánh giá sơ bộ chờ xác nhận tại ${prel.componentNameVi}. Tình trạng: ${prel.conditionVi}.`,
+          position: prel.anchor,
+          calloutOffset: resolveVehicleCalloutOffset(vehicle, canonicalId),
+          icon: 'shield',
+          infoFrames: [
+            {
+              label: 'Phát hiện sơ bộ',
+              value: `${prel.conditionVi} (Chờ xác nhận)`,
+              text: `Phát hiện sơ bộ: ${prel.conditionVi} (Chờ xác nhận)`,
+            },
+            {
+              label: 'Trạng thái',
+              value: 'Đang kiểm tra - Chờ hoàn tất biên bản',
+              text: 'Trạng thái: Đang kiểm tra - Chờ hoàn tất biên bản',
+            },
+            ...(prel.note ? [{
+              label: 'Ghi chú kiểm tra',
+              value: prel.note,
+              text: `Ghi chú kiểm tra: ${prel.note}`,
+            }] : []),
+            {
+              label: 'Mã linh kiện',
+              value: canonicalId,
+              text: `Mã linh kiện: ${canonicalId}`,
+            },
+          ],
+        });
+        presentIds.add(canonicalId);
+      }
+    }
+
+    return list;
+  }, [baseHotspots, aggregatedDamageMap, aggregatedDamages, preliminaryFindingsMap, vehicle]);
 
   // Active selected hotspot item
   const activeHotspotIndex = useMemo(
@@ -928,6 +1267,7 @@ export const VehicleHotspotLayer: React.FC<VehicleHotspotLayerProps> = ({
       clearVehiclePartSelection();
     } else {
       selectVehiclePart(hotspot.id);
+      selectVehiclePartCode(hotspot.id);
     }
   };
 
@@ -937,23 +1277,31 @@ export const VehicleHotspotLayer: React.FC<VehicleHotspotLayerProps> = ({
     const nextIndex =
       (currentIndex + delta + hotspots.length) % hotspots.length;
     selectVehiclePart(hotspots[nextIndex].id);
+    selectVehiclePartCode(hotspots[nextIndex].id);
   };
 
   return (
     <group ref={layerGroupRef} name="VehicleHotspotLayer3D">
       {/* 1. Render all 3D Glowing Hotspot Markers directly on the Vehicle */}
       {exploreHotspotsVisible &&
-        hotspots.map((hotspot, idx) => (
-          <SingleHotspotNode
-            key={hotspot.id}
-            hotspot={hotspot}
-            index={idx}
-            isSelected={selectedVehiclePartId === hotspot.id}
-            isHovered={hoveredVehiclePartId === hotspot.id}
-            onSelect={handleSelectHotspot}
-            onHover={(id) => hoverVehiclePart(id)}
-          />
-        ))}
+        hotspots.map((hotspot, idx) => {
+          const canonicalId = normalizeComponentId(hotspot.id) || hotspot.id;
+          const aggDamage = canonicalId ? aggregatedDamageMap.get(canonicalId) || null : null;
+          const prelFinding = canonicalId ? preliminaryFindingsMap.get(canonicalId) || null : null;
+          return (
+            <SingleHotspotNode
+              key={hotspot.id}
+              hotspot={hotspot}
+              index={idx}
+              isSelected={selectedVehiclePartId === hotspot.id}
+              isHovered={hoveredVehiclePartId === hotspot.id}
+              aggregatedDamage={aggDamage}
+              preliminaryFinding={prelFinding}
+              onSelect={handleSelectHotspot}
+              onHover={(id) => hoverVehiclePart(id)}
+            />
+          );
+        })}
 
       {/* 2. Render Compact Floating Holographic Info Card in Safe Screen Space via Portal */}
       {canShowFloatingCard &&

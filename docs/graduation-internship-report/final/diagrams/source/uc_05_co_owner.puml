@@ -1,0 +1,43 @@
+@startuml
+title USE CASE: CHỦ ĐỒNG SỞ HỮU VÀ TRẢI NGHIỆM GARAGE (UC-05)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam actorStyle awesome
+
+
+left to right direction
+
+actor "Chủ Đồng Sở Hữu (CO_OWNER)" as CoOwner
+
+package "Không Gian Tương Tác Co-Owner" #F8F9FA {
+    usecase "Khám Phá Xe Trong Virtual Garage 3D" as UC_Explore3D
+    usecase "Bật Chế Độ X-Ray Kiểm Tra Pin" as UC_XRay
+    usecase "Đặt Lịch Sử Dụng Xe Điện" as UC_BookCar
+    usecase "Ký Xác Nhận Biên Bản Bàn Giao Xe" as UC_AckHandover
+    usecase "Bắt Đầu Chuyến Đi (Start Trip)" as UC_StartTrip
+    usecase "Yêu Cầu Gia Hạn Thêm Giờ" as UC_ExtendTrip
+    usecase "Yêu Cầu Trả Xe (Return Request)" as UC_RequestReturn
+    usecase "Nộp Thông Tin Thanh Toán Nợ Điện (DEMO)" as UC_PayBill
+    usecase "Biểu Quyết Đề Xuất Nhóm" as UC_Vote
+}
+
+CoOwner --> UC_Explore3D
+CoOwner --> UC_XRay
+CoOwner --> UC_BookCar
+CoOwner --> UC_AckHandover
+CoOwner --> UC_StartTrip
+CoOwner --> UC_ExtendTrip
+CoOwner --> UC_RequestReturn
+CoOwner --> UC_PayBill
+CoOwner --> UC_Vote
+
+UC_Explore3D ..> UC_XRay : <<extend>>
+UC_StartTrip ..> UC_AckHandover : <<include>>
+
+@enduml

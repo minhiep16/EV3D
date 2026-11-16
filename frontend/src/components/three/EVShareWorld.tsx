@@ -35,7 +35,14 @@ const EVShareWorldComponent: React.FC = () => {
         <Canvas
           shadows
           dpr={[1, 1.5]}
-          camera={{ position: isCoOwner ? [-0.25, 2.35, 12.0] : [0.2, 3.2, 9.6], fov: 40 }}
+          camera={{
+            position: isCoOwner
+              ? [-0.25, 2.35, 12.0]
+              : user?.role === 'ADMIN'
+              ? [0.0, 3.85, 10.5]
+              : [0.0, 2.810, 9.974],
+            fov: isCoOwner ? 40 : 38,
+          }}
           gl={{
             antialias: true,
             alpha: false,

@@ -1,0 +1,54 @@
+@startuml
+title QUY TRÌNH CHUYỂN NHƯỢNG TỶ LỆ SỞ HỮU PHƯƠNG TIỆN (ACT-08)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+|Bên Chuyển Nhượng (CO_OWNER)|
+start
+:Mở TransferModal trong nhóm đồng sở hữu;
+:Chọn thành viên nhận và nhập % cổ phần chuyển;
+:Bấm "Gửi Yêu Cầu Chuyển Nhượng";
+
+|Hệ Thống Backend (Spring Boot)|
+:Kiểm tra: % chuyển nhượng <= % đang sở hữu?;
+if (Hợp lệ?) then (Hợp lệ)
+    :Tạo OwnershipTransferRequest (PENDING_CONSENT);
+    :Gửi thông báo đến Bên Nhận và Trưởng nhóm;
+else (Vượt quá số sở hữu)
+    :Báo lỗi: Số cổ phần không đủ để chuyển;
+    stop
+endif
+
+|Bên Nhận Cổ Phần|
+:Nhận thông báo đề nghị chuyển nhượng;
+:Mở bảng xem xét thỏa thuận vốn góp;
+if (Đồng ý nhận?) then (Đồng ý)
+    :Bấm "Chấp Thuận Nhận Cổ Phần";
+    
+    |Trưởng Nhóm (LEADER)|
+    :Xem xét và ký xác nhận phê duyệt giao dịch;
+    
+    |Hệ Thống Backend (Spring Boot)|
+    :Thực thi giao dịch nguyên tử (@Transactional):;
+    :Trừ cổ phần của Bên Chuyển Nhượng;
+    :Cộng cổ phần cho Bên Nhận;
+    :Kiểm tra bất biến: Tổng cổ phần nhóm = 100.0000%?;
+    :Ghi nhật ký lịch sử vào OwnershipChangeHistory;
+    :Sinh phiên bản hợp đồng mới (DRAFT);
+    
+    |Các Bên Liên Quan|
+    :Nhận thông báo hoàn tất chuyển nhượng;
+else (Từ chối)
+    :Bấm "Từ Chối Nhận";
+    |Hệ Thống Backend (Spring Boot)|
+    :Hủy yêu cầu chuyển nhượng;
+endif
+stop
+@enduml

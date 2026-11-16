@@ -1,0 +1,31 @@
+@startuml
+title MÁY TRẠNG THÁI: VÒNG ĐỜI VẬN HÀNH PHƯƠNG TIỆN (STATE-01)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+[*] --> AVAILABLE : Khởi tạo xe mới trong hệ thống
+
+AVAILABLE --> RESERVED : Nhân viên xác nhận bàn giao (verifyHandover)
+AVAILABLE --> CHARGING : Cắm sạc tại trụ thông minh (startCharging)
+AVAILABLE --> MAINTENANCE : Đưa xe vào diện bảo dưỡng định kỳ
+
+RESERVED --> IN_USE : Co-Owner bấm "Bắt Đầu Chuyến Đi"
+RESERVED --> AVAILABLE : Hủy lịch đặt hoặc quá hạn bàn giao
+
+IN_USE --> AVAILABLE : Nhân viên đối soát và chốt hoàn tất trả xe
+
+CHARGING --> AVAILABLE : Dừng và hoàn tất phiên sạc
+
+MAINTENANCE --> AVAILABLE : Kỹ thuật viên nghiệm thu sửa chữa hoàn tất
+
+AVAILABLE --> DECOMMISSIONED : Thanh lý hoặc ngừng khai thác
+DECOMMISSIONED --> [*]
+
+@enduml

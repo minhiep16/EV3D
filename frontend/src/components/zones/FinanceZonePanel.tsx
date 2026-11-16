@@ -32,15 +32,16 @@ import { useAuthStore } from '../../store/authStore';
 import { fetchVehicles } from '../../services/vehicleApi';
 import { fetchVehicleCoOwnership } from '../../services/coOwnershipApi';
 import { useExpenses, useExpenseSummary, useCostSharingSummary } from '../../hooks/useExpenses';
-import { useFundSummary } from '../../hooks/useFund';
 import {
   fetchMyPersonalPayments,
   submitPersonalPayment,
   fetchPersonalPayments,
+  verifyPersonalPayment,
 } from '../../services/fundApi';
 import { ExpenseCategory, ExpenseResponse } from '../../types/expense';
 import { ExpenseShareResponse } from '../../types/expenseShare';
 import { useExpenseShares } from '../../hooks/useExpenses';
+import { EVCarLoader } from '../common/EVCarLoader';
 import { AddExpenseModal } from './AddExpenseModal';
 import { ExpenseVerificationSection } from './ExpenseVerificationSection';
 import { VehicleResponse } from '../../types/vehicle';
@@ -178,13 +179,6 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
     refetch: refetchExpenses,
   } = useExpenses(activeVehicleId);
 
-  // Shared Fund query
-  const {
-    data: fundSummary,
-    isLoading: isFundLoading,
-    isError: isFundError,
-  } = useFundSummary(activeVehicleId);
-
   // Authoritative Cost Sharing Summary for current user & selected vehicle
   const {
     data: costSharingSummary,
@@ -300,6 +294,9 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
     return () => clearTimeout(timer);
   }, [selectedCategory]);
 
+  // Tab State: 3 Authoritative Navigation Tabs (Section 8)
+  const [activeTab, setActiveTab] = useState<'HISTORY' | 'UNPAID' | 'PAID'>('HISTORY');
+
   // State: Expandable cards
   const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null);
 
@@ -334,6 +331,72 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
     });
   }, [expenses, selectedCategory, selectedMonth]);
 
+  // Unpaid obligations for current user (Section 8 & 9)
+  const unpaidObligations = useMemo(() => {
+    return expenses.filter((e) => {
+      if (e.currentUserPaymentStatus === 'NOT_INVOLVED') return false;
+
+      const allocated = e.currentUserAllocatedAmount != null ? Number(e.currentUserAllocatedAmount) : null;
+      const paid = e.currentUserPaidAmount != null ? Number(e.currentUserPaidAmount) : 0;
+      const remaining = e.currentUserRemainingAmount != null
+        ? Number(e.currentUserRemainingAmount)
+        : (allocated != null ? Math.max(0, allocated - paid) : 0);
+
+      if (e.isFullySettled || e.currentUserPaymentStatus === 'PAID') return false;
+
+      const hasVerified = myPayments.some(
+        (p) => p.expenseId === e.id && p.status === 'PAYMENT_VERIFIED'
+      );
+      if (hasVerified && remaining <= 0) return false;
+
+      if (remaining > 0 || (allocated != null && allocated > paid)) return true;
+      if (e.currentUserPaymentStatus === 'PENDING_VERIFICATION' || e.currentUserPaymentStatus === 'PENDING_PAYMENT') return true;
+
+      const hasPendingPayment = myPayments.some(
+        (p) => p.expenseId === e.id && p.status === 'PAYMENT_SUBMITTED'
+      );
+      if (hasPendingPayment) return true;
+
+      return false;
+    });
+  }, [expenses, myPayments]);
+
+  const unpaidExpensesForView = useMemo(() => {
+    if (isStaff) {
+      return expenses.filter((e) => !e.isFullySettled && e.settlementStatus !== 'SETTLED');
+    }
+    return unpaidObligations;
+  }, [isStaff, expenses, unpaidObligations]);
+
+  // Verified personal payments list (Section 8 & 9)
+  const verifiedPaymentsList = useMemo(() => {
+    return myPayments.filter((p) => p.status === 'PAYMENT_VERIFIED');
+  }, [myPayments]);
+
+  const headerTitle = useMemo(() => {
+    switch (activeTab) {
+      case 'UNPAID':
+        return 'CẦN THANH TOÁN';
+      case 'PAID':
+        return 'ĐÃ THANH TOÁN';
+      case 'HISTORY':
+      default:
+        return 'LỊCH SỬ CHI PHÍ';
+    }
+  }, [activeTab]);
+
+  const headerSubtitle = useMemo(() => {
+    switch (activeTab) {
+      case 'UNPAID':
+        return `${activeVehicleName} • ${unpaidExpensesForView.length} khoản cần thanh toán`;
+      case 'PAID':
+        return `${activeVehicleName} • ${verifiedPaymentsList.length} giao dịch đã xác minh`;
+      case 'HISTORY':
+      default:
+        return `${activeVehicleName} • ${filteredExpenses.length} khoản chi thực tế`;
+    }
+  }, [activeTab, activeVehicleName, unpaidExpensesForView.length, verifiedPaymentsList.length, filteredExpenses.length]);
+
   // KPI 1: TỔNG CHI (All recorded approved/pending expenses)
   const totalRecordedExpenses = useMemo(() => {
     return expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
@@ -347,10 +410,13 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
       .reduce((sum, e) => sum + Number(e.amount || 0), 0);
   }, [expenses, selectedMonth]);
 
-  // KPI 3: QUỸ CHUNG (Authoritative available balance; 0 if no fund or not loaded)
-  const sharedFundBalance = fundSummary?.availableBalance ?? 0;
+  // KPI 3: ĐÃ THANH TOÁN (Authoritative verified personal / group payment)
+  const myPaidAmount = costSharingSummary?.userPaidAmount ?? 0;
+  const groupPaidAmount = expenseSummary?.paidAmount ?? 0;
+  const paidTotal = isStaff ? groupPaidAmount : myPaidAmount;
+  const paidLabel = isStaff ? 'Đã thanh toán nhóm' : 'Đã thanh toán của tôi';
 
-  // KPI 4: KHOẢN CHỜ THANH TOÁN (Isolated Personal Obligation vs. Group Liabilities)
+  // KPI 4: CẦN THANH TOÁN (Isolated personal obligation vs. group liabilities)
   const myPendingObligationTotal = useMemo(() => {
     if (!activeVehicleId || !user?.id) return 0;
 
@@ -394,19 +460,19 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
     : 0;
 
   const pendingLiabilitiesLabel = isStaff
-    ? 'Chờ thanh toán toàn nhóm'
-    : myPendingObligationTotal > 0
-    ? 'Chờ thanh toán của tôi'
-    : myPendingVerificationTotal > 0
+    ? 'Cần thu toàn nhóm'
+    : myPendingVerificationTotal > 0 && myPendingObligationTotal <= myPendingVerificationTotal
     ? 'Chờ nhân viên xác minh'
-    : 'Chờ thanh toán của tôi';
+    : myPendingObligationTotal > 0
+    ? 'Cần thanh toán của tôi'
+    : 'Cần thanh toán của tôi';
 
   const pendingLiabilitiesColor = isStaff
-    ? '#fbbf24'
+    ? (groupPendingLiabilitiesTotal > 0 ? '#fbbf24' : '#10b981')
+    : myPendingVerificationTotal > 0 && myPendingObligationTotal <= myPendingVerificationTotal
+    ? '#38bdf8'
     : myPendingObligationTotal > 0
     ? '#fbbf24'
-    : myPendingVerificationTotal > 0
-    ? '#38bdf8'
     : '#10b981';
 
   const parseFinanceError = (err: any) => {
@@ -536,8 +602,10 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
         queryClient.invalidateQueries({ queryKey: ['personal-payments', targetExpense.id] }),
         queryClient.invalidateQueries({ queryKey: ['expenses'] }),
         queryClient.invalidateQueries({ queryKey: ['expense-shares', targetExpense.id] }),
+        queryClient.invalidateQueries({ queryKey: ['expense-shares'] }),
         queryClient.invalidateQueries({ queryKey: ['cost-sharing-summary'] }),
         queryClient.invalidateQueries({ queryKey: ['expense-summary'] }),
+        queryClient.invalidateQueries({ queryKey: ['notifications'] }),
       ]);
       refetchMyPayments();
     } catch (err: any) {
@@ -553,20 +621,27 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
 
   return (
     <div
+      data-ui-interactive="true"
+      data-testid="finance-zone-panel"
+      onPointerDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      onWheel={(e) => e.stopPropagation()}
       style={{
         position: 'fixed',
         top: '76px',
-        right: '24px',
+        right: '20px',
+        bottom: '20px',
         zIndex: 40,
-        width: 'clamp(450px, 33vw, 620px)',
-        maxWidth: 'calc(100vw - 32px)',
+        width: 'clamp(440px, 28vw, 495px)',
+        maxWidth: 'min(495px, calc(100vw - 32px))',
         maxHeight: 'calc(100vh - 96px)',
-        height: 'calc(100vh - 96px)',
-        background: 'linear-gradient(180deg, rgba(8, 26, 48, 0.94) 0%, rgba(4, 14, 28, 0.97) 100%)',
+        background: 'rgba(7, 20, 38, 0.94)',
         backdropFilter: 'blur(24px)',
-        border: '1.5px solid rgba(0, 242, 254, 0.48)',
-        borderRadius: '24px',
-        boxShadow: '0 24px 60px rgba(0, 0, 0, 0.85), 0 0 35px rgba(0, 242, 254, 0.22), inset 0 1.5px 1px rgba(255, 255, 255, 0.15), inset 0 0 24px rgba(0, 242, 254, 0.06)',
+        WebkitBackdropFilter: 'blur(24px)',
+        border: '1.5px solid rgba(0, 242, 254, 0.3)',
+        borderRadius: '20px',
+        boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65), 0 0 30px rgba(0, 242, 254, 0.16)',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -616,7 +691,7 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                 textTransform: 'uppercase',
               }}
             >
-              LỊCH SỬ CHI PHÍ
+              {headerTitle}
             </h2>
             <div
               style={{
@@ -626,7 +701,7 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
                 fontWeight: 500,
               }}
             >
-              {activeVehicleName} • {filteredExpenses.length} khoản chi thực tế
+              {headerSubtitle}
             </div>
           </div>
         </div>
@@ -774,7 +849,7 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
           flexShrink: 0,
         }}
       >
-        {/* Card 1: TỔNG CHI */}
+        {/* Card 1: TỔNG CHI PHÍ XE */}
         <div
           style={{
             background: 'rgba(251, 113, 133, 0.05)',
@@ -790,7 +865,7 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <Wallet size={12} color="#fb7185" />
             <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>
-              Tổng chi
+              Tổng chi phí xe
             </span>
           </div>
           <div
@@ -816,7 +891,7 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
           </div>
         </div>
 
-        {/* Card 2: THÁNG NÀY */}
+        {/* Card 2: CHI PHÍ THÁNG NÀY */}
         <div
           style={{
             background: 'rgba(0, 242, 254, 0.05)',
@@ -832,7 +907,7 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <Calendar size={12} color="#00f2fe" />
             <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>
-              Tháng này
+              Chi phí tháng này
             </span>
           </div>
           <div
@@ -858,11 +933,11 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
           </div>
         </div>
 
-        {/* Card 3: QUỸ CHUNG */}
+        {/* Card 3: ĐÃ THANH TOÁN CỦA TÔI / ĐÃ THANH TOÁN NHÓM */}
         <div
           style={{
-            background: 'rgba(56, 189, 248, 0.05)',
-            border: '1.2px solid rgba(56, 189, 248, 0.25)',
+            background: 'rgba(16, 185, 129, 0.05)',
+            border: '1.2px solid rgba(16, 185, 129, 0.25)',
             borderRadius: '12px',
             padding: '10px 12px',
             minWidth: 0,
@@ -872,9 +947,9 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Users size={12} color="#38bdf8" />
+            <ShieldCheck size={12} color="#10b981" />
             <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>
-              Quỹ chung
+              {paidLabel}
             </span>
           </div>
           <div
@@ -882,7 +957,7 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
               fontSize: 'clamp(15px, 1.2vw, 17px)',
               fontWeight: 850,
               fontVariantNumeric: 'tabular-nums',
-              color: '#38bdf8',
+              color: '#10b981',
               marginTop: '4px',
               letterSpacing: '-0.02em',
               whiteSpace: 'nowrap',
@@ -890,17 +965,17 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
               textOverflow: 'ellipsis',
             }}
           >
-            {isFundLoading ? (
+            {isCostSharingLoading || isExpenseSummaryLoading ? (
               <span style={{ fontSize: '12px', color: '#94a3b8' }}>Đang tải...</span>
-            ) : isFundError ? (
+            ) : isCostSharingError ? (
               <span style={{ fontSize: '14px', color: '#64748b' }}>—</span>
             ) : (
-              formatVND(sharedFundBalance)
+              formatVND(paidTotal)
             )}
           </div>
         </div>
 
-        {/* Card 4: KHOẢN CHỜ THANH TOÁN */}
+        {/* Card 4: CẦN THANH TOÁN CỦA TÔI / CẦN THU TOÀN NHÓM */}
         <div
           style={{
             background: `${pendingLiabilitiesColor}0d`,
@@ -943,167 +1018,309 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
         </div>
       </div>
 
-      {/* 3. CATEGORY FILTER CHIPS (SINGLE-LINE HORIZONTAL SCROLL WITH ARROW CONTROLS) */}
+      {/* 2.5. THREE HORIZONTAL NAVIGATION TABS (SECTION 8) */}
       <div
         style={{
-          position: 'relative',
-          padding: '4px 20px 8px 20px',
+          padding: '6px 20px 8px 20px',
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: '8px',
           flexShrink: 0,
-          maxWidth: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px',
-          boxSizing: 'border-box',
         }}
-        onClick={(e) => e.stopPropagation()}
-        onMouseDown={(e) => e.stopPropagation()}
       >
-        {/* Left Arrow Button */}
-        {canScrollLeft && (
-          <button
-            type="button"
-            onClick={() => handleScrollFilters('left')}
-            title="Cuộn bộ lọc sang trái"
-            style={{
-              width: '26px',
-              height: '26px',
-              borderRadius: '50%',
-              background: 'rgba(0, 242, 254, 0.12)',
-              border: '1.2px solid rgba(0, 242, 254, 0.40)',
-              color: '#00f2fe',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              flexShrink: 0,
-              boxShadow: '0 0 10px rgba(0, 242, 254, 0.25)',
-              transition: 'all 0.15s ease',
-              padding: 0,
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(0, 242, 254, 0.25)';
-              e.currentTarget.style.borderColor = '#00f2fe';
-              e.currentTarget.style.boxShadow = '0 0 14px rgba(0, 242, 254, 0.45)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(0, 242, 254, 0.12)';
-              e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.40)';
-              e.currentTarget.style.boxShadow = '0 0 10px rgba(0, 242, 254, 0.25)';
-            }}
-          >
-            <ChevronLeft size={14} />
-          </button>
-        )}
-
-        {/* Scrollable Filters Viewport */}
-        <div
-          ref={filterScrollRef}
-          onScroll={checkFilterScroll}
-          onWheel={(e) => {
-            if (e.deltaY !== 0) {
-              e.currentTarget.scrollLeft += e.deltaY;
-            }
-          }}
+        {/* Tab 1: LỊCH SỬ CHI PHÍ */}
+        <button
+          type="button"
+          onClick={() => setActiveTab('HISTORY')}
           style={{
-            flex: 1,
-            minWidth: 0,
+            background: activeTab === 'HISTORY'
+              ? 'linear-gradient(135deg, rgba(0, 242, 254, 0.22) 0%, rgba(2, 132, 199, 0.25) 100%)'
+              : 'rgba(255, 255, 255, 0.04)',
+            border: activeTab === 'HISTORY'
+              ? '1.5px solid #00f2fe'
+              : '1px solid rgba(255, 255, 255, 0.08)',
+            borderRadius: '10px',
+            padding: '8px 10px',
+            color: activeTab === 'HISTORY' ? '#00f2fe' : '#94a3b8',
+            fontSize: '11px',
+            fontWeight: activeTab === 'HISTORY' ? 850 : 650,
+            cursor: 'pointer',
             display: 'flex',
-            flexWrap: 'nowrap',
+            alignItems: 'center',
+            justifyContent: 'center',
             gap: '6px',
-            overflowX: 'auto',
-            scrollbarWidth: 'none',
-            msOverflowStyle: 'none',
-            WebkitOverflowScrolling: 'touch',
-            scrollBehavior: 'smooth',
-            paddingBottom: '2px',
-            scrollPadding: '0 6px',
+            transition: 'all 0.15s ease',
+            boxShadow: activeTab === 'HISTORY' ? '0 0 12px rgba(0, 242, 254, 0.25)' : 'none',
           }}
         >
-          {CATEGORY_CHIPS.map((chip) => {
-            const isActive = selectedCategory === chip.id;
-            const IconComp = chip.icon;
-            return (
-              <button
-                key={chip.id}
-                data-category-id={chip.id}
-                type="button"
-                onClick={() => handleSelectCategory(chip.id)}
-                style={{
-                  background: isActive ? '#00f2fe' : 'rgba(255, 255, 255, 0.05)',
-                  border: isActive ? '1px solid #00f2fe' : '1px solid rgba(255, 255, 255, 0.10)',
-                  color: isActive ? '#04111d' : '#94a3b8',
-                  borderRadius: '9999px',
-                  padding: '5px 12px',
-                  fontSize: '11px',
-                  fontWeight: isActive ? 800 : 600,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  whiteSpace: 'nowrap',
-                  transition: 'all 0.15s ease',
-                  boxShadow: isActive ? '0 2px 10px rgba(0, 242, 254, 0.35)' : 'none',
-                  flexShrink: 0,
-                }}
-                onMouseEnter={(e) => {
-                  if (!isActive) {
-                    e.currentTarget.style.background = 'rgba(0, 242, 254, 0.10)';
-                    e.currentTarget.style.color = '#e2e8f0';
-                    e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.30)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!isActive) {
-                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-                    e.currentTarget.style.color = '#94a3b8';
-                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.10)';
-                  }
-                }}
-              >
-                {IconComp && <IconComp size={11} color={isActive ? '#04111d' : '#94a3b8'} />}
-                <span>{chip.label}</span>
-              </button>
-            );
-          })}
-        </div>
+          <Receipt size={13} color={activeTab === 'HISTORY' ? '#00f2fe' : '#94a3b8'} />
+          <span>LỊCH SỬ CHI PHÍ</span>
+          {filteredExpenses.length > 0 && (
+            <span
+              style={{
+                fontSize: '9.5px',
+                padding: '1px 5px',
+                borderRadius: '9999px',
+                background: activeTab === 'HISTORY' ? '#00f2fe' : 'rgba(255, 255, 255, 0.1)',
+                color: activeTab === 'HISTORY' ? '#041628' : '#cbd5e1',
+                fontWeight: 800,
+              }}
+            >
+              {filteredExpenses.length}
+            </span>
+          )}
+        </button>
 
-        {/* Right Arrow Button */}
-        {canScrollRight && (
-          <button
-            type="button"
-            onClick={() => handleScrollFilters('right')}
-            title="Cuộn bộ lọc sang phải"
+        {/* Tab 2: CẦN THANH TOÁN */}
+        <button
+          type="button"
+          onClick={() => setActiveTab('UNPAID')}
+          style={{
+            background: activeTab === 'UNPAID'
+              ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.22) 0%, rgba(217, 119, 6, 0.25) 100%)'
+              : 'rgba(255, 255, 255, 0.04)',
+            border: activeTab === 'UNPAID'
+              ? '1.5px solid #fbbf24'
+              : '1px solid rgba(255, 255, 255, 0.08)',
+            borderRadius: '10px',
+            padding: '8px 10px',
+            color: activeTab === 'UNPAID' ? '#fbbf24' : '#94a3b8',
+            fontSize: '11px',
+            fontWeight: activeTab === 'UNPAID' ? 850 : 650,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+            transition: 'all 0.15s ease',
+            boxShadow: activeTab === 'UNPAID' ? '0 0 12px rgba(245, 158, 11, 0.25)' : 'none',
+          }}
+        >
+          <Clock size={13} color={activeTab === 'UNPAID' ? '#fbbf24' : '#94a3b8'} />
+          <span>CẦN THANH TOÁN</span>
+          {unpaidExpensesForView.length > 0 && (
+            <span
+              style={{
+                fontSize: '9.5px',
+                padding: '1px 5px',
+                borderRadius: '9999px',
+                background: activeTab === 'UNPAID' ? '#fbbf24' : 'rgba(245, 158, 11, 0.25)',
+                color: activeTab === 'UNPAID' ? '#041628' : '#fbbf24',
+                fontWeight: 800,
+              }}
+            >
+              {unpaidExpensesForView.length}
+            </span>
+          )}
+        </button>
+
+        {/* Tab 3: ĐÃ THANH TOÁN */}
+        <button
+          type="button"
+          onClick={() => setActiveTab('PAID')}
+          style={{
+            background: activeTab === 'PAID'
+              ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.22) 0%, rgba(5, 150, 105, 0.25) 100%)'
+              : 'rgba(255, 255, 255, 0.04)',
+            border: activeTab === 'PAID'
+              ? '1.5px solid #10b981'
+              : '1px solid rgba(255, 255, 255, 0.08)',
+            borderRadius: '10px',
+            padding: '8px 10px',
+            color: activeTab === 'PAID' ? '#10b981' : '#94a3b8',
+            fontSize: '11px',
+            fontWeight: activeTab === 'PAID' ? 850 : 650,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+            transition: 'all 0.15s ease',
+            boxShadow: activeTab === 'PAID' ? '0 0 12px rgba(16, 185, 129, 0.25)' : 'none',
+          }}
+        >
+          <ShieldCheck size={13} color={activeTab === 'PAID' ? '#10b981' : '#94a3b8'} />
+          <span>ĐÃ THANH TOÁN</span>
+          {verifiedPaymentsList.length > 0 && (
+            <span
+              style={{
+                fontSize: '9.5px',
+                padding: '1px 5px',
+                borderRadius: '9999px',
+                background: activeTab === 'PAID' ? '#10b981' : 'rgba(16, 185, 129, 0.25)',
+                color: activeTab === 'PAID' ? '#041628' : '#34d399',
+                fontWeight: 800,
+              }}
+            >
+              {verifiedPaymentsList.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* 3. CATEGORY FILTER CHIPS (ONLY SHOWN FOR LỊCH SỬ CHI PHÍ) */}
+      {activeTab === 'HISTORY' && (
+        <div
+          style={{
+            position: 'relative',
+            padding: '4px 20px 8px 20px',
+            flexShrink: 0,
+            maxWidth: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            boxSizing: 'border-box',
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          {/* Left Arrow Button */}
+          {canScrollLeft && (
+            <button
+              type="button"
+              onClick={() => handleScrollFilters('left')}
+              title="Cuộn bộ lọc sang trái"
+              style={{
+                width: '26px',
+                height: '26px',
+                borderRadius: '50%',
+                background: 'rgba(0, 242, 254, 0.12)',
+                border: '1.2px solid rgba(0, 242, 254, 0.40)',
+                color: '#00f2fe',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                flexShrink: 0,
+                boxShadow: '0 0 10px rgba(0, 242, 254, 0.25)',
+                transition: 'all 0.15s ease',
+                padding: 0,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(0, 242, 254, 0.25)';
+                e.currentTarget.style.borderColor = '#00f2fe';
+                e.currentTarget.style.boxShadow = '0 0 14px rgba(0, 242, 254, 0.45)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(0, 242, 254, 0.12)';
+                e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.40)';
+                e.currentTarget.style.boxShadow = '0 0 10px rgba(0, 242, 254, 0.25)';
+              }}
+            >
+              <ChevronLeft size={14} />
+            </button>
+          )}
+
+          {/* Scrollable Filters Viewport */}
+          <div
+            ref={filterScrollRef}
+            onScroll={checkFilterScroll}
+            onWheel={(e) => {
+              if (e.deltaY !== 0) {
+                e.currentTarget.scrollLeft += e.deltaY;
+              }
+            }}
             style={{
-              width: '26px',
-              height: '26px',
-              borderRadius: '50%',
-              background: 'rgba(0, 242, 254, 0.12)',
-              border: '1.2px solid rgba(0, 242, 254, 0.40)',
-              color: '#00f2fe',
+              flex: 1,
+              minWidth: 0,
               display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              flexShrink: 0,
-              boxShadow: '0 0 10px rgba(0, 242, 254, 0.25)',
-              transition: 'all 0.15s ease',
-              padding: 0,
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(0, 242, 254, 0.25)';
-              e.currentTarget.style.borderColor = '#00f2fe';
-              e.currentTarget.style.boxShadow = '0 0 14px rgba(0, 242, 254, 0.45)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(0, 242, 254, 0.12)';
-              e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.40)';
-              e.currentTarget.style.boxShadow = '0 0 10px rgba(0, 242, 254, 0.25)';
+              flexWrap: 'nowrap',
+              gap: '6px',
+              overflowX: 'auto',
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
+              WebkitOverflowScrolling: 'touch',
+              scrollBehavior: 'smooth',
+              paddingBottom: '2px',
+              scrollPadding: '0 6px',
             }}
           >
-            <ChevronRight size={14} />
-          </button>
-        )}
-      </div>
+            {CATEGORY_CHIPS.map((chip) => {
+              const isActive = selectedCategory === chip.id;
+              const IconComp = chip.icon;
+              return (
+                <button
+                  key={chip.id}
+                  data-category-id={chip.id}
+                  type="button"
+                  onClick={() => handleSelectCategory(chip.id)}
+                  style={{
+                    background: isActive ? '#00f2fe' : 'rgba(255, 255, 255, 0.05)',
+                    border: isActive ? '1px solid #00f2fe' : '1px solid rgba(255, 255, 255, 0.10)',
+                    color: isActive ? '#04111d' : '#94a3b8',
+                    borderRadius: '9999px',
+                    padding: '5px 12px',
+                    fontSize: '11px',
+                    fontWeight: isActive ? 800 : 600,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    whiteSpace: 'nowrap',
+                    transition: 'all 0.15s ease',
+                    boxShadow: isActive ? '0 2px 10px rgba(0, 242, 254, 0.35)' : 'none',
+                    flexShrink: 0,
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isActive) {
+                      e.currentTarget.style.background = 'rgba(0, 242, 254, 0.10)';
+                      e.currentTarget.style.color = '#e2e8f0';
+                      e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.30)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isActive) {
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                      e.currentTarget.style.color = '#94a3b8';
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.10)';
+                    }
+                  }}
+                >
+                  {IconComp && <IconComp size={11} color={isActive ? '#04111d' : '#94a3b8'} />}
+                  <span>{chip.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Right Arrow Button */}
+          {canScrollRight && (
+            <button
+              type="button"
+              onClick={() => handleScrollFilters('right')}
+              title="Cuộn bộ lọc sang phải"
+              style={{
+                width: '26px',
+                height: '26px',
+                borderRadius: '50%',
+                background: 'rgba(0, 242, 254, 0.12)',
+                border: '1.2px solid rgba(0, 242, 254, 0.40)',
+                color: '#00f2fe',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                flexShrink: 0,
+                boxShadow: '0 0 10px rgba(0, 242, 254, 0.25)',
+                transition: 'all 0.15s ease',
+                padding: 0,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(0, 242, 254, 0.25)';
+                e.currentTarget.style.borderColor = '#00f2fe';
+                e.currentTarget.style.boxShadow = '0 0 14px rgba(0, 242, 254, 0.45)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(0, 242, 254, 0.12)';
+                e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.40)';
+                e.currentTarget.style.boxShadow = '0 0 10px rgba(0, 242, 254, 0.25)';
+              }}
+            >
+              <ChevronRight size={14} />
+            </button>
+          )}
+        </div>
+      )}
 
       {/* 4. SCROLLABLE EXPENSE LIST (DRAG-TO-SCROLL & WHEEL) */}
       <div
@@ -1126,20 +1343,7 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
         }}
       >
         {isExpensesLoading ? (
-          <div
-            style={{
-              padding: '40px 0',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '10px',
-              color: '#38bdf8',
-            }}
-          >
-            <Loader2 size={24} className="animate-spin" color="#00f2fe" />
-            <span style={{ fontSize: '13px', fontWeight: 600 }}>Đang tải danh sách chi phí...</span>
-          </div>
+          <EVCarLoader variant="panel" message="Đang tải danh sách chi phí..." minHeight="240px" />
         ) : !activeVehicleId ? (
           <div
             style={{
@@ -1228,43 +1432,114 @@ export const FinanceZonePanel: React.FC<FinanceZonePanelProps> = ({
               Thử lại
             </button>
           </div>
-        ) : filteredExpenses.length === 0 ? (
-          <div
-            style={{
-              padding: '40px 20px',
-              background: 'rgba(10, 30, 56, 0.4)',
-              border: '1px dashed rgba(0, 242, 254, 0.2)',
-              borderRadius: '16px',
-              textAlign: 'center',
-              color: '#94a3b8',
-              fontSize: '13px',
-            }}
-          >
-            Chưa có khoản chi nào trong danh mục này.
-          </div>
-        ) : (
-          filteredExpenses.map((exp) => (
-            <ExpenseItemRow
-              key={exp.id}
-              expense={exp}
-              isExpanded={expandedExpenseId === exp.id}
-              onToggleExpand={() => {
-                if (dragDistanceRef.current > 5) return;
-                setExpandedExpenseId((prev) => (prev === exp.id ? null : exp.id));
+        ) : activeTab === 'HISTORY' ? (
+          filteredExpenses.length === 0 ? (
+            <div
+              style={{
+                padding: '40px 20px',
+                background: 'rgba(10, 30, 56, 0.4)',
+                border: '1px dashed rgba(0, 242, 254, 0.2)',
+                borderRadius: '16px',
+                textAlign: 'center',
+                color: '#94a3b8',
+                fontSize: '13px',
               }}
-              currentUser={user}
-              isStaff={isStaff}
-              myPayments={myPayments}
-              quickPayLoading={quickPayLoadingId === exp.id}
-              quickPayFeedback={quickPayFeedback?.expenseId === exp.id ? quickPayFeedback : null}
-              onQuickPay={(amount) => handleQuickPay(exp, amount)}
-              onShowReceipt={() => setShowReceiptModal(exp)}
-              isInfoTooltipOpen={infoTooltipExpenseId === exp.id}
-              onToggleInfoTooltip={() =>
-                setInfoTooltipExpenseId((prev) => (prev === exp.id ? null : exp.id))
-              }
-            />
-          ))
+            >
+              Chưa có khoản chi nào trong danh mục này.
+            </div>
+          ) : (
+            filteredExpenses.map((exp) => (
+              <ExpenseItemRow
+                key={exp.id}
+                expense={exp}
+                isExpanded={expandedExpenseId === exp.id}
+                onToggleExpand={() => {
+                  if (dragDistanceRef.current > 5) return;
+                  setExpandedExpenseId((prev) => (prev === exp.id ? null : exp.id));
+                }}
+                currentUser={user}
+                isStaff={isStaff}
+                myPayments={myPayments}
+                quickPayLoading={quickPayLoadingId === exp.id}
+                quickPayFeedback={quickPayFeedback?.expenseId === exp.id ? quickPayFeedback : null}
+                onQuickPay={(amount) => handleQuickPay(exp, amount)}
+                onShowReceipt={() => setShowReceiptModal(exp)}
+                isInfoTooltipOpen={infoTooltipExpenseId === exp.id}
+                onToggleInfoTooltip={() =>
+                  setInfoTooltipExpenseId((prev) => (prev === exp.id ? null : exp.id))
+                }
+              />
+            ))
+          )
+        ) : activeTab === 'UNPAID' ? (
+          unpaidExpensesForView.length === 0 ? (
+            <div
+              style={{
+                padding: '40px 20px',
+                background: 'rgba(10, 30, 56, 0.4)',
+                border: '1px dashed rgba(16, 185, 129, 0.3)',
+                borderRadius: '16px',
+                textAlign: 'center',
+                color: '#34d399',
+                fontSize: '13px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
+              <CheckCircle2 size={28} color="#10b981" />
+              <span style={{ fontWeight: 700, fontSize: '14px', color: '#f8fafc' }}>
+                Không có nghĩa vụ chi phí cần thanh toán
+              </span>
+              <span style={{ color: '#94a3b8', fontSize: '12px', maxWidth: '340px' }}>
+                Tất cả các khoản chi phí phân bổ cho bạn đối với phương tiện này đã được thanh toán và quyết toán đầy đủ.
+              </span>
+            </div>
+          ) : (
+            unpaidExpensesForView.map((exp) => (
+              <UnpaidObligationCard
+                key={exp.id}
+                expense={exp}
+                myPayments={myPayments}
+                quickPayLoading={quickPayLoadingId === exp.id}
+                quickPayFeedback={quickPayFeedback?.expenseId === exp.id ? quickPayFeedback : null}
+                onQuickPay={(amount) => handleQuickPay(exp, amount)}
+                onShowReceipt={() => setShowReceiptModal(exp)}
+              />
+            ))
+          )
+        ) : (
+          /* activeTab === 'PAID' */
+          verifiedPaymentsList.length === 0 ? (
+            <div
+              style={{
+                padding: '40px 20px',
+                background: 'rgba(10, 30, 56, 0.4)',
+                border: '1px dashed rgba(0, 242, 254, 0.2)',
+                borderRadius: '16px',
+                textAlign: 'center',
+                color: '#94a3b8',
+                fontSize: '13px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
+              <Receipt size={28} color="#64748b" />
+              <span style={{ fontWeight: 700, fontSize: '14px', color: '#cbd5e1' }}>
+                Chưa có khoản thanh toán nào đã được xác minh
+              </span>
+              <span style={{ color: '#94a3b8', fontSize: '12px', maxWidth: '340px' }}>
+                Các giao dịch sau khi được nhân viên xác minh sẽ hiển thị đầy đủ thông tin mã giao dịch và ngày duyệt tại đây.
+              </span>
+            </div>
+          ) : (
+            verifiedPaymentsList.map((payment) => (
+              <VerifiedPaymentCard key={payment.id} payment={payment} />
+            ))
+          )
         )}
       </div>
 
@@ -1458,6 +1733,8 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
   isInfoTooltipOpen,
   onToggleInfoTooltip,
 }) => {
+  const [showCalculationDetails, setShowCalculationDetails] = useState<boolean>(false);
+
   // Query shares when expanded
   const { data: rawShares = [], isLoading: isSharesLoading } = useExpenseShares(
     expense.id,
@@ -1493,21 +1770,127 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
     return myPayments.find((p) => p.expenseId === expense.id && p.status === 'PAYMENT_VERIFIED');
   }, [myPayments, expense.id]);
 
-  const isSettled = verifiedPayment != null || expense.status === 'APPROVED' && myShare?.status === 'SETTLED';
+  const isSettled = useMemo(() => {
+    if (verifiedPayment != null) return true;
+    if (myShare) {
+      const paid = Number(myShare.paidAmount || 0);
+      const allocated = Number(myShare.shareAmount || 0);
+      if (allocated > 0 && paid >= allocated) return true;
+      if (myShare.status === 'SETTLED' && paid > 0) return true;
+    }
+    if (expense.currentUserPaymentStatus === 'PAID') return true;
+    if (expense.currentUserAllocatedAmount != null && expense.currentUserPaidAmount != null) {
+      const a = Number(expense.currentUserAllocatedAmount);
+      const p = Number(expense.currentUserPaidAmount);
+      if (a > 0 && p >= a) return true;
+    }
+    return false;
+  }, [
+    verifiedPayment,
+    myShare,
+    expense.currentUserPaymentStatus,
+    expense.currentUserAllocatedAmount,
+    expense.currentUserPaidAmount,
+  ]);
 
   // Status badge resolution for row conforming strictly to authoritative backend business states
   const statusMeta = useMemo(() => {
-    // 1. Authoritative Full Settlement: ALL member shares are settled
-    if (expense.isFullySettled === true || (shares.length > 0 && shares.every((s) => s.status === 'SETTLED'))) {
+    // 1. Pending co-owner approval or voting
+    if (
+      expense.status === 'PENDING_APPROVAL' ||
+      expense.status === 'PENDING_VOTE' ||
+      expense.status === 'PENDING_VERIFICATION'
+    ) {
       return {
-        label: 'ĐÃ QUYẾT TOÁN',
-        color: '#10b981',
-        bg: 'rgba(16, 185, 129, 0.12)',
-        border: '1px solid rgba(16, 185, 129, 0.35)',
+        label: isStaff ? 'CHỜ DUYỆT' : 'CHỜ BIỂU QUYẾT',
+        color: '#a855f7',
+        bg: 'rgba(168, 85, 247, 0.12)',
+        border: '1px solid rgba(168, 85, 247, 0.35)',
       };
     }
-    // 2. Current user's personal obligation is settled
-    if (isSettled) {
+
+    // 2. Rejected
+    if (expense.status === 'REJECTED') {
+      return {
+        label: 'TỪ CHỐI',
+        color: '#ef4444',
+        bg: 'rgba(239, 68, 68, 0.12)',
+        border: '1px solid rgba(239, 68, 68, 0.35)',
+      };
+    }
+
+    // 3. STAFF VIEW: Group-level settlement status
+    if (isStaff) {
+      if (expense.isFullySettled === true || expense.settlementStatus === 'SETTLED') {
+        return {
+          label: 'ĐÃ QUYẾT TOÁN CHI PHÍ',
+          color: '#10b981',
+          bg: 'rgba(16, 185, 129, 0.12)',
+          border: '1px solid rgba(16, 185, 129, 0.35)',
+        };
+      }
+      if (expense.settlementStatus === 'PARTIALLY_SETTLED') {
+        return {
+          label: 'QUYẾT TOÁN MỘT PHẦN',
+          color: '#38bdf8',
+          bg: 'rgba(56, 189, 248, 0.12)',
+          border: '1px solid rgba(56, 189, 248, 0.35)',
+        };
+      }
+      if (shares.length > 0 || expense.status === 'APPROVED' || expense.settlementStatus === 'ALLOCATED') {
+        return {
+          label: 'ĐÃ PHÂN BỔ',
+          color: '#00f2fe',
+          bg: 'rgba(0, 242, 254, 0.12)',
+          border: '1px solid rgba(0, 242, 254, 0.35)',
+        };
+      }
+      return {
+        label: 'CHƯA PHÂN BỔ',
+        color: '#94a3b8',
+        bg: 'rgba(148, 163, 184, 0.12)',
+        border: '1px solid rgba(148, 163, 184, 0.35)',
+      };
+    }
+
+    // 4. CO-OWNER VIEW: Strictly authoritative personal payment status
+    const allocated =
+      myShare?.shareAmount != null
+        ? Number(myShare.shareAmount)
+        : expense.currentUserAllocatedAmount != null
+        ? Number(expense.currentUserAllocatedAmount)
+        : null;
+
+    const verifiedPaid =
+      verifiedPayment != null
+        ? (allocated ?? expense.amount)
+        : myShare?.paidAmount != null
+        ? Number(myShare.paidAmount)
+        : expense.currentUserPaidAmount != null
+        ? Number(expense.currentUserPaidAmount)
+        : 0;
+
+    const pendingAmount =
+      pendingPayment != null
+        ? Number(pendingPayment.amount) || (allocated ?? expense.amount)
+        : myShare?.pendingVerificationAmount != null
+        ? Number(myShare.pendingVerificationAmount)
+        : expense.currentUserPendingAmount != null
+        ? Number(expense.currentUserPendingAmount)
+        : 0;
+
+    const personalStatus = expense.currentUserPaymentStatus || myShare?.status;
+
+    if (allocated === 0 || personalStatus === 'NOT_INVOLVED') {
+      return {
+        label: 'KHÔNG PHÁT SINH CHI PHÍ',
+        color: '#94a3b8',
+        bg: 'rgba(148, 163, 184, 0.12)',
+        border: '1px solid rgba(148, 163, 184, 0.35)',
+      };
+    }
+
+    if (isSettled || personalStatus === 'PAID' || (allocated != null && allocated > 0 && verifiedPaid >= allocated)) {
       return {
         label: 'ĐÃ THANH TOÁN',
         color: '#10b981',
@@ -1515,8 +1898,8 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
         border: '1px solid rgba(16, 185, 129, 0.35)',
       };
     }
-    // 3. Current user submitted payment awaiting staff verification
-    if (pendingPayment) {
+
+    if (pendingPayment != null || pendingAmount > 0 || personalStatus === 'PENDING_VERIFICATION') {
       return {
         label: 'CHỜ XÁC MINH',
         color: '#38bdf8',
@@ -1524,50 +1907,57 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
         border: '1px solid rgba(56, 189, 248, 0.35)',
       };
     }
-    // 4. Pending co-owner approval or voting
-    if (expense.status === 'PENDING_APPROVAL' || expense.status === 'PENDING_VOTE' || expense.status === 'PENDING_VERIFICATION') {
+
+    if (verifiedPaid > 0 && allocated != null && verifiedPaid < allocated) {
       return {
-        label: 'CHỜ BIỂU QUYẾT',
-        color: '#a855f7',
-        bg: 'rgba(168, 85, 247, 0.12)',
-        border: '1px solid rgba(168, 85, 247, 0.35)',
-      };
-    }
-    // 5. Partially settled group expense
-    if (expense.settlementStatus === 'PARTIALLY_SETTLED') {
-      return {
-        label: 'QUYẾT TOÁN MỘT PHẦN',
+        label: 'THANH TOÁN MỘT PHẦN',
         color: '#38bdf8',
         bg: 'rgba(56, 189, 248, 0.12)',
         border: '1px solid rgba(56, 189, 248, 0.35)',
       };
     }
-    // 6. Unpaid verified obligation for current member
-    if (myShare && (myShare.status === 'PENDING' || myShare.status === 'ALLOCATED') && !isStaff) {
+
+    if (allocated != null && allocated > 0 && verifiedPaid === 0 && pendingAmount === 0) {
       return {
-        label: 'CHỜ THANH TOÁN',
+        label: 'CHƯA THANH TOÁN',
         color: '#f59e0b',
         bg: 'rgba(245, 158, 11, 0.12)',
         border: '1px solid rgba(245, 158, 11, 0.35)',
       };
     }
-    // 7. Member shares exist and allocated to group
-    if (shares.length > 0 || expense.status === 'APPROVED') {
+
+    if (allocated == null) {
       return {
-        label: 'ĐÃ PHÂN BỔ',
-        color: '#00f2fe',
-        bg: 'rgba(0, 242, 254, 0.12)',
-        border: '1px solid rgba(0, 242, 254, 0.35)',
+        label: 'ĐANG KIỂM TRA THANH TOÁN',
+        color: '#38bdf8',
+        bg: 'rgba(56, 189, 248, 0.12)',
+        border: '1px solid rgba(56, 189, 248, 0.35)',
       };
     }
-    // 8. General unallocated expense
+
     return {
       label: 'CHƯA PHÂN BỔ',
       color: '#94a3b8',
       bg: 'rgba(148, 163, 184, 0.12)',
       border: '1px solid rgba(148, 163, 184, 0.35)',
     };
-  }, [expense.isFullySettled, expense.settlementStatus, isSettled, pendingPayment, expense.status, shares, myShare, isStaff]);
+  }, [
+    expense.status,
+    expense.statusLabel,
+    expense.isFullySettled,
+    expense.settlementStatus,
+    expense.currentUserPaymentStatus,
+    expense.currentUserAllocatedAmount,
+    expense.currentUserPaidAmount,
+    expense.currentUserPendingAmount,
+    expense.amount,
+    isSettled,
+    pendingPayment,
+    verifiedPayment,
+    myShare,
+    shares.length,
+    isStaff,
+  ]);
 
   // Formula description resolution
   const formulaInfo = useMemo(() => {
@@ -1578,15 +1968,15 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
     if (policy === 'USAGE_AND_CAPITAL') {
       if (Number(totalKm) === 0) {
         return {
-          title: 'Tỷ lệ vốn nghịch chiều (Zero-km)',
+          title: '50% theo sở hữu nghịch đảo + 50% theo km sử dụng (0 km: 100% sở hữu nghịch đảo)',
           explanation:
-            'Chưa phát sinh km sử dụng trong kỳ. Chi phí được phân bổ theo tỷ lệ vốn nghịch chiều theo quy định nhóm.',
+            'Chưa phát sinh km sử dụng trong kỳ (0 km). Chi phí được phân bổ 100% theo tỷ lệ sở hữu nghịch đảo (1 - tỷ lệ sở hữu).',
         };
       }
       return {
-        title: 'Theo km sử dụng và vốn',
+        title: '50% theo sở hữu nghịch đảo + 50% theo km sử dụng',
         explanation:
-          'Chi phí được phân bổ theo số km sử dụng và tỷ lệ vốn sở hữu của từng thành viên.',
+          'Chi phí được phân bổ 50% theo tỷ lệ sở hữu nghịch đảo (1 - tỷ lệ sở hữu) và 50% theo số km sử dụng thực tế trong kỳ.',
       };
     }
     if (policy === 'OWNERSHIP_RATIO') {
@@ -1766,13 +2156,26 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
               <Car size={32} color="#00f2fe" style={{ opacity: 0.9, zIndex: 1 }} />
             </div>
 
-            {/* Middle: Tổng chi phí thực tế */}
+            {/* Middle: Tổng chi phí thực tế & Quyết toán nhóm */}
             <div>
               <div style={{ fontSize: '11.5px', color: '#94a3b8', fontWeight: 600 }}>
                 Tổng chi phí thực tế
               </div>
               <div style={{ fontSize: '19px', fontWeight: 850, color: '#ffffff', marginTop: '2px' }}>
                 {formatVND(expense.amount)}
+              </div>
+              <div style={{ marginTop: '4px', fontSize: '11px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span>Quyết toán nhóm:</span>
+                <span
+                  style={{
+                    color: expense.isFullySettled || expense.settlementStatus === 'SETTLED' ? '#34d399' : '#38bdf8',
+                    fontWeight: 700,
+                  }}
+                >
+                  {expense.isFullySettled || expense.settlementStatus === 'SETTLED'
+                    ? 'Đã quyết toán chi phí'
+                    : expense.settlementStatusLabel || 'Đã phân bổ'}
+                </span>
               </div>
             </div>
 
@@ -1830,7 +2233,7 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
                   onClick={(e) => e.stopPropagation()}
                 >
                   <div style={{ fontWeight: 800, color: '#00f2fe', marginBottom: '4px' }}>
-                    * Giải thích phân bổ (Phase 19/24):
+                    * Giải thích phân bổ (50% Sở hữu nghịch đảo + 50% Km):
                   </div>
                   <div>{formulaInfo.explanation}</div>
                 </div>
@@ -1904,19 +2307,29 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
 
                   const allocatedAmount = Number(share.shareAmount || 0);
                   const verifiedPaid = Number(share.paidAmount || 0);
+                  const pendingAmount = Number(
+                    share.pendingVerificationAmount ||
+                      (isCurrent && pendingPayment ? pendingPayment.amount : 0)
+                  );
+                  const remainingAmount =
+                    share.remainingAmount != null
+                      ? Number(share.remainingAmount)
+                      : Math.max(0, allocatedAmount - verifiedPaid);
+
+                  const isZeroObligation = allocatedAmount === 0 && remainingAmount === 0;
 
                   const isMemberSettled =
-                    share.status === 'SETTLED' ||
-                    (isCurrent && verifiedPayment != null) ||
-                    (verifiedPaid >= allocatedAmount && allocatedAmount > 0);
+                    !isZeroObligation &&
+                    ((verifiedPaid >= allocatedAmount && allocatedAmount > 0) ||
+                      (isCurrent && verifiedPayment != null) ||
+                      (share.status === 'SETTLED' && verifiedPaid > 0));
 
                   const isMemberPending =
+                    !isZeroObligation &&
                     !isMemberSettled &&
-                    ((isCurrent && pendingPayment != null) || (share.status === 'PENDING' && verifiedPaid > 0));
+                    (pendingAmount > 0 || (isCurrent && pendingPayment != null) || share.status === 'PENDING');
 
-                  const outstandingAmount = isMemberSettled
-                    ? 0
-                    : Math.max(0, allocatedAmount - verifiedPaid);
+                  const outstandingAmount = isMemberSettled || isZeroObligation ? 0 : remainingAmount;
 
                   return (
                     <div
@@ -1971,7 +2384,26 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
                         </div>
 
                         <div>
-                          {isMemberSettled ? (
+                          {isZeroObligation ? (
+                            <span
+                              style={{
+                                background: 'rgba(148, 163, 184, 0.16)',
+                                border: '1px solid rgba(148, 163, 184, 0.45)',
+                                color: '#94a3b8',
+                                padding: '2px 8px',
+                                borderRadius: '6px',
+                                fontSize: '10.5px',
+                                fontWeight: 800,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '3px',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              <CheckCircle2 size={11} color="#94a3b8" />
+                              Không phát sinh chi phí
+                            </span>
+                          ) : isMemberSettled ? (
                             <span
                               style={{
                                 background: 'rgba(16, 185, 129, 0.16)',
@@ -2009,6 +2441,25 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
                               <Clock size={11} color="#38bdf8" />
                               Chờ xác minh
                             </span>
+                          ) : verifiedPaid > 0 && verifiedPaid < allocatedAmount ? (
+                            <span
+                              style={{
+                                background: 'rgba(56, 189, 248, 0.16)',
+                                border: '1px solid rgba(56, 189, 248, 0.45)',
+                                color: '#38bdf8',
+                                padding: '2px 8px',
+                                borderRadius: '6px',
+                                fontSize: '10.5px',
+                                fontWeight: 800,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '3px',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              <Clock size={11} color="#38bdf8" />
+                              Thanh toán một phần
+                            </span>
                           ) : (
                             <span
                               style={{
@@ -2026,7 +2477,7 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
                               }}
                             >
                               <Clock size={11} color="#fbbf24" />
-                              Chờ thanh toán
+                              Chưa thanh toán
                             </span>
                           )}
                         </div>
@@ -2130,6 +2581,251 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
             )}
           </div>
 
+          {/* SECTION: CHI TIẾT CÁCH TÍNH (13 THÔNG SỐ CÔNG THỨC CHÍNH THỨC) */}
+          <div
+            style={{
+              background: 'rgba(8, 22, 42, 0.75)',
+              borderRadius: '12px',
+              border: showCalculationDetails
+                ? '1.5px solid rgba(0, 242, 254, 0.50)'
+                : '1px solid rgba(255, 255, 255, 0.10)',
+              overflow: 'hidden',
+              flexShrink: 0,
+              transition: 'all 0.2s ease',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setShowCalculationDetails((prev) => !prev)}
+              style={{
+                width: '100%',
+                padding: '10px 14px',
+                background: showCalculationDetails
+                  ? 'rgba(0, 242, 254, 0.12)'
+                  : 'rgba(255, 255, 255, 0.03)',
+                border: 'none',
+                color: '#ffffff',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                fontSize: '11.5px',
+                fontWeight: 800,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Receipt size={14} color="#00f2fe" />
+                <span style={{ color: '#00f2fe' }}>CHI TIẾT CÁCH TÍNH</span>
+                <span
+                  style={{
+                    fontSize: '10px',
+                    color: '#94a3b8',
+                    fontWeight: 600,
+                    textTransform: 'none',
+                    letterSpacing: 'normal',
+                  }}
+                >
+                  (13 thông số công thức sở hữu nghịch đảo & km)
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '10px', color: '#38bdf8' }}>
+                  {showCalculationDetails ? 'Thu gọn' : 'Xem chi tiết'}
+                </span>
+                {showCalculationDetails ? (
+                  <ChevronUp size={14} color="#00f2fe" />
+                ) : (
+                  <ChevronDown size={14} color="#94a3b8" />
+                )}
+              </div>
+            </button>
+
+            {showCalculationDetails && (
+              <div
+                style={{
+                  padding: '14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
+                  borderTop: '1px solid rgba(0, 242, 254, 0.20)',
+                  background: 'rgba(4, 14, 28, 0.85)',
+                }}
+              >
+                {(() => {
+                  const totalExp = Number(expense.amount || 0);
+                  const firstShare = shares[0];
+                  const totalKm = Number(firstShare?.totalKmSnapshot ?? shares.reduce((acc, s) => acc + Number(s.memberKmSnapshot || 0), 0));
+                  const isZeroKm = totalKm <= 0;
+                  const alpha = isZeroKm ? 1.0 : 0.5;
+                  const beta = isZeroKm ? 0.0 : 0.5;
+
+                  const totalInvWeight = shares.reduce((acc, s) => {
+                    const pct = Number(s.ownershipPercentage || 0) / 100;
+                    return acc + Math.max(0, 1 - pct);
+                  }, 0);
+
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {/* Formula Header Card */}
+                      <div
+                        style={{
+                          background: 'rgba(0, 242, 254, 0.06)',
+                          border: '1px solid rgba(0, 242, 254, 0.25)',
+                          borderRadius: '8px',
+                          padding: '10px 12px',
+                          fontSize: '11px',
+                          lineHeight: 1.6,
+                          color: '#cbd5e1',
+                        }}
+                      >
+                        <div style={{ fontWeight: 800, color: '#00f2fe', marginBottom: '4px' }}>
+                          CÔNG THỨC PHÂN BỔ CHÍNH THỨC (HỆ THỐNG TOÀN DIỆN):
+                        </div>
+                        <div>
+                          • Trọng số sở hữu nghịch đảo: <code style={{ color: '#38bdf8' }}>inverseOwnershipWeight_i = 1 - ownershipShare_i</code>
+                        </div>
+                        <div>
+                          • Chi phí theo vốn ({isZeroKm ? 'alpha = 1.0 (0 km)' : 'alpha = 0.5'}):{' '}
+                          <code style={{ color: '#38bdf8' }}>
+                            ownershipCost_i = totalExpense * alpha * (inverseOwnershipWeight_i / totalInverseOwnershipWeight)
+                          </code>
+                        </div>
+                        <div>
+                          • Chi phí theo km ({isZeroKm ? 'beta = 0.0' : 'beta = 0.5'}):{' '}
+                          <code style={{ color: '#38bdf8' }}>
+                            usageCost_i = totalExpense * beta * (distanceKm_i / totalDistanceKm)
+                          </code>
+                        </div>
+                        <div>
+                          • Phân bổ thành viên trước làm tròn: <code style={{ color: '#38bdf8' }}>allocatedCost_i = ownershipCost_i + usageCost_i</code>
+                        </div>
+                        <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px' }}>
+                          * Làm tròn tiền tệ: Thuật toán số dư lớn nhất (Largest-Remainder) đảm bảo tổng chi phí các thành viên luôn khớp chính xác 100% số tiền hóa đơn ({formatVND(totalExp)}).
+                        </div>
+                      </div>
+
+                      {/* Global 4-parameter overview */}
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(4, 1fr)',
+                          gap: '8px',
+                          background: 'rgba(255, 255, 255, 0.03)',
+                          borderRadius: '8px',
+                          padding: '8px 10px',
+                          border: '1px solid rgba(255, 255, 255, 0.08)',
+                          fontSize: '10.5px',
+                        }}
+                      >
+                        <div>
+                          <div style={{ color: '#94a3b8', fontSize: '9.5px', textTransform: 'uppercase' }}>1. Tổng chi phí (T)</div>
+                          <div style={{ color: '#ffffff', fontWeight: 800, marginTop: '2px' }}>{formatVND(totalExp)}</div>
+                        </div>
+                        <div>
+                          <div style={{ color: '#94a3b8', fontSize: '9.5px', textTransform: 'uppercase' }}>2. Tỷ trọng vốn (α)</div>
+                          <div style={{ color: '#38bdf8', fontWeight: 800, marginTop: '2px' }}>{(alpha * 100).toFixed(0)}%</div>
+                        </div>
+                        <div>
+                          <div style={{ color: '#94a3b8', fontSize: '9.5px', textTransform: 'uppercase' }}>3. Tỷ trọng km (β)</div>
+                          <div style={{ color: '#38bdf8', fontWeight: 800, marginTop: '2px' }}>{(beta * 100).toFixed(0)}%</div>
+                        </div>
+                        <div>
+                          <div style={{ color: '#94a3b8', fontSize: '9.5px', textTransform: 'uppercase' }}>6. Tổng trọng số nghịch đảo (W)</div>
+                          <div style={{ color: '#00f2fe', fontWeight: 800, marginTop: '2px' }}>{totalInvWeight.toFixed(4)}</div>
+                        </div>
+                      </div>
+
+                      {/* Detailed 13-parameter breakdown cards for each co-owner */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {shares.map((sh, idx) => {
+                          const isCurrent = Boolean(
+                            currentUser?.id &&
+                              (sh.userId === currentUser.id ||
+                                (currentUser.fullName && sh.userName?.includes(currentUser.fullName)))
+                          );
+                          const ownPct = Number(sh.ownershipPercentage || 0);
+                          const decOwn = ownPct / 100;
+                          const invWeight = Math.max(0, 1 - decOwn);
+                          const ownRatio = totalInvWeight > 0 ? invWeight / totalInvWeight : 0;
+                          const ownCost = sh.ownershipCost != null ? Number(sh.ownershipCost) : totalExp * alpha * ownRatio;
+                          const memberKm = Number(sh.memberKmSnapshot || 0);
+                          const kmRatio = totalKm > 0 ? memberKm / totalKm : 0;
+                          const useCost = sh.usageCost != null ? Number(sh.usageCost) : (totalKm > 0 ? totalExp * beta * kmRatio : 0);
+                          const unroundedTotal = ownCost + useCost;
+                          const finalCost = Number(sh.shareAmount || 0);
+                          const roundingDiff = finalCost - Math.floor(unroundedTotal);
+
+                          return (
+                            <div
+                              key={sh.id || sh.userId || idx}
+                              style={{
+                                background: isCurrent ? 'rgba(0, 242, 254, 0.08)' : 'rgba(8, 20, 38, 0.65)',
+                                border: isCurrent ? '1.5px solid #00f2fe' : '1px solid rgba(255, 255, 255, 0.07)',
+                                borderRadius: '10px',
+                                padding: '10px 12px',
+                                fontSize: '11px',
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <strong style={{ color: isCurrent ? '#00f2fe' : '#ffffff', fontSize: '12px' }}>
+                                    {sh.userName || `Thành viên ${idx + 1}`}
+                                  </strong>
+                                  {isCurrent && (
+                                    <span style={{ background: '#00f2fe', color: '#041628', fontSize: '9px', fontWeight: 800, padding: '1px 5px', borderRadius: '4px' }}>
+                                      BẠN
+                                    </span>
+                                  )}
+                                </div>
+                                <div style={{ fontSize: '12px', fontWeight: 850, color: '#ffffff' }}>
+                                  13. Phân bổ thực tế: <span style={{ color: '#00f2fe' }}>{formatVND(finalCost)}</span>
+                                  {roundingDiff > 0 && <span style={{ fontSize: '9.5px', color: '#fbbf24', marginLeft: '4px' }}>(+{roundingDiff}đ làm tròn)</span>}
+                                </div>
+                              </div>
+
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', fontSize: '10.5px' }}>
+                                {/* Ownership breakdown */}
+                                <div style={{ background: 'rgba(0, 0, 0, 0.25)', padding: '6px 8px', borderRadius: '6px' }}>
+                                  <div style={{ color: '#94a3b8', fontSize: '9.5px', fontWeight: 700, marginBottom: '2px' }}>PHẦN VỐN NGHỊCH ĐẢO</div>
+                                  <div>4. Tỷ lệ sở hữu: <strong style={{ color: '#e2e8f0' }}>{ownPct}%</strong></div>
+                                  <div>5. Trọng số nghịch đảo (1 - s): <strong style={{ color: '#38bdf8' }}>{invWeight.toFixed(4)}</strong></div>
+                                  <div>7. Tỷ lệ phần vốn (w / W): <strong style={{ color: '#38bdf8' }}>{(ownRatio * 100).toFixed(2)}%</strong></div>
+                                  <div>8. Chi phí vốn: <strong style={{ color: '#00f2fe' }}>{formatVND(ownCost)}</strong></div>
+                                </div>
+
+                                {/* Distance breakdown */}
+                                <div style={{ background: 'rgba(0, 0, 0, 0.25)', padding: '6px 8px', borderRadius: '6px' }}>
+                                  <div style={{ color: '#94a3b8', fontSize: '9.5px', fontWeight: 700, marginBottom: '2px' }}>PHẦN QUÃNG ĐƯỜNG (KM)</div>
+                                  <div>9. Km cá nhân: <strong style={{ color: '#e2e8f0' }}>{memberKm} km</strong></div>
+                                  <div>10. Tổng km nhóm: <strong style={{ color: '#e2e8f0' }}>{totalKm} km</strong></div>
+                                  <div>11. Tỷ lệ km (d / D): <strong style={{ color: '#38bdf8' }}>{(kmRatio * 100).toFixed(2)}%</strong></div>
+                                  <div>12. Chi phí km: <strong style={{ color: '#00f2fe' }}>{formatVND(useCost)}</strong></div>
+                                </div>
+
+                                {/* Sum & Result */}
+                                <div style={{ background: 'rgba(0, 0, 0, 0.25)', padding: '6px 8px', borderRadius: '6px' }}>
+                                  <div style={{ color: '#94a3b8', fontSize: '9.5px', fontWeight: 700, marginBottom: '2px' }}>TỔNG HỢP VÀ LÀM TRÒN</div>
+                                  <div>Chi phí vốn: <strong style={{ color: '#cbd5e1' }}>{formatVND(ownCost)}</strong></div>
+                                  <div>+ Chi phí km: <strong style={{ color: '#cbd5e1' }}>{formatVND(useCost)}</strong></div>
+                                  <div>= Chưa làm tròn: <strong style={{ color: '#94a3b8' }}>{unroundedTotal.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}đ</strong></div>
+                                  <div style={{ marginTop: '2px', borderTop: '1px dashed rgba(255, 255, 255, 0.1)', paddingTop: '2px' }}>
+                                    Số tiền chính thức: <strong style={{ color: '#10b981' }}>{formatVND(finalCost)}</strong>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
+
           {/* Action Buttons Bar */}
           <div
             style={{
@@ -2143,11 +2839,63 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
           >
             {/* Pay Button for Current User if amount > 0 and not settled */}
             {(() => {
-              const myAllocated = Number(myShare?.shareAmount ?? (expense.status === 'APPROVED' ? expense.amount : 0));
-              const myPaid = Number(myShare?.paidAmount ?? (isSettled ? myAllocated : 0));
-              const outstandingToPay = isSettled ? 0 : Math.max(0, myAllocated - myPaid);
+              const myAllocated =
+                myShare?.shareAmount != null
+                  ? Number(myShare.shareAmount)
+                  : expense.currentUserAllocatedAmount != null
+                  ? Number(expense.currentUserAllocatedAmount)
+                  : (shares.length > 0 ? 0 : 0);
 
-              if (isSettled || (myShare && myShare.status === 'SETTLED') || (outstandingToPay === 0 && myAllocated > 0)) {
+              const myPaid =
+                myShare?.paidAmount != null
+                  ? Number(myShare.paidAmount)
+                  : verifiedPayment
+                  ? myAllocated
+                  : expense.currentUserPaidAmount != null
+                  ? Number(expense.currentUserPaidAmount)
+                  : 0;
+
+              const myPending =
+                myShare?.pendingVerificationAmount != null
+                  ? Number(myShare.pendingVerificationAmount)
+                  : pendingPayment
+                  ? (Number(pendingPayment.amount) || myAllocated)
+                  : expense.currentUserPendingAmount != null
+                  ? Number(expense.currentUserPendingAmount)
+                  : 0;
+
+              const outstandingToPay = isSettled || myAllocated === 0
+                ? 0
+                : myShare?.remainingAmount != null
+                ? Number(myShare.remainingAmount)
+                : expense.currentUserRemainingAmount != null
+                ? Number(expense.currentUserRemainingAmount)
+                : Math.max(0, myAllocated - myPaid);
+
+              if (myAllocated === 0 || expense.currentUserPaymentStatus === 'NOT_INVOLVED') {
+                return (
+                  <div
+                    style={{
+                      background: 'rgba(148, 163, 184, 0.12)',
+                      border: '1px solid rgba(148, 163, 184, 0.35)',
+                      color: '#94a3b8',
+                      padding: '8px 16px',
+                      borderRadius: '10px',
+                      fontSize: '12px',
+                      fontWeight: 800,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <CheckCircle2 size={14} color="#94a3b8" />
+                    <span>KHÔNG PHÁT SINH CHI PHÍ</span>
+                  </div>
+                );
+              }
+
+              if (isSettled) {
                 return (
                   <div
                     style={{
@@ -2165,11 +2913,11 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
                     }}
                   >
                     <CheckCircle2 size={14} color="#34d399" />
-                    <span>ĐÃ THANH TOÁN (DEMO)</span>
+                    <span>ĐÃ THANH TOÁN</span>
                   </div>
                 );
               }
-              if (pendingPayment) {
+              if (pendingPayment || myPending > 0) {
                 return (
                   <div
                     style={{
@@ -2218,15 +2966,13 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
                     }}
                   >
                     {quickPayLoading ? (
-                      <Loader2 size={15} className="animate-spin" color="#041628" />
+                      <EVCarLoader variant="button" message="Đang xử lý..." />
                     ) : (
-                      <CreditCard size={15} color="#041628" />
+                      <>
+                        <CreditCard size={15} color="#041628" />
+                        <span>{`Thanh toán ngay (${formatVND(outstandingToPay)})`}</span>
+                      </>
                     )}
-                    <span>
-                      {quickPayLoading
-                        ? 'Đang xử lý...'
-                        : `Thanh toán ngay (${formatVND(outstandingToPay)})`}
-                    </span>
                   </button>
                 );
               }
@@ -2279,13 +3025,14 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
 
           {/* STAFF Verification Section (Only for STAFF accounts) */}
           {isStaff && (
-            <div style={{ marginTop: '8px', paddingTop: '10px', borderTop: '1px dashed rgba(255, 255, 255, 0.1)' }}>
+            <div style={{ marginTop: '8px', paddingTop: '10px', borderTop: '1px dashed rgba(255, 255, 255, 0.1)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <ExpenseVerificationSection
                 expenseId={expense.id}
                 expenseStatus={expense.status}
                 evidenceUrl={expense.evidenceUrl}
                 evidenceNote={expense.evidenceNote}
               />
+              <StaffPersonalPaymentsVerification expenseId={expense.id} />
             </div>
           )}
         </div>
@@ -2293,4 +3040,528 @@ const ExpenseItemRow: React.FC<ExpenseItemRowProps> = ({
     </div>
   );
 };
+
+// ========================================================
+// SUB-COMPONENT: STAFF PERSONAL PAYMENT VERIFICATION
+// ========================================================
+const StaffPersonalPaymentsVerification: React.FC<{
+  expenseId: string;
+}> = ({ expenseId }) => {
+  const queryClient = useQueryClient();
+  const [verifyingId, setVerifyingId] = useState<string | null>(null);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+
+  const { data: payments = [], isLoading, refetch } = useQuery({
+    queryKey: ['personal-payments', expenseId],
+    queryFn: () => fetchPersonalPayments(expenseId),
+  });
+
+  const pendingPayments = useMemo(() => {
+    return Array.isArray(payments)
+      ? payments.filter((p) => p.status === 'PAYMENT_SUBMITTED')
+      : [];
+  }, [payments]);
+
+  if (isLoading || pendingPayments.length === 0) return null;
+
+  const handleVerify = async (paymentId: string, confirmed: boolean) => {
+    setVerifyingId(paymentId);
+    setVerifyError(null);
+    try {
+      await verifyPersonalPayment(paymentId, {
+        confirmed,
+        note: confirmed
+          ? 'Nhân viên xác nhận đã nhận đủ tiền thanh toán cá nhân'
+          : 'Nhân viên từ chối xác nhận thanh toán',
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['personal-payments'] }),
+        queryClient.invalidateQueries({ queryKey: ['expense-shares'] }),
+        queryClient.invalidateQueries({ queryKey: ['expenses'] }),
+        queryClient.invalidateQueries({ queryKey: ['cost-sharing-summary'] }),
+        queryClient.invalidateQueries({ queryKey: ['expense-summary'] }),
+        queryClient.invalidateQueries({ queryKey: ['my-personal-payments'] }),
+        queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+      ]);
+      refetch();
+    } catch (err: any) {
+      setVerifyError(err?.message || 'Lỗi khi xác minh thanh toán cá nhân.');
+    } finally {
+      setVerifyingId(null);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        background: 'rgba(56, 189, 248, 0.08)',
+        border: '1px solid rgba(56, 189, 248, 0.25)',
+        borderRadius: '10px',
+        padding: '10px 14px',
+      }}
+    >
+      <div
+        style={{
+          fontSize: '12px',
+          fontWeight: 800,
+          color: '#38bdf8',
+          marginBottom: '8px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+        }}
+      >
+        <ShieldCheck size={14} color="#38bdf8" />
+        <span>XÁC MINH THANH TOÁN CÁ NHÂN CHỜ DUYỆT ({pendingPayments.length})</span>
+      </div>
+
+      {verifyError && (
+        <div style={{ fontSize: '11px', color: '#f87171', marginBottom: '6px' }}>
+          {verifyError}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {pendingPayments.map((p) => (
+          <div
+            key={p.id}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: 'rgba(4, 14, 28, 0.65)',
+              padding: '8px 12px',
+              borderRadius: '8px',
+              border: '1px solid rgba(255, 255, 255, 0.06)',
+            }}
+          >
+            <div style={{ fontSize: '12px', color: '#f8fafc' }}>
+              <div>
+                <strong>{p.payerName}</strong>:{' '}
+                <span style={{ color: '#00f2fe', fontWeight: 800 }}>
+                  {formatVND(p.amount)}
+                </span>
+              </div>
+              <div style={{ fontSize: '10.5px', color: '#94a3b8' }}>
+                Phương thức: {p.paymentMethod || 'DEMO_QUICK_PAY'}{' '}
+                {p.note ? `• ${p.note}` : ''}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button
+                type="button"
+                disabled={verifyingId === p.id}
+                onClick={() => handleVerify(p.id, true)}
+                style={{
+                  background: '#10b981',
+                  color: '#041628',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '5px 12px',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  cursor: verifyingId === p.id ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {verifyingId === p.id ? 'Đang duyệt...' : 'Xác nhận'}
+              </button>
+              <button
+                type="button"
+                disabled={verifyingId === p.id}
+                onClick={() => handleVerify(p.id, false)}
+                style={{
+                  background: 'rgba(239, 68, 68, 0.2)',
+                  color: '#ef4444',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  borderRadius: '6px',
+                  padding: '5px 10px',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  cursor: verifyingId === p.id ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Từ chối
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ========================================================
+// SUB-COMPONENT: UNPAID OBLIGATION CARD (SECTION 8 & 9)
+// ========================================================
+interface UnpaidObligationCardProps {
+  expense: ExpenseResponse;
+  myPayments: any[];
+  quickPayLoading: boolean;
+  quickPayFeedback: { expenseId: string; text: string; isError: boolean } | null;
+  onQuickPay: (amount: number) => void;
+  onShowReceipt: () => void;
+}
+
+const UnpaidObligationCard: React.FC<UnpaidObligationCardProps> = ({
+  expense,
+  myPayments,
+  quickPayLoading,
+  quickPayFeedback,
+  onQuickPay,
+  onShowReceipt,
+}) => {
+  const pendingPayment = useMemo(() => {
+    return myPayments.find(
+      (p) => p.expenseId === expense.id && p.status === 'PAYMENT_SUBMITTED'
+    );
+  }, [myPayments, expense.id]);
+
+  const allocated =
+    expense.currentUserAllocatedAmount != null
+      ? Number(expense.currentUserAllocatedAmount)
+      : Number(expense.amount || 0);
+  const paid = expense.currentUserPaidAmount != null ? Number(expense.currentUserPaidAmount) : 0;
+  const remaining =
+    expense.currentUserRemainingAmount != null
+      ? Number(expense.currentUserRemainingAmount)
+      : Math.max(0, allocated - paid);
+
+  const isPendingVerification =
+    !!pendingPayment ||
+    (expense.currentUserPendingAmount != null && expense.currentUserPendingAmount > 0) ||
+    expense.currentUserPaymentStatus === 'PENDING_VERIFICATION';
+
+  return (
+    <div
+      style={{
+        background: 'rgba(11, 26, 48, 0.75)',
+        border: isPendingVerification
+          ? '1.2px solid rgba(56, 189, 248, 0.40)'
+          : '1.2px solid rgba(245, 158, 11, 0.40)',
+        borderRadius: '16px',
+        padding: '14px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+        boxShadow: '0 4px 16px rgba(0, 0, 0, 0.25)',
+      }}
+    >
+      {/* Top Header Row */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
+          <div
+            style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '10px',
+              background: getCategoryBg(expense.category),
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            {getCategoryIcon(expense.category)}
+          </div>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div
+              style={{
+                fontSize: '13.5px',
+                fontWeight: 750,
+                color: '#ffffff',
+                lineHeight: 1.3,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {expense.description || expense.categoryLabel || 'Khoản chi phí'}
+            </div>
+            <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
+              {formatDate(expense.occurredAt || expense.createdAt)} • Tổng: {formatVND(expense.amount)}
+            </div>
+          </div>
+        </div>
+
+        <span
+          style={{
+            background: isPendingVerification ? 'rgba(56, 189, 248, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+            border: isPendingVerification
+              ? '1px solid rgba(56, 189, 248, 0.45)'
+              : '1px solid rgba(245, 158, 11, 0.45)',
+            color: isPendingVerification ? '#38bdf8' : '#fbbf24',
+            fontSize: '10.5px',
+            fontWeight: 800,
+            padding: '3px 8px',
+            borderRadius: '9999px',
+            whiteSpace: 'nowrap',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px',
+            flexShrink: 0,
+          }}
+        >
+          {isPendingVerification ? <Clock size={11} color="#38bdf8" /> : <AlertTriangle size={11} color="#fbbf24" />}
+          <span>{isPendingVerification ? 'CHỜ XÁC MINH' : 'CHƯA THANH TOÁN'}</span>
+        </span>
+      </div>
+
+      {/* Allocation & Remaining Obligation Micro-Grid */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(2, 1fr)',
+          gap: '8px',
+          background: 'rgba(4, 14, 28, 0.55)',
+          borderRadius: '10px',
+          padding: '8px 12px',
+          border: '1px solid rgba(255, 255, 255, 0.05)',
+        }}
+      >
+        <div>
+          <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>
+            Phân bổ cho bạn
+          </div>
+          <div style={{ fontSize: '14px', fontWeight: 800, color: '#ffffff', marginTop: '2px' }}>
+            {formatVND(allocated)}
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>
+            Cần thanh toán
+          </div>
+          <div
+            style={{
+              fontSize: '14px',
+              fontWeight: 850,
+              color: isPendingVerification ? '#38bdf8' : '#fbbf24',
+              marginTop: '2px',
+            }}
+          >
+            {formatVND(remaining)}
+          </div>
+        </div>
+      </div>
+
+      {/* Action Bar */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+        {isPendingVerification ? (
+          <div
+            style={{
+              background: 'rgba(56, 189, 248, 0.12)',
+              border: '1px solid rgba(56, 189, 248, 0.35)',
+              color: '#38bdf8',
+              borderRadius: '8px',
+              padding: '7px 12px',
+              fontSize: '11.5px',
+              fontWeight: 700,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <Clock size={13} color="#38bdf8" />
+            <span>Đã gửi thanh toán demo! CHỜ NHÂN VIÊN XÁC NHẬN.</span>
+          </div>
+        ) : remaining > 0 ? (
+          <button
+            type="button"
+            disabled={quickPayLoading}
+            onClick={() => onQuickPay(remaining)}
+            style={{
+              background: 'linear-gradient(135deg, #00f2fe 0%, #0284c7 100%)',
+              border: 'none',
+              borderRadius: '10px',
+              padding: '8px 16px',
+              color: '#041628',
+              fontSize: '12.5px',
+              fontWeight: 850,
+              cursor: quickPayLoading ? 'not-allowed' : 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              boxShadow: '0 4px 14px rgba(0, 242, 254, 0.35)',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            {quickPayLoading ? (
+              <EVCarLoader variant="button" message="Đang xử lý..." />
+            ) : (
+              <>
+                <CreditCard size={14} color="#041628" />
+                <span>Thanh toán mô phỏng (DEMO) — {formatVND(remaining)}</span>
+              </>
+            )}
+          </button>
+        ) : null}
+
+        <button
+          type="button"
+          onClick={onShowReceipt}
+          style={{
+            background: 'rgba(255, 255, 255, 0.06)',
+            border: '1px solid rgba(255, 255, 255, 0.12)',
+            borderRadius: '8px',
+            padding: '7px 12px',
+            color: '#cbd5e1',
+            fontSize: '11.5px',
+            fontWeight: 650,
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '5px',
+          }}
+        >
+          <FileText size={13} />
+          <span>Chứng từ</span>
+        </button>
+      </div>
+
+      {/* Quick Pay Feedback */}
+      {quickPayFeedback && (
+        <div
+          style={{
+            fontSize: '11px',
+            fontWeight: 650,
+            color: quickPayFeedback.isError ? '#f87171' : '#34d399',
+            marginTop: '-4px',
+          }}
+        >
+          {quickPayFeedback.text}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ========================================================
+// SUB-COMPONENT: VERIFIED PAYMENT CARD (SECTION 8 & 9)
+// ========================================================
+interface VerifiedPaymentCardProps {
+  payment: any;
+}
+
+const VerifiedPaymentCard: React.FC<VerifiedPaymentCardProps> = ({ payment }) => {
+  return (
+    <div
+      style={{
+        background: 'rgba(11, 26, 48, 0.75)',
+        border: '1.2px solid rgba(16, 185, 129, 0.35)',
+        borderRadius: '16px',
+        padding: '14px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '10px',
+        boxShadow: '0 4px 16px rgba(0, 0, 0, 0.25)',
+      }}
+    >
+      {/* Top Header Row */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
+          <div
+            style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '10px',
+              background: 'rgba(16, 185, 129, 0.15)',
+              border: '1px solid rgba(16, 185, 129, 0.35)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <ShieldCheck size={18} color="#10b981" />
+          </div>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div
+              style={{
+                fontSize: '13.5px',
+                fontWeight: 750,
+                color: '#ffffff',
+                lineHeight: 1.3,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {payment.expenseDescription || 'Thanh toán chi phí cá nhân'}
+            </div>
+            <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
+              Mã GD: <strong style={{ color: '#cbd5e1' }}>{payment.paymentReference || (payment.id ? payment.id.slice(0, 8).toUpperCase() : 'GD-DEMO')}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px', flexShrink: 0 }}>
+          <div style={{ fontSize: '15px', fontWeight: 850, color: '#34d399', fontVariantNumeric: 'tabular-nums' }}>
+            {formatVND(payment.amount)}
+          </div>
+          <span
+            style={{
+              background: 'rgba(16, 185, 129, 0.15)',
+              border: '1px solid rgba(16, 185, 129, 0.45)',
+              color: '#34d399',
+              fontSize: '10px',
+              fontWeight: 800,
+              padding: '2px 7px',
+              borderRadius: '9999px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '3px',
+            }}
+          >
+            <CheckCircle2 size={10} color="#34d399" />
+            <span>ĐÃ XÁC MINH</span>
+          </span>
+        </div>
+      </div>
+
+      {/* Details Row: Payment Date, Verification Date, Verifier */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: '6px',
+          background: 'rgba(4, 14, 28, 0.55)',
+          borderRadius: '10px',
+          padding: '8px 10px',
+          border: '1px solid rgba(255, 255, 255, 0.05)',
+        }}
+      >
+        <div>
+          <div style={{ fontSize: '9.5px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>
+            Phương thức
+          </div>
+          <div style={{ fontSize: '11.5px', fontWeight: 700, color: '#e2e8f0', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {payment.paymentMethod || 'DEMO_PAYMENT'}
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: '9.5px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>
+            Ngày thanh toán
+          </div>
+          <div style={{ fontSize: '11.5px', fontWeight: 700, color: '#e2e8f0', marginTop: '2px' }}>
+            {formatDate(payment.createdAt)}
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: '9.5px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>
+            Ngày xác minh
+          </div>
+          <div style={{ fontSize: '11.5px', fontWeight: 700, color: '#34d399', marginTop: '2px' }}>
+            {payment.verifiedAt ? formatDate(payment.verifiedAt) : 'Đã xác minh'}
+          </div>
+        </div>
+      </div>
+
+      {payment.verifiedByName && (
+        <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+          Người xác minh: <strong style={{ color: '#cbd5e1' }}>{payment.verifiedByName}</strong>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export default FinanceZonePanel;

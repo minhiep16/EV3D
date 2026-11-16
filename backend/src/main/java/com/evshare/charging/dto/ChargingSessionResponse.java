@@ -21,12 +21,20 @@ public class ChargingSessionResponse {
     private ChargingSessionStatus status;
     private UUID startedByUserId;
     private String startedByUserName;
+    private String startedByUserRole;
+    private Boolean canControl;
+    private Boolean isStaffCharging;
+    private Boolean isExemptFromFee;
     private Instant startedAt;
     private Instant endedAt;
     private BigDecimal startSocPercent;
     private BigDecimal currentSocPercent;
     private BigDecimal targetSocPercent;
     private BigDecimal energyDeliveredKwh;
+    private BigDecimal storedEnergyKwh;
+    private BigDecimal tariffPerKwh;
+    private BigDecimal chargingCost;
+    private BigDecimal energyLossKwh;
     private BigDecimal powerKw;
     private Integer estimatedRemainingMinutes;
     private String completionReason;
@@ -59,19 +67,56 @@ public class ChargingSessionResponse {
         if (session.getStartedBy() != null) {
             response.setStartedByUserId(session.getStartedBy().getId());
             response.setStartedByUserName(session.getStartedBy().getFullName());
+            if (session.getStartedBy().getRole() != null) {
+                response.setStartedByUserRole(session.getStartedBy().getRole().name());
+            }
         }
+        boolean isStaff = session.getStartedBy() != null &&
+                (session.getStartedBy().getRole() == com.evshare.user.entity.Role.STAFF ||
+                 session.getStartedBy().getRole() == com.evshare.user.entity.Role.ADMIN);
+        response.setIsStaffCharging(isStaff);
+        response.setIsExemptFromFee(isStaff);
+
         response.setStartedAt(session.getStartedAt());
         response.setEndedAt(session.getEndedAt());
         response.setStartSocPercent(session.getStartSocPercent());
         response.setCurrentSocPercent(session.getCurrentSocPercent());
         response.setTargetSocPercent(session.getTargetSocPercent());
         response.setEnergyDeliveredKwh(session.getEnergyDeliveredKwh());
+        response.setStoredEnergyKwh(session.getStoredEnergyKwh());
+        response.setTariffPerKwh(session.getTariffPerKwh());
+        response.setChargingCost(isStaff ? BigDecimal.ZERO : session.getChargingCost());
+        response.setEnergyLossKwh(session.getEnergyLossKwh());
         response.setPowerKw(session.getPowerKw());
         response.setEstimatedRemainingMinutes(estimatedRemainingMinutes);
         response.setCompletionReason(session.getCompletionReason());
         response.setCreatedAt(session.getCreatedAt());
         response.setUpdatedAt(session.getUpdatedAt());
         return response;
+    }
+
+    public static ChargingSessionResponse fromEntity(ChargingSession session, Integer estimatedRemainingMinutes, com.evshare.security.UserPrincipal principal) {
+        ChargingSessionResponse response = fromEntity(session, estimatedRemainingMinutes);
+        if (response != null && session != null) {
+            response.setCanControl(resolveCanControl(session, principal));
+        }
+        return response;
+    }
+
+    public static boolean resolveCanControl(ChargingSession session, com.evshare.security.UserPrincipal principal) {
+        if (principal == null || principal.getUser() == null || session == null) {
+            return false;
+        }
+        com.evshare.user.entity.Role role = principal.getUser().getRole();
+        if (role == com.evshare.user.entity.Role.ADMIN || role == com.evshare.user.entity.Role.STAFF) {
+            return true;
+        }
+        if (role == com.evshare.user.entity.Role.CO_OWNER) {
+            if (session.getStartedBy() != null && principal.getUser().getId() != null) {
+                return session.getStartedBy().getId().equals(principal.getUser().getId());
+            }
+        }
+        return false;
     }
 
     public UUID getId() {
@@ -194,6 +239,38 @@ public class ChargingSessionResponse {
         this.energyDeliveredKwh = energyDeliveredKwh;
     }
 
+    public BigDecimal getStoredEnergyKwh() {
+        return storedEnergyKwh;
+    }
+
+    public void setStoredEnergyKwh(BigDecimal storedEnergyKwh) {
+        this.storedEnergyKwh = storedEnergyKwh;
+    }
+
+    public BigDecimal getTariffPerKwh() {
+        return tariffPerKwh;
+    }
+
+    public void setTariffPerKwh(BigDecimal tariffPerKwh) {
+        this.tariffPerKwh = tariffPerKwh;
+    }
+
+    public BigDecimal getChargingCost() {
+        return chargingCost;
+    }
+
+    public void setChargingCost(BigDecimal chargingCost) {
+        this.chargingCost = chargingCost;
+    }
+
+    public BigDecimal getEnergyLossKwh() {
+        return energyLossKwh;
+    }
+
+    public void setEnergyLossKwh(BigDecimal energyLossKwh) {
+        this.energyLossKwh = energyLossKwh;
+    }
+
     public BigDecimal getPowerKw() {
         return powerKw;
     }
@@ -216,6 +293,38 @@ public class ChargingSessionResponse {
 
     public void setCompletionReason(String completionReason) {
         this.completionReason = completionReason;
+    }
+
+    public Boolean getCanControl() {
+        return canControl;
+    }
+
+    public void setCanControl(Boolean canControl) {
+        this.canControl = canControl;
+    }
+
+    public String getStartedByUserRole() {
+        return startedByUserRole;
+    }
+
+    public void setStartedByUserRole(String startedByUserRole) {
+        this.startedByUserRole = startedByUserRole;
+    }
+
+    public Boolean getIsStaffCharging() {
+        return isStaffCharging;
+    }
+
+    public void setIsStaffCharging(Boolean isStaffCharging) {
+        this.isStaffCharging = isStaffCharging;
+    }
+
+    public Boolean getIsExemptFromFee() {
+        return isExemptFromFee;
+    }
+
+    public void setIsExemptFromFee(Boolean isExemptFromFee) {
+        this.isExemptFromFee = isExemptFromFee;
     }
 
     public Instant getCreatedAt() {

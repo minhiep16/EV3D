@@ -33,6 +33,7 @@ import java.util.stream.Collectors;
 import com.evshare.fund.config.FinancialModeConfig;
 import com.evshare.fund.entity.FinancialMode;
 import com.evshare.expense.service.ExpenseShareService;
+import com.evshare.notification.service.NotificationService;
 
 @Service
 public class PersonalPaymentService {
@@ -42,19 +43,22 @@ public class PersonalPaymentService {
     private final ExpenseShareRepository expenseShareRepository;
     private final FinancialModeConfig financialModeConfig;
     private final ExpenseShareService expenseShareService;
+    private final NotificationService notificationService;
 
     public PersonalPaymentService(
             PersonalExpensePaymentRepository paymentRepository,
             ExpenseRepository expenseRepository,
             ExpenseShareRepository expenseShareRepository,
             FinancialModeConfig financialModeConfig,
-            ExpenseShareService expenseShareService
+            ExpenseShareService expenseShareService,
+            NotificationService notificationService
     ) {
         this.paymentRepository = paymentRepository;
         this.expenseRepository = expenseRepository;
         this.expenseShareRepository = expenseShareRepository;
         this.financialModeConfig = financialModeConfig;
         this.expenseShareService = expenseShareService;
+        this.notificationService = notificationService;
     }
 
     /**
@@ -81,6 +85,11 @@ public class PersonalPaymentService {
         // Validate vehicle membership authorization for authenticated payer
         expenseShareService.validateVehicleAccess(expense.getVehicle().getId(), principal);
 
+        // Validate positive payment amount (Section 4 & Section 5)
+        if (request.amount() == null || request.amount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Số tiền thanh toán phải lớn hơn 0 đ.");
+        }
+
         User payer = principal.getUser();
 
         // Find relevant expense share for this user
@@ -89,7 +98,7 @@ public class PersonalPaymentService {
             share = expenseShareRepository.findById(request.expenseShareId())
                     .orElseThrow(() -> new ResourceNotFoundException("Phân bổ chi phí không tồn tại: " + request.expenseShareId()));
             if (!share.getUser().getId().equals(payer.getId()) && payer.getRole() == Role.CO_OWNER) {
-                throw new AccessDeniedException("Bạn không thể thanh toán nghĩa vụ chi phí của thành viên khác.");
+                throw new AccessDeniedException("Bạn không thể thanh toán nghĩa vụ chi phí của thành viên khác. Chỉ người có nghĩa vụ mới có quyền nộp thanh toán.");
             }
         } else {
             share = expenseShareRepository.findByExpenseIdAndUserId(expenseId, payer.getId()).orElse(null);
@@ -102,6 +111,23 @@ public class PersonalPaymentService {
 
         if (share != null && share.getStatus() == ExpenseShareStatus.SETTLED) {
             throw new IllegalStateException("Nghĩa vụ chi phí này đã được thanh toán hoàn tất (ĐÃ THANH TOÁN).");
+        }
+
+        if (share != null) {
+            BigDecimal allocated = share.getShareAmount() != null ? share.getShareAmount() : BigDecimal.ZERO;
+            if (allocated.compareTo(BigDecimal.ZERO) <= 0 && payer.getRole() == Role.CO_OWNER) {
+                throw new IllegalStateException("Nghĩa vụ chi phí này không có số tiền cần thanh toán (0 đ). Không cần nộp thanh toán.");
+            }
+            List<PersonalExpensePayment> verifiedPayments = paymentRepository
+                    .findByExpenseShareIdAndStatusOrderByCreatedAtDesc(share.getId(), PersonalPaymentStatus.PAYMENT_VERIFIED);
+            BigDecimal paid = verifiedPayments.stream()
+                    .map(PersonalExpensePayment::getAmount)
+                    .filter(Objects::nonNull)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal remaining = allocated.subtract(paid);
+            if (remaining.compareTo(BigDecimal.ZERO) <= 0 && payer.getRole() == Role.CO_OWNER) {
+                throw new IllegalStateException("Khoản chi này đã được thanh toán hoàn tất (Số tiền còn lại: 0 đ). Không cần nộp thanh toán.");
+            }
         }
 
         // Idempotency: Enforce at most ONE active pending submission per payable obligation
@@ -142,6 +168,17 @@ public class PersonalPaymentService {
         payment.setFinancialMode(financialModeConfig.getMode());
 
         PersonalExpensePayment saved = paymentRepository.save(payment);
+
+        if (notificationService != null) {
+            UUID vehicleId = (expense.getVehicle() != null) ? expense.getVehicle().getId() : null;
+            String amountFormatted = String.format("%,d VND", saved.getAmount() != null ? saved.getAmount().longValue() : 0);
+            try {
+                notificationService.notifyPaymentVerificationRequested(vehicleId, null, saved.getId(), amountFormatted, payer.getFullName());
+            } catch (Exception ignored) {
+                // Non-blocking notification
+            }
+        }
+
         return mapToPaymentResponse(saved);
     }
 
@@ -185,6 +222,9 @@ public class PersonalPaymentService {
             }
 
             if (share != null) {
+                if (payment.getExpenseShare() == null) {
+                    payment.setExpenseShare(share);
+                }
                 // Sum all verified payments for this share
                 List<PersonalExpensePayment> allSharePayments = paymentRepository.findByExpenseShareIdOrderByCreatedAtDesc(share.getId());
                 BigDecimal totalVerified = allSharePayments.stream()
@@ -233,6 +273,22 @@ public class PersonalPaymentService {
         }
 
         PersonalExpensePayment saved = paymentRepository.save(payment);
+
+        if (notificationService != null) {
+            UUID vehicleId = (payment.getExpense() != null && payment.getExpense().getVehicle() != null)
+                    ? payment.getExpense().getVehicle().getId() : null;
+            String amountFormatted = String.format("%,d VND", payment.getAmount() != null ? payment.getAmount().longValue() : 0);
+            try {
+                if (Boolean.TRUE.equals(request.confirmed())) {
+                    notificationService.notifyPaymentVerified(payment.getPayerUser().getId(), vehicleId, payment.getId(), amountFormatted);
+                } else {
+                    notificationService.notifyPaymentRejected(payment.getPayerUser().getId(), vehicleId, payment.getId(), amountFormatted, request.note());
+                }
+            } catch (Exception ignored) {
+                // Non-blocking notification
+            }
+        }
+
         return mapToPaymentResponse(saved);
     }
 
@@ -329,6 +385,9 @@ public class PersonalPaymentService {
         Expense exp = p.getExpense();
         UUID vehicleId = (exp != null && exp.getVehicle() != null) ? exp.getVehicle().getId() : null;
         String vehicleName = (exp != null && exp.getVehicle() != null) ? exp.getVehicle().getName() : null;
+        String vehiclePlate = (exp != null && exp.getVehicle() != null) ? exp.getVehicle().getLicensePlate() : null;
+        BigDecimal totalExpenseAmount = exp != null ? exp.getAmount() : null;
+        BigDecimal allocatedAmount = p.getExpenseShare() != null ? p.getExpenseShare().getShareAmount() : null;
 
         return new PersonalExpensePaymentResponse(
                 p.getId(),
@@ -350,7 +409,10 @@ public class PersonalPaymentService {
                 mode,
                 mode.getVietnameseLabel(),
                 vehicleId,
-                vehicleName
+                vehicleName,
+                vehiclePlate,
+                totalExpenseAmount,
+                allocatedAmount
         );
     }
 }

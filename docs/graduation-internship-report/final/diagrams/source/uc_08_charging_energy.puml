@@ -1,0 +1,45 @@
+@startuml
+title USE CASE: NẠP SẠC PIN VÀ TỒN KHO NĂNG LƯỢNG (UC-08)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam actorStyle awesome
+
+
+left to right direction
+
+actor "Người Dùng (CoOwner / Staff)" as User
+actor "Nhân Viên (STAFF)" as Staff
+actor "Động Cơ Năng Lượng" as Engine
+
+package "Phân Hệ Nạp Sạc & Tồn Kho Điện" #F8F9FA {
+    usecase "Xem Danh Mục Trụ Sạc & Trạng Thái" as UC_ViewStations
+    usecase "Cắm Sạc & Bắt Đầu Phiên Sạc" as UC_StartCharge
+    usecase "Theo Dõi Tiến Trình Nạp SOC/kWh" as UC_MonitorCharge
+    usecase "Hoàn Tất Phiên Sạc Điện" as UC_StopCharge
+    usecase "Thực Hiện Phiên Sạc Vận Hành Miễn Phí" as UC_StaffCharge
+    usecase "Hạch Toán Tổn Hao Điện 10%" as UC_CalcLoss
+    usecase "Cập Nhật Đơn Giá Bình Quân Gia Quyền (WAC)" as UC_UpdateWAC
+    usecase "Xuất Kho Điện Tiêu Thụ Chuyến Đi" as UC_DeductTripEnergy
+}
+
+User --> UC_ViewStations
+User --> UC_StartCharge
+User --> UC_MonitorCharge
+User --> UC_StopCharge
+
+Staff --> UC_StaffCharge
+
+Engine --> UC_CalcLoss
+Engine --> UC_UpdateWAC
+Engine --> UC_DeductTripEnergy
+
+UC_StopCharge ..> UC_CalcLoss : <<include>>
+UC_CalcLoss ..> UC_UpdateWAC : <<include>>
+
+@enduml

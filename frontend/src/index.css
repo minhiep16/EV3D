@@ -177,3 +177,174 @@ body {
     transform: translateY(0);
   }
 }
+
+@keyframes galleryFadeSlideUp {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 18px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+@keyframes fleetSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes staffPanelSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateX(36px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* ======================================================== */
+/* PHASE 4.4: RESPONSIVE VIEWPORT & TOUCH ARCHITECTURE      */
+/* ======================================================== */
+
+/* Standardized Thin Dark-Themed Scrollbar for All Panels */
+.evshare-standard-panel,
+.evshare-contract-panel,
+.evshare-ownership-panel,
+.evshare-scroll-area {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 217, 255, 0.35) rgba(7, 20, 38, 0.4);
+  touch-action: pan-y;
+}
+
+.evshare-standard-panel::-webkit-scrollbar,
+.evshare-contract-panel::-webkit-scrollbar,
+.evshare-ownership-panel::-webkit-scrollbar,
+.evshare-scroll-area::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.evshare-standard-panel::-webkit-scrollbar-track,
+.evshare-contract-panel::-webkit-scrollbar-track,
+.evshare-ownership-panel::-webkit-scrollbar-track,
+.evshare-scroll-area::-webkit-scrollbar-track {
+  background: rgba(7, 20, 38, 0.4);
+  border-radius: 9999px;
+  margin: 4px 0;
+}
+
+.evshare-standard-panel::-webkit-scrollbar-thumb,
+.evshare-contract-panel::-webkit-scrollbar-thumb,
+.evshare-ownership-panel::-webkit-scrollbar-thumb,
+.evshare-scroll-area::-webkit-scrollbar-thumb {
+  background: rgba(0, 217, 255, 0.35);
+  border-radius: 9999px;
+}
+
+.evshare-standard-panel::-webkit-scrollbar-thumb:hover,
+.evshare-contract-panel::-webkit-scrollbar-thumb:hover,
+.evshare-ownership-panel::-webkit-scrollbar-thumb:hover,
+.evshare-scroll-area::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 217, 255, 0.6);
+}
+
+/* 3D Canvas Touch Action */
+canvas {
+  touch-action: none;
+}
+
+/* Top Navigation Header Responsiveness */
+@media (max-width: 640px) {
+  .garage-brand-subtitle,
+  .garage-brand-divider,
+  .garage-user-name {
+    display: none !important;
+  }
+  .garage-top-header {
+    top: 8px !important;
+    left: 8px !important;
+    right: 8px !important;
+    gap: 6px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .garage-brand-title {
+    font-size: 11px !important;
+  }
+}
+
+/* Tablet Viewport Adaptation (769px - 1024px) */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .evshare-standard-panel {
+    top: 72px !important;
+    right: 12px !important;
+    width: clamp(380px, 45vw, 460px) !important;
+    max-width: calc(100vw - 24px) !important;
+    max-height: calc(100dvh - 88px) !important;
+  }
+
+  .evshare-standard-panel.compact-overview {
+    max-height: min(76vh, calc(100dvh - 128px)) !important;
+  }
+
+  .evshare-contract-panel,
+  .evshare-ownership-panel {
+    top: 72px !important;
+    right: 12px !important;
+    width: min(460px, calc(100vw - 24px)) !important;
+    max-height: calc(100dvh - 88px) !important;
+  }
+}
+
+/* Mobile & Small Screen Adaptation (<= 768px) */
+@media (max-width: 768px) {
+  .evshare-standard-panel {
+    top: 64px !important;
+    left: 8px !important;
+    right: 8px !important;
+    bottom: 8px !important;
+    width: auto !important;
+    max-width: calc(100vw - 16px) !important;
+    max-height: calc(100dvh - 72px) !important;
+    border-radius: 16px !important;
+    animation: slideUpDrawer 0.28s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  }
+
+  .evshare-standard-panel.compact-overview {
+    top: auto !important;
+    bottom: 8px !important;
+    max-height: calc(100dvh - 80px) !important;
+  }
+
+  .evshare-contract-panel,
+  .evshare-ownership-panel {
+    top: 64px !important;
+    left: 8px !important;
+    right: 8px !important;
+    bottom: 8px !important;
+    width: auto !important;
+    max-width: calc(100vw - 16px) !important;
+    height: auto !important;
+    max-height: calc(100dvh - 72px) !important;
+    border-radius: 16px !important;
+    animation: slideUpDrawer 0.28s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  }
+}
+
+/* Ultrawide & 4K Viewports (>= 2560px) */
+@media (min-width: 2560px) {
+  .evshare-standard-panel {
+    width: clamp(520px, 22vw, 620px) !important;
+    max-width: 640px !important;
+  }
+}

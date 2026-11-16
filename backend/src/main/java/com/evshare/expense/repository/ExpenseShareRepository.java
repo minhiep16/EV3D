@@ -39,4 +39,7 @@ public interface ExpenseShareRepository extends JpaRepository<ExpenseShare, UUID
             @Param("from") Instant from,
             @Param("to") Instant to
     );
+
+    @Query("SELECT CASE WHEN COUNT(es) > 0 THEN true ELSE false END FROM ExpenseShare es JOIN es.expense e WHERE e.vehicle.id = :vehicleId AND es.user.id = :userId")
+    boolean existsByVehicleIdAndUserId(@Param("vehicleId") UUID vehicleId, @Param("userId") UUID userId);
 }

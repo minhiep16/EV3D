@@ -1,0 +1,181 @@
+@startuml
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Times New Roman"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam classAttributeIconSize 0
+
+title Sơ Đồ Lớp Miền Dữ Liệu Tổng Thể (Overall Domain Model Class Diagram)
+
+package "Phân Hệ Người Dùng & Bảo Mật" {
+    class User {
+        - id: UUID
+        - email: String
+        - passwordHash: String
+        - fullName: String
+        - phoneNumber: String
+        - role: Role
+        - status: UserStatus
+        + getId(): UUID
+        + getEmail(): String
+        + getRole(): Role
+    }
+
+    enum Role {
+        ADMIN
+        STAFF
+        CO_OWNER
+    }
+    
+    User --> Role
+}
+
+package "Phân Hệ Xe & Đồng Sở Hữu" {
+    class Vehicle {
+        - id: UUID
+        - vin: String
+        - licensePlate: String
+        - modelName: String
+        - exteriorColor: String
+        - batteryCapacityKwh: BigDecimal
+        - currentBatteryLevel: Integer
+        - currentOdometerKm: BigDecimal
+        - status: VehicleStatus
+        + isAvailableForBooking(): boolean
+    }
+
+    enum VehicleStatus {
+        AVAILABLE
+        IN_USE
+        CHARGING
+        MAINTENANCE
+        RESERVED
+        DECOMMISSIONED
+    }
+    
+    class CoOwnershipGroup {
+        - id: UUID
+        - groupCode: String
+        - groupName: String
+        - maxMembers: Integer
+        - status: GroupStatus
+    }
+    
+    class GroupMember {
+        - id: UUID
+        - group: CoOwnershipGroup
+        - user: User
+        - role: GroupMemberRole
+        - status: MemberStatus
+        - joinedAt: Instant
+    }
+    
+    class OwnershipShare {
+        - id: UUID
+        - member: GroupMember
+        - vehicle: Vehicle
+        - percentage: BigDecimal
+        - capitalContribution: BigDecimal
+    }
+
+    Vehicle --> VehicleStatus
+    CoOwnershipGroup "1" *-- "0..*" GroupMember
+    GroupMember --> User
+    GroupMember "1" *-- "1..*" OwnershipShare
+    OwnershipShare --> Vehicle
+}
+
+package "Phân Hệ Đặt Xe, Bàn Giao & Chuyến Đi" {
+    class Booking {
+        - id: UUID
+        - vehicle: Vehicle
+        - user: User
+        - startTime: Instant
+        - endTime: Instant
+        - status: BookingStatus
+        - purpose: String
+    }
+    
+    class VehicleHandover {
+        - id: UUID
+        - booking: Booking
+        - verifiedByStaff: User
+        - startOdometer: BigDecimal
+        - startBatteryLevel: Integer
+        - status: HandoverStatus
+        - handoverTime: Instant
+    }
+    
+    class Trip {
+        - id: UUID
+        - booking: Booking
+        - vehicle: Vehicle
+        - user: User
+        - startedAt: Instant
+        - endedAt: Instant
+        - startOdometer: BigDecimal
+        - endOdometer: BigDecimal
+        - energyConsumedKwh: BigDecimal
+        - status: TripStatus
+        + calculateDistance(): BigDecimal
+    }
+
+    Booking --> Vehicle
+    Booking --> User
+    VehicleHandover --> Booking
+    VehicleHandover --> User
+    Trip --> Booking
+    Trip --> Vehicle
+    Trip --> User
+}
+
+package "Phân Hệ Năng Lượng & Tài Chính" {
+    class VehicleEnergyInventory {
+        - id: UUID
+        - vehicle: Vehicle
+        - availableEnergyKwh: BigDecimal
+        - totalInventoryCost: BigDecimal
+        - weightedAverageCostPerKwh: BigDecimal
+        - isReconciliationRequired: Boolean
+    }
+    
+    class Expense {
+        - id: UUID
+        - vehicle: Vehicle
+        - coOwnershipGroup: CoOwnershipGroup
+        - amount: BigDecimal
+        - category: ExpenseCategory
+        - allocationPolicy: ExpenseAllocationPolicy
+        - status: ExpenseStatus
+    }
+    
+    class ExpenseShare {
+        - id: UUID
+        - expense: Expense
+        - user: User
+        - ownershipPercentage: BigDecimal
+        - shareAmount: BigDecimal
+        - status: ExpenseShareStatus
+    }
+    
+    class PersonalExpensePayment {
+        - id: UUID
+        - expense: Expense
+        - expenseShare: ExpenseShare
+        - payerUser: User
+        - amount: BigDecimal
+        - status: PersonalPaymentStatus
+        - paymentReference: String
+    }
+
+    VehicleEnergyInventory --> Vehicle
+    Expense --> Vehicle
+    Expense --> CoOwnershipGroup
+    Expense "1" *-- "1..*" ExpenseShare
+    ExpenseShare --> User
+    PersonalExpensePayment --> Expense
+    PersonalExpensePayment --> ExpenseShare
+    PersonalExpensePayment --> User
+}
+
+@enduml

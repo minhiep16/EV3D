@@ -10,6 +10,8 @@ export const CoOwnerExplorationToolbar: React.FC = () => {
   return (
     <div
       data-ui-interactive="true"
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
       style={{
         position: 'fixed',
         top: '20px',

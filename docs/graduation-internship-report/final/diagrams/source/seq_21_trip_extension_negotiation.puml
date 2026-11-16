@@ -1,0 +1,57 @@
+@startuml
+title SƠ ĐỒ TUẦN TỰ: GIA HẠN CHUYẾN ĐI VÀ ĐÀM PHÁN XUNG ĐỘT (SEQ-21)
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam sequenceMessageAlign center
+
+autonumber
+actor "Chủ Xe Đang Lái" as Driver
+actor "Chủ Xe Có Lịch Kế" as NextOwner
+participant "ActiveTripDetailPanel" as UI
+participant "TripController" as Controller
+participant "TripService" as TripSvc
+participant "BookingRepository" as BookingRepo
+participant "NotificationService" as NotiSvc
+database "MySQL Database" as DB
+
+Driver -> UI : Nhấn "Yêu Cầu Gia Hạn" (+60 phút)
+activate UI
+UI -> Controller : POST /api/trips/{tripId}/extend/negotiate {extendMinutes: 60}
+activate Controller
+Controller -> TripSvc : negotiateExtension(tripId, userId, 60)
+activate TripSvc
+
+TripSvc -> BookingRepo : findConflictingBookings(vehicleId, currentEnd, newEnd)
+BookingRepo -> DB : SELECT * FROM bookings WHERE vehicle_id = ? AND start_time < :newEnd
+DB --> BookingRepo : Danh sách lịch bị ảnh hưởng (NextBooking)
+
+alt Không có lịch xung đột liền kề
+    TripSvc -> DB : UPDATE bookings SET end_time = :newEnd WHERE id = :bookingId
+    TripSvc --> Controller : ExtensionResult (APPROVED, no conflict)
+    Controller --> UI : HTTP 200 OK (Gia hạn thành công ngay)
+    UI --> Driver : Cập nhật thời gian kết thúc mới trên HUD
+else Có lịch người kế tiếp bị ảnh hưởng
+    TripSvc -> DB : INSERT INTO trip_extension_requests (trip_id, requested_minutes, status = 'PENDING_CONSENT')
+    TripSvc -> NotiSvc : notifyNextBookingOwner(nextOwnerId, requestDetails)
+    NotiSvc -> NextOwner : Gửi thông báo đề nghị lùi lịch / đồng thuận
+    TripSvc --> Controller : ExtensionResult (PENDING_CONSENT)
+    Controller --> UI : HTTP 202 Accepted (Đã gửi yêu cầu đàm phán)
+    UI --> Driver : Hiển thị đồng hồ đếm ngược chờ bên kế tiếp phản hồi
+    
+    NextOwner -> Controller : POST /api/trips/extension-requests/{id}/accept
+    Controller -> TripSvc : acceptExtension(requestId, nextOwnerId)
+    TripSvc -> DB : UPDATE trip_extension_requests SET status = 'ACCEPTED'
+    TripSvc -> DB : UPDATE bookings SET end_time = :newEnd WHERE id = :bookingId
+    TripSvc -> DB : UPDATE bookings SET start_time = :adjustedStart WHERE id = :nextBookingId
+    TripSvc -> NotiSvc : notifyDriverExtensionApproved(driverId)
+    NotiSvc --> Driver : Thông báo: Lịch gia hạn đã được chấp thuận!
+end
+deactivate TripSvc
+deactivate Controller
+deactivate UI
+@enduml

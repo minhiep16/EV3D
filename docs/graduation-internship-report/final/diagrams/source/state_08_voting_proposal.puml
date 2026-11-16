@@ -1,0 +1,24 @@
+@startuml
+title MÁY TRẠNG THÁI: ĐỀ XUẤT BIỂU QUYẾT TẬP THỂ (STATE-08)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+[*] --> DRAFT : Thành viên soạn thảo đề xuất
+
+DRAFT --> OPEN : Phát động biểu quyết đến nhóm xe
+OPEN --> APPROVED : Hết hạn & Tỷ lệ ủng hộ > 50.00%
+OPEN --> REJECTED : Hết hạn & Tỷ lệ ủng hộ <= 50.00%
+OPEN --> CANCELLED : Người tạo chủ động rút đề xuất
+
+APPROVED --> [*]
+REJECTED --> [*]
+CANCELLED --> [*]
+
+@enduml

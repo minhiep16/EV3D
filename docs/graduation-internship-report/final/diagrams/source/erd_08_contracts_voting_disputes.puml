@@ -1,0 +1,75 @@
+@startuml
+title LƯỢC ĐỒ CƠ SỞ DỮ LIỆU: HỢP ĐỒNG, BIỂU QUYẾT VÀ TRANH CHẤP (ERD-08)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+entity "co_ownership_contracts" as contracts {
+    * id : CHAR(36) [PK]
+    --
+    * vehicle_id : CHAR(36) [FK]
+    contract_number : VARCHAR(50) [UNIQUE]
+    created_at : TIMESTAMP
+}
+
+entity "co_ownership_contract_versions" as versions {
+    * id : CHAR(36) [PK]
+    --
+    * contract_id : CHAR(36) [FK]
+    version_number : INT
+    terms_content : LONGTEXT
+    status : VARCHAR(30)
+    effective_from : TIMESTAMP
+}
+
+entity "contract_acceptances" as acceptances {
+    * id : CHAR(36) [PK]
+    --
+    * version_id : CHAR(36) [FK]
+    * user_id : CHAR(36) [FK]
+    digital_signature_hash : VARCHAR(255)
+    accepted_at : TIMESTAMP
+}
+
+entity "vote_proposals" as proposals {
+    * id : CHAR(36) [PK]
+    --
+    * group_id : CHAR(36) [FK]
+    * created_by_user_id : CHAR(36) [FK]
+    title : VARCHAR(200)
+    description : TEXT
+    deadline : TIMESTAMP
+    status : VARCHAR(30)
+}
+
+entity "proposal_votes" as votes {
+    * id : CHAR(36) [PK]
+    --
+    * proposal_id : CHAR(36) [FK]
+    * user_id : CHAR(36) [FK]
+    vote_type : VARCHAR(20)
+    weight : DECIMAL(7,4)
+    cast_at : TIMESTAMP
+}
+
+entity "disputes" as disputes {
+    * id : CHAR(36) [PK]
+    --
+    * vehicle_id : CHAR(36) [FK]
+    * reported_by_user_id : CHAR(36) [FK]
+    title : VARCHAR(200)
+    status : VARCHAR(30)
+    resolution_notes : TEXT
+}
+
+contracts ||--|{ versions
+versions ||--o{ acceptances
+proposals ||--o{ votes
+
+@enduml

@@ -14,41 +14,9 @@ import { shouldShowShowroomBranding } from '../../config/garageZoneVisibility';
  * - Sleek, low-height architectural planter troughs with delicate, realistic indoor trees & botanical foliage
  * - Open, spacious, daylight-flooded luxury showroom shell
  */
-export const GarageStructure: React.FC = () => {
-  const vehicleBookingMode = useWorldStore((state) => state.vehicleBookingMode);
-  const vehicleMaintenanceMode = useWorldStore((state) => state.vehicleMaintenanceMode);
-  const vehicleBatteryXrayMode = useWorldStore((state) => state.vehicleBatteryXrayMode);
-  const vehicleDamageMappingMode = useWorldStore((state) => state.vehicleDamageMappingMode);
-  const vehicleDamageHistoryMode = useWorldStore((state) => state.vehicleDamageHistoryMode);
-  const vehicleChargingMode = useWorldStore((state) => state.vehicleChargingMode);
-  const vehicleTripStartMode = useWorldStore((state) => state.vehicleTripStartMode);
-  const vehicleTripVisualizationMode = useWorldStore((state) => state.vehicleTripVisualizationMode);
-  const vehicleHandoverMode = useWorldStore((state) => state.vehicleHandoverMode);
-  const vehicleReceiptReviewMode = useWorldStore((state) => state.vehicleReceiptReviewMode);
-  const vehicleCoOwnershipMode = useWorldStore((state) => state.vehicleCoOwnershipMode);
-  const vehicleInspectionMode = useWorldStore((state) => state.vehicleInspectionMode);
-  const selectedVehicleId = useWorldStore((state) => state.selectedVehicleId);
-  const isVehicleSelected = useWorldStore((state) => state.isVehicleSelected);
-  const selectedZone = useWorldStore((state) => state.selectedZone);
-
-  // Centralized Rule: Hide decorative floating wall branding during ALL primary business panels & submodes
-  const showBranding = shouldShowShowroomBranding({
-    vehicleBookingMode,
-    vehicleMaintenanceMode,
-    vehicleBatteryXrayMode,
-    vehicleDamageMappingMode,
-    vehicleDamageHistoryMode,
-    vehicleChargingMode,
-    vehicleTripStartMode,
-    vehicleTripVisualizationMode,
-    vehicleHandoverMode,
-    vehicleReceiptReviewMode,
-    vehicleCoOwnershipMode,
-    vehicleInspectionMode,
-    selectedVehicleId,
-    isVehicleSelected,
-    selectedZone,
-  });
+const GarageStructureComponent: React.FC = () => {
+  // Selective state subscription: only re-render if branding visibility boolean actually toggles
+  const showBranding = useWorldStore(shouldShowShowroomBranding);
 
   // Curved Panoramic Window Glass Panels (5 wide, elegant curved glass panes matching reference curvature)
   const windowPanels = [
@@ -555,3 +523,5 @@ export const GarageStructure: React.FC = () => {
     </group>
   );
 };
+
+export const GarageStructure = React.memo(GarageStructureComponent);

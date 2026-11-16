@@ -1,0 +1,27 @@
+@startuml
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Times New Roman"
+skinparam defaultFontSize 12
+skinparam roundCorner 10
+
+title Biểu Đồ Trạng Thái Vòng Đời Chuyến Đi (Trip Lifecycle State Machine)
+
+[*] --> NOT_STARTED : Đặt lịch CONFIRMED\nChưa đến giờ hoặc chưa bàn giao
+
+NOT_STARTED --> ACTIVE : startTrip()\n[Nhân viên đã xác nhận bàn giao\n& Trong khung giờ cho phép]
+
+state ACTIVE {
+    [*] --> DRIVING : Phương tiện đang di chuyển
+    DRIVING --> EXTENSION_PENDING : Yêu cầu gia hạn (requestTripExtension)\n[Cần biểu quyết/chấp thuận nếu có xung đột]
+    EXTENSION_PENDING --> DRIVING : Gia hạn thành công / Từ chối gia hạn
+    DRIVING --> RETURN_REQUESTED : Co-Owner yêu cầu trả xe\n(requestTripReturn)
+}
+
+RETURN_REQUESTED --> COMPLETED : confirmTripReturn()\n[Nhân viên hoàn tất kiểm tra kỹ thuật,\nghi nhận ODO/Pin & chốt biên bản]
+
+NOT_STARTED --> CANCELLED : cancelBooking()\n[Hủy lịch trước giờ bắt đầu]
+
+COMPLETED --> [*] : Đối soát điện năng tiêu thụ\n& Phân bổ chi phí hoàn tất
+CANCELLED --> [*]
+
+@enduml

@@ -300,18 +300,226 @@ export const DEFAULT_EV_HOTSPOTS: VehicleHotspotItem[] = [
     anchorSide: 'right',
     icon: 'compass',
   },
+  {
+    id: 'DOOR_FR',
+    title: 'Cửa trước bên phải',
+    subtitle: 'Cửa bên phụ tích hợp kính cách âm',
+    shortDescription: 'Cửa trước phía bên phụ kết hợp cảm biến an toàn và cách âm cao cấp.',
+    material: 'Thép dập cường lực & kính cách âm 2 lớp',
+    function: 'Bảo vệ khoang hành khách và đóng mở ra vào xe',
+    highlight: 'Kính hai lớp cách âm, cảm biến cảnh báo mở cửa Safe Exit Assist',
+    roleSummary: 'Bảo vệ an toàn va chạm bên và giữ không gian yên tĩnh',
+    infoFrames: buildInfoFrames(
+      'Thép dập cường lực & kính cách âm 2 lớp',
+      'Bảo vệ khoang hành khách và đóng mở ra vào xe',
+      'Kính hai lớp cách âm, cảm biến cảnh báo mở cửa Safe Exit Assist',
+      'Bảo vệ an toàn va chạm bên và giữ không gian yên tĩnh'
+    ),
+    position: [0.92, 0.86, 0.52],
+    calloutOffset: [0.95, 0.55, 0.20],
+    anchorSide: 'right',
+    icon: 'shield',
+  },
+  {
+    id: 'DOOR_FL',
+    title: 'Cửa trước bên trái',
+    subtitle: 'Cửa bên lái tích hợp kính cách âm',
+    shortDescription: 'Cửa trước phía bên lái tích hợp điều khiển trung tâm và kính cách âm.',
+    material: 'Thép dập cường lực & kính cách âm 2 lớp',
+    function: 'Bảo vệ khoang hành khách và đóng mở ra vào xe',
+    highlight: 'Cụm điều khiển gương kính điện tử, khóa an toàn',
+    roleSummary: 'Bảo vệ an toàn va chạm bên và điều khiển trung tâm',
+    infoFrames: buildInfoFrames(
+      'Thép dập cường lực & kính cách âm 2 lớp',
+      'Bảo vệ khoang hành khách và đóng mở ra vào xe',
+      'Cụm điều khiển gương kính điện tử, khóa an toàn',
+      'Bảo vệ an toàn va chạm bên và điều khiển trung tâm'
+    ),
+    position: [-0.92, 0.86, 0.52],
+    calloutOffset: [-0.95, 0.55, 0.20],
+    anchorSide: 'left',
+    icon: 'shield',
+  },
+  {
+    id: 'DOOR_RR',
+    title: 'Cửa sau bên phải',
+    subtitle: 'Cửa hành khách phía sau bên phải',
+    shortDescription: 'Cửa sau bên phụ tích hợp khóa trẻ em an toàn và kính cách nhiệt.',
+    material: 'Thép dập cường lực & kính cách nhiệt',
+    function: 'Ra vào khoang hành khách phía sau an toàn',
+    highlight: 'Khóa an toàn trẻ em điện tử và kính cách nhiệt',
+    roleSummary: 'Bảo vệ hành khách phía sau khi có va chạm ngang',
+    infoFrames: buildInfoFrames(
+      'Thép dập cường lực & kính cách nhiệt',
+      'Ra vào khoang hành khách phía sau an toàn',
+      'Khóa an toàn trẻ em điện tử và kính cách nhiệt',
+      'Bảo vệ hành khách phía sau khi có va chạm ngang'
+    ),
+    position: [0.92, 0.86, -0.42],
+    calloutOffset: [0.95, 0.55, -0.20],
+    anchorSide: 'right',
+    icon: 'shield',
+  },
+  {
+    id: 'DOOR_RL',
+    title: 'Cửa sau bên trái',
+    subtitle: 'Cửa hành khách phía sau bên trái',
+    shortDescription: 'Cửa sau bên lái tích hợp khóa trẻ em an toàn và kính cách nhiệt.',
+    material: 'Thép dập cường lực & kính cách nhiệt',
+    function: 'Ra vào khoang hành khách phía sau an toàn',
+    highlight: 'Khóa an toàn trẻ em điện tử và kính cách nhiệt',
+    roleSummary: 'Bảo vệ hành khách phía sau khi có va chạm ngang',
+    infoFrames: buildInfoFrames(
+      'Thép dập cường lực & kính cách nhiệt',
+      'Ra vào khoang hành khách phía sau an toàn',
+      'Khóa an toàn trẻ em điện tử và kính cách nhiệt',
+      'Bảo vệ hành khách phía sau khi có va chạm ngang'
+    ),
+    position: [-0.92, 0.86, -0.42],
+    calloutOffset: [-0.95, 0.55, -0.20],
+    anchorSide: 'left',
+    icon: 'shield',
+  },
+  {
+    id: 'WHEEL_FR',
+    title: 'Bánh trước phải',
+    subtitle: 'Mâm hợp kim nhôm & Lốp không săm',
+    shortDescription: 'Cụm bánh xe trước bên phụ tích hợp cảm biến áp suất và phanh đĩa.',
+    material: 'Mâm hợp kim nhôm & lốp không săm',
+    function: 'Hỗ trợ xe vận hành và dẫn hướng ổn định',
+    highlight: 'Cân bằng động tối ưu, cảm biến TPMS',
+    roleSummary: 'Tăng độ bám đường và an toàn dẫn hướng',
+    infoFrames: buildInfoFrames(
+      'Mâm hợp kim nhôm & lốp không săm',
+      'Hỗ trợ xe vận hành và dẫn hướng ổn định',
+      'Cân bằng động tối ưu, cảm biến TPMS',
+      'Tăng độ bám đường và an toàn dẫn hướng'
+    ),
+    position: [0.86, 0.36, 1.34],
+    calloutOffset: [0.95, 0.58, 0.35],
+    anchorSide: 'right',
+    icon: 'disc',
+  },
+  {
+    id: 'WHEEL_RL',
+    title: 'Bánh sau trái',
+    subtitle: 'Mâm hợp kim nhôm & Lốp không săm',
+    shortDescription: 'Cụm bánh xe sau bên lái chịu tải và truyền động tối ưu.',
+    material: 'Mâm hợp kim nhôm & lốp không săm',
+    function: 'Truyền động cầu sau và bám đường',
+    highlight: 'Lốp bản rộng chịu tải cao cho cụm pin',
+    roleSummary: 'Ổn định thân xe và chống trượt khi tăng tốc',
+    infoFrames: buildInfoFrames(
+      'Mâm hợp kim nhôm & lốp không săm',
+      'Truyền động cầu sau và bám đường',
+      'Lốp bản rộng chịu tải cao cho cụm pin',
+      'Ổn định thân xe và chống trượt khi tăng tốc'
+    ),
+    position: [-0.86, 0.36, -1.34],
+    calloutOffset: [-0.95, 0.58, -0.35],
+    anchorSide: 'left',
+    icon: 'disc',
+  },
+  {
+    id: 'WHEEL_RR',
+    title: 'Bánh sau phải',
+    subtitle: 'Mâm hợp kim nhôm & Lốp không săm',
+    shortDescription: 'Cụm bánh xe sau bên phụ chịu tải và truyền động tối ưu.',
+    material: 'Mâm hợp kim nhôm & lốp không săm',
+    function: 'Truyền động cầu sau và bám đường',
+    highlight: 'Lốp bản rộng chịu tải cao cho cụm pin',
+    roleSummary: 'Ổn định thân xe và chống trượt khi tăng tốc',
+    infoFrames: buildInfoFrames(
+      'Mâm hợp kim nhôm & lốp không săm',
+      'Truyền động cầu sau và bám đường',
+      'Lốp bản rộng chịu tải cao cho cụm pin',
+      'Ổn định thân xe và chống trượt khi tăng tốc'
+    ),
+    position: [0.86, 0.36, -1.34],
+    calloutOffset: [0.95, 0.58, -0.35],
+    anchorSide: 'right',
+    icon: 'disc',
+  },
+  {
+    id: 'HOOD',
+    title: 'Nắp ca-pô',
+    subtitle: 'Nắp ca-pô trước khí động học',
+    shortDescription: 'Nắp che khoang động cơ điện và cốp trước khí động học.',
+    material: 'Hợp kim nhôm siêu nhẹ',
+    function: 'Bảo vệ khoang máy trước và tối ưu dòng khí',
+    highlight: 'Hấp thụ xung lực va chạm bảo vệ người đi bộ',
+    roleSummary: 'Giảm trọng lượng phần đầu xe và tối ưu khí động học',
+    infoFrames: buildInfoFrames(
+      'Hợp kim nhôm siêu nhẹ',
+      'Bảo vệ khoang máy trước và tối ưu dòng khí',
+      'Hấp thụ xung lực va chạm bảo vệ người đi bộ',
+      'Giảm trọng lượng phần đầu xe và tối ưu khí động học'
+    ),
+    position: [0.0, 0.82, 1.25],
+    calloutOffset: [0.0, 0.75, 0.40],
+    anchorSide: 'top',
+    icon: 'layers',
+  },
+  {
+    id: 'ROOF',
+    title: 'Nóc xe',
+    subtitle: 'Trần kính toàn cảnh Panorama',
+    shortDescription: 'Mui trần kính toàn cảnh nguyên khối cách nhiệt Low-E cao cấp.',
+    material: 'Kính an toàn nhiều lớp phủ phản xạ nhiệt',
+    function: 'Che chắn khoang hành khách và mở rộng không gian',
+    highlight: 'Chống 99% tia UV, kết cấu chịu lực đạt chuẩn 5 sao',
+    roleSummary: 'Tăng độ cứng vững cho khung xe và tối ưu ánh sáng',
+    infoFrames: buildInfoFrames(
+      'Kính an toàn nhiều lớp phủ phản xạ nhiệt',
+      'Che chắn khoang hành khách và mở rộng không gian',
+      'Chống 99% tia UV, kết cấu chịu lực đạt chuẩn 5 sao',
+      'Tăng độ cứng vững cho khung xe và tối ưu ánh sáng'
+    ),
+    position: [0.0, 1.45, -0.30],
+    calloutOffset: [0.0, 0.70, -0.20],
+    anchorSide: 'top',
+    icon: 'sun',
+  },
+  {
+    id: 'DIFFUSER',
+    title: 'Cản sau & Khuếch tán',
+    subtitle: 'Bộ khuếch tán khí động học gầm sau',
+    shortDescription: 'Cụm cản sau và khuếch tán gió tối ưu hóa lực nén và độ ổn định.',
+    material: 'Nhựa kỹ thuật gia cường & cánh gió thể thao',
+    function: 'Điều hướng luồng khí gầm xe và bảo vệ đuôi xe',
+    highlight: 'Hệ số cản khí động học thấp, tích hợp cảm biến lùi',
+    roleSummary: 'Giảm nhiễu loạn khí sau xe và tăng độ bám đuôi',
+    infoFrames: buildInfoFrames(
+      'Nhựa kỹ thuật gia cường & cánh gió thể thao',
+      'Điều hướng luồng khí gầm xe và bảo vệ đuôi xe',
+      'Hệ số cản khí động học thấp, tích hợp cảm biến lùi',
+      'Giảm nhiễu loạn khí sau xe và tăng độ bám đuôi'
+    ),
+    position: [0.0, 0.32, -1.80],
+    calloutOffset: [-0.85, 0.50, -0.40],
+    anchorSide: 'left',
+    icon: 'sparkles',
+  },
 ];
 
 /**
- * Helper to clone default hotspots and apply model-specific overrides cleanly,
- * automatically regenerating the 4-frame sequence when text fields are customized.
+ * Clones a base set of hotspots and applies model-specific position, offset,
+ * anchor side, and text transformations cleanly without mutating shared configurations.
  */
-function createModelHotspots(
-  overrides: Partial<Record<VehiclePartId, Partial<VehicleHotspotItem>>>
+export function cloneHotspotsWithTransforms(
+  baseHotspots: VehicleHotspotItem[] = DEFAULT_EV_HOTSPOTS,
+  transforms: Partial<Record<VehiclePartId, Partial<VehicleHotspotItem>>> = {}
 ): VehicleHotspotItem[] {
-  return DEFAULT_EV_HOTSPOTS.map((item) => {
-    const custom = overrides[item.id];
-    if (!custom) return item;
+  return (baseHotspots || DEFAULT_EV_HOTSPOTS).map((item) => {
+    const custom = transforms[item.id];
+    if (!custom) {
+      return {
+        ...item,
+        position: [...item.position] as [number, number, number],
+        calloutOffset: [...item.calloutOffset] as [number, number, number],
+        infoFrames: item.infoFrames ? item.infoFrames.map((f) => ({ ...f })) : [],
+      };
+    }
 
     const material = custom.material ?? item.material;
     const func = custom.function ?? item.function;
@@ -321,6 +529,14 @@ function createModelHotspots(
     return {
       ...item,
       ...custom,
+      position: custom.position
+        ? ([...custom.position] as [number, number, number])
+        : ([...item.position] as [number, number, number]),
+      calloutOffset: custom.calloutOffset
+        ? ([...custom.calloutOffset] as [number, number, number])
+        : ([...item.calloutOffset] as [number, number, number]),
+      anchorSide: custom.anchorSide ?? item.anchorSide,
+      icon: custom.icon ?? item.icon,
       material,
       function: func,
       highlight,
@@ -330,6 +546,16 @@ function createModelHotspots(
         buildInfoFrames(material, func, highlight, roleSummary),
     };
   });
+}
+
+/**
+ * Helper to clone default hotspots and apply model-specific overrides cleanly,
+ * automatically regenerating the 4-frame sequence when text fields are customized.
+ */
+export function createModelHotspots(
+  overrides: Partial<Record<VehiclePartId, Partial<VehicleHotspotItem>>>
+): VehicleHotspotItem[] {
+  return cloneHotspotsWithTransforms(DEFAULT_EV_HOTSPOTS, overrides);
 }
 
 /**
@@ -475,6 +701,139 @@ export const vehicleHotspots: Record<string, VehicleHotspotItem[]> = {
       calloutOffset: [-0.88, 0.58, 0.05],
       anchorSide: 'left',
     },
+    DOOR_FR: {
+      position: [-0.87, 0.76, 0.21],
+      calloutOffset: [-0.95, 0.55, 0.20],
+      anchorSide: 'left',
+    },
+    DOOR_FL: {
+      position: [0.87, 0.76, 0.21],
+      calloutOffset: [0.95, 0.55, 0.20],
+      anchorSide: 'right',
+    },
+    DOOR_RR: {
+      position: [-0.79, 0.76, -0.69],
+      calloutOffset: [-0.95, 0.55, -0.20],
+      anchorSide: 'left',
+    },
+    DOOR_RL: {
+      position: [0.79, 0.76, -0.69],
+      calloutOffset: [0.95, 0.55, -0.20],
+      anchorSide: 'right',
+    },
+    WHEEL_FR: {
+      position: [-0.77, 0.30, 1.37],
+      calloutOffset: [-0.95, 0.58, 0.35],
+      anchorSide: 'left',
+    },
+    WHEEL_RL: {
+      position: [0.77, 0.30, -1.27],
+      calloutOffset: [0.95, 0.58, -0.35],
+      anchorSide: 'right',
+    },
+    WHEEL_RR: {
+      position: [-0.77, 0.30, -1.27],
+      calloutOffset: [-0.95, 0.58, -0.35],
+      anchorSide: 'left',
+    },
+    HOOD: {
+      position: [0.0, 0.82, 1.25],
+      calloutOffset: [0.0, 0.75, 0.40],
+      anchorSide: 'top',
+    },
+    ROOF: {
+      position: [0.0, 1.45, -0.30],
+      calloutOffset: [0.0, 0.70, -0.20],
+      anchorSide: 'top',
+    },
+    DIFFUSER: {
+      position: [0.0, 0.32, -1.80],
+      calloutOffset: [-0.85, 0.50, -0.40],
+      anchorSide: 'left',
+    },
+  }),
+
+  'Tesla Cybertruck': cloneHotspotsWithTransforms(DEFAULT_EV_HOTSPOTS, {
+    DOOR_FR: {
+      position: [1.05, 0.95, 0.65],
+      calloutOffset: [1.05, 0.60, 0.25],
+      anchorSide: 'right',
+    },
+    DOOR_FL: {
+      position: [-1.05, 0.95, 0.65],
+      calloutOffset: [-1.05, 0.60, 0.25],
+      anchorSide: 'left',
+    },
+    DOOR_RR: {
+      position: [1.05, 0.95, -0.45],
+      calloutOffset: [1.05, 0.60, -0.25],
+      anchorSide: 'right',
+    },
+    DOOR_RL: {
+      position: [-1.05, 0.95, -0.45],
+      calloutOffset: [-1.05, 0.60, -0.25],
+      anchorSide: 'left',
+    },
+    WHEEL_FR: {
+      position: [1.02, 0.45, 1.70],
+      calloutOffset: [1.08, 0.55, 0.35],
+      anchorSide: 'right',
+    },
+    WHEEL_FL: {
+      position: [-1.02, 0.45, 1.70],
+      calloutOffset: [-1.08, 0.55, 0.35],
+      anchorSide: 'left',
+    },
+    WHEEL_RL: {
+      position: [-1.02, 0.45, -1.70],
+      calloutOffset: [-1.08, 0.55, -0.35],
+      anchorSide: 'left',
+    },
+    WHEEL_RR: {
+      position: [1.02, 0.45, -1.70],
+      calloutOffset: [1.08, 0.55, -0.35],
+      anchorSide: 'right',
+    },
+    HOOD: {
+      position: [0.0, 1.05, 1.55],
+      calloutOffset: [0.0, 0.80, 0.40],
+      anchorSide: 'top',
+    },
+    ROOF: {
+      position: [0.0, 1.78, 0.10],
+      calloutOffset: [0.0, 0.75, -0.20],
+      anchorSide: 'top',
+    },
+    DIFFUSER: {
+      position: [0.0, 0.45, -2.35],
+      calloutOffset: [0.0, 0.50, -0.40],
+      anchorSide: 'left',
+    },
+    HEADLIGHTS: {
+      position: [0.0, 0.90, 2.35],
+      calloutOffset: [0.0, 0.65, 0.45],
+      anchorSide: 'top',
+    },
+    TAILLIGHTS: {
+      position: [0.0, 1.05, -2.40],
+      calloutOffset: [0.0, 0.65, -0.45],
+      anchorSide: 'top',
+    },
+    WINDSHIELD: {
+      position: [0.0, 1.35, 0.75],
+      calloutOffset: [0.0, 0.70, 0.25],
+      anchorSide: 'top',
+    },
+    BATTERY: {
+      position: [0.0, 0.28, 0.0],
+      calloutOffset: [-1.10, 0.65, 0.15],
+      anchorSide: 'left',
+    },
+    CHARGING_PORT: {
+      position: [-1.05, 0.95, -1.80],
+      calloutOffset: [-1.05, 0.55, -0.35],
+      anchorSide: 'left',
+    },
   }),
 
   default: DEFAULT_EV_HOTSPOTS,
@@ -500,6 +859,9 @@ export function resolveVehicleHotspots(
       const lower = candidate.toLowerCase();
       if (lower.includes('vf8') || lower.includes('vf 8')) {
         return vehicleHotspots['VinFast VF8 Plus'];
+      }
+      if (lower.includes('cybertruck')) {
+        return vehicleHotspots['Tesla Cybertruck'];
       }
       if (lower.includes('model y') || lower.includes('tesla')) {
         return vehicleHotspots['Tesla Model Y Long Range'];

@@ -1,0 +1,50 @@
+@startuml
+title QUY TRÌNH TRẢ XE, ĐỐI SOÁT VÀ GHI NHẬN HƯ HỎNG 3D (ACT-05)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+|Chủ Đồng Sở Hữu (CO_OWNER)|
+start
+:Đưa xe về trạm sạc / bãi đỗ tập trung;
+:Xem đồng hồ ODO và % Pin lúc đỗ xe;
+:Mở giao diện chuyến đi, bấm "Yêu Cầu Trả Xe";
+:Nhập ODO và % Pin kết thúc;
+
+|Hệ Thống Backend (Spring Boot)|
+:Ghi nhận returnRequestedAt = now();
+:Chuyển trạng thái Trip sang RETURN_REQUESTED;
+:Thông báo cho Nhân viên trực trạm;
+
+|Nhân Viên Điều Hành (STAFF)|
+:Mở StaffReturnInspectionModal;
+:Kiểm tra đối chiếu ODO và Pin thực tế;
+:Thực hiện Checklist kỹ thuật (Lốp, Phanh, Kính, Đèn);
+if (Phát hiện vết trầy xước / va đập mới?) then (Có hư hại)
+    :Nhấp trực tiếp lên vị trí tương ứng trên mô hình 3D;
+    :Lưu DamageRecord kèm tọa độ không gian (x, y, z);
+    :Điểm Hotspot phát sáng nhấp nháy màu đỏ;
+else (Không có hư hại)
+    :Đánh dấu Checklist hoàn hảo;
+endif
+:Bấm "Xác Nhận Hoàn Tất Trả Xe";
+
+|Hệ Thống Backend (Spring Boot)|
+:Cập nhật Trip status = COMPLETED;
+:Cập nhật trạng thái xe = AVAILABLE;
+:Gọi VehicleEnergyInventoryService.recordTripConsumption;
+:Trừ số kWh điện tiêu thụ trong kho pin;
+:Tính tiền điện chuyến đi (kWh x WAC);
+:Tạo khoản chi Expense (loại CHARGING, USER_RESPONSIBILITY);
+:Gán 100% nghĩa vụ tiền điện cho người lái;
+
+|Chủ Đồng Sở Hữu (CO_OWNER)|
+:Nhận biên bản nghiệm thu và thông báo nợ tiền điện;
+stop
+@enduml

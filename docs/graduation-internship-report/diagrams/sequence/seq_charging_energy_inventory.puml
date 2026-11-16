@@ -1,0 +1,85 @@
+@startuml
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Times New Roman"
+skinparam defaultFontSize 12
+skinparam roundCorner 10
+
+title Sơ Đồ Tuần Tự: Hoàn Tất Phiên Sạc và Cập Nhật Tồn Kho Năng Lượng (Sequence Diagram)
+
+actor "Người Dùng / Nhân Viên\n(Operator)" as User
+participant "ChargingPanel\n(Frontend)" as UI
+participant "ChargingSessionController" as Controller
+participant "ChargingSessionService" as ChargeService
+participant "VehicleEnergyInventoryService" as EnergyService
+participant "VehicleEnergyInventoryRepository" as InvRepo
+participant "VehicleEnergyTransactionRepository" as TxRepo
+database "MySQL Database" as DB
+
+User -> UI : Nhấn "Dừng & Hoàn Tất Phiên Sạc"
+activate UI
+
+UI -> Controller : POST /api/charging/sessions/{id}/complete
+activate Controller
+
+Controller -> ChargeService : completeChargingSession(sessionId, principal)
+activate ChargeService
+
+ChargeService -> DB : Cập nhật ChargingSession (status = COMPLETED, endedAt, energyDeliveredKwh)
+activate DB
+DB --> ChargeService : OK
+deactivate DB
+
+ChargeService -> EnergyService : recordChargingSessionCompletion(session)
+activate EnergyService
+
+EnergyService -> TxRepo : existsBySourceReferenceIdAndTransactionType(session.id, CHARGING_INFLOW)
+activate TxRepo
+TxRepo --> EnergyService : false (Chưa từng ghi nhận - Tránh trùng lặp)
+deactivate TxRepo
+
+EnergyService -> InvRepo : findByVehicleId(vehicle.id)
+activate InvRepo
+InvRepo --> EnergyService : VehicleEnergyInventory (prevEnergy, prevCost, prevAvgCost)
+deactivate InvRepo
+
+note over EnergyService
+  Tính toán vật lý & tài chính:
+  1. storedEnergy = deliveredEnergy * 0.90 (Hiệu suất sạc 90%)
+  2. energyLoss = deliveredEnergy - storedEnergy
+  3. energyValueToAdd = storedEnergy * tariff
+  4. newEnergy = prevEnergy + storedEnergy
+  5. newValue = prevValue + energyValueToAdd
+  6. newAvgCost = newValue / newEnergy (Giá bình quân gia quyền mới)
+end note
+
+EnergyService -> InvRepo : save(inventory: updated energy, value, weightedAvgCost)
+activate InvRepo
+InvRepo -> DB : UPDATE vehicle_energy_inventories SET available_energy_kwh = ?, total_inventory_cost = ?, weighted_avg_cost_per_kwh = ? WHERE id = ?
+activate DB
+DB --> InvRepo : OK
+deactivate DB
+InvRepo --> EnergyService : Saved Inventory
+deactivate InvRepo
+
+EnergyService -> TxRepo : save(new VehicleEnergyTransaction(CHARGING_INFLOW, +storedEnergy, +cost, newAvgCost))
+activate TxRepo
+TxRepo -> DB : INSERT INTO vehicle_energy_transactions (...)
+activate DB
+DB --> TxRepo : OK
+deactivate DB
+TxRepo --> EnergyService : Saved Transaction
+deactivate TxRepo
+
+EnergyService --> ChargeService : Updated Inventory
+deactivate EnergyService
+
+ChargeService --> Controller : ChargingSessionResponse
+deactivate ChargeService
+
+Controller --> UI : HTTP 200 OK (ChargingSessionResponse JSON)
+deactivate Controller
+
+UI --> User : Cập nhật % pin hiển thị và bảng tồn kho năng lượng 3D
+deactivate UI
+
+@enduml

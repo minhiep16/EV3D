@@ -47,6 +47,7 @@ import { useWorldStore } from '../../../store/worldStore';
 import { getPartById } from '../../../data/vehicleParts';
 import { StaffApprovedWorkSection } from '../../fleet/StaffApprovedWorkSection';
 import { useStaffApprovedWork } from '../../../hooks/useVoting';
+import { EVCarLoader } from '../../common/EVCarLoader';
 
 interface StaffMaintenanceItemCardProps {
   item: MaintenanceResponse;
@@ -1926,8 +1927,14 @@ export const StaffMaintenancePanel: React.FC<StaffMaintenancePanelProps> = ({
                   gap: '5px',
                 }}
               >
-                <Check size={14} />
-                <span>{createMutation.isPending ? 'Đang tạo...' : 'TẠO YÊU CẦU'}</span>
+                {createMutation.isPending ? (
+                  <EVCarLoader variant="button" message="Đang tạo..." />
+                ) : (
+                  <>
+                    <Check size={14} />
+                    <span>TẠO YÊU CẦU</span>
+                  </>
+                )}
               </button>
 
               <button

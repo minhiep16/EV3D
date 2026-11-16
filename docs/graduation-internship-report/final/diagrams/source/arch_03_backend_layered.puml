@@ -1,0 +1,57 @@
+@startuml
+title KIẾN TRÚC PHÂN TẦNG BACKEND SPRING BOOT
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+package "Filter & Security Layer" #EBF5FB {
+    [JwtAuthenticationFilter] as JwtFilter
+    [SecurityConfig (CORS, CSRF, RBAC)] as SecConfig
+}
+
+package "Controller Layer (REST Endpoints)" #E8F8F5 {
+    [AuthController] as AuthCtrl
+    [VehicleController] as VehCtrl
+    [BookingController] as BookCtrl
+    [TripController] as TripCtrl
+    [ExpenseController] as ExpCtrl
+    [ChargingSessionController] as ChargeCtrl
+}
+
+package "Service Layer (Business Logic)" #FEF9E7 {
+    [AuthService] as AuthSvc
+    [BookingService] as BookSvc
+    [TripService] as TripSvc
+    [VehicleEnergyInventoryService] as EnergySvc
+    [ExpenseShareService] as ExpSvc
+    [ChargingSessionService] as ChargeSvc
+}
+
+package "Repository Layer (Spring Data JPA)" #EAECEE {
+    [BookingRepository] as BookRepo
+    [TripRepository] as TripRepo
+    [VehicleRepository] as VehRepo
+    [EnergyInventoryRepository] as EnergyRepo
+    [ExpenseRepository] as ExpRepo
+}
+
+JwtFilter --> SecConfig
+SecConfig --> AuthCtrl
+AuthCtrl --> AuthSvc
+BookCtrl --> BookSvc
+TripCtrl --> TripSvc
+ExpCtrl --> ExpSvc
+ChargeCtrl --> ChargeSvc
+
+BookSvc --> BookRepo : findConflictingBookings()
+TripSvc --> TripRepo : save() & verify
+TripSvc --> EnergySvc : recordTripConsumption()
+EnergySvc --> EnergyRepo
+ExpSvc --> ExpRepo : generateSharesForExpense()
+@enduml

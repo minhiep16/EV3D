@@ -1,0 +1,62 @@
+@startuml
+title SƠ ĐỒ LỚP: HỢP ĐỒNG, BIỂU QUYẾT VÀ TRANH CHẤP (CLASS-08)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam classAttributeIconSize 0
+
+
+class CoOwnershipContract {
+    - id: UUID
+    - contractNumber: String
+    - createdAt: Instant
+}
+
+class CoOwnershipContractVersion {
+    - id: UUID
+    - versionNumber: int
+    - termsContent: String
+    - status: ContractVersionStatus
+    - effectiveFrom: Instant
+}
+
+class ContractAcceptance {
+    - id: UUID
+    - acceptedAt: Instant
+    - digitalSignatureHash: String
+}
+
+class VoteProposal {
+    - id: UUID
+    - title: String
+    - description: String
+    - proposalType: String
+    - deadline: Instant
+    - status: ProposalStatus
+}
+
+class ProposalVote {
+    - id: UUID
+    - voteType: VoteType
+    - weight: BigDecimal
+    - castAt: Instant
+}
+
+class Dispute {
+    - id: UUID
+    - title: String
+    - description: String
+    - status: DisputeStatus
+    - resolutionNotes: String
+}
+
+CoOwnershipContract "1" *-- "many" CoOwnershipContractVersion
+CoOwnershipContractVersion "1" *-- "many" ContractAcceptance
+VoteProposal "1" *-- "many" ProposalVote
+
+@enduml

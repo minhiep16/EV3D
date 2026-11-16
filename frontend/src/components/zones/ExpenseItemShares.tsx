@@ -496,7 +496,12 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
           expense?.responsibleUserName ||
           safeShares.find((s) => s?.isResponsibleUser)?.userName ||
           safeShares.find((s) => Number(s?.shareAmount) > 0)?.userName ||
-          'Nguyen Van A';
+          'Người lái';
+
+        const responsibleUserId =
+          expense?.responsibleUserId ||
+          safeShares.find((s) => s?.isResponsibleUser)?.userId ||
+          safeShares.find((s) => Number(s?.shareAmount) > 0)?.userId;
 
         const batteryAtReceive =
           expense?.startBatteryLevel != null
@@ -525,23 +530,21 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
         const verifiedBy = expense?.verifiedByStaffName || 'STAFF';
         const paymentStatusNotice = 'Chi phí điện đã được ghi nhận. Chờ thanh toán.';
 
-        const isSettled = safeShares.some((s) => s.status === 'SETTLED') || personalPayments.some((p) => p.status === 'PAYMENT_VERIFIED');
-        const pendingPayment = personalPayments.find((p) => p.status === 'PAYMENT_SUBMITTED');
-        const verifiedPayment = personalPayments.find((p) => p.status === 'PAYMENT_VERIFIED');
+        const currentUserShare = safeShares.find((s) => Boolean(currentUser?.id && s.userId === currentUser.id));
+        const isZeroObligation = currentUserShare != null && Number(currentUserShare.shareAmount ?? 0) === 0;
+
         const isResponsible = Boolean(
-          (currentUser?.id && expense?.responsibleUserId && expense.responsibleUserId.toLowerCase() === currentUser.id.toLowerCase()) ||
+          (currentUser?.id && responsibleUserId && responsibleUserId.toLowerCase() === currentUser.id.toLowerCase()) ||
           (currentUser?.fullName && responsiblePersonName && (
             responsiblePersonName.toLowerCase().includes(currentUser.fullName.toLowerCase()) ||
             currentUser.fullName.toLowerCase().includes(responsiblePersonName.toLowerCase())
-          )) ||
-          (currentUser?.fullName?.includes('Nguyen Van A') && (
-            !expense?.responsibleUserName ||
-            expense.responsibleUserName.includes('Nguyen Van A') ||
-            expense.responsibleUserId === 'cbd7b894-a6c6-4b51-81d0-9a344715755b' ||
-            category === 'CHARGING' ||
-            allocationPolicy === 'USER_RESPONSIBILITY'
           ))
         );
+
+        const verifiedPayment = personalPayments.find((p) => p.status === 'PAYMENT_VERIFIED');
+        const pendingPayment = personalPayments.find((p) => p.status === 'PAYMENT_SUBMITTED');
+        // Settled ONLY if personal payment has been verified by staff
+        const isSettled = Boolean(verifiedPayment);
 
         return (
           <div
@@ -580,7 +583,26 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
                 <Zap size={13} color="#00f2fe" />
                 <span>CHI PHÍ ĐIỆN CHUYẾN ĐI</span>
               </div>
-              {isSettled ? (
+              {isZeroObligation && !isResponsible && currentUser?.role !== 'STAFF' && currentUser?.role !== 'ADMIN' ? (
+                <span
+                  data-testid="personal-payment-zero-tag"
+                  style={{
+                    background: 'rgba(148, 163, 184, 0.16)',
+                    border: '1px solid rgba(148, 163, 184, 0.35)',
+                    color: '#94a3b8',
+                    padding: '3px 8px',
+                    borderRadius: '6px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  <CheckCircle2 size={12} color="#94a3b8" />
+                  <span>KHÔNG PHÁT SINH CHI PHÍ</span>
+                </span>
+              ) : isSettled ? (
                 <span
                   data-testid="personal-payment-settled-tag"
                   style={{
@@ -757,16 +779,21 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
                 </div>
 
                 {(() => {
-                  const isSettled = safeShares.some((s) => s.status === 'SETTLED') || personalPayments.some((p) => p.status === 'PAYMENT_VERIFIED');
-                  const pendingPayment = personalPayments.find((p) => p.status === 'PAYMENT_SUBMITTED');
                   const verifiedPayment = personalPayments.find((p) => p.status === 'PAYMENT_VERIFIED');
+                  const pendingPayment = personalPayments.find((p) => p.status === 'PAYMENT_SUBMITTED');
+                  const isSettled = Boolean(verifiedPayment);
                   const isStaffOrAdmin = currentUser?.role === 'STAFF' || currentUser?.role === 'ADMIN';
 
                   return (
                     <>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ color: '#94a3b8' }}>Trạng thái thanh toán:</span>
-                        {isSettled ? (
+                        {isZeroObligation && !isResponsible && !isStaffOrAdmin ? (
+                          <span style={{ color: '#94a3b8', background: 'rgba(148, 163, 184, 0.15)', border: '1px solid rgba(148, 163, 184, 0.4)', borderRadius: '4px', padding: '1px 6px', fontWeight: 700, fontSize: '9.5px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                            <CheckCircle2 size={10} color="#94a3b8" />
+                            KHÔNG PHÁT SINH CHI PHÍ
+                          </span>
+                        ) : isSettled ? (
                           <span style={{ color: '#10b981', background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.4)', borderRadius: '4px', padding: '1px 6px', fontWeight: 800, fontSize: '9.5px', display: 'flex', alignItems: 'center', gap: '3px' }}>
                             <CheckCircle2 size={10} color="#10b981" />
                             ĐÃ THANH TOÁN (DEMO)
@@ -811,7 +838,7 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
                         <div style={{ background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '6px', padding: '6px 8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <span style={{ color: '#38bdf8', fontWeight: 750, fontSize: '9.5px' }}>
-                              Nguyen Van A — {Number(pendingPayment.amount).toLocaleString('vi-VN')}đ
+                              {(pendingPayment as any).payerUserName || responsiblePersonName} — {Number(pendingPayment.amount).toLocaleString('vi-VN')}đ
                             </span>
                             <span style={{ color: '#fbbf24', background: 'rgba(245, 158, 11, 0.2)', border: '1px solid rgba(245, 158, 11, 0.4)', borderRadius: '3px', padding: '0 4px', fontSize: '8.5px', fontWeight: 800 }}>
                               GIAO DỊCH DEMO
@@ -864,7 +891,7 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
                       )}
 
                       {/* Demo payment submission form for un-settled expense */}
-                      {!isSettled && !pendingPayment && (
+                      {!isSettled && !pendingPayment && (isResponsible || isStaffOrAdmin) && (
                         <div style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(0, 242, 254, 0.25)', borderRadius: '6px', padding: '6px 8px', display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '2px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <span style={{ fontSize: '9.5px', color: '#00f2fe', fontWeight: 750 }}>
@@ -933,6 +960,23 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
                             <CreditCard size={12} />
                             <span>{submitPersonalPaymentMutation.isPending ? 'Đang gửi...' : 'THANH TOÁN DEMO'}</span>
                           </button>
+                        </div>
+                      )}
+
+                      {!isSettled && !pendingPayment && !isResponsible && !isStaffOrAdmin && (
+                        <div
+                          style={{
+                            background: 'rgba(148, 163, 184, 0.08)',
+                            border: '1px dashed rgba(148, 163, 184, 0.25)',
+                            borderRadius: '6px',
+                            padding: '6px 8px',
+                            fontSize: '9px',
+                            color: '#94a3b8',
+                            lineHeight: 1.35,
+                            marginTop: '2px',
+                          }}
+                        >
+                          Khoản chi này thuộc trách nhiệm 100% của người sử dụng ({responsiblePersonName}). Bạn không phát sinh nghĩa vụ thanh toán cho chi phí này.
                         </div>
                       )}
 
@@ -1181,7 +1225,21 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
                     Người thanh toán
                   </span>
                 )}
-                {statusMeta && share.status !== 'ALLOCATED' && (
+                {shareAmount === 0 ? (
+                  <span
+                    style={{
+                      background: 'rgba(148, 163, 184, 0.12)',
+                      color: '#94a3b8',
+                      border: '1px solid rgba(148, 163, 184, 0.25)',
+                      fontSize: '9px',
+                      fontWeight: 700,
+                      padding: '1px 5px',
+                      borderRadius: '4px',
+                    }}
+                  >
+                    KHÔNG PHÁT SINH
+                  </span>
+                ) : statusMeta && share.status !== 'ALLOCATED' ? (
                   <span
                     style={{
                       background: statusMeta.bg,
@@ -1195,7 +1253,7 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
                   >
                     {statusMeta.label}
                   </span>
-                )}
+                ) : null}
               </div>
               <span style={{ color: '#ffffff', fontWeight: 750, fontVariantNumeric: 'tabular-nums' }}>
                 {shareAmount.toLocaleString('vi-VN')}đ
@@ -1244,6 +1302,43 @@ const ExpenseItemSharesContent: React.FC<ExpenseItemSharesProps> = ({
 
         // Only display if user is a co-owner with an allocated share, or staff inspecting verification
         if (!userShare && !isStaffOrAdmin) return null;
+
+        if (userShare && payableAmount === 0 && !isStaffOrAdmin) {
+          return (
+            <div
+              data-testid="shared-expense-zero-obligation"
+              style={{
+                marginTop: '8px',
+                padding: '8px 10px',
+                background: 'rgba(15, 23, 42, 0.5)',
+                border: '1px solid rgba(148, 163, 184, 0.2)',
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                fontSize: '10.5px',
+              }}
+            >
+              <span style={{ color: '#94a3b8' }}>Nghĩa vụ chi phí của bạn ({userShare?.ownershipPercentage || 0}%):</span>
+              <span
+                style={{
+                  background: 'rgba(148, 163, 184, 0.12)',
+                  border: '1px solid rgba(148, 163, 184, 0.3)',
+                  color: '#94a3b8',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  fontWeight: 700,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <CheckCircle2 size={11} color="#94a3b8" />
+                KHÔNG PHÁT SINH CHI PHÍ (0đ)
+              </span>
+            </div>
+          );
+        }
 
         return (
           <div

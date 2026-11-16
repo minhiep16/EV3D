@@ -4,6 +4,8 @@ import {
   ChargingSessionResponse,
   CreateChargingSessionPayload,
   ProgressChargingSessionPayload,
+  VehicleEnergyInventoryResponse,
+  VehicleEnergyTransactionResponse,
 } from '../types/charging';
 
 /**
@@ -180,3 +182,47 @@ export async function cancelChargingSession(sessionId: string): Promise<Charging
 
   return res.json();
 }
+
+/**
+ * Fetch physical vehicle energy inventory (stored energy, inventory value, weighted average tariff).
+ */
+export async function fetchVehicleEnergyInventory(vehicleId: string): Promise<VehicleEnergyInventoryResponse | null> {
+  if (!vehicleId) return null;
+  try {
+    const res = await authenticatedFetch(`/api/vehicles/${vehicleId}/energy-inventory`);
+    if (res.status === 404 || res.status === 204) return null;
+    if (!res.ok) {
+      if (res.status >= 500) {
+        console.warn(`[chargingApi] Energy inventory returned ${res.status}`);
+        return null;
+      }
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.message || `Lỗi tải kho điện năng (${res.status})`);
+    }
+    const data = await safeParseResponse<VehicleEnergyInventoryResponse>(res);
+    return data || null;
+  } catch (err: any) {
+    console.warn('[chargingApi] Energy inventory query failed gracefully:', err?.message || err);
+    return null;
+  }
+}
+
+/**
+ * Fetch vehicle energy transaction audit history.
+ */
+export async function fetchVehicleEnergyTransactions(vehicleId: string): Promise<VehicleEnergyTransactionResponse[]> {
+  if (!vehicleId) return [];
+  try {
+    const res = await authenticatedFetch(`/api/vehicles/${vehicleId}/energy-inventory/transactions`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.message || `Lỗi tải lịch sử giao dịch điện năng (${res.status})`);
+    }
+    const data = await safeParseResponse<VehicleEnergyTransactionResponse[]>(res);
+    return data || [];
+  } catch (err: any) {
+    console.warn('[chargingApi] Energy transactions query failed gracefully:', err?.message || err);
+    return [];
+  }
+}
+

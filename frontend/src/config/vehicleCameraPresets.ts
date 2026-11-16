@@ -13,13 +13,21 @@
  * 5. Constrain zoom distances so camera never clips into the windshield or body.
  */
 
+import * as THREE from 'three';
 import { VEHICLE_INTERACTION_CONFIG } from './interactionConfig';
 import {
   getPartById,
   SEMANTIC_HITBOX_DEFINITIONS,
   EV02_SEMANTIC_HITBOXES,
 } from '../data/vehicleParts';
-import { resolveVehicleCode } from '../components/three/vehicles/vehicleModelConfig';
+import {
+  findCatalogEntryByModel,
+  getCatalogEntryById,
+} from '../data/vehicleCatalog';
+import {
+  resolveVehicleCode,
+  VEHICLE_MODEL_CONFIGS,
+} from '../components/three/vehicles/vehicleModelConfig';
 import { getVehicleBaySlot } from './garageSlotConfig';
 import { STAFF_GARAGE_LAYOUT } from './staffGarageLayout';
 export * from './garageCameraConfig';
@@ -154,106 +162,269 @@ export const VEHICLE_EXPLORE_CAMERA: VehicleCameraPreset = {
  * Resolves the primary ground anchor of a vehicle using the centralized garage slot architecture.
  * Automatically adapts for role, vehicle status, and dedicated bay assignment.
  */
-export function getVehicleAnchor(role?: string, vehicleCode?: string | null): [number, number, number] {
+export function getVehicleAnchor(role?: string, vehicleIdentifier?: any): [number, number, number] {
   const isOperations = role === 'STAFF' || role === 'ADMIN';
   if (isOperations) {
     return STAFF_GARAGE_LAYOUT.heroAnchor;
   }
-  return getVehicleBaySlot(vehicleCode, role).position;
+  const code = resolveVehicleCode(vehicleIdentifier);
+  return getVehicleBaySlot(code, role).position;
+}
+
+/**
+ * Shared Vehicle Overview Camera Preset Builder
+ * Reuses the canonical three-quarter showroom overview camera geometry
+ * across both CO_OWNER and STAFF/ADMIN operations mode.
+ *
+ * Geometric Specifications (derived from authoritative CO_OWNER baseline):
+ * - Target: [vx + panelOffsetX, vy + 0.71, vz]
+ * - Position: [vx + panelOffsetX - 0.25, vy + 2.21, vz + 10.2 * responsiveFactor]
+ * - Viewing Vector: ΔX = -0.25m, ΔY = 1.50m, ΔZ = 10.2m (Distance ~10.31m)
+ * - Viewing Angles: Downward pitch ~8.36°, horizontal azimuth ~ -1.40°
+ * - FOV: 40°
+ * - Distance Constraints: minDistance 5.0m, maxDistance 18.0m
+ * - Polar Constraints: min 0.40 rad (~23°), max 1.42 rad (~81°)
+ */
+export interface SharedVehicleOverviewPresetOptions {
+  anchor: [number, number, number];
+  panelSide?: 'none' | 'right';
+  panelOffsetX?: number;
+  responsiveFactor?: number;
+  transitionDuration?: number;
+}
+
+export function buildSharedVehicleOverviewPreset(
+  options: SharedVehicleOverviewPresetOptions
+): VehicleCameraPreset {
+  const {
+    anchor,
+    panelSide = 'none',
+    panelOffsetX = 0,
+    responsiveFactor = 1.0,
+    transitionDuration = 0.7,
+  } = options;
+
+  const [vx, vy, vz] = anchor;
+  const targetX = vx + panelOffsetX;
+  const targetY = vy + 1.05;
+  const targetZ = vz;
+
+  // Scaled 5% farther along identical viewing vector: target + (prev - target) * 1.05
+  // Previous delta: [0.0, 1.543, 9.023] -> Scaled delta: [0.0, 1.620, 9.474]
+  const camDistZ = 9.474 * responsiveFactor;
+  const posX = targetX;
+  const posY = targetY + 1.620;
+  const posZ = targetZ + camDistZ;
+
+  return {
+    target: [targetX, targetY, targetZ],
+    position: [posX, posY, posZ],
+    fov: 38,
+    minDistance: 6.0,
+    maxDistance: 15.0,
+    minPolarAngle: 0.40,
+    maxPolarAngle: 1.42,
+    enableRotate: true,
+    enableZoom: true,
+    enablePan: true,
+    panelSide,
+    panelOffsetX: panelOffsetX > 0 ? panelOffsetX : undefined,
+    transitionDuration,
+  };
+}
+
+export interface VehicleFramingProfile {
+  modelLength: number;
+  modelHeight: number;
+  modelWidth: number;
+  targetY: number;
+  camElevation: number;
+  baseDistZ: number;
+}
+
+/**
+ * Resolves vehicle physical framing profile based on catalog specifications,
+ * normalization parameters, and 3D bounding geometry.
+ * Adapts camera distance and eye-level elevation for sports cars, sedans, SUVs, and trucks.
+ */
+export function resolveVehicleFramingProfile(
+  vehicleIdentifier?: any,
+  role?: string,
+  responsiveFactor: number = 1.0
+): VehicleFramingProfile {
+  const code = resolveVehicleCode(vehicleIdentifier);
+
+  // Extract model name or candidate keywords
+  let modelName = '';
+  if (vehicleIdentifier && typeof vehicleIdentifier === 'object') {
+    modelName = (vehicleIdentifier.model || vehicleIdentifier.name || '').trim();
+  }
+
+  // Lookup in central multi-vehicle catalog
+  const catalogEntry =
+    (modelName ? findCatalogEntryByModel(modelName) : undefined) ||
+    getCatalogEntryById(code);
+
+  const modelDef = VEHICLE_MODEL_CONFIGS[code as 'EV01' | 'EV02'];
+
+  // 1. Length in meters
+  let length = 4.25; // standard vehicle default
+  if (catalogEntry?.normalization?.targetLength) {
+    length = catalogEntry.normalization.targetLength;
+  } else if (modelDef?.dimensions?.length) {
+    length = modelDef.dimensions.length;
+  }
+
+  // 2. Height in meters
+  let height = 1.50; // standard vehicle default
+  const nameLower = (catalogEntry?.displayName || modelName || code).toLowerCase();
+  if (nameLower.includes('roadster')) {
+    // Low-slung compact sports car (e.g. Tesla Roadster 2008 EV39)
+    height = 1.20;
+    length = 3.90;
+  } else if (nameLower.includes('cybertruck')) {
+    // High-clearance pickup truck (e.g. Tesla Cybertruck)
+    height = 1.85;
+    length = 5.60;
+  } else if (nameLower.includes('vf3') || nameLower.includes('vf 3')) {
+    // Compact mini-SUV (VinFast VF3)
+    height = 1.58;
+    length = 3.20;
+  } else if (nameLower.includes('mistra') || nameLower.includes('model 3') || nameLower.includes('taycan')) {
+    // Aerodynamic sedan
+    height = 1.45;
+    length = 4.60;
+  } else if (modelDef?.dimensions?.height) {
+    height = modelDef.dimensions.height;
+  }
+
+  // 3. Width in meters
+  const width = modelDef?.dimensions?.width || 1.90;
+
+  // Calibrate optical target Y (center of visible vehicle mass)
+  const targetY = THREE.MathUtils.clamp(height * 0.52, 0.70, 1.05);
+
+  // Calibrate camera eye-level elevation
+  const camElevation = THREE.MathUtils.clamp(height * 1.25, 1.70, 2.25);
+
+  // Calibrate framing distance proportional to vehicle length
+  // Front-three-quarter showroom composition: vehicle occupies ~65-75% of available horizontal viewport
+  // Tesla Roadster EV39 (3.9m) -> ~6.16m
+  // VF3 (3.2m) -> ~5.60m
+  // VF8 / Model 3 (4.25m - 4.4m) -> ~6.72m - 6.95m
+  // Cybertruck (5.6m) -> ~8.80m
+  const baseDistZ = THREE.MathUtils.clamp(length * 1.58 * responsiveFactor, 5.6, 8.8);
+
+  return {
+    modelLength: length,
+    modelHeight: height,
+    modelWidth: width,
+    targetY,
+    camElevation,
+    baseDistZ,
+  };
 }
 
 /**
  * Evaluates active interaction modes and determines the appropriate camera preset key.
  */
-export function resolveActiveCameraPresetKey(state: {
-  selectedZone?: string | null;
-  selectedVehicleId?: string | null;
-  selectedVehiclePartId?: string | null;
-  selectedVehiclePartCode?: string | null;
-  selectedDamageId?: string | null;
-  isDamageDetailModalOpen?: boolean;
-  isVehicleDetailOpen?: boolean;
-  vehicleCoOwnershipMode?: boolean;
-  vehicleBookingMode?: boolean;
-  vehicleHandoverMode?: boolean;
-  vehicleReceiptReviewMode?: boolean;
-  vehicleTripStartMode?: boolean;
-  vehicleTripVisualizationMode?: boolean;
-  vehicleDamageMappingMode?: boolean;
-  vehicleDamageHistoryMode?: boolean;
-  vehicleInspectionMode?: boolean;
-  vehicleMaintenanceMode?: boolean;
-  vehicleBatteryXrayMode?: boolean;
-  vehicleChargingMode?: boolean;
-  isExplorationMode?: boolean;
-}): VehiclePresetKey {
+export function resolveActiveCameraPresetKey(
+  state: {
+    selectedZone?: string | null;
+    selectedVehicleId?: string | null;
+    selectedVehiclePartId?: string | null;
+    selectedVehiclePartCode?: string | null;
+    selectedDamageId?: string | null;
+    isDamageDetailModalOpen?: boolean;
+    isVehicleDetailOpen?: boolean;
+    vehicleCoOwnershipMode?: boolean;
+    vehicleBookingMode?: boolean;
+    vehicleHandoverMode?: boolean;
+    vehicleReceiptReviewMode?: boolean;
+    vehicleTripStartMode?: boolean;
+    vehicleTripVisualizationMode?: boolean;
+    vehicleDamageMappingMode?: boolean;
+    vehicleDamageHistoryMode?: boolean;
+    vehicleInspectionMode?: boolean;
+    vehicleMaintenanceMode?: boolean;
+    vehicleBatteryXrayMode?: boolean;
+    vehicleChargingMode?: boolean;
+    isExplorationMode?: boolean;
+    role?: string;
+  },
+  roleParam?: string
+): VehiclePresetKey {
+  const currentRole = roleParam || state.role;
+  const isOperations = currentRole === 'STAFF' || currentRole === 'ADMIN';
+
+  // In STAFF/ADMIN operations mode, preserve the canonical showroom overview preset
+  // across all standard vehicle selection, panel toggling, maintenance, charging, and history views.
+  // Only explicitly designated inspection modes activate specialized camera positions.
+  if (currentRole === 'ADMIN') {
+    const adminActiveModule = (state as any).adminActiveModule;
+    if (adminActiveModule && adminActiveModule !== 'NONE') {
+      return 'VEHICLE_WITH_RIGHT_PANEL';
+    }
+    // In ADMIN command center, all standard views (overview, gallery, vehicle navigation)
+    // strictly use the canonical centered OVERVIEW preset.
+    return 'OVERVIEW';
+  }
+
+  if (isOperations) {
+    if (state.vehicleInspectionMode && (state.selectedVehiclePartCode || state.selectedVehiclePartId)) {
+      return 'VEHICLE_PART_INSPECTION';
+    }
+    if (state.isDamageDetailModalOpen || state.selectedDamageId) {
+      return 'VEHICLE_PART_INSPECTION';
+    }
+    if (state.vehicleBatteryXrayMode) {
+      if (state.selectedVehiclePartId === 'BATTERY' || state.selectedVehiclePartCode === 'BATTERY') {
+        return 'BATTERY_DETAIL';
+      }
+      return 'BATTERY_XRAY';
+    }
+    // In staff mode, selecting/interacting with vehicle or opening right-side panel keeps overview camera stable
+    return 'OVERVIEW';
+  }
+
+  // Non-operations (CO_OWNER) mode behavior:
+  // "Khám phá" (Exploration) is the ONLY operational function allowed to use automatic camera zoom
   if (state.isExplorationMode) {
     if (state.selectedVehiclePartCode || state.selectedVehiclePartId) {
       return 'VEHICLE_PART_INSPECTION';
     }
-    return 'VEHICLE_FOCUS';
+    // Enter exploration without unnecessary zoom: keep OVERVIEW
+    return 'OVERVIEW';
   }
-  // Authoritative damage inspection focus: when damage details modal is open or a damage is selected
+
+  // Preserve specialized damage inspection focus if damage detail modal is open
   if (state.isDamageDetailModalOpen || state.selectedDamageId) {
     return 'VEHICLE_PART_INSPECTION';
   }
-  if (state.vehicleChargingMode) {
-    if (state.selectedVehiclePartId === 'CHARGING_PORT' || state.selectedVehiclePartCode === 'CHARGING_PORT') {
-      return 'CHARGING_PORT_DETAIL';
-    }
-    return 'CHARGING_OVERVIEW';
+
+  // Preserve handover inspection checkpoints if in handover/receipt review
+  if (state.vehicleHandoverMode || state.vehicleReceiptReviewMode) {
+    return 'HANDOVER_INSPECTION';
   }
-  if (state.vehicleBatteryXrayMode) {
-    if (state.selectedVehiclePartId === 'BATTERY' || state.selectedVehiclePartCode === 'BATTERY') {
-      return 'BATTERY_DETAIL';
-    }
-    return 'BATTERY_XRAY';
-  }
-  if (state.vehicleMaintenanceMode) {
-    if (state.selectedDamageId || state.selectedVehiclePartCode || state.selectedVehiclePartId) {
-      return 'VEHICLE_PART_INSPECTION';
-    }
-    return 'VEHICLE_FOCUS';
-  }
-  if (state.vehicleDamageHistoryMode) {
-    if (state.selectedDamageId || state.selectedVehiclePartCode || state.selectedVehiclePartId) {
-      return 'VEHICLE_PART_INSPECTION';
-    }
-    return 'DAMAGE_HISTORY';
-  }
-  if (state.vehicleDamageMappingMode) {
-    if (state.selectedVehiclePartCode || state.selectedVehiclePartId) {
-      return 'VEHICLE_PART_INSPECTION';
-    }
-    return 'DAMAGE_MAPPING';
-  }
-  if (state.vehicleInspectionMode) {
-    if (state.selectedVehiclePartCode || state.selectedVehiclePartId) {
-      return 'VEHICLE_PART_INSPECTION';
-    }
-    return 'VEHICLE_WITH_RIGHT_PANEL';
-  }
+
+  // Preserve trip visualization if in trip mode
   if (state.vehicleTripVisualizationMode) {
     return 'VEHICLE_TRIP_VISUALIZATION';
   }
   if (state.vehicleTripStartMode) {
     return 'TRIP_VIEW';
   }
-  if (state.vehicleHandoverMode || state.vehicleReceiptReviewMode) {
-    return 'HANDOVER_INSPECTION';
-  }
-  if (state.vehicleBookingMode) {
-    return 'VEHICLE_BOOKING';
-  }
-  if (state.vehicleCoOwnershipMode) {
-    return 'VEHICLE_CO_OWNERSHIP';
-  }
-  if (state.selectedVehicleId) {
-    if (state.isVehicleDetailOpen) {
-      return 'VEHICLE_WITH_RIGHT_PANEL';
-    }
-    return 'VEHICLE_FOCUS';
-  }
+
+  // All ordinary CO_OWNER operational functions:
+  // - Đặt lịch (vehicleBookingMode)
+  // - Bảo dưỡng (vehicleMaintenanceMode)
+  // - X-Ray pin (vehicleBatteryXrayMode)
+  // - Biểu quyết (vehicleVotingMode)
+  // - Tranh chấp (activePrimaryPanel === 'DISPUTE')
+  // - Nhóm sở hữu (vehicleCoOwnershipMode)
+  // - Hợp đồng (activePrimaryPanel === 'CONTRACT')
+  // as well as central vehicle selection and operational carousel: all stay on canonical OVERVIEW camera.
+  // No automatic camera zoom, movement, rotation or focus transitions.
   return 'OVERVIEW';
 }
 
@@ -265,7 +436,7 @@ export function getVehicleCameraPreset(
   presetKey: VehiclePresetKey,
   role?: string,
   viewportWidth?: number,
-  vehicleCode?: string | null
+  vehicleCode?: any
 ): VehicleCameraPreset {
   const isCoOwner = !role || role === 'CO_OWNER';
   const isOperationsRole = role === 'STAFF' || role === 'ADMIN';
@@ -273,185 +444,327 @@ export function getVehicleCameraPreset(
 
   // Responsive distance scale for narrower viewports (< 1280px)
   const responsiveFactor =
-    viewportWidth && viewportWidth < 1280
-      ? Math.min(1.18, Math.max(1.0, 1280 / viewportWidth))
+    viewportWidth && viewportWidth < 1440
+      ? Math.min(1.25, Math.max(1.0, 1440 / viewportWidth))
       : 1.0;
 
   // Polar constraints: Min ~31° (0.55 rad), Max ~82° (1.43 rad, floor-safe)
   const defaultMinPolar = 0.55;
   const defaultMaxPolar = 1.43;
 
-  switch (presetKey) {
-    case 'OVERVIEW':
-      return {
-        target: isCoOwner ? [0.0, 0.85, 1.8] : STAFF_GARAGE_LAYOUT.camera.target,
-        position: isCoOwner ? [-0.25, 2.35, 12.0] : STAFF_GARAGE_LAYOUT.camera.position,
-        minDistance: isCoOwner ? 5.0 : STAFF_GARAGE_LAYOUT.camera.minDistance,
-        maxDistance: isCoOwner ? 18.0 : STAFF_GARAGE_LAYOUT.camera.maxDistance,
-        minPolarAngle: isCoOwner ? 0.40 : STAFF_GARAGE_LAYOUT.camera.minPolarAngle,
-        maxPolarAngle: isCoOwner ? 1.42 : STAFF_GARAGE_LAYOUT.camera.maxPolarAngle,
-        enableRotate: true,
-        enableZoom: true,
-        enablePan: true,
-        panelSide: 'none',
-        transitionDuration: 0.7,
-      };
-
-    case 'VEHICLE_WITH_RIGHT_PANEL': {
-      if (!isCoOwner) {
+  // =========================================================================
+  // 1. ORIGINAL CO_OWNER CAMERA POLICY (COMPLETELY RESTORED & ISOLATED)
+  // Preserves original three-quarter viewing angle, generous room margins,
+  // 8.8m distance, target [0.0, 0.85, 1.8], and panel-safe 0.75m lateral offset.
+  // =========================================================================
+  if (isCoOwner) {
+    switch (presetKey) {
+      case 'OVERVIEW':
         return {
-          target: STAFF_GARAGE_LAYOUT.camera.target,
-          position: STAFF_GARAGE_LAYOUT.camera.position,
-          minDistance: STAFF_GARAGE_LAYOUT.camera.minDistance,
-          maxDistance: STAFF_GARAGE_LAYOUT.camera.maxDistance,
-          minPolarAngle: STAFF_GARAGE_LAYOUT.camera.minPolarAngle,
-          maxPolarAngle: STAFF_GARAGE_LAYOUT.camera.maxPolarAngle,
+          target: [0.0, 0.85, 1.8],
+          position: [-0.25, 2.35, 12.0],
+          minDistance: 5.0,
+          maxDistance: 18.0,
+          minPolarAngle: 0.40,
+          maxPolarAngle: 1.42,
           enableRotate: true,
           enableZoom: true,
           enablePan: true,
-          panelSide: 'right',
-          transitionDuration: 0.65,
+          panelSide: 'none',
+          transitionDuration: 0.7,
         };
-      }
-      // Premium hero framing: EV01 on center-left ~30-34% of viewport width, Right Information Panel clear on right, zero clipping
-      const panelOffsetX = 0.75;
-      const baseDistZ = 7.0 * responsiveFactor;
-      return {
-        target: [vx + panelOffsetX, vy + 0.85, vz],
-        position: [vx + 0.45, vy + 2.05, vz + baseDistZ],
-        minDistance: 4.5,
-        maxDistance: 16.0,
-        minPolarAngle: 0.40,
-        maxPolarAngle: 1.42,
-        enableRotate: true,
-        enableZoom: true,
-        enablePan: true,
-        panelSide: 'right',
-        panelOffsetX,
-        transitionDuration: 0.65,
-      };
-    }
 
-    case 'VEHICLE_FOCUS': {
-      if (!isCoOwner) {
+      case 'VEHICLE_FOCUS':
         return {
-          target: STAFF_GARAGE_LAYOUT.camera.target,
-          position: STAFF_GARAGE_LAYOUT.camera.position,
-          minDistance: STAFF_GARAGE_LAYOUT.camera.minDistance,
-          maxDistance: STAFF_GARAGE_LAYOUT.camera.maxDistance,
-          minPolarAngle: STAFF_GARAGE_LAYOUT.camera.minPolarAngle,
-          maxPolarAngle: STAFF_GARAGE_LAYOUT.camera.maxPolarAngle,
+          target: [vx, vy + 0.85, vz],
+          position: [vx - 0.25, vy + 2.05, vz + 7.0],
+          minDistance: 4.5,
+          maxDistance: 16.0,
+          minPolarAngle: 0.40,
+          maxPolarAngle: 1.42,
           enableRotate: true,
           enableZoom: true,
           enablePan: true,
           panelSide: 'none',
           transitionDuration: 0.65,
         };
-      }
-      // Pure vehicle focus without right panel - spacious cinematic 3/4 angle
-      const baseDistZ = 7.0 * responsiveFactor;
-      return {
-        target: [vx, vy + 0.85, vz],
-        position: [vx - 0.25, vy + 2.05, vz + baseDistZ],
-        minDistance: 4.5,
-        maxDistance: 16.0,
-        minPolarAngle: 0.40,
-        maxPolarAngle: 1.42,
-        enableRotate: true,
-        enableZoom: true,
-        enablePan: true,
-        panelSide: 'none',
-        transitionDuration: 0.65,
-      };
-    }
 
-    case 'VEHICLE_EXPLORE':
-    case 'VEHICLE_PART_INSPECTION':
-    case 'MAINTENANCE': {
-      if (!isCoOwner) {
+      case 'VEHICLE_WITH_RIGHT_PANEL':
         return {
-          target: STAFF_GARAGE_LAYOUT.camera.target,
-          position: STAFF_GARAGE_LAYOUT.camera.position,
-          minDistance: STAFF_GARAGE_LAYOUT.camera.minDistance,
-          maxDistance: STAFF_GARAGE_LAYOUT.camera.maxDistance,
-          minPolarAngle: STAFF_GARAGE_LAYOUT.camera.minPolarAngle,
-          maxPolarAngle: STAFF_GARAGE_LAYOUT.camera.maxPolarAngle,
+          target: [vx + 0.75, vy + 0.85, vz],
+          position: [vx + 0.45, vy + 2.05, vz + 7.0],
+          minDistance: 4.5,
+          maxDistance: 16.0,
+          minPolarAngle: 0.40,
+          maxPolarAngle: 1.42,
           enableRotate: true,
           enableZoom: true,
           enablePan: true,
           panelSide: 'right',
+          panelOffsetX: 0.75,
+          transitionDuration: 0.65,
+        };
+
+      case 'VEHICLE_EXPLORE':
+        return {
+          target: [vx, vy + 0.95, vz],
+          position: [vx, vy + 3.2, vz + 12.0],
+          minDistance: 5.5,
+          maxDistance: 20.0,
+          minPolarAngle: 0.55,
+          maxPolarAngle: 1.43,
+          enableRotate: true,
+          enableZoom: true,
+          enablePan: true,
+          panelSide: 'none',
+          transitionDuration: 0.65,
+        };
+
+      case 'VEHICLE_BOOKING': {
+        const panelOffsetX = 0.95;
+        const baseDistZ = 11.5 * responsiveFactor;
+        return {
+          target: [vx + panelOffsetX, vy + 1.15, vz],
+          position: [vx + panelOffsetX, vy + 3.2, vz + baseDistZ],
+          minDistance: 6.5,
+          maxDistance: 22.0,
+          minPolarAngle: defaultMinPolar,
+          maxPolarAngle: defaultMaxPolar,
+          enableRotate: true,
+          enableZoom: true,
+          enablePan: true,
+          panelSide: 'right',
+          panelOffsetX,
           transitionDuration: 0.65,
         };
       }
-      const baseDistZ = 12.0 * responsiveFactor;
-      return {
-        target: [vx, vy + 0.95, vz],
-        position: [vx, vy + 3.2, vz + baseDistZ],
-        minDistance: 5.5,
-        maxDistance: 20.0,
-        minPolarAngle: defaultMinPolar,
-        maxPolarAngle: defaultMaxPolar,
-        enableRotate: true,
-        enableZoom: true,
-        enablePan: true,
+
+      case 'VEHICLE_CO_OWNERSHIP': {
+        const panelOffsetX = 0.65;
+        const baseDistZ = 10.0 * responsiveFactor;
+        return {
+          target: [vx + panelOffsetX, vy + 0.95, vz],
+          position: [vx + 0.45, vy + 2.35, vz + baseDistZ],
+          fov: 40,
+          minDistance: 4.5,
+          maxDistance: 18.0,
+          minPolarAngle: 0.40,
+          maxPolarAngle: 1.42,
+          enableRotate: true,
+          enableZoom: true,
+          enablePan: true,
+          panelSide: 'right',
+          panelOffsetX,
+          transitionDuration: 0.65,
+        };
+      }
+
+      case 'HANDOVER_INSPECTION': {
+        const panelOffsetX = 1.25;
+        const baseDistZ = 12.5 * responsiveFactor;
+        return {
+          target: [vx + panelOffsetX, vy + 1.05, vz],
+          position: [vx + panelOffsetX, vy + 3.5, vz + baseDistZ],
+          minDistance: 6.0,
+          maxDistance: 22.0,
+          minPolarAngle: defaultMinPolar,
+          maxPolarAngle: defaultMaxPolar,
+          enableRotate: true,
+          enableZoom: true,
+          enablePan: true,
+          panelSide: 'right',
+          panelOffsetX,
+          transitionDuration: 0.65,
+        };
+      }
+
+      case 'TRIP_VIEW':
+      case 'VEHICLE_TRIP_VISUALIZATION': {
+        const panelOffsetX = 0.85;
+        const baseDistZ = 8.6 * responsiveFactor;
+        return {
+          target: [vx + panelOffsetX, vy + 0.90, vz],
+          position: [vx + 0.35, vy + 2.15, vz + baseDistZ],
+          fov: 40,
+          minDistance: 4.5,
+          maxDistance: 16.0,
+          minPolarAngle: 0.40,
+          maxPolarAngle: 1.42,
+          enableRotate: true,
+          enableZoom: true,
+          enablePan: true,
+          panelSide: 'right',
+          panelOffsetX,
+          transitionDuration: 0.65,
+        };
+      }
+
+      case 'BATTERY_XRAY': {
+        const panelOffsetX = 1.35;
+        const baseDistZ = 10.6 * responsiveFactor;
+        return {
+          target: [vx + panelOffsetX, vy + 0.65, vz],
+          position: [vx + panelOffsetX, vy + 2.85, vz + baseDistZ],
+          minDistance: 4.8,
+          maxDistance: 19.0,
+          minPolarAngle: 0.62,
+          maxPolarAngle: 1.38,
+          enableRotate: true,
+          enableZoom: true,
+          enablePan: true,
+          panelSide: 'right',
+          panelOffsetX,
+          transitionDuration: 0.65,
+        };
+      }
+
+      case 'BATTERY_DETAIL': {
+        const panelOffsetX = 1.15;
+        const baseDistZ = 7.2 * responsiveFactor;
+        return {
+          target: [vx + panelOffsetX, vy + 0.38, vz],
+          position: [vx + panelOffsetX, vy + 1.85, vz + baseDistZ],
+          minDistance: 3.5,
+          maxDistance: 14.0,
+          minPolarAngle: 0.70,
+          maxPolarAngle: 1.35,
+          enableRotate: true,
+          enableZoom: true,
+          enablePan: true,
+          panelSide: 'right',
+          panelOffsetX,
+          transitionDuration: 0.65,
+        };
+      }
+
+      case 'CHARGING_OVERVIEW': {
+        const panelOffsetX = 1.35;
+        const baseDistZ = 11.2 * responsiveFactor;
+        return {
+          target: [vx + panelOffsetX, vy + 0.95, vz],
+          position: [vx + panelOffsetX, vy + 3.1, vz + baseDistZ],
+          minDistance: 5.0,
+          maxDistance: 20.0,
+          minPolarAngle: 0.58,
+          maxPolarAngle: 1.40,
+          enableRotate: true,
+          enableZoom: true,
+          enablePan: true,
+          panelSide: 'right',
+          panelOffsetX,
+          transitionDuration: 0.65,
+        };
+      }
+
+      case 'CHARGING_PORT_DETAIL': {
+        const panelOffsetX = 1.10;
+        const baseDistZ = 7.5 * responsiveFactor;
+        return {
+          target: [vx + panelOffsetX - 0.45, vy + 0.82, vz - 0.9],
+          position: [vx + panelOffsetX - 2.8, vy + 1.8, vz + baseDistZ - 3.2],
+          minDistance: 3.8,
+          maxDistance: 15.0,
+          minPolarAngle: 0.65,
+          maxPolarAngle: 1.38,
+          enableRotate: true,
+          enableZoom: true,
+          enablePan: true,
+          panelSide: 'right',
+          panelOffsetX,
+          transitionDuration: 0.65,
+        };
+      }
+
+      case 'DAMAGE_HISTORY':
+      case 'DAMAGE_MAPPING':
+      case 'MAINTENANCE':
+      case 'VEHICLE_PART_INSPECTION':
+      default: {
+        return {
+          target: [vx + 0.75, vy + 0.85, vz],
+          position: [vx + 0.45, vy + 2.05, vz + 7.0],
+          minDistance: 4.5,
+          maxDistance: 16.0,
+          minPolarAngle: 0.40,
+          maxPolarAngle: 1.42,
+          enableRotate: true,
+          enableZoom: true,
+          enablePan: true,
+          panelSide: 'right',
+          panelOffsetX: 0.75,
+          transitionDuration: 0.65,
+        };
+      }
+    }
+  }
+
+  // =========================================================================
+  // 1.5 DEDICATED ADMIN COMMAND CENTER CAMERA POLICY (EXPLICITLY AUTHORIZED)
+  // Frontal elevated perspective (elevation 3.85m, downward pitch ~15.2°),
+  // balanced wide framing for 3 horizontal rear stations behind hero vehicle,
+  // foreground hologram clearance, and smooth right panel transition.
+  // =========================================================================
+  if (role === 'ADMIN') {
+    const isPanelOpen = presetKey === 'VEHICLE_WITH_RIGHT_PANEL';
+    const panelOffsetX = isPanelOpen ? 1.15 : 0.0;
+    const targetX = panelOffsetX;
+    const targetY = 1.05;
+    const targetZ = 0.2;
+    const posX = panelOffsetX;
+    const posY = 3.85;
+    const posZ = 10.5 * responsiveFactor;
+
+    return {
+      target: [targetX, targetY, targetZ],
+      position: [posX, posY, posZ],
+      fov: 38,
+      minDistance: 6.0,
+      maxDistance: 16.0,
+      minPolarAngle: 0.35,
+      maxPolarAngle: 1.42,
+      enableRotate: true,
+      enableZoom: true,
+      enablePan: true,
+      panelSide: isPanelOpen ? 'right' : 'none',
+      panelOffsetX: isPanelOpen ? panelOffsetX : undefined,
+      transitionDuration: 0.65,
+    };
+  }
+
+  // =========================================================================
+  // 2. STAFF & OPERATIONS CAMERA POLICY (PRESERVED & ISOLATED)
+  // Reuses the identical canonical three-quarter showroom overview camera geometry
+  // and zoom distance from CO_OWNER mode, with panel-safe lateral clearance.
+  // =========================================================================
+  const profile = resolveVehicleFramingProfile(vehicleCode, role, responsiveFactor);
+
+  switch (presetKey) {
+    case 'OVERVIEW':
+    case 'VEHICLE_FOCUS':
+    case 'VEHICLE_WITH_RIGHT_PANEL':
+      return buildSharedVehicleOverviewPreset({
+        anchor: STAFF_GARAGE_LAYOUT.heroAnchor,
         panelSide: 'none',
-        transitionDuration: 0.65,
-      };
-    }
+        responsiveFactor,
+        transitionDuration: 0.7,
+      });
 
-    case 'VEHICLE_BOOKING': {
-      // Balanced hero framing: EV01 clearly visible in center-left (~35% focus) with base grounded,
-      // ample vertical headroom for floating 3D timeline, clear breathing room from fixed right booking panel
+    case 'VEHICLE_EXPLORE':
+    case 'VEHICLE_PART_INSPECTION':
+    case 'MAINTENANCE': {
       const panelOffsetX = 0.95;
-      const baseDistZ = 11.5 * responsiveFactor;
+      const targetX = vx + panelOffsetX;
+      const targetY = vy + profile.targetY;
+      const targetZ = vz;
       return {
-        target: [vx + panelOffsetX, vy + 1.15, vz],
-        position: [vx + panelOffsetX, vy + 3.2, vz + baseDistZ],
-        minDistance: 6.5,
-        maxDistance: 22.0,
-        minPolarAngle: defaultMinPolar,
-        maxPolarAngle: defaultMaxPolar,
-        enableRotate: true,
-        enableZoom: true,
-        enablePan: true,
-        panelSide: 'right',
-        panelOffsetX,
-        transitionDuration: 0.65,
-      };
-    }
-
-    case 'VEHICLE_CO_OWNERSHIP': {
-      // Re-framed CO_OWNER vehicle & co-ownership composition:
-      // Vehicle prominent in center-left (~35-45% viewport width), 3D member representatives visible on left,
-      // right co-ownership panel unobstructed, podium grounded and visible
-      const panelOffsetX = 0.65;
-      const baseDistZ = 10.0 * responsiveFactor;
-      return {
-        target: [vx + panelOffsetX, vy + 0.95, vz],
-        position: [vx + 0.45, vy + 2.35, vz + baseDistZ],
-        fov: 40,
-        minDistance: 4.5,
-        maxDistance: 18.0,
-        minPolarAngle: 0.40,
-        maxPolarAngle: 1.42,
-        enableRotate: true,
-        enableZoom: true,
-        enablePan: true,
-        panelSide: 'right',
-        panelOffsetX,
-        transitionDuration: 0.65,
-      };
-    }
-
-    case 'HANDOVER_INSPECTION': {
-      // Handover 8 hotspots + right inspection card
-      const panelOffsetX = 1.25;
-      const baseDistZ = 12.5 * responsiveFactor;
-      return {
-        target: [vx + panelOffsetX, vy + 1.05, vz],
-        position: [vx + panelOffsetX, vy + 3.5, vz + baseDistZ],
-        minDistance: 6.0,
-        maxDistance: 22.0,
+        target: [targetX, targetY, targetZ],
+        position: [
+          targetX - 0.25,
+          targetY + profile.camElevation + 0.35,
+          targetZ + profile.baseDistZ + 1.2,
+        ],
+        minDistance: Math.max(4.0, profile.baseDistZ - 2.0),
+        maxDistance: Math.min(22.0, profile.baseDistZ + 10.0),
         minPolarAngle: defaultMinPolar,
         maxPolarAngle: defaultMaxPolar,
         enableRotate: true,
@@ -465,29 +778,12 @@ export function getVehicleCameraPreset(
 
     case 'DAMAGE_HISTORY':
     case 'DAMAGE_MAPPING': {
-      if (isOperationsRole || !isCoOwner) {
-        // STAFF / ADMIN panel-safe damage / inspection camera logic with fixed right panel
-        return {
-          target: STAFF_GARAGE_LAYOUT.camera.target,
-          position: STAFF_GARAGE_LAYOUT.camera.position,
-          minDistance: STAFF_GARAGE_LAYOUT.camera.minDistance,
-          maxDistance: STAFF_GARAGE_LAYOUT.camera.maxDistance,
-          minPolarAngle: STAFF_GARAGE_LAYOUT.camera.minPolarAngle,
-          maxPolarAngle: STAFF_GARAGE_LAYOUT.camera.maxPolarAngle,
-          enableRotate: true,
-          enableZoom: true,
-          enablePan: true,
-          panelSide: 'right',
-          transitionDuration: 0.65,
-        };
-      }
-      // CO_OWNER existing spatial behavior: Damage surface clicking + inspector
-      const panelOffsetX = 1.25;
-      const baseDistZ = 12.2 * responsiveFactor;
+      const panelOffsetX = 0.95;
+      const baseDistZ = (profile.baseDistZ + 1.2) * responsiveFactor;
       return {
-        target: [vx + panelOffsetX, vy + 1.05, vz],
-        position: [vx + panelOffsetX, vy + 3.5, vz + baseDistZ],
-        minDistance: 5.8,
+        target: [vx + panelOffsetX, vy + profile.targetY + 0.15, vz],
+        position: [vx + panelOffsetX * 0.8, vy + profile.camElevation + 1.0, vz + baseDistZ],
+        minDistance: 4.5,
         maxDistance: 22.0,
         minPolarAngle: defaultMinPolar,
         maxPolarAngle: defaultMaxPolar,
@@ -500,34 +796,7 @@ export function getVehicleCameraPreset(
       };
     }
 
-    case 'TRIP_VIEW':
-    case 'VEHICLE_TRIP_VISUALIZATION': {
-      // Balanced Active Trip Details framing:
-      // Vehicle prominent in left-center (~35-40% viewport width) with platform grounded and visible,
-      // 3D spline route curving forward, comfortable eye-level elevation, clear breathing room from right-side panel
-      const panelOffsetX = 0.85;
-      const baseDistZ = 8.6 * responsiveFactor;
-      return {
-        target: [vx + panelOffsetX, vy + 0.90, vz],
-        position: [vx + 0.35, vy + 2.15, vz + baseDistZ],
-        fov: 40,
-        minDistance: 4.5,
-        maxDistance: 16.0,
-        minPolarAngle: 0.40,
-        maxPolarAngle: 1.42,
-        enableRotate: true,
-        enableZoom: true,
-        enablePan: true,
-        panelSide: 'right',
-        panelOffsetX,
-        transitionDuration: 0.65,
-      };
-    }
-
     case 'BATTERY_XRAY': {
-      // Dedicated 3D X-Ray Inspection preset:
-      // Shows vehicle body context, underfloor battery pack, right panel safe area
-      // Composition: center-left vehicle (panelOffsetX = 1.35), elevated looking down into battery pack
       const panelOffsetX = 1.35;
       const baseDistZ = 10.6 * responsiveFactor;
       return {
@@ -536,7 +805,7 @@ export function getVehicleCameraPreset(
         minDistance: 4.8,
         maxDistance: 19.0,
         minPolarAngle: 0.62,
-        maxPolarAngle: 1.38, // Floor-safe: never below floor
+        maxPolarAngle: 1.38,
         enableRotate: true,
         enableZoom: true,
         enablePan: true,
@@ -547,8 +816,6 @@ export function getVehicleCameraPreset(
     }
 
     case 'BATTERY_DETAIL': {
-      // Optional close-up inspection preset when battery pack is focused/clicked:
-      // Closer, slightly lower angle, still above floor, battery pack fully visible
       const panelOffsetX = 1.15;
       const baseDistZ = 7.2 * responsiveFactor;
       return {
@@ -557,7 +824,7 @@ export function getVehicleCameraPreset(
         minDistance: 3.5,
         maxDistance: 14.0,
         minPolarAngle: 0.70,
-        maxPolarAngle: 1.35, // Floor-safe
+        maxPolarAngle: 1.35,
         enableRotate: true,
         enableZoom: true,
         enablePan: true,
@@ -568,8 +835,6 @@ export function getVehicleCameraPreset(
     }
 
     case 'CHARGING_OVERVIEW': {
-      // Dedicated 3D Charging Mode Overview:
-      // Composition: center-left vehicle, charger kiosk visible, panel safe on right
       const panelOffsetX = 1.35;
       const baseDistZ = 11.2 * responsiveFactor;
       return {
@@ -589,8 +854,6 @@ export function getVehicleCameraPreset(
     }
 
     case 'CHARGING_PORT_DETAIL': {
-      // Close-up charging port inspection preset:
-      // Focuses left-rear quarter charging port and cable connection
       const panelOffsetX = 1.10;
       const baseDistZ = 7.5 * responsiveFactor;
       return {
@@ -609,22 +872,13 @@ export function getVehicleCameraPreset(
       };
     }
 
-    default: {
-      const baseDistZ = 13.0 * responsiveFactor;
-      return {
-        target: [vx, vy + 0.95, vz],
-        position: [vx, vy + 3.4, vz + baseDistZ],
-        minDistance: 6.0,
-        maxDistance: 24.0,
-        minPolarAngle: defaultMinPolar,
-        maxPolarAngle: defaultMaxPolar,
-        enableRotate: true,
-        enableZoom: true,
-        enablePan: true,
+    default:
+      return buildSharedVehicleOverviewPreset({
+        anchor: STAFF_GARAGE_LAYOUT.heroAnchor,
         panelSide: 'none',
-        transitionDuration: 0.65,
-      };
-    }
+        responsiveFactor,
+        transitionDuration: 0.7,
+      });
   }
 }
 

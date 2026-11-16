@@ -1,0 +1,44 @@
+@startuml
+title KIẾN TRÚC PHÂN MIỀN QUẢN TRỊ TÀI CHÍNH VÀ NĂNG LƯỢNG
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+package "Energy Domain" #E8F8F5 {
+    [ChargingStation] as Station
+    [ChargingSession] as Session
+    [VehicleEnergyInventory] as Inventory
+    [VehicleEnergyTransaction] as EnergyTx
+    
+    Station --> Session : Cung cấp điện lưới
+    Session --> Inventory : Nạp kho điện (Hiệu suất 90%, Tổn hao 10%)
+    Inventory --> EnergyTx : Ghi nhật ký CHARGING_INFLOW
+}
+
+package "Trip Operations" #EBF5FB {
+    [Trip] as Trip
+    Trip --> Inventory : Xuất kho kWh điện tiêu thụ
+    Inventory --> EnergyTx : Ghi nhật ký TRIP_CONSUMPTION
+}
+
+package "Financial Allocation Domain" #FEF9E7 {
+    [Expense] as Expense
+    [ExpenseShare] as Share
+    [PersonalExpensePayment] as Payment
+    
+    Trip --> Expense : Tự động sinh hóa đơn sạc điện (USER_RESPONSIBILITY)
+    Expense --> Share : Phân bổ 100% cho người lái
+    
+    [MaintenanceExpense] as MaintExp
+    MaintExp --> Share : Phân bổ theo tỷ lệ sở hữu (OWNERSHIP_RATIO)\nứng dụng thuật toán Hare-Niemeyer
+    
+    Share --> Payment : Thành viên nộp thanh toán (PAYMENT_SUBMITTED)
+    Payment --> Share : Nhân viên phê duyệt xác minh (SETTLED)
+}
+@enduml

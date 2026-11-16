@@ -1,0 +1,84 @@
+@startuml
+title SƠ ĐỒ LỚP MIỀN DỮ LIỆU TỔNG THỂ (LEVEL 0 DOMAIN MODEL)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam classAttributeIconSize 0
+
+
+class User {
+    - id: UUID
+    - email: String
+    - fullName: String
+    - role: Role
+    - status: UserStatus
+}
+
+class Vehicle {
+    - id: UUID
+    - vin: String
+    - licensePlate: String
+    - modelName: String
+    - batteryCapacityKwh: BigDecimal
+    - currentBatteryLevel: int
+    - currentOdometerKm: BigDecimal
+    - status: VehicleStatus
+}
+
+class CoOwnershipGroup {
+    - id: UUID
+    - groupCode: String
+    - groupName: String
+    - maxMembers: int
+}
+
+class OwnershipShare {
+    - id: UUID
+    - percentage: BigDecimal
+    - capitalContribution: BigDecimal
+}
+
+class Booking {
+    - id: UUID
+    - startTime: Instant
+    - endTime: Instant
+    - status: BookingStatus
+}
+
+class Trip {
+    - id: UUID
+    - startedAt: Instant
+    - endedAt: Instant
+    - energyConsumedKwh: BigDecimal
+    - status: TripStatus
+}
+
+class VehicleEnergyInventory {
+    - id: UUID
+    - availableEnergyKwh: BigDecimal
+    - totalInventoryCost: BigDecimal
+    - weightedAverageCostPerKwh: BigDecimal
+}
+
+class Expense {
+    - id: UUID
+    - amount: BigDecimal
+    - category: ExpenseCategory
+    - policy: ExpenseAllocationPolicy
+}
+
+CoOwnershipGroup "1" *-- "many" OwnershipShare
+OwnershipShare "many" --> "1" User
+Vehicle "1" -- "1" CoOwnershipGroup
+Vehicle "1" -- "1" VehicleEnergyInventory
+Vehicle "1" *-- "many" Booking
+Booking "1" -- "0..1" Trip
+User "1" -- "many" Booking
+Vehicle "1" *-- "many" Expense
+
+@enduml

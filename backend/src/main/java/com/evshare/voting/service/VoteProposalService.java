@@ -60,7 +60,20 @@ public class VoteProposalService {
     private final DamageRecordRepository damageRecordRepository;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.evshare.maintenance.repository.MaintenanceApprovalVoteRepository maintenanceApprovalVoteRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.evshare.notification.service.NotificationService notificationService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.evshare.inspection.repository.VehicleInspectionRepository vehicleInspectionRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.evshare.inspection.repository.VehicleInspectionItemRepository vehicleInspectionItemRepository;
+
+    @org.springframework.context.annotation.Lazy
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.evshare.maintenance.service.MaintenanceService maintenanceService;
 
     public VoteProposalService(
             VoteProposalRepository voteProposalRepository,
@@ -302,9 +315,10 @@ public class VoteProposalService {
         if (maint.getDescription() != null && maint.getDescription().contains("Dự toán chi phí: ")) {
             try {
                 String sub = maint.getDescription().substring(maint.getDescription().indexOf("Dự toán chi phí: ") + 17);
-                String numStr = sub.split(" ")[0].replaceAll("[^0-9.]", "");
-                if (!numStr.isBlank()) {
-                    estimatedCost = new BigDecimal(numStr);
+                String firstPart = sub.split(" ")[0].trim();
+                String digitsOnly = firstPart.replaceAll("[^0-9]", "");
+                if (!digitsOnly.isBlank()) {
+                    estimatedCost = new BigDecimal(digitsOnly);
                 }
             } catch (Exception ignored) {
             }
@@ -333,18 +347,28 @@ public class VoteProposalService {
                         ? VoteProposalType.MAINTENANCE
                         : VoteProposalType.REPAIR);
 
+        VoteProposalStatus initialStatus = VoteProposalStatus.OPEN;
+        if (maint.getStatus() == MaintenanceStatus.APPROVED || maint.getStatus() == MaintenanceStatus.SCHEDULED
+                || maint.getStatus() == MaintenanceStatus.IN_PROGRESS || maint.getStatus() == MaintenanceStatus.COMPLETED) {
+            initialStatus = VoteProposalStatus.APPROVED;
+        } else if (maint.getStatus() == MaintenanceStatus.REJECTED || maint.getStatus() == MaintenanceStatus.CANCELLED) {
+            initialStatus = VoteProposalStatus.REJECTED;
+        }
+
+        User creator = maint.getCreatedBy() != null ? maint.getCreatedBy() : (principal != null ? principal.getUser() : null);
+
         VoteProposal proposal = new VoteProposal(
                 UUID.randomUUID(),
                 group,
                 maint.getVehicle(),
-                principal.getUser(),
+                creator,
                 propType,
                 maint.getTitle(),
                 maint.getDescription(),
                 estimatedCost,
                 estimatedCost,
                 "VND",
-                VoteProposalStatus.OPEN,
+                initialStatus,
                 decisionRule,
                 quorumPct,
                 thresholdPct,
@@ -398,9 +422,54 @@ public class VoteProposalService {
         List<ProposalVoteEligibility> savedEligibilities = eligibilityRepository.saveAll(eligibilities);
         savedProposal.setEligibilities(savedEligibilities);
 
+        // Reconcile and import any legacy votes from maintenance_approval_votes
+        if (maintenanceApprovalVoteRepository != null) {
+            try {
+                List<com.evshare.maintenance.entity.MaintenanceApprovalVote> legacyVotes =
+                        maintenanceApprovalVoteRepository.findByMaintenanceRequestId(maintenanceId);
+                for (com.evshare.maintenance.entity.MaintenanceApprovalVote mav : legacyVotes) {
+                    if (mav.getUser() != null) {
+                        ProposalVoteEligibility voterElig = savedEligibilities.stream()
+                                .filter(e -> e.getUser().getId().equals(mav.getUser().getId()))
+                                .findFirst()
+                                .orElse(null);
+                        if (voterElig != null) {
+                            ProposalVoteChoice choice = switch (mav.getDecision()) {
+                                case APPROVE -> ProposalVoteChoice.APPROVE;
+                                case REJECT -> ProposalVoteChoice.REJECT;
+                                case ABSTAIN -> ProposalVoteChoice.ABSTAIN;
+                            };
+                            ProposalVote pv = new ProposalVote(
+                                    UUID.randomUUID(),
+                                    savedProposal,
+                                    mav.getUser(),
+                                    voterElig.getMember(),
+                                    choice,
+                                    voterElig.getVotingWeight(),
+                                    mav.getComment()
+                            );
+                            if (mav.getCreatedAt() != null) {
+                                pv.setCastAt(mav.getCreatedAt());
+                            }
+                            if (mav.getUpdatedAt() != null) {
+                                pv.setUpdatedAt(mav.getUpdatedAt());
+                            }
+                            proposalVoteRepository.save(pv);
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        // Evaluate rules with snapshot and any imported votes
+        evaluateAndFinalize(savedProposal);
+
         // Transition maintenance request to PENDING_APPROVAL and link proposal
         maint.setRelatedProposalId(savedProposal.getId());
-        maint.setStatus(MaintenanceStatus.PENDING_APPROVAL);
+        if (maint.getStatus() == MaintenanceStatus.PENDING) {
+            maint.setStatus(MaintenanceStatus.PENDING_APPROVAL);
+        }
         maintenanceRequestRepository.save(maint);
 
         if (notificationService != null) {
@@ -415,15 +484,38 @@ public class VoteProposalService {
             }
         }
 
-        return buildProposalResponse(savedProposal, principal.getId());
+        return buildProposalResponse(savedProposal, principal != null ? principal.getId() : null);
     }
 
     /**
      * Get list of proposals for a vehicle, with auto-expiration check.
+     * Automatically reconciles and links unlinked maintenance proposals.
      */
     @Transactional
     public List<VoteProposalResponse> getProposalsForVehicle(UUID vehicleId, VoteProposalStatus statusFilter, UserPrincipal principal) {
         validateVehicleAccess(vehicleId, principal);
+
+        // Auto-reconcile unlinked maintenance requests for this vehicle requiring co-owner voting
+        List<MaintenanceRequest> vehicleMaintRequests = maintenanceRequestRepository.findByVehicleIdOrderByCreatedAtDesc(vehicleId);
+        for (MaintenanceRequest maint : vehicleMaintRequests) {
+            if (maint.getStatus() == MaintenanceStatus.PENDING_APPROVAL || maint.getStatus() == MaintenanceStatus.APPROVED || maint.getStatus() == MaintenanceStatus.REJECTED) {
+                if (maint.getRelatedProposalId() == null) {
+                    Optional<VoteProposal> existingOpt = voteProposalRepository.findByRelatedMaintenanceRequestId(maint.getId());
+                    if (existingOpt.isEmpty()) {
+                        try {
+                            createVoteForMaintenance(maint.getId(), principal);
+                        } catch (Exception ignored) {
+                        }
+                    } else {
+                        maint.setRelatedProposalId(existingOpt.get().getId());
+                        maintenanceRequestRepository.save(maint);
+                    }
+                }
+            }
+        }
+
+        // Auto-reconcile approved proposals missing execution records
+        reconcileApprovedProposals(vehicleId);
 
         List<VoteProposal> list = voteProposalRepository.findByVehicleIdOrderByCreatedAtDesc(vehicleId);
 
@@ -517,6 +609,41 @@ public class VoteProposalService {
         }
         proposalVoteRepository.save(vote);
 
+        // Sync to legacy maintenance_approval_votes if proposal is linked to a MaintenanceRequest
+        if (proposal.getRelatedMaintenanceRequest() != null && maintenanceApprovalVoteRepository != null) {
+            try {
+                UUID maintId = proposal.getRelatedMaintenanceRequest().getId();
+                com.evshare.maintenance.entity.VoteDecision decision = switch (request.choice()) {
+                    case APPROVE -> com.evshare.maintenance.entity.VoteDecision.APPROVE;
+                    case REJECT -> com.evshare.maintenance.entity.VoteDecision.REJECT;
+                    case ABSTAIN -> com.evshare.maintenance.entity.VoteDecision.ABSTAIN;
+                };
+                Optional<com.evshare.maintenance.entity.MaintenanceApprovalVote> existingMav =
+                        maintenanceApprovalVoteRepository.findByMaintenanceRequestIdAndUserId(maintId, userId);
+                if (existingMav.isPresent()) {
+                    com.evshare.maintenance.entity.MaintenanceApprovalVote mav = existingMav.get();
+                    mav.setDecision(decision);
+                    mav.setVotingWeight(eligibility.getVotingWeight());
+                    mav.setComment(request.comment() != null ? request.comment().trim() : null);
+                    mav.setUpdatedAt(Instant.now());
+                    maintenanceApprovalVoteRepository.save(mav);
+                } else {
+                    com.evshare.maintenance.entity.MaintenanceApprovalVote mav = new com.evshare.maintenance.entity.MaintenanceApprovalVote(
+                            UUID.randomUUID(),
+                            proposal.getRelatedMaintenanceRequest(),
+                            proposal.getGroup(),
+                            eligibility.getMember(),
+                            principal.getUser(),
+                            decision,
+                            eligibility.getVotingWeight(),
+                            request.comment() != null ? request.comment().trim() : null
+                    );
+                    maintenanceApprovalVoteRepository.save(mav);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
         // Section XIII: Evaluate rules and finalize if threshold or rejection definitively reached
         evaluateAndFinalize(proposal);
 
@@ -558,25 +685,45 @@ public class VoteProposalService {
                 .map(ProposalVoteEligibility::getVotingWeight)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+        Set<UUID> eligibleUserIds = eligibilities.stream()
+                .filter(e -> e.getUser() != null && e.getVotingWeight() != null && e.getVotingWeight().compareTo(BigDecimal.ZERO) > 0)
+                .map(e -> e.getUser().getId())
+                .collect(Collectors.toSet());
+
+        Set<UUID> distinctApprovingUserIds = new HashSet<>();
+        Set<UUID> distinctRejectingUserIds = new HashSet<>();
+        Set<UUID> distinctAbstainingUserIds = new HashSet<>();
+
         BigDecimal approveWeight = BigDecimal.ZERO;
         BigDecimal rejectWeight = BigDecimal.ZERO;
         BigDecimal abstainWeight = BigDecimal.ZERO;
-        int approveCount = 0;
-        int rejectCount = 0;
-        int abstainCount = 0;
 
         for (ProposalVote v : votes) {
+            if (v.getVoterUser() == null || !eligibleUserIds.contains(v.getVoterUser().getId())) {
+                continue;
+            }
+            UUID voterId = v.getVoterUser().getId();
+            BigDecimal weight = v.getVotingWeightSnapshot() != null ? v.getVotingWeightSnapshot() : BigDecimal.ZERO;
+
             if (v.getChoice() == ProposalVoteChoice.APPROVE) {
-                approveWeight = approveWeight.add(v.getVotingWeightSnapshot());
-                approveCount++;
+                if (distinctApprovingUserIds.add(voterId)) {
+                    approveWeight = approveWeight.add(weight);
+                }
             } else if (v.getChoice() == ProposalVoteChoice.REJECT) {
-                rejectWeight = rejectWeight.add(v.getVotingWeightSnapshot());
-                rejectCount++;
+                if (distinctRejectingUserIds.add(voterId)) {
+                    rejectWeight = rejectWeight.add(weight);
+                }
             } else if (v.getChoice() == ProposalVoteChoice.ABSTAIN) {
-                abstainWeight = abstainWeight.add(v.getVotingWeightSnapshot());
-                abstainCount++;
+                if (distinctAbstainingUserIds.add(voterId)) {
+                    abstainWeight = abstainWeight.add(weight);
+                }
             }
         }
+
+        int approveCount = distinctApprovingUserIds.size();
+        int rejectCount = distinctRejectingUserIds.size();
+        int abstainCount = distinctAbstainingUserIds.size();
+        int participatingMemberCount = approveCount + rejectCount + abstainCount;
 
         BigDecimal participatingWeight = approveWeight.add(rejectWeight).add(abstainWeight);
         BigDecimal actualQuorumPct = totalEligibleWeight.compareTo(BigDecimal.ZERO) > 0
@@ -587,8 +734,17 @@ public class VoteProposalService {
                 ? approveWeight.multiply(new BigDecimal("100")).divide(totalEligibleWeight, 2, RoundingMode.HALF_UP)
                 : BigDecimal.ZERO;
 
-        boolean quorumMet = actualQuorumPct.compareTo(proposal.getRequiredQuorumPercentage()) >= 0;
-        boolean thresholdMet = actualApprovePct.compareTo(proposal.getRequiredThresholdPercentage()) >= 0;
+        int eligibleMemberCount = eligibleUserIds.size() > 0 ? eligibleUserIds.size() : eligibilities.size();
+        int requiredParticipatingMembers = (int) Math.ceil(eligibleMemberCount * 0.75);
+        int requiredApprovingMembers = (eligibleMemberCount / 2) + 1;
+
+        boolean memberQuorumMet = participatingMemberCount >= requiredParticipatingMembers;
+        boolean weightQuorumMet = actualQuorumPct.compareTo(proposal.getRequiredQuorumPercentage()) >= 0;
+        boolean quorumMet = memberQuorumMet && weightQuorumMet;
+
+        boolean memberThresholdMet = approveCount >= requiredApprovingMembers;
+        boolean weightThresholdMet = actualApprovePct.compareTo(proposal.getRequiredThresholdPercentage()) >= 0;
+        boolean thresholdMet = memberThresholdMet && weightThresholdMet;
 
         return new VoteResultResponse(
                 proposal.getId(),
@@ -628,11 +784,14 @@ public class VoteProposalService {
     /**
      * Section XIX: STAFF views approved work authorizations.
      */
-    @Transactional(readOnly = true)
+    @Transactional
     public List<ApprovedWorkResponse> getStaffApprovedWork(UUID vehicleId, UserPrincipal principal) {
         if (principal == null || principal.getUser() == null) {
             throw new UnauthorizedException("Vui lòng đăng nhập.");
         }
+
+        // Idempotent reconciliation of approved maintenance proposals missing execution records
+        reconcileApprovedProposals(vehicleId);
 
         List<VoteProposal> proposals;
         if (vehicleId != null) {
@@ -644,10 +803,86 @@ public class VoteProposalService {
         return proposals.stream()
                 .filter(p -> p.getStatus() == VoteProposalStatus.APPROVED
                         || p.getStatus() == VoteProposalStatus.OPEN
+                        || p.getExecutionStatus() == ProposalExecutionStatus.ACCEPTED
                         || p.getExecutionStatus() == ProposalExecutionStatus.IN_PROGRESS
                         || p.getExecutionStatus() == ProposalExecutionStatus.COMPLETED)
                 .map(this::mapToApprovedWorkResponse)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Section XIX: STAFF accepts authorized work proposal.
+     * Transitions executionStatus: NOT_STARTED / PENDING_STAFF -> ACCEPTED.
+     */
+    @Transactional
+    public ApprovedWorkResponse acceptProposalWork(UUID proposalId, UUID assignedStaffId, UserPrincipal principal) {
+        if (principal == null || principal.getUser() == null) {
+            throw new UnauthorizedException("Vui lòng đăng nhập.");
+        }
+
+        Role role = principal.getUser().getRole();
+        if (role != Role.STAFF && role != Role.ADMIN) {
+            throw new AccessDeniedException("Chỉ Nhân viên (STAFF) hoặc Quản trị viên (ADMIN) mới có quyền tiếp nhận công việc.");
+        }
+
+        VoteProposal proposal = voteProposalRepository.findById(proposalId)
+                .orElseThrow(() -> new ResourceNotFoundException("Đề xuất không tồn tại: " + proposalId));
+
+        if (proposal.getStatus() != VoteProposalStatus.APPROVED) {
+            throw new IllegalStateException("Đề xuất chưa được phê duyệt (Trạng thái hiện tại: "
+                    + proposal.getStatus().getVietnameseLabel() + "). Chỉ đề xuất đã duyệt mới có thể tiếp nhận.");
+        }
+
+        if (proposal.getExecutionStatus() == ProposalExecutionStatus.ACCEPTED) {
+            return mapToApprovedWorkResponse(proposal);
+        }
+
+        if (proposal.getExecutionStatus() == ProposalExecutionStatus.IN_PROGRESS) {
+            throw new IllegalStateException("Công việc đang được tiến hành.");
+        }
+
+        if (proposal.getExecutionStatus() == ProposalExecutionStatus.COMPLETED) {
+            throw new IllegalStateException("Công việc đã hoàn tất trước đó.");
+        }
+
+        User staff = principal.getUser();
+        if (assignedStaffId != null) {
+            staff = userRepository.findById(assignedStaffId).orElse(staff);
+        }
+
+        proposal.setExecutionStatus(ProposalExecutionStatus.ACCEPTED);
+        proposal.setExecutedByStaff(staff);
+
+        // Update related MaintenanceRequest if linked
+        MaintenanceRequest maint = null;
+        if (proposal.getRelatedMaintenanceRequest() != null) {
+            maint = maintenanceRequestRepository.findByIdWithDetails(proposal.getRelatedMaintenanceRequest().getId())
+                    .orElse(proposal.getRelatedMaintenanceRequest());
+        } else {
+            maint = maintenanceRequestRepository.findByRelatedProposalId(proposal.getId()).orElse(null);
+        }
+
+        if (maint != null) {
+            maint.setStatus(MaintenanceStatus.ACCEPTED);
+            maint.setAssignedStaff(staff);
+            maintenanceRequestRepository.save(maint);
+        }
+
+        VoteProposal saved = voteProposalRepository.save(proposal);
+
+        if (notificationService != null) {
+            try {
+                notificationService.notifyStaffAcceptedRepair(
+                        proposal.getVehicle().getId(),
+                        proposal.getGroup().getId(),
+                        maint != null ? maint.getId() : proposal.getId(),
+                        staff.getFullName()
+                );
+            } catch (Exception ignored) {
+            }
+        }
+
+        return mapToApprovedWorkResponse(saved);
     }
 
     /**
@@ -696,7 +931,7 @@ public class VoteProposalService {
         }
 
         if (maint != null) {
-            if (maint.getStatus() == MaintenanceStatus.APPROVED || maint.getStatus() == MaintenanceStatus.SCHEDULED || maint.getStatus() == MaintenanceStatus.PENDING_APPROVAL) {
+            if (maint.getStatus() == MaintenanceStatus.APPROVED || maint.getStatus() == MaintenanceStatus.ACCEPTED || maint.getStatus() == MaintenanceStatus.SCHEDULED || maint.getStatus() == MaintenanceStatus.PENDING_APPROVAL) {
                 maint.setStatus(MaintenanceStatus.IN_PROGRESS);
                 maint.setStartedAt(Instant.now());
                 maint.setAssignedStaff(principal.getUser());
@@ -713,22 +948,6 @@ public class VoteProposalService {
                         if (damage.getStatus() == DamageStatus.OPEN) {
                             damage.setStatus(DamageStatus.UNDER_MAINTENANCE);
                             damageRecordRepository.save(damage);
-                        }
-                    }
-                } else {
-                    // Match part from title/desc if join table was empty
-                    String t = (maint.getTitle() != null ? maint.getTitle().toUpperCase() : "") + " " + (proposal.getTitle() != null ? proposal.getTitle().toUpperCase() : "");
-                    List<DamageRecord> vehicleDamages = damageRecordRepository.findByVehicleIdOrderByCreatedAtDesc(proposal.getVehicle().getId());
-                    for (DamageRecord d : vehicleDamages) {
-                        if (d.getStatus() == DamageStatus.OPEN && d.getVehiclePartCode() != null) {
-                            String p = d.getVehiclePartCode().toUpperCase();
-                            if (t.contains(p) || (p.equals("DOOR_RL") && (t.contains("CỬA SAU TRÁI") || t.contains("CỬA SAU T"))) || (p.equals("DOOR_FR") && (t.contains("CỬA TRƯỚC PHẢI") || t.contains("CỬA TRƯỚC P")))) {
-                                d.setStatus(DamageStatus.UNDER_MAINTENANCE);
-                                DamageRecord savedD = damageRecordRepository.save(d);
-                                if (maint.getDamageRecords() != null) {
-                                    maint.getDamageRecords().add(savedD);
-                                }
-                            }
                         }
                     }
                 }
@@ -830,6 +1049,15 @@ public class VoteProposalService {
         // Section XXI: Run Phase 19 USAGE_AND_CAPITAL expense allocation
         try {
             expenseShareService.generateSharesForExpense(savedExpense);
+            if (notificationService != null && proposal.getGroup() != null) {
+                String costStr = String.format("%,d VND", savedExpense.getAmount().longValue());
+                notificationService.notifyFinancialAllocation(
+                        proposal.getGroup().getId(),
+                        savedExpense.getId(),
+                        savedExpense.getDescription() != null ? savedExpense.getDescription() : proposal.getTitle(),
+                        costStr
+                );
+            }
         } catch (Exception e) {
             // Keep expense created even if share generation requires further trip verification
         }
@@ -853,40 +1081,58 @@ public class VoteProposalService {
             }
             maintenanceRequestRepository.save(maint);
 
-            // Transactionally resolve all linked damage records (Requirement 18: DO NOT delete rows)
+            // Transactionally resolve explicitly linked damage records (Requirement 18: DO NOT delete rows)
+            java.util.Set<String> resolvedExplicitParts = new java.util.HashSet<>();
             if (maint.getDamageRecords() != null && !maint.getDamageRecords().isEmpty()) {
                 for (DamageRecord damage : maint.getDamageRecords()) {
+                    if (damage.getCreatedAt() != null && damage.getCreatedAt().isAfter(now)) {
+                        continue;
+                    }
                     if (damage.getStatus() == DamageStatus.UNDER_MAINTENANCE || damage.getStatus() == DamageStatus.OPEN) {
                         damage.setStatus(DamageStatus.RESOLVED);
                         damage.setResolvedAt(now);
                         damage.setResolvedByMaintenanceRequestId(maint.getId());
                         damageRecordRepository.save(damage);
-                    }
-                }
-            } else {
-                // Match part from title/desc if join table was empty
-                String t = (maint.getTitle() != null ? maint.getTitle().toUpperCase() : "") + " " + (proposal.getTitle() != null ? proposal.getTitle().toUpperCase() : "");
-                List<DamageRecord> vehicleDamages = damageRecordRepository.findByVehicleIdOrderByCreatedAtDesc(proposal.getVehicle().getId());
-                for (DamageRecord d : vehicleDamages) {
-                    if (d.getStatus() != DamageStatus.RESOLVED && d.getVehiclePartCode() != null) {
-                        String p = d.getVehiclePartCode().toUpperCase();
-                        if (t.contains(p) || (p.equals("DOOR_RL") && (t.contains("CỬA SAU TRÁI") || t.contains("CỬA SAU T"))) || (p.equals("DOOR_FR") && (t.contains("CỬA TRƯỚC PHẢI") || t.contains("CỬA TRƯỚC P")))) {
-                            d.setStatus(DamageStatus.RESOLVED);
-                            d.setResolvedAt(now);
-                            d.setResolvedByMaintenanceRequestId(maint.getId());
-                            DamageRecord savedD = damageRecordRepository.save(d);
-                            if (maint.getDamageRecords() != null) {
-                                maint.getDamageRecords().add(savedD);
-                            }
+                        if (damage.getVehiclePartCode() != null) {
+                            resolvedExplicitParts.add(com.evshare.inspection.service.VehicleInspectionService.normalizeCanonicalPartCode(damage.getVehiclePartCode()));
                         }
                     }
                 }
             }
 
-            // Recheck vehicle availability
-            Vehicle vehicle = proposal.getVehicle();
-            vehicle.setStatus(VehicleStatus.AVAILABLE);
-            vehicleRepository.save(vehicle);
+            // Automatic preliminary inspection finding resolution for explicitly resolved parts in draft session:
+            if (vehicleInspectionRepository != null && vehicleInspectionItemRepository != null && !resolvedExplicitParts.isEmpty()) {
+                try {
+                    List<com.evshare.inspection.entity.VehicleInspection> inProgressList =
+                            vehicleInspectionRepository.findInProgressByVehicleIdOrderByStartedAtDesc(proposal.getVehicle().getId());
+                    for (com.evshare.inspection.entity.VehicleInspection activeInsp : inProgressList) {
+                        if (activeInsp.getItems() != null) {
+                            for (com.evshare.inspection.entity.VehicleInspectionItem item : activeInsp.getItems()) {
+                                if (item.getVehiclePartCode() != null) {
+                                    String norm = com.evshare.inspection.service.VehicleInspectionService.normalizeCanonicalPartCode(item.getVehiclePartCode());
+                                    boolean isPriorOrDuring = item.getCreatedAt() == null || !item.getCreatedAt().isAfter(now);
+                                    if (resolvedExplicitParts.contains(norm) && isPriorOrDuring && item.getConditionStatus() != com.evshare.inspection.entity.InspectionItemCondition.GOOD) {
+                                        item.setConditionStatus(com.evshare.inspection.entity.InspectionItemCondition.GOOD);
+                                        String curNote = item.getNote() != null ? item.getNote().trim() : "";
+                                        item.setNote((curNote.isEmpty() ? "" : curNote + " | ") + "[Đã khắc phục hoàn tất qua đề xuất #" + proposal.getId().toString().substring(0, 8) + "]");
+                                        vehicleInspectionItemRepository.save(item);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+
+            // Authoritative vehicle status integrity validation (Section 5)
+            if (maintenanceService != null) {
+                maintenanceService.resolveAndApplyVehicleStatus(proposal.getVehicle());
+            } else {
+                Vehicle vehicle = proposal.getVehicle();
+                vehicle.setStatus(VehicleStatus.AVAILABLE);
+                vehicleRepository.save(vehicle);
+            }
         }
 
         VoteProposal saved = voteProposalRepository.save(proposal);
@@ -958,28 +1204,68 @@ public class VoteProposalService {
             totalEligibleWeight = new BigDecimal("100.00");
         }
 
+        Set<UUID> eligibleUserIds = eligibilities.stream()
+                .filter(e -> e.getUser() != null && e.getVotingWeight() != null && e.getVotingWeight().compareTo(BigDecimal.ZERO) > 0)
+                .map(e -> e.getUser().getId())
+                .collect(Collectors.toSet());
+
+        Set<UUID> distinctApprovingUserIds = new HashSet<>();
+        Set<UUID> distinctRejectingUserIds = new HashSet<>();
+        Set<UUID> distinctAbstainingUserIds = new HashSet<>();
+
         BigDecimal approveWeight = BigDecimal.ZERO;
         BigDecimal rejectWeight = BigDecimal.ZERO;
         BigDecimal abstainWeight = BigDecimal.ZERO;
 
         for (ProposalVote v : votes) {
+            if (v.getVoterUser() == null || !eligibleUserIds.contains(v.getVoterUser().getId())) {
+                continue;
+            }
+            UUID voterId = v.getVoterUser().getId();
+            BigDecimal weight = v.getVotingWeightSnapshot() != null ? v.getVotingWeightSnapshot() : BigDecimal.ZERO;
+
             if (v.getChoice() == ProposalVoteChoice.APPROVE) {
-                approveWeight = approveWeight.add(v.getVotingWeightSnapshot());
+                if (distinctApprovingUserIds.add(voterId)) {
+                    approveWeight = approveWeight.add(weight);
+                }
             } else if (v.getChoice() == ProposalVoteChoice.REJECT) {
-                rejectWeight = rejectWeight.add(v.getVotingWeightSnapshot());
+                if (distinctRejectingUserIds.add(voterId)) {
+                    rejectWeight = rejectWeight.add(weight);
+                }
             } else if (v.getChoice() == ProposalVoteChoice.ABSTAIN) {
-                abstainWeight = abstainWeight.add(v.getVotingWeightSnapshot());
+                if (distinctAbstainingUserIds.add(voterId)) {
+                    abstainWeight = abstainWeight.add(weight);
+                }
             }
         }
 
+        int approveCount = distinctApprovingUserIds.size();
+        int rejectCount = distinctRejectingUserIds.size();
+        int abstainCount = distinctAbstainingUserIds.size();
+        int participatingMemberCount = approveCount + rejectCount + abstainCount;
+
         BigDecimal participatingWeight = approveWeight.add(rejectWeight).add(abstainWeight);
+        int eligibleMemberCount = eligibleUserIds.size() > 0 ? eligibleUserIds.size() : eligibilities.size();
+
+        // Collective Voting Dual Approval Rules:
+        // 1. Dual Quorum: BOTH member participation (>= 75% ceil) AND ownership weight (>= required quorum %)
+        int requiredParticipatingMembers = (int) Math.ceil(eligibleMemberCount * 0.75);
+        boolean memberQuorumMet = participatingMemberCount >= requiredParticipatingMembers;
+
         BigDecimal quorumNeeded = totalEligibleWeight.multiply(proposal.getRequiredQuorumPercentage())
                 .divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
+        boolean weightQuorumMet = participatingWeight.compareTo(quorumNeeded) >= 0;
+        boolean quorumMet = memberQuorumMet && weightQuorumMet;
+
+        // 2. Dual Approval: BOTH member approval count (> 50% floor+1) AND ownership approval weight (>= required threshold %)
+        int requiredApprovingMembers = (eligibleMemberCount / 2) + 1;
+        boolean memberApprovalMet = approveCount >= requiredApprovingMembers;
+
         BigDecimal thresholdNeeded = totalEligibleWeight.multiply(proposal.getRequiredThresholdPercentage())
                 .divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
+        boolean weightThresholdMet = approveWeight.compareTo(thresholdNeeded) >= 0;
+        boolean thresholdMet = memberApprovalMet && weightThresholdMet;
 
-        boolean quorumMet = participatingWeight.compareTo(quorumNeeded) >= 0;
-        boolean thresholdMet = approveWeight.compareTo(thresholdNeeded) >= 0;
         boolean deadlinePassed = Instant.now().isAfter(proposal.getVotingEndsAt());
 
         // Decision logic
@@ -990,15 +1276,63 @@ public class VoteProposalService {
                 proposal.setFinalizedAt(Instant.now());
                 proposal.setApprovedBudget(proposal.getEstimatedAmount());
 
-                // Sync linked maintenance request if present
+                // Sync or create linked maintenance request if category is MAINTENANCE or REPAIR
+                MaintenanceRequest maint = null;
                 if (proposal.getRelatedMaintenanceRequest() != null) {
-                    MaintenanceRequest maint = proposal.getRelatedMaintenanceRequest();
+                    maint = maintenanceRequestRepository.findById(proposal.getRelatedMaintenanceRequest().getId())
+                            .orElse(proposal.getRelatedMaintenanceRequest());
                     if (maint.getStatus() == MaintenanceStatus.PENDING_APPROVAL) {
                         maint.setStatus(MaintenanceStatus.APPROVED);
                         maint.setApprovedAt(Instant.now());
                         maint.setApprovedWeight(approveWeight);
-                        maintenanceRequestRepository.save(maint);
+                        maint = maintenanceRequestRepository.save(maint);
                     }
+                } else if (proposal.getProposalType() == VoteProposalType.MAINTENANCE || proposal.getProposalType() == VoteProposalType.REPAIR) {
+                    Optional<MaintenanceRequest> existingMaintOpt = maintenanceRequestRepository.findByRelatedProposalId(proposal.getId());
+                    if (existingMaintOpt.isPresent()) {
+                        maint = existingMaintOpt.get();
+                        maint.setStatus(MaintenanceStatus.APPROVED);
+                        maint.setApprovedAt(Instant.now());
+                        maint.setApprovedWeight(approveWeight);
+                        maint = maintenanceRequestRepository.save(maint);
+                    } else {
+                        maint = new MaintenanceRequest(
+                                UUID.randomUUID(),
+                                proposal.getVehicle(),
+                                MaintenanceStatus.APPROVED,
+                                MaintenancePriority.MEDIUM,
+                                proposal.getProposalType() == VoteProposalType.REPAIR ? MaintenanceType.REPAIR : MaintenanceType.PREVENTIVE,
+                                proposal.getTitle(),
+                                proposal.getDescription(),
+                                null,
+                                proposal.getCreatedByUser(),
+                                null
+                        );
+                        maint.setApprovedAt(Instant.now());
+                        maint.setApprovedWeight(approveWeight);
+                        maint.setRelatedProposalId(proposal.getId());
+
+                        // Match damage records if applicable
+                        if (proposal.getVehicle() != null) {
+                            String t = (proposal.getTitle() != null ? proposal.getTitle().toUpperCase() : "") + " " + (proposal.getDescription() != null ? proposal.getDescription().toUpperCase() : "");
+                            List<DamageRecord> vehicleDamages = damageRecordRepository.findByVehicleIdOrderByCreatedAtDesc(proposal.getVehicle().getId());
+                            Set<DamageRecord> matchedDamages = new HashSet<>();
+                            for (DamageRecord d : vehicleDamages) {
+                                if (d.getStatus() == DamageStatus.OPEN && d.getVehiclePartCode() != null) {
+                                    String partCode = d.getVehiclePartCode().toUpperCase();
+                                    if (t.contains(partCode) || (partCode.equals("DOOR_RL") && (t.contains("CỬA SAU TRÁI") || t.contains("CỬA SAU T"))) || (partCode.equals("DOOR_FR") && (t.contains("CỬA TRƯỚC PHẢI") || t.contains("CỬA TRƯỚC P")))) {
+                                        matchedDamages.add(d);
+                                    }
+                                }
+                            }
+                            if (!matchedDamages.isEmpty()) {
+                                maint.setDamageRecords(matchedDamages);
+                            }
+                        }
+
+                        maint = maintenanceRequestRepository.save(maint);
+                    }
+                    proposal.setRelatedMaintenanceRequest(maint);
                 }
                 voteProposalRepository.save(proposal);
 
@@ -1011,20 +1345,20 @@ public class VoteProposalService {
                                 proposal.getTitle(),
                                 true
                         );
-                        if (proposal.getRelatedMaintenanceRequest() != null) {
+                        if (maint != null) {
                             notificationService.notifyRepairApprovedForStaff(
                                     proposal.getVehicle().getId(),
                                     proposal.getVehicle() != null ? proposal.getVehicle().getLicensePlate() : null,
-                                    proposal.getRelatedMaintenanceRequest().getId(),
+                                    maint.getId(),
                                     proposal.getTitle()
                             );
                         }
                     } catch (Exception ignored) {
                     }
                 }
-            } else if (deadlinePassed) {
-                // Deadline passed without meeting approval conditions
-                if (!quorumMet) {
+            } else if (deadlinePassed || totalEligibleWeight.subtract(rejectWeight).compareTo(thresholdNeeded) < 0) {
+                // Deadline passed without meeting approval conditions OR mathematically impossible to approve
+                if (deadlinePassed && !quorumMet) {
                     proposal.setStatus(VoteProposalStatus.EXPIRED);
                 } else {
                     proposal.setStatus(VoteProposalStatus.REJECTED);
@@ -1033,7 +1367,8 @@ public class VoteProposalService {
 
                 // Sync linked maintenance request if present
                 if (proposal.getRelatedMaintenanceRequest() != null) {
-                    MaintenanceRequest maint = proposal.getRelatedMaintenanceRequest();
+                    MaintenanceRequest maint = maintenanceRequestRepository.findById(proposal.getRelatedMaintenanceRequest().getId())
+                            .orElse(proposal.getRelatedMaintenanceRequest());
                     if (maint.getStatus() == MaintenanceStatus.PENDING_APPROVAL) {
                         maint.setStatus(MaintenanceStatus.REJECTED);
                         maintenanceRequestRepository.save(maint);
@@ -1086,34 +1421,54 @@ public class VoteProposalService {
                 .map(ProposalVoteEligibility::getVotingWeight)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+        Set<UUID> eligibleUserIds = eligibilities.stream()
+                .filter(e -> e.getUser() != null && e.getVotingWeight() != null && e.getVotingWeight().compareTo(BigDecimal.ZERO) > 0)
+                .map(e -> e.getUser().getId())
+                .collect(Collectors.toSet());
+
+        Set<UUID> distinctApprovingUserIds = new HashSet<>();
+        Set<UUID> distinctRejectingUserIds = new HashSet<>();
+        Set<UUID> distinctAbstainingUserIds = new HashSet<>();
+
         BigDecimal approveWeight = BigDecimal.ZERO;
         BigDecimal rejectWeight = BigDecimal.ZERO;
         BigDecimal abstainWeight = BigDecimal.ZERO;
-        int approveCount = 0;
-        int rejectCount = 0;
-        int abstainCount = 0;
 
         ProposalVoteChoice currentUserVote = null;
         BigDecimal currentUserWeight = BigDecimal.ZERO;
         boolean isEligible = false;
 
         for (ProposalVote v : votes) {
+            if (v.getVoterUser() == null || !eligibleUserIds.contains(v.getVoterUser().getId())) {
+                continue;
+            }
+            UUID voterId = v.getVoterUser().getId();
+            BigDecimal weight = v.getVotingWeightSnapshot() != null ? v.getVotingWeightSnapshot() : BigDecimal.ZERO;
+
             if (v.getChoice() == ProposalVoteChoice.APPROVE) {
-                approveWeight = approveWeight.add(v.getVotingWeightSnapshot());
-                approveCount++;
+                if (distinctApprovingUserIds.add(voterId)) {
+                    approveWeight = approveWeight.add(weight);
+                }
             } else if (v.getChoice() == ProposalVoteChoice.REJECT) {
-                rejectWeight = rejectWeight.add(v.getVotingWeightSnapshot());
-                rejectCount++;
+                if (distinctRejectingUserIds.add(voterId)) {
+                    rejectWeight = rejectWeight.add(weight);
+                }
             } else if (v.getChoice() == ProposalVoteChoice.ABSTAIN) {
-                abstainWeight = abstainWeight.add(v.getVotingWeightSnapshot());
-                abstainCount++;
+                if (distinctAbstainingUserIds.add(voterId)) {
+                    abstainWeight = abstainWeight.add(weight);
+                }
             }
 
-            if (currentUserId != null && v.getVoterUser().getId().equals(currentUserId)) {
+            if (currentUserId != null && voterId.equals(currentUserId)) {
                 currentUserVote = v.getChoice();
-                currentUserWeight = v.getVotingWeightSnapshot();
+                currentUserWeight = weight;
             }
         }
+
+        int approveCount = distinctApprovingUserIds.size();
+        int rejectCount = distinctRejectingUserIds.size();
+        int abstainCount = distinctAbstainingUserIds.size();
+        int participatingMemberCount = approveCount + rejectCount + abstainCount;
 
         if (currentUserId != null) {
             for (ProposalVoteEligibility e : eligibilities) {
@@ -1133,8 +1488,17 @@ public class VoteProposalService {
         BigDecimal thresholdNeeded = totalEligibleWeight.multiply(proposal.getRequiredThresholdPercentage())
                 .divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
 
-        boolean quorumSatisfied = participatingWeight.compareTo(quorumNeeded) >= 0;
-        boolean thresholdSatisfied = approveWeight.compareTo(thresholdNeeded) >= 0;
+        int eligibleMemberCount = eligibleUserIds.size() > 0 ? eligibleUserIds.size() : eligibilities.size();
+        int requiredParticipatingMembers = (int) Math.ceil(eligibleMemberCount * 0.75);
+        int requiredApprovingMembers = (eligibleMemberCount / 2) + 1;
+
+        boolean memberQuorumMet = participatingMemberCount >= requiredParticipatingMembers;
+        boolean weightQuorumMet = participatingWeight.compareTo(quorumNeeded) >= 0;
+        boolean quorumSatisfied = memberQuorumMet && weightQuorumMet;
+
+        boolean memberApprovalMet = approveCount >= requiredApprovingMembers;
+        boolean weightThresholdMet = approveWeight.compareTo(thresholdNeeded) >= 0;
+        boolean thresholdSatisfied = memberApprovalMet && weightThresholdMet;
 
         return new VoteProposalResponse(
                 proposal.getId(),
@@ -1192,9 +1556,136 @@ public class VoteProposalService {
         );
     }
 
+    /**
+     * Section 4: Safe, Idempotent Reconciliation Mechanism for APPROVED maintenance proposals.
+     * Inspects existing links first, creates only missing execution records, preserves budgets.
+     */
+    @Transactional
+    public void reconcileApprovedProposals(UUID vehicleId) {
+        List<VoteProposal> proposals;
+        if (vehicleId != null) {
+            proposals = voteProposalRepository.findByVehicleIdOrderByCreatedAtDesc(vehicleId);
+        } else {
+            proposals = voteProposalRepository.findAll();
+        }
+
+        for (VoteProposal p : proposals) {
+            if (p.getStatus() == VoteProposalStatus.APPROVED
+                    && (p.getProposalType() == VoteProposalType.MAINTENANCE || p.getProposalType() == VoteProposalType.REPAIR)) {
+
+                // Dual approval validation: enforce quorum & member approval before advancing unexecuted proposals
+                if (p.getExecutionStatus() == ProposalExecutionStatus.NOT_STARTED || p.getExecutionStatus() == ProposalExecutionStatus.PENDING_STAFF) {
+                    List<ProposalVote> pVotes = proposalVoteRepository.findByProposalId(p.getId());
+                    List<ProposalVoteEligibility> pElig = eligibilityRepository.findByProposalId(p.getId());
+                    if (!pElig.isEmpty()) {
+                        Set<UUID> eligibleIds = pElig.stream()
+                                .filter(e -> e.getUser() != null && e.getVotingWeight() != null && e.getVotingWeight().compareTo(BigDecimal.ZERO) > 0)
+                                .map(e -> e.getUser().getId())
+                                .collect(Collectors.toSet());
+
+                        long actApprovers = pVotes.stream()
+                                .filter(v -> v.getVoterUser() != null && eligibleIds.contains(v.getVoterUser().getId()) && v.getChoice() == ProposalVoteChoice.APPROVE)
+                                .map(v -> v.getVoterUser().getId())
+                                .distinct()
+                                .count();
+
+                        long distinctParticipants = pVotes.stream()
+                                .filter(v -> v.getVoterUser() != null && eligibleIds.contains(v.getVoterUser().getId()))
+                                .map(v -> v.getVoterUser().getId())
+                                .distinct()
+                                .count();
+
+                        int eligCount = eligibleIds.size() > 0 ? eligibleIds.size() : pElig.size();
+                        int reqParticipants = (int) Math.ceil(eligCount * 0.75);
+                        int reqApprovers = (eligCount / 2) + 1;
+
+                        if (distinctParticipants < reqParticipants || actApprovers < reqApprovers) {
+                            if (p.getVotingEndsAt() != null && Instant.now().isBefore(p.getVotingEndsAt())) {
+                                p.setStatus(VoteProposalStatus.OPEN);
+                                p.setFinalizedAt(null);
+                                voteProposalRepository.save(p);
+                                continue;
+                            } else {
+                                p.setStatus(distinctParticipants < reqParticipants ? VoteProposalStatus.EXPIRED : VoteProposalStatus.REJECTED);
+                                p.setFinalizedAt(Instant.now());
+                                voteProposalRepository.save(p);
+                                continue;
+                            }
+                        }
+                    }
+                }
+
+                // 1. Ensure approved budget is set from proposal estimated amount
+                if (p.getApprovedBudget() == null && p.getEstimatedAmount() != null) {
+                    p.setApprovedBudget(p.getEstimatedAmount());
+                    p = voteProposalRepository.save(p);
+                }
+
+                // 2. Inspect existing links first
+                if (p.getRelatedMaintenanceRequest() == null) {
+                    Optional<MaintenanceRequest> existingMaintOpt = maintenanceRequestRepository.findByRelatedProposalId(p.getId());
+                    if (existingMaintOpt.isPresent()) {
+                        p.setRelatedMaintenanceRequest(existingMaintOpt.get());
+                        voteProposalRepository.save(p);
+                    } else {
+                        // Create only missing work record
+                        MaintenanceStatus targetMaintStatus = MaintenanceStatus.APPROVED;
+                        if (p.getExecutionStatus() == ProposalExecutionStatus.COMPLETED) {
+                            targetMaintStatus = MaintenanceStatus.COMPLETED;
+                        } else if (p.getExecutionStatus() == ProposalExecutionStatus.IN_PROGRESS) {
+                            targetMaintStatus = MaintenanceStatus.IN_PROGRESS;
+                        } else if (p.getExecutionStatus() == ProposalExecutionStatus.ACCEPTED) {
+                            targetMaintStatus = MaintenanceStatus.ACCEPTED;
+                        }
+
+                        MaintenanceRequest maint = new MaintenanceRequest(
+                                UUID.randomUUID(),
+                                p.getVehicle(),
+                                targetMaintStatus,
+                                MaintenancePriority.MEDIUM,
+                                p.getProposalType() == VoteProposalType.REPAIR ? MaintenanceType.REPAIR : MaintenanceType.PREVENTIVE,
+                                p.getTitle(),
+                                p.getDescription(),
+                                null,
+                                p.getCreatedByUser(),
+                                p.getExecutedByStaff()
+                        );
+                        maint.setApprovedAt(p.getFinalizedAt() != null ? p.getFinalizedAt() : Instant.now());
+                        maint.setApprovedWeight(p.getRequiredThresholdPercentage());
+                        maint.setRelatedProposalId(p.getId());
+
+                        // Match damage records if applicable
+                        if (p.getVehicle() != null) {
+                            String t = (p.getTitle() != null ? p.getTitle().toUpperCase() : "") + " " + (p.getDescription() != null ? p.getDescription().toUpperCase() : "");
+                            List<DamageRecord> vehicleDamages = damageRecordRepository.findByVehicleIdOrderByCreatedAtDesc(p.getVehicle().getId());
+                            Set<DamageRecord> matchedDamages = new HashSet<>();
+                            for (DamageRecord d : vehicleDamages) {
+                                if (d.getStatus() == DamageStatus.OPEN && d.getVehiclePartCode() != null) {
+                                    String partCode = d.getVehiclePartCode().toUpperCase();
+                                    if (t.contains(partCode) || (partCode.equals("DOOR_RL") && (t.contains("CỬA SAU TRÁI") || t.contains("CỬA SAU T"))) || (partCode.equals("DOOR_FR") && (t.contains("CỬA TRƯỚC PHẢI") || t.contains("CỬA TRƯỚC P")))) {
+                                        matchedDamages.add(d);
+                                    }
+                                }
+                            }
+                            if (!matchedDamages.isEmpty()) {
+                                maint.setDamageRecords(matchedDamages);
+                            }
+                        }
+
+                        MaintenanceRequest savedMaint = maintenanceRequestRepository.save(maint);
+                        p.setRelatedMaintenanceRequest(savedMaint);
+                        voteProposalRepository.save(p);
+                    }
+                }
+            }
+        }
+    }
+
     private ApprovedWorkResponse mapToApprovedWorkResponse(VoteProposal proposal) {
         boolean canStart = proposal.getStatus() == VoteProposalStatus.APPROVED
-                && proposal.getExecutionStatus() == ProposalExecutionStatus.NOT_STARTED;
+                && (proposal.getExecutionStatus() == ProposalExecutionStatus.NOT_STARTED
+                    || proposal.getExecutionStatus() == ProposalExecutionStatus.PENDING_STAFF
+                    || proposal.getExecutionStatus() == ProposalExecutionStatus.ACCEPTED);
 
         String blockReason = null;
         if (proposal.getStatus() == VoteProposalStatus.OPEN) {
@@ -1217,6 +1708,7 @@ public class VoteProposalService {
                 proposal.getVehicle().getLicensePlate(),
                 proposal.getGroup().getId(),
                 proposal.getGroup().getName(),
+                proposal.getCreatedByUser() != null ? proposal.getCreatedByUser().getFullName() : "Đồng sở hữu",
                 proposal.getProposalType(),
                 proposal.getProposalType().getVietnameseLabel(),
                 proposal.getTitle(),

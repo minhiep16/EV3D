@@ -1,0 +1,57 @@
+@startuml
+title SƠ ĐỒ TUẦN TỰ: HỦY ĐẶT LỊCH VÀ GIẢI PHÓNG KHUNG GIỜ (SEQ-08)
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam sequenceMessageAlign center
+skinparam participant {
+    BackgroundColor #F8F9FA
+    BorderColor #2C3E50
+    FontColor #2C3E50
+}
+skinparam actor {
+    BackgroundColor #E8F4F8
+    BorderColor #1A5276
+}
+skinparam database {
+    BackgroundColor #FEF9E7
+    BorderColor #B7950B
+}
+
+autonumber
+actor "Chủ Xe (CO_OWNER)" as CoOwner
+participant "BookingHistoryUI" as UI
+participant "BookingController" as Controller
+participant "BookingService" as Service
+database "MySQL Database" as DB
+
+CoOwner -> UI : Nhấn "Hủy Đặt Lịch" (Trước giờ khởi hành > 2h)
+activate UI
+UI -> Controller : POST /api/bookings/{id}/cancel {reason}
+activate Controller
+
+Controller -> Service : cancelBooking(bookingId, userId, reason)
+activate Service
+
+Service -> DB : SELECT * FROM bookings WHERE id = ?
+DB --> Service : Booking (status = CONFIRMED)
+
+Service -> Service : Kiểm tra điều kiện hủy (Chưa bắt đầu chuyến đi)
+Service -> DB : UPDATE bookings SET status = 'CANCELLED', cancellation_reason = ?
+DB --> Service : OK
+
+Service -> DB : UPDATE vehicles SET status = 'AVAILABLE' WHERE id = ?
+DB --> Service : OK
+
+Service --> Controller : BookingResponse (status = CANCELLED)
+deactivate Service
+Controller --> UI : HTTP 200 OK + Message "Hủy lịch thành công"
+deactivate Controller
+UI --> CoOwner : Cập nhật giao diện lịch trình rảnh
+deactivate UI
+
+@enduml

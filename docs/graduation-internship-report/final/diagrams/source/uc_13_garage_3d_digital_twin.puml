@@ -1,0 +1,40 @@
+@startuml
+title USE CASE: VIRTUAL GARAGE 3D VÀ BẢN SAO SỐ HÓA XE (UC-13)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam actorStyle awesome
+
+
+left to right direction
+
+actor "Người Dùng (Mọi Vai Trò)" as User
+actor "Chủ Đồng Sở Hữu" as CoOwner
+
+package "Không Gian Tương Tác 3D (Virtual Garage)" #F8F9FA {
+    usecase "Xoay, Phóng To, Di Chuyển Máy Quay Quanh Xe" as UC_Camera
+    usecase "Đặt Lại Góc Nhìn Camera Chuẩn" as UC_ResetCam
+    usecase "Xem Nhãn Thông Tin Nổi HUD (Biển Số, Pin)" as UC_HUD
+    usecase "Bóc Tách Phụ Tùng Xe (Part Exploration)" as UC_PartExploration
+    usecase "Bật Chế Độ X-Ray Nhìn Xuyên Khối Pin" as UC_BatteryXray
+    usecase "Xem Các Điểm Cảnh Báo Hư Hỏng 3D (Hotspots)" as UC_ViewDamage3D
+    usecase "Chuyển Đổi Nhanh Giữa Các Xe Trong Đội Xe" as UC_SwitchVehicle
+}
+
+User --> UC_Camera
+User --> UC_ResetCam
+User --> UC_HUD
+User --> UC_SwitchVehicle
+
+CoOwner --> UC_PartExploration
+CoOwner --> UC_BatteryXray
+CoOwner --> UC_ViewDamage3D
+
+UC_Camera ..> UC_ResetCam : <<extend>>
+
+@enduml

@@ -2,16 +2,20 @@ package com.evshare.vehicle.controller;
 
 import com.evshare.vehicle.dto.CreateVehicleRequest;
 import com.evshare.vehicle.dto.UpdateVehicleRequest;
+import com.evshare.vehicle.dto.VehicleAnalyticsResponse;
 import com.evshare.vehicle.dto.VehicleResponse;
+import com.evshare.vehicle.service.VehicleAnalyticsService;
 import com.evshare.vehicle.service.VehicleService;
 import com.evshare.security.UserPrincipal;
 import jakarta.validation.Valid;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -20,9 +24,11 @@ import java.util.UUID;
 public class VehicleController {
 
     private final VehicleService vehicleService;
+    private final VehicleAnalyticsService vehicleAnalyticsService;
 
-    public VehicleController(VehicleService vehicleService) {
+    public VehicleController(VehicleService vehicleService, VehicleAnalyticsService vehicleAnalyticsService) {
         this.vehicleService = vehicleService;
+        this.vehicleAnalyticsService = vehicleAnalyticsService;
     }
 
     @GetMapping
@@ -57,5 +63,16 @@ public class VehicleController {
     ) {
         VehicleResponse updated = vehicleService.updateVehicle(id, request);
         return ResponseEntity.ok(updated);
+    }
+
+    @GetMapping("/{id}/analytics")
+    public ResponseEntity<VehicleAnalyticsResponse> getVehicleAnalytics(
+            @PathVariable String id,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        VehicleAnalyticsResponse response = vehicleAnalyticsService.getVehicleAnalytics(id, from, to, principal);
+        return ResponseEntity.ok(response);
     }
 }

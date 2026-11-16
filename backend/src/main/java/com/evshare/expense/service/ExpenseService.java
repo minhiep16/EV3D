@@ -9,6 +9,10 @@ import com.evshare.expense.dto.*;
 import com.evshare.expense.entity.*;
 import com.evshare.expense.repository.ExpenseApprovalRepository;
 import com.evshare.expense.repository.ExpenseRepository;
+import com.evshare.expense.repository.ExpenseShareRepository;
+import com.evshare.fund.entity.PersonalExpensePayment;
+import com.evshare.fund.entity.PersonalPaymentStatus;
+import com.evshare.fund.repository.PersonalExpensePaymentRepository;
 import com.evshare.maintenance.entity.MaintenanceStatus;
 import com.evshare.maintenance.repository.MaintenanceRequestRepository;
 import com.evshare.ownership.entity.*;
@@ -38,6 +42,7 @@ import java.util.stream.Collectors;
 public class ExpenseService {
 
     private final ExpenseRepository expenseRepository;
+    private final ExpenseShareRepository expenseShareRepository;
     private final VehicleRepository vehicleRepository;
     private final CoOwnershipGroupRepository groupRepository;
     private final GroupMemberRepository memberRepository;
@@ -50,9 +55,14 @@ public class ExpenseService {
     private final MaintenanceRequestRepository maintenanceRequestRepository;
     private final TripRepository tripRepository;
     private final BookingRepository bookingRepository;
+    private final PersonalExpensePaymentRepository paymentRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.evshare.energy.service.VehicleEnergyInventoryService energyInventoryService;
 
     public ExpenseService(
             ExpenseRepository expenseRepository,
+            ExpenseShareRepository expenseShareRepository,
             VehicleRepository vehicleRepository,
             CoOwnershipGroupRepository groupRepository,
             GroupMemberRepository memberRepository,
@@ -64,9 +74,11 @@ public class ExpenseService {
             ChargingSessionRepository chargingSessionRepository,
             MaintenanceRequestRepository maintenanceRequestRepository,
             TripRepository tripRepository,
-            BookingRepository bookingRepository
+            BookingRepository bookingRepository,
+            PersonalExpensePaymentRepository paymentRepository
     ) {
         this.expenseRepository = expenseRepository;
+        this.expenseShareRepository = expenseShareRepository;
         this.vehicleRepository = vehicleRepository;
         this.groupRepository = groupRepository;
         this.memberRepository = memberRepository;
@@ -79,14 +91,14 @@ public class ExpenseService {
         this.maintenanceRequestRepository = maintenanceRequestRepository;
         this.tripRepository = tripRepository;
         this.bookingRepository = bookingRepository;
+        this.paymentRepository = paymentRepository;
     }
 
     public static ExpenseAllocationPolicy defaultPolicyForCategory(ExpenseCategory category) {
         if (category == null) return ExpenseAllocationPolicy.USAGE_AND_CAPITAL;
         return switch (category) {
             case CHARGING, PARKING, TOLL -> ExpenseAllocationPolicy.USER_RESPONSIBILITY;
-            case MAINTENANCE, REPAIR -> ExpenseAllocationPolicy.USAGE_AND_CAPITAL;
-            case INSURANCE, CLEANING, OTHER -> ExpenseAllocationPolicy.OWNERSHIP_RATIO;
+            case MAINTENANCE, REPAIR, CLEANING, OTHER, INSURANCE -> ExpenseAllocationPolicy.USAGE_AND_CAPITAL;
         };
     }
 
@@ -197,6 +209,11 @@ public class ExpenseService {
                 UUID sessionId = UUID.fromString(sourceRef.trim());
                 var sessionOpt = chargingSessionRepository.findById(sessionId);
                 if (sessionOpt.isPresent() && sessionOpt.get().getVehicle().getId().equals(vehicleId)) {
+                    var sess = sessionOpt.get();
+                    if (sess.getStartedBy() != null &&
+                            (sess.getStartedBy().getRole() == Role.STAFF || sess.getStartedBy().getRole() == Role.ADMIN)) {
+                        throw new IllegalStateException("Phiên sạc do nhân viên vận hành (STAFF) thực hiện được miễn phí và không tạo chi phí thanh toán.");
+                    }
                     initialStatus = ExpenseStatus.APPROVED;
                     approvedAt = Instant.now();
                 }
@@ -261,7 +278,12 @@ public class ExpenseService {
                 UUID sessionId = UUID.fromString(sourceRef.trim());
                 var sessionOpt = chargingSessionRepository.findById(sessionId);
                 if (sessionOpt.isPresent() && sessionOpt.get().getVehicle().getId().equals(vehicleId)) {
-                    responsibleUser = sessionOpt.get().getStartedBy();
+                    var sess = sessionOpt.get();
+                    if (sess.getStartedBy() != null &&
+                            (sess.getStartedBy().getRole() == Role.STAFF || sess.getStartedBy().getRole() == Role.ADMIN)) {
+                        throw new IllegalStateException("Phiên sạc do nhân viên vận hành (STAFF) thực hiện được miễn phí và không tạo chi phí thanh toán.");
+                    }
+                    responsibleUser = sess.getStartedBy();
                 }
             } catch (IllegalArgumentException ignored) {
             }
@@ -329,7 +351,7 @@ public class ExpenseService {
             expenseShareService.generateSharesForExpense(saved);
         }
 
-        return toResponse(saved);
+        return toResponse(saved, principal);
     }
 
     /**
@@ -388,15 +410,44 @@ public class ExpenseService {
             return null;
         }
 
-        BigDecimal unitPrice = new BigDecimal("3000"); // 3,000 VND / kWh standard tariff
-        BigDecimal amount = effectiveKwh.multiply(unitPrice).setScale(0, RoundingMode.HALF_UP);
+        BigDecimal unitPrice;
+        BigDecimal amount;
+        String reconTag = "";
+
+        if (energyInventoryService != null) {
+            try {
+                com.evshare.energy.dto.TripEnergyCostResult costResult =
+                        energyInventoryService.recordTripConsumption(trip, effectiveKwh, staffUser);
+                unitPrice = costResult.getApplicableUnitCost();
+                amount = costResult.getTripEnergyExpense();
+                if (costResult.isReconciliationRequired()) {
+                    reconTag = " [Cần đối soát]";
+                }
+            } catch (Exception ex) {
+                unitPrice = new BigDecimal("3850.00");
+                amount = effectiveKwh.multiply(unitPrice).setScale(0, RoundingMode.HALF_UP);
+            }
+        } else {
+            unitPrice = new BigDecimal("3850.00");
+            amount = effectiveKwh.multiply(unitPrice).setScale(0, RoundingMode.HALF_UP);
+        }
 
         String staffName = staffUser != null ? staffUser.getFullName() : "STAFF";
         String calcTypeNote = isEstimated ? "(ước tính từ SOC)" : "(đo thực tế)";
-        String description = String.format("Chi phí điện chuyến đi: %s kWh %s (%s)",
+        String description = String.format("Chi phí điện chuyến đi: %s kWh %s @ %s đ/kWh%s (%s)",
                 effectiveKwh.setScale(1, RoundingMode.HALF_UP),
                 calcTypeNote,
+                unitPrice.setScale(0, RoundingMode.HALF_UP),
+                reconTag,
                 vehicle.getName());
+
+        // Resolve platform/staff payer for operational trip energy expense (never set to tripUser)
+        User expensePayer = (staffUser != null && (staffUser.getRole() == Role.STAFF || staffUser.getRole() == Role.ADMIN))
+                ? staffUser
+                : userRepository.findAll().stream()
+                        .filter(u -> u.getRole() == Role.STAFF || u.getRole() == Role.ADMIN)
+                        .findFirst()
+                        .orElse(staffUser != null ? staffUser : tripUser);
 
         Expense expense = new Expense(
                 UUID.randomUUID(),
@@ -406,7 +457,7 @@ public class ExpenseService {
                 amount,
                 description,
                 trip.getEndedAt() != null ? trip.getEndedAt() : Instant.now(),
-                tripUser,
+                expensePayer,
                 staffUser != null ? staffUser : tripUser,
                 ExpenseSourceType.TRIP,
                 sourceRef,
@@ -701,7 +752,7 @@ public class ExpenseService {
         }
 
         return expenses.stream()
-                .map(this::toResponse)
+                .map(e -> toResponse(e, principal))
                 .toList();
     }
 
@@ -715,16 +766,181 @@ public class ExpenseService {
 
         validateVehicleAccess(expense.getVehicle().getId(), principal);
 
-        return toResponse(expense);
+        return toResponse(expense, principal);
     }
 
     private ExpenseResponse toResponse(Expense expense) {
+        return toResponse(expense, null);
+    }
+
+    private ExpenseResponse toResponse(Expense expense, UserPrincipal principal) {
         if (expense == null) return null;
         Trip trip = null;
         if (expense.getRelatedTripId() != null) {
             trip = tripRepository.findById(expense.getRelatedTripId()).orElse(null);
         }
-        return ExpenseResponse.fromEntity(expense, trip);
+
+        Boolean isFullySettled = null;
+        String settlementStatus = "UNSETTLED";
+        String settlementStatusLabel = "Chưa quyết toán";
+
+        UUID payerId = (expense.getPaidBy() != null && expense.getPaidBy().getRole() != Role.STAFF && expense.getPaidBy().getRole() != Role.ADMIN)
+                ? expense.getPaidBy().getId()
+                : null;
+
+        String currentUserPaymentStatus = null;
+        String currentUserPaymentStatusLabel = null;
+        BigDecimal currentUserAllocatedAmount = BigDecimal.ZERO;
+        BigDecimal currentUserPaidAmount = BigDecimal.ZERO;
+        BigDecimal currentUserPendingAmount = BigDecimal.ZERO;
+        BigDecimal currentUserRemainingAmount = BigDecimal.ZERO;
+
+        UUID currentUserId = principal != null ? principal.getId() : null;
+        boolean isStaff = principal != null && (principal.getUser().getRole() == Role.STAFF || principal.getUser().getRole() == Role.ADMIN);
+
+        if (expense.getStatus() == ExpenseStatus.APPROVED) {
+            List<ExpenseShare> shares = expenseShareRepository.findByExpenseId(expense.getId());
+            if (shares.isEmpty()) {
+                try {
+                    shares = expenseShareService.generateSharesForExpense(expense);
+                } catch (Exception ignored) {
+                    shares = List.of();
+                }
+            }
+
+            if (!shares.isEmpty()) {
+                boolean allSettled = true;
+                boolean anySettled = false;
+
+                for (ExpenseShare s : shares) {
+                    boolean isUpfrontPayer = !ExpenseShareService.isOperationalOrUserExpense(expense, s)
+                            && payerId != null
+                            && payerId.equals(s.getUser().getId());
+
+                    List<PersonalExpensePayment> sharePayments = paymentRepository.findByExpenseShareIdOrderByCreatedAtDesc(s.getId());
+                    if (sharePayments.isEmpty() && s.getUser() != null) {
+                        sharePayments = paymentRepository.findByExpenseIdAndPayerUserIdOrderByCreatedAtDesc(expense.getId(), s.getUser().getId());
+                    }
+
+                    BigDecimal verifiedPaid = sharePayments.stream()
+                            .filter(p -> p.getStatus() == PersonalPaymentStatus.PAYMENT_VERIFIED)
+                            .map(PersonalExpensePayment::getAmount)
+                            .filter(Objects::nonNull)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                    BigDecimal pendingVerification = sharePayments.stream()
+                            .filter(p -> p.getStatus() == PersonalPaymentStatus.PAYMENT_SUBMITTED)
+                            .map(PersonalExpensePayment::getAmount)
+                            .filter(Objects::nonNull)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                    BigDecimal paidAmount = isUpfrontPayer ? s.getShareAmount() : verifiedPaid;
+                    BigDecimal remainingAmount = s.getShareAmount().subtract(paidAmount).max(BigDecimal.ZERO);
+
+                    boolean isShareSettled = isUpfrontPayer || (paidAmount.compareTo(s.getShareAmount()) >= 0 && s.getShareAmount().compareTo(BigDecimal.ZERO) > 0);
+
+                    // Reconcile and heal persisted database share status
+                    if (isShareSettled) {
+                        anySettled = true;
+                        if (s.getStatus() != ExpenseShareStatus.SETTLED) {
+                            s.setStatus(ExpenseShareStatus.SETTLED);
+                            try {
+                                expenseShareRepository.save(s);
+                            } catch (Exception ignored) {}
+                        }
+                    } else {
+                        allSettled = false;
+                        if (pendingVerification.compareTo(BigDecimal.ZERO) > 0) {
+                            if (s.getStatus() != ExpenseShareStatus.PENDING) {
+                                s.setStatus(ExpenseShareStatus.PENDING);
+                                try {
+                                    expenseShareRepository.save(s);
+                                } catch (Exception ignored) {}
+                            }
+                        } else {
+                            if (s.getStatus() != ExpenseShareStatus.ALLOCATED) {
+                                s.setStatus(ExpenseShareStatus.ALLOCATED);
+                                try {
+                                    expenseShareRepository.save(s);
+                                } catch (Exception ignored) {}
+                            }
+                        }
+                    }
+
+                    // Check if this share belongs to the current user
+                    if (currentUserId != null && s.getUser() != null && s.getUser().getId().equals(currentUserId)) {
+                        currentUserAllocatedAmount = s.getShareAmount();
+                        currentUserPaidAmount = paidAmount;
+                        currentUserPendingAmount = pendingVerification;
+                        currentUserRemainingAmount = remainingAmount;
+
+                        if (currentUserAllocatedAmount.compareTo(BigDecimal.ZERO) == 0) {
+                            currentUserPaymentStatus = "NOT_INVOLVED";
+                            currentUserPaymentStatusLabel = "Không phát sinh";
+                        } else if (isShareSettled) {
+                            currentUserPaymentStatus = "PAID";
+                            currentUserPaymentStatusLabel = "Đã thanh toán";
+                        } else if (pendingVerification.compareTo(BigDecimal.ZERO) > 0) {
+                            currentUserPaymentStatus = "PENDING_VERIFICATION";
+                            currentUserPaymentStatusLabel = "Chờ xác minh";
+                        } else if (verifiedPaid.compareTo(BigDecimal.ZERO) > 0 && verifiedPaid.compareTo(currentUserAllocatedAmount) < 0) {
+                            currentUserPaymentStatus = "PARTIALLY_PAID";
+                            currentUserPaymentStatusLabel = "Thanh toán một phần";
+                        } else {
+                            currentUserPaymentStatus = "UNPAID";
+                            currentUserPaymentStatusLabel = "Chưa thanh toán";
+                        }
+                    }
+                }
+
+                if (allSettled) {
+                    isFullySettled = Boolean.TRUE;
+                    settlementStatus = "SETTLED";
+                    settlementStatusLabel = "Đã quyết toán chi phí";
+                } else if (anySettled) {
+                    isFullySettled = Boolean.FALSE;
+                    settlementStatus = "PARTIALLY_SETTLED";
+                    settlementStatusLabel = "Quyết toán một phần";
+                } else {
+                    isFullySettled = Boolean.FALSE;
+                    settlementStatus = "ALLOCATED";
+                    settlementStatusLabel = "Đã phân bổ";
+                }
+            } else {
+                isFullySettled = Boolean.FALSE;
+                settlementStatus = "APPROVED";
+                settlementStatusLabel = "Đã duyệt";
+            }
+        } else {
+            isFullySettled = Boolean.FALSE;
+            settlementStatus = expense.getStatus() != null ? expense.getStatus().name() : "PENDING";
+            settlementStatusLabel = expense.getStatus() != null ? expense.getStatus().getVietnameseLabel() : "Chờ xử lý";
+        }
+
+        // Fallback for user with no share on this expense (e.g. staff or member not involved)
+        if (currentUserPaymentStatus == null) {
+            if (isStaff) {
+                currentUserPaymentStatus = "STAFF_VIEW";
+                currentUserPaymentStatusLabel = settlementStatusLabel;
+            } else {
+                currentUserPaymentStatus = "NOT_INVOLVED";
+                currentUserPaymentStatusLabel = "Không phát sinh";
+            }
+        }
+
+        return ExpenseResponse.fromEntity(
+                expense,
+                trip,
+                isFullySettled,
+                settlementStatus,
+                settlementStatusLabel,
+                currentUserPaymentStatus,
+                currentUserPaymentStatusLabel,
+                currentUserAllocatedAmount,
+                currentUserPaidAmount,
+                currentUserPendingAmount,
+                currentUserRemainingAmount
+        );
     }
 
     /**
@@ -811,8 +1027,13 @@ public class ExpenseService {
     }
 
     /**
-     * Validate User Authorization for Vehicle
-     * Invariant: CO_OWNER user may only access their authorized active co-owned vehicle.
+     * Validate User Authorization for Vehicle Financial Records
+     * - STAFF and ADMIN have global access to all vehicles.
+     * - CO_OWNER:
+     *   1. Active members of any co-ownership group owning this vehicle.
+     *   2. Co-owners holding registered ownership shares in this vehicle.
+     *   3. Members with pending transfer/withdrawal or past members who hold historical expense obligations.
+     *   4. Fallback for open/unconstrained vehicles.
      */
     public void validateVehicleAccess(UUID vehicleId, UserPrincipal principal) {
         if (principal == null || principal.getUser() == null) {
@@ -825,32 +1046,71 @@ public class ExpenseService {
         }
 
         UUID userId = principal.getId();
-        List<GroupMember> activeMemberships = memberRepository.findByUserIdAndStatus(userId, MemberStatus.ACTIVE);
-        boolean hasAccess = false;
 
-        for (GroupMember member : activeMemberships) {
-            if (member.getRemovedAt() != null) {
-                continue;
+        // 1. Resolve all groups associated with this vehicle (via GroupVehicle or direct vehicleId)
+        List<GroupVehicle> gvs = groupVehicleRepository.findByVehicleId(vehicleId);
+        List<UUID> groupIds = new ArrayList<>();
+        for (GroupVehicle gv : gvs) {
+            if (gv.getGroup() != null && !groupIds.contains(gv.getGroup().getId())) {
+                groupIds.add(gv.getGroup().getId());
             }
-            CoOwnershipGroup group = member.getGroup();
-            if (group != null && group.getStatus() == GroupStatus.ACTIVE) {
-                if (vehicleId.equals(group.getVehicleId())) {
-                    hasAccess = true;
-                    break;
+        }
+        groupRepository.findByVehicleId(vehicleId).ifPresent(g -> {
+            if (!groupIds.contains(g.getId())) {
+                groupIds.add(g.getId());
+            }
+        });
+
+        // If vehicle is not linked to any group, allow access (open/unrestricted vehicle)
+        if (groupIds.isEmpty()) {
+            return;
+        }
+
+        // 2. Check user association across the vehicle's groups
+        for (UUID groupId : groupIds) {
+            // Check active membership
+            if (memberRepository.existsByGroupIdAndUserIdAndStatus(groupId, userId, MemberStatus.ACTIVE)) {
+                return;
+            }
+            // Check ownership share record
+            if (ownershipShareRepository.findByGroupIdAndVehicleIdAndUserId(groupId, vehicleId, userId).isPresent()) {
+                return;
+            }
+            // Check pending transfer/withdrawal or group membership
+            Optional<GroupMember> memberOpt = memberRepository.findByGroupIdAndUserId(groupId, userId);
+            if (memberOpt.isPresent()) {
+                GroupMember member = memberOpt.get();
+                if (member.getStatus() == MemberStatus.ACTIVE
+                        || member.getStatus() == MemberStatus.TRANSFER_PENDING
+                        || member.getStatus() == MemberStatus.WITHDRAWAL_PENDING) {
+                    return;
                 }
-                List<GroupVehicle> gvs = groupVehicleRepository.findByGroupIdAndStatus(group.getId(), GroupVehicleStatus.ACTIVE);
-                for (GroupVehicle gv : gvs) {
+            }
+        }
+
+        // 3. Check historical expense obligations (past shares on this vehicle)
+        if (expenseShareRepository.existsByVehicleIdAndUserId(vehicleId, userId)) {
+            return;
+        }
+
+        // 4. Bi-directional fallback: check active memberships of user
+        List<GroupMember> userMemberships = memberRepository.findByUserIdAndStatus(userId, MemberStatus.ACTIVE);
+        for (GroupMember member : userMemberships) {
+            if (member.getRemovedAt() != null) continue;
+            CoOwnershipGroup group = member.getGroup();
+            if (group != null) {
+                if (vehicleId.equals(group.getVehicleId())) {
+                    return;
+                }
+                List<GroupVehicle> groupVehicles = groupVehicleRepository.findByGroupId(group.getId());
+                for (GroupVehicle gv : groupVehicles) {
                     if (gv.getVehicle() != null && vehicleId.equals(gv.getVehicle().getId())) {
-                        hasAccess = true;
-                        break;
+                        return;
                     }
                 }
-                if (hasAccess) break;
             }
         }
 
-        if (!hasAccess) {
-            throw new AccessDeniedException("Bạn không có quyền truy cập dữ liệu chi phí của phương tiện này.");
-        }
+        throw new AccessDeniedException("Bạn không có quyền truy cập dữ liệu chi phí của phương tiện này.");
     }
 }

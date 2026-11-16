@@ -73,6 +73,12 @@ public class OwnershipTransferResponse {
     private UUID responsibleUserId;
     private String responsibleUserName;
     private String financialMode;
+    private String financialObligationPaymentStatus;
+    private UUID financialObligationPaymentId;
+    private String financialObligationPaymentReference;
+    private Instant financialObligationPaymentSubmittedAt;
+    private BigDecimal financialObligationPaymentAmount;
+    private String financialObligationRejectionReason;
 
     public OwnershipTransferResponse() {
     }
@@ -87,7 +93,7 @@ public class OwnershipTransferResponse {
         if (entity.getVehicle() != null) {
             resp.setVehicleId(entity.getVehicle().getId());
             resp.setVehicleName(entity.getVehicle().getName());
-            resp.setVehicleCode("EV01");
+            resp.setVehicleCode(entity.getVehicle().getVehicleCode() != null ? entity.getVehicle().getVehicleCode() : entity.getVehicle().getName());
         }
         if (entity.getFromUser() != null) {
             resp.setFromUserId(entity.getFromUser().getId());
@@ -767,5 +773,59 @@ public class OwnershipTransferResponse {
 
     public void setFinancialMode(String financialMode) {
         this.financialMode = financialMode;
+    }
+
+    @JsonProperty("financialObligationPaymentStatus")
+    public String getFinancialObligationPaymentStatus() {
+        return financialObligationPaymentStatus;
+    }
+
+    public void setFinancialObligationPaymentStatus(String financialObligationPaymentStatus) {
+        this.financialObligationPaymentStatus = financialObligationPaymentStatus;
+    }
+
+    @JsonProperty("financialObligationPaymentId")
+    public UUID getFinancialObligationPaymentId() {
+        return financialObligationPaymentId;
+    }
+
+    public void setFinancialObligationPaymentId(UUID financialObligationPaymentId) {
+        this.financialObligationPaymentId = financialObligationPaymentId;
+    }
+
+    @JsonProperty("financialObligationPaymentReference")
+    public String getFinancialObligationPaymentReference() {
+        return financialObligationPaymentReference;
+    }
+
+    public void setFinancialObligationPaymentReference(String financialObligationPaymentReference) {
+        this.financialObligationPaymentReference = financialObligationPaymentReference;
+    }
+
+    @JsonProperty("financialObligationPaymentSubmittedAt")
+    public Instant getFinancialObligationPaymentSubmittedAt() {
+        return financialObligationPaymentSubmittedAt;
+    }
+
+    public void setFinancialObligationPaymentSubmittedAt(Instant financialObligationPaymentSubmittedAt) {
+        this.financialObligationPaymentSubmittedAt = financialObligationPaymentSubmittedAt;
+    }
+
+    @JsonProperty("financialObligationPaymentAmount")
+    public BigDecimal getFinancialObligationPaymentAmount() {
+        return financialObligationPaymentAmount;
+    }
+
+    public void setFinancialObligationPaymentAmount(BigDecimal financialObligationPaymentAmount) {
+        this.financialObligationPaymentAmount = financialObligationPaymentAmount;
+    }
+
+    @JsonProperty("financialObligationRejectionReason")
+    public String getFinancialObligationRejectionReason() {
+        return financialObligationRejectionReason;
+    }
+
+    public void setFinancialObligationRejectionReason(String financialObligationRejectionReason) {
+        this.financialObligationRejectionReason = financialObligationRejectionReason;
     }
 }

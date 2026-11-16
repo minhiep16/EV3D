@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { Wallet, Sparkles, ArrowRight } from 'lucide-react';
 import { ZoneConfig } from '../../../config/garageZoneConfigs';
 import { useWorldStore } from '../../../store/worldStore';
-import { useFundSummary } from '../../../hooks/useFund';
+import { useExpenseSummary } from '../../../hooks/useExpenses';
 
 interface FinanceFloatingWalletHotspotProps {
   zone: ZoneConfig;
@@ -40,7 +40,7 @@ export const FinanceFloatingWalletHotspot: React.FC<FinanceFloatingWalletHotspot
   const activeFeature = useWorldStore((state) => state.activeFeature);
   const selectedVehicleId = useWorldStore((state) => state.selectedVehicleId);
   const targetVehicleId = selectedVehicleId || '11111111-1111-1111-1111-111111111111';
-  const { data: fundSummary } = useFundSummary(targetVehicleId);
+  const { data: expenseSummary } = useExpenseSummary(targetVehicleId);
   const isVehicleSelected = useWorldStore((state) => state.isVehicleSelected);
   const selectedZone = useWorldStore((state) => state.selectedZone);
 
@@ -335,10 +335,10 @@ export const FinanceFloatingWalletHotspot: React.FC<FinanceFloatingWalletHotspot
               {isActive ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', margin: '2px 0' }}>
                   <span style={{ fontSize: '8.5px', color: '#7dd3fc', fontWeight: 500 }}>
-                    Quỹ chung nhóm EV01
+                    Phân bổ chi phí trực tiếp
                   </span>
                   <span style={{ fontSize: '13.5px', fontWeight: 800, color: '#38bdf8', letterSpacing: '-0.02em' }}>
-                    {fundSummary ? `${Number(fundSummary.availableBalance).toLocaleString('vi-VN')} ₫` : '...'}
+                    {expenseSummary ? `${Number(expenseSummary.totalExpense || 0).toLocaleString('vi-VN')} ₫` : '0 ₫'}
                   </span>
                 </div>
               ) : (
@@ -350,7 +350,7 @@ export const FinanceFloatingWalletHotspot: React.FC<FinanceFloatingWalletHotspot
                     margin: '3px 0 1px 0',
                   }}
                 >
-                  Quỹ chung & chi phí
+                  Chi phí & Phân bổ
                 </span>
               )}
 
@@ -569,7 +569,7 @@ export const FinanceFloatingWalletHotspot: React.FC<FinanceFloatingWalletHotspot
                   opacity: isActive ? 1.0 : 0.85,
                 }}
               >
-                Quỹ chung & chi phí
+                Chi phí & Phân bổ trực tiếp
               </span>
             </div>
           </Html>

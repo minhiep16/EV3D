@@ -1,0 +1,36 @@
+@startuml
+title USE CASE: QUẢN TRỊ VIÊN VÀ GIÁM SÁT HỆ THỐNG (UC-03)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam actorStyle awesome
+
+
+left to right direction
+
+actor "Quản Trị Viên (ADMIN)" as Admin
+
+package "Trung Tâm Chỉ Huy Quản Trị" #F8F9FA {
+    usecase "Xem Báo Cáo Phân Tích Tổng Thể" as UC_Stats
+    usecase "Quản Lý Danh Mục Toàn Đội Xe" as UC_FleetMgmt
+    usecase "Khởi Tạo Nhóm Đồng Sở Hữu" as UC_CreateGroup
+    usecase "Giám Sát Tỷ Lệ Sở Hữu (100% Invariant)" as UC_MonitorShares
+    usecase "Xem Nhật Ký Kiểm Toán (Audit Logs)" as UC_AuditLogs
+    usecase "Cấu Hình Tham Số Hệ Thống" as UC_SysConfig
+    usecase "Hòa Giải Tranh Chấp Cấp Cao" as UC_AdminDispute
+}
+
+Admin --> UC_Stats
+Admin --> UC_FleetMgmt
+Admin --> UC_CreateGroup
+Admin --> UC_MonitorShares
+Admin --> UC_AuditLogs
+Admin --> UC_SysConfig
+Admin --> UC_AdminDispute
+
+@enduml

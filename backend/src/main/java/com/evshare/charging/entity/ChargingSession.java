@@ -55,6 +55,18 @@ public class ChargingSession {
     @Column(name = "energy_delivered_kwh", precision = 6, scale = 2)
     private BigDecimal energyDeliveredKwh;
 
+    @Column(name = "stored_energy_kwh", precision = 8, scale = 3)
+    private BigDecimal storedEnergyKwh;
+
+    @Column(name = "tariff_per_kwh", precision = 10, scale = 2)
+    private BigDecimal tariffPerKwh;
+
+    @Column(name = "charging_cost", precision = 14, scale = 2)
+    private BigDecimal chargingCost;
+
+    @Column(name = "energy_loss_kwh", precision = 8, scale = 3)
+    private BigDecimal energyLossKwh;
+
     @Column(name = "power_kw", precision = 6, scale = 2)
     private BigDecimal powerKw;
 
@@ -199,6 +211,38 @@ public class ChargingSession {
 
     public void setEnergyDeliveredKwh(BigDecimal energyDeliveredKwh) {
         this.energyDeliveredKwh = energyDeliveredKwh;
+    }
+
+    public BigDecimal getStoredEnergyKwh() {
+        return storedEnergyKwh;
+    }
+
+    public void setStoredEnergyKwh(BigDecimal storedEnergyKwh) {
+        this.storedEnergyKwh = storedEnergyKwh;
+    }
+
+    public BigDecimal getTariffPerKwh() {
+        return tariffPerKwh;
+    }
+
+    public void setTariffPerKwh(BigDecimal tariffPerKwh) {
+        this.tariffPerKwh = tariffPerKwh;
+    }
+
+    public BigDecimal getChargingCost() {
+        return chargingCost;
+    }
+
+    public void setChargingCost(BigDecimal chargingCost) {
+        this.chargingCost = chargingCost;
+    }
+
+    public BigDecimal getEnergyLossKwh() {
+        return energyLossKwh;
+    }
+
+    public void setEnergyLossKwh(BigDecimal energyLossKwh) {
+        this.energyLossKwh = energyLossKwh;
     }
 
     public BigDecimal getPowerKw() {

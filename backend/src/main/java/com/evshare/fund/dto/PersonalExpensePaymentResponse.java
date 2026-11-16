@@ -27,5 +27,8 @@ public record PersonalExpensePaymentResponse(
         FinancialMode financialMode,
         String financialModeLabel,
         UUID vehicleId,
-        String vehicleName
+        String vehicleName,
+        String vehiclePlate,
+        BigDecimal totalExpenseAmount,
+        BigDecimal allocatedAmount
 ) {}

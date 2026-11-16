@@ -22,6 +22,15 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
     Optional<Notification> findFirstByRecipientIdAndEventTypeAndEntityId(
             UUID recipientUserId, String eventType, UUID entityId);
 
+    @Query("SELECT COUNT(n) > 0 FROM Notification n WHERE n.recipient.id = :recipientUserId AND n.entityId = :entityId AND n.eventType IN ('TRIP_RETURN_CONFIRMED', 'COMPLETED_TRIP_VIEWED') AND n.readAt IS NOT NULL")
+    boolean isTripCompletionAcknowledged(@Param("recipientUserId") UUID recipientUserId, @Param("entityId") UUID entityId);
+
+    @Query("SELECT n FROM Notification n WHERE n.recipient.id = :recipientUserId AND n.entityId = :entityId AND n.eventType IN ('TRIP_RETURN_CONFIRMED', 'COMPLETED_TRIP_VIEWED')")
+    List<Notification> findTripCompletionNotifications(@Param("recipientUserId") UUID recipientUserId, @Param("entityId") UUID entityId);
+
+    Optional<Notification> findFirstByRecipientIdAndEntityIdAndEventTypeIn(
+            UUID recipientUserId, UUID entityId, List<String> eventTypes);
+
     @Modifying
     @Query("UPDATE Notification n SET n.readAt = :readAt WHERE n.recipient.id = :recipientUserId AND n.readAt IS NULL")
     int markAllAsReadForUser(@Param("recipientUserId") UUID recipientUserId, @Param("readAt") Instant readAt);

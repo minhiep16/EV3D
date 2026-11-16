@@ -1,6 +1,7 @@
 package com.evshare.inspection.controller;
 
 import com.evshare.inspection.dto.CompleteInspectionRequest;
+import com.evshare.inspection.dto.InspectionComparisonResponse;
 import com.evshare.inspection.dto.VehicleInspectionItemRequest;
 import com.evshare.inspection.dto.VehicleInspectionResponse;
 import com.evshare.inspection.entity.InspectionType;
@@ -37,11 +38,12 @@ public class VehicleInspectionController {
     }
 
     @GetMapping("/vehicles/{vehicleId}/inspections/active")
-    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
     public ResponseEntity<VehicleInspectionResponse> getActiveInspection(
-            @PathVariable UUID vehicleId
+            @PathVariable UUID vehicleId,
+            @AuthenticationPrincipal UserPrincipal principal
     ) {
-        Optional<VehicleInspectionResponse> opt = inspectionService.getActiveInspection(vehicleId);
+        Optional<VehicleInspectionResponse> opt = inspectionService.getActiveInspection(vehicleId, principal);
         return opt.map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
     }
@@ -51,9 +53,10 @@ public class VehicleInspectionController {
     public ResponseEntity<VehicleInspectionResponse> startInspection(
             @PathVariable UUID vehicleId,
             @RequestParam(required = false, defaultValue = "PRE_HANDOVER") InspectionType type,
+            @RequestParam(required = false, defaultValue = "false") boolean forceNew,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
-        VehicleInspectionResponse response = inspectionService.startOrGetActiveInspection(vehicleId, principal.getId(), type);
+        VehicleInspectionResponse response = inspectionService.startOrGetActiveInspection(vehicleId, principal.getId(), type, forceNew);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
@@ -85,6 +88,33 @@ public class VehicleInspectionController {
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         VehicleInspectionResponse response = inspectionService.completeInspection(inspectionId, request, principal.getId());
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Compare pre-handover and post-trip inspections (Phase 2 Section 10).
+     */
+    @GetMapping("/inspections/compare")
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
+    public ResponseEntity<InspectionComparisonResponse> compareInspections(
+            @RequestParam UUID preInspectionId,
+            @RequestParam UUID postInspectionId
+    ) {
+        InspectionComparisonResponse response =
+                inspectionService.compareInspections(preInspectionId, postInspectionId);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Compare pre and post inspections for a given trip.
+     */
+    @GetMapping("/trips/{tripId}/inspection-comparison")
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
+    public ResponseEntity<InspectionComparisonResponse> getTripInspectionComparison(
+            @PathVariable UUID tripId
+    ) {
+        InspectionComparisonResponse response =
+                inspectionService.compareTripInspections(tripId);
         return ResponseEntity.ok(response);
     }
 }

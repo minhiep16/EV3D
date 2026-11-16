@@ -65,3 +65,183 @@ export interface CoOwnershipGroupResponse {
   availablePercentage: number;
   statusLabel?: string;
 }
+
+export type MembershipInvitationStatus =
+  | 'PENDING_CONTRIBUTOR_CONSENT'
+  | 'PENDING_INVITEE_RESPONSE'
+  | 'ACCEPTED'
+  | 'PENDING_CONTRACT_SIGNATURE'
+  | 'READY_FOR_COMPLETION'
+  | 'COMPLETED'
+  | 'REJECTED'
+  | 'CANCELLED'
+  | 'EXPIRED'
+  | 'INVITED'
+  | 'ACTIVE';
+
+export interface ContributorShareContribution {
+  userId: string;
+  fullName: string;
+  email: string;
+  percentage: number;
+  consented?: boolean;
+  declined?: boolean;
+  consentedAt?: string | null;
+  note?: string | null;
+}
+
+export interface MemberSharePreviewItem {
+  userId: string | null;
+  fullName: string;
+  email: string;
+  currentPercentage: number;
+  deductionPercentage: number;
+  projectedPercentage: number;
+  isCurrentLeader: boolean;
+  isProjectedLeader: boolean;
+  roleLabel: string;
+}
+
+export interface InvitationPreviewRequest {
+  inviteeUserId?: string;
+  inviteeEmail?: string;
+  leaderTransferPercentage: number;
+  additionalContributions?: ContributorShareContribution[];
+}
+
+export interface InvitationPreviewResponse {
+  groupId: string;
+  groupName: string;
+  vehicleId: string;
+  vehicleName: string;
+  inviteeUserId?: string | null;
+  inviteeName: string;
+  inviteeEmail: string;
+  leaderTransferPercentage: number;
+  totalOfferedPercentage: number;
+  currentDistribution: MemberSharePreviewItem[];
+  projectedDistribution: MemberSharePreviewItem[];
+  currentLeaderId?: string | null;
+  currentLeaderName: string;
+  projectedLeaderId?: string | null;
+  projectedLeaderName: string;
+  leaderChanges: boolean;
+  initialStatus: MembershipInvitationStatus;
+  note?: string;
+}
+
+export interface InvitationPermissionResponse {
+  canInvite: boolean;
+  currentLeaderUserId?: string | null;
+  currentLeaderName?: string | null;
+  leaderSharePercentage: number;
+  maxTransferablePercentage: number;
+  minTransferPercentage: number;
+  message: string;
+}
+
+export interface DigitalSignatureRecord {
+  userId: string;
+  signerName: string;
+  role: string;
+  signedAt: string;
+  ipAddress: string;
+  method: string;
+}
+
+export interface InvitationSignatoryResponse {
+  userId: string | null;
+  fullName: string;
+  email: string;
+  role: string;
+  roleLabel: string;
+  contributionPercentage?: number | null;
+  signed: boolean;
+  signedAt?: string | null;
+  signatureMethod?: string | null;
+  ipAddress?: string | null;
+}
+
+export interface MembershipInvitationResponse {
+  id: string;
+  groupId: string;
+  groupName?: string;
+  vehicleId: string;
+  vehicleName?: string;
+  vehicleCode?: string;
+  licensePlate?: string;
+  invitedByUserId: string;
+  invitedByUserName: string;
+  inviteeEmail: string;
+  inviteeUserId?: string | null;
+  inviteeUserName?: string | null;
+  proposedPercentage: number;
+  leaderTransferPercentage: number;
+  totalOfferedPercentage: number;
+  additionalContributions: ContributorShareContribution[];
+  signatures: DigitalSignatureRecord[];
+  contractVersionId?: string | null;
+  contractId?: string | null;
+  contractTitle?: string | null;
+  contractContent?: string | null;
+  documentHash?: string | null;
+  contractVersionNumber?: number | null;
+  status: MembershipInvitationStatus;
+  statusVi: string;
+  invitationNote?: string | null;
+  rejectionReason?: string | null;
+  createdAt: string;
+  acceptedAt?: string | null;
+  completedAt?: string | null;
+  rejectedAt?: string | null;
+  cancelledAt?: string | null;
+  expiresAt: string;
+  canConsent?: boolean;
+  canAccept?: boolean;
+  canReject?: boolean;
+  canCancel?: boolean;
+  canSign?: boolean;
+  canFinalize?: boolean;
+  currentSocPercent?: number;
+  odometerKm?: number;
+  damageCount?: number;
+  batteryCapacityKwh?: number;
+  manufactureYear?: number;
+  vehicleModel?: string;
+  exteriorColor?: string;
+  currentLeaderName?: string;
+  projectedLeaderName?: string;
+  currentDistribution?: MemberSharePreviewItem[];
+  projectedDistribution?: MemberSharePreviewItem[];
+  requiredSignatories?: InvitationSignatoryResponse[];
+  signedCount?: number;
+  requiredSignaturesCount?: number;
+  pendingSignerNames?: string[];
+  isCurrentUserRequiredSigner?: boolean;
+  hasCurrentUserSigned?: boolean;
+}
+
+export interface CreateInvitationPayload {
+  inviteeUserId?: string;
+  inviteeEmail?: string;
+  leaderTransferPercentage: number;
+  additionalContributions?: ContributorShareContribution[];
+  invitationNote?: string;
+}
+
+export interface ContributorConsentPayload {
+  approved: boolean;
+  note?: string;
+}
+
+export interface InviteeRespondPayload {
+  accept: boolean;
+  reason?: string;
+}
+
+export interface DigitalSignPayload {
+  pinOrPassword?: string;
+  signatureMethod?: string;
+  fullName?: string;
+  contentHash?: string;
+}

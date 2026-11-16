@@ -16,6 +16,7 @@ public record ApprovedWorkResponse(
         String vehicleLicensePlate,
         UUID groupId,
         String groupName,
+        String creatorName,
         VoteProposalType proposalType,
         String proposalTypeVietnamese,
         String title,

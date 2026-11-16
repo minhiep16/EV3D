@@ -1,5 +1,6 @@
 import { authenticatedFetch, safeParseResponse } from './api';
 import { CreateDamagePayload, DamageRecordData } from '../types/damage';
+import { isValidUuid } from '../utils/formatUtils';
 
 /**
  * Fetch all damage records for a completed trip.
@@ -27,6 +28,7 @@ export async function fetchTripDamages(tripId: string): Promise<DamageRecordData
  * Fetch all damage records for a vehicle (operational inspection view).
  */
 export async function fetchVehicleDamages(vehicleId: string): Promise<DamageRecordData[]> {
+  if (!vehicleId || !isValidUuid(vehicleId)) return [];
   try {
     const res = await authenticatedFetch(`/api/vehicles/${vehicleId}/damages`);
     if (res.status === 204 || res.status === 404) {

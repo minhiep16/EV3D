@@ -31,6 +31,7 @@ import { useWorldStore } from '../../../store/worldStore';
 import { useAuthStore } from '../../../store/authStore';
 import { hasCapability } from '../../../utils/roleCapabilities';
 import { getPartById } from '../../../data/vehicleParts';
+import { EVCarLoader } from '../../common/EVCarLoader';
 
 interface DamageHistoryPanelProps {
   vehicle: VehicleResponse;
@@ -168,16 +169,19 @@ export const DamageHistoryPanel: React.FC<DamageHistoryPanelProps> = ({
     <div
       style={{
         position: 'fixed',
-        top: '88px',
+        top: '76px',
         right: '20px',
         bottom: '20px',
-        width: 'clamp(350px, 28vw, 430px)',
+        width: 'clamp(440px, 28vw, 495px)',
+        maxWidth: 'min(495px, calc(100vw - 32px))',
+        maxHeight: 'calc(100vh - 96px)',
         zIndex: 40,
-        background: 'linear-gradient(180deg, rgba(11, 18, 33, 0.96) 0%, rgba(6, 11, 22, 0.98) 100%)',
+        background: 'rgba(7, 20, 38, 0.94)',
         backdropFilter: 'blur(24px)',
-        border: '1px solid rgba(0, 242, 254, 0.22)',
-        borderRadius: '16px',
-        boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65), 0 0 35px rgba(0, 242, 254, 0.08)',
+        WebkitBackdropFilter: 'blur(24px)',
+        border: '1.5px solid rgba(0, 242, 254, 0.3)',
+        borderRadius: '20px',
+        boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65), 0 0 30px rgba(0, 242, 254, 0.16)',
         display: 'flex',
         flexDirection: 'column',
         color: '#ffffff',
@@ -381,22 +385,22 @@ export const DamageHistoryPanel: React.FC<DamageHistoryPanelProps> = ({
                       ? st.id === 'RESOLVED'
                         ? '1px solid #10b981'
                         : st.id === 'UNDER_MAINTENANCE'
-                        ? '1px solid #f59e0b'
-                        : '1px solid #00f2fe'
+                          ? '1px solid #f59e0b'
+                          : '1px solid #00f2fe'
                       : '1px solid rgba(255, 255, 255, 0.1)',
                     background: isActive
                       ? st.id === 'RESOLVED'
                         ? 'rgba(16, 185, 129, 0.18)'
                         : st.id === 'UNDER_MAINTENANCE'
-                        ? 'rgba(245, 158, 11, 0.18)'
-                        : 'rgba(0, 242, 254, 0.18)'
+                          ? 'rgba(245, 158, 11, 0.18)'
+                          : 'rgba(0, 242, 254, 0.18)'
                       : 'rgba(255, 255, 255, 0.03)',
                     color: isActive
                       ? st.id === 'RESOLVED'
                         ? '#34d399'
                         : st.id === 'UNDER_MAINTENANCE'
-                        ? '#fbbf24'
-                        : '#00f2fe'
+                          ? '#fbbf24'
+                          : '#00f2fe'
                       : '#94a3b8',
                     cursor: 'pointer',
                     transition: 'all 0.15s ease',
@@ -504,20 +508,7 @@ export const DamageHistoryPanel: React.FC<DamageHistoryPanelProps> = ({
       >
         {/* Loading State */}
         {isLoading && (
-          <div
-            style={{
-              padding: '30px 10px',
-              textAlign: 'center',
-              color: '#94a3b8',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '10px',
-            }}
-          >
-            <RefreshCw size={22} className="animate-spin" color="#00f2fe" />
-            <div style={{ fontSize: '12px' }}>Đang tải lịch sử hư hỏng phương tiện...</div>
-          </div>
+          <EVCarLoader variant="panel" message="Đang tải lịch sử hư hỏng phương tiện..." minHeight="180px" />
         )}
 
         {/* Error State */}

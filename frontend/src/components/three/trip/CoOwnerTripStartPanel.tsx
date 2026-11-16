@@ -215,9 +215,10 @@ export const CoOwnerTripStartPanel: React.FC<CoOwnerTripStartPanelProps> = ({
       style={{
         position: 'fixed',
         top: '76px',
-        right: '24px',
-        width: '420px',
-        maxWidth: 'calc(100vw - 48px)',
+        right: '20px',
+        bottom: '20px',
+        width: 'clamp(440px, 28vw, 495px)',
+        maxWidth: 'min(495px, calc(100vw - 32px))',
         maxHeight: 'calc(100vh - 96px)',
         overflowY: 'auto',
         background: 'rgba(7, 20, 38, 0.94)',
@@ -225,11 +226,11 @@ export const CoOwnerTripStartPanel: React.FC<CoOwnerTripStartPanelProps> = ({
         WebkitBackdropFilter: 'blur(24px)',
         border: isTripActive
           ? '1.5px solid rgba(16, 185, 129, 0.55)'
-          : '1.5px solid rgba(0, 242, 254, 0.40)',
+          : '1.5px solid rgba(0, 242, 254, 0.3)',
         boxShadow: isTripActive
           ? '0 20px 50px rgba(0, 0, 0, 0.75), 0 0 25px rgba(16, 185, 129, 0.22)'
-          : '0 20px 50px rgba(0, 0, 0, 0.75), 0 0 25px rgba(0, 242, 254, 0.20)',
-        borderRadius: '24px',
+          : '0 20px 50px rgba(0, 0, 0, 0.65), 0 0 30px rgba(0, 242, 254, 0.16)',
+        borderRadius: '20px',
         padding: '20px 22px',
         color: '#ffffff',
         fontFamily: 'var(--font-family, system-ui, sans-serif)',

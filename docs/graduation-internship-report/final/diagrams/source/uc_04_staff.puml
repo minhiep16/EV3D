@@ -1,0 +1,38 @@
+@startuml
+title USE CASE: NHÂN VIÊN VẬN HÀNH VÀ ĐIỀU HÀNH BÃI XE (UC-04)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam actorStyle awesome
+
+
+left to right direction
+
+actor "Nhân Viên (STAFF)" as Staff
+
+package "Phân Hệ Điều Hành Kỹ Thuật" #F8F9FA {
+    usecase "Theo Dõi Danh Sách Xe Tại Bãi" as UC_FleetStatus
+    usecase "Lập Biên Bản Bàn Giao Xe Kỹ Thuật" as UC_VerifyHandover
+    usecase "Kiểm Tra Kỹ Thuật Khi Trả Xe (Checklist)" as UC_Inspection
+    usecase "Gắn Điểm Hư Hỏng Mới Trên Mô Hình 3D" as UC_DamageHotspot
+    usecase "Thực Hiện Sạc Xe Vận Hành (Miễn Phí)" as UC_StaffCharge
+    usecase "Đối Soát & Phê Duyệt Thanh Toán Cá Nhân" as UC_VerifyPayment
+    usecase "Điều Tra & Hòa Giải Khiếu Nại Tranh Chấp" as UC_InvestigateDispute
+}
+
+Staff --> UC_FleetStatus
+Staff --> UC_VerifyHandover
+Staff --> UC_Inspection
+Staff --> UC_DamageHotspot
+Staff --> UC_StaffCharge
+Staff --> UC_VerifyPayment
+Staff --> UC_InvestigateDispute
+
+UC_Inspection ..> UC_DamageHotspot : <<include>> (Nếu phát hiện trầy xước)
+
+@enduml

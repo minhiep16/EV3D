@@ -5,11 +5,19 @@ import {
   VehicleInspectionSubmitRequest,
   VehicleHandoverEligibilityResponse,
 } from '../types/handover';
+import { isValidUuid } from '../utils/formatUtils';
 
 export async function fetchHandoverEligibility(
   vehicleId: string,
   bookingId?: string
 ): Promise<VehicleHandoverEligibilityResponse> {
+  if (!vehicleId || !isValidUuid(vehicleId)) {
+    return {
+      vehicleId: vehicleId || '',
+      handoverAllowed: false,
+      reason: 'NO_BOOKING',
+    };
+  }
   try {
     const url = bookingId
       ? `/api/vehicles/${vehicleId}/handover-eligibility?bookingId=${bookingId}`
@@ -87,6 +95,7 @@ export async function fetchActiveVehicleHandover(
 export async function fetchActiveVehicleHandovers(
   vehicleId: string
 ): Promise<VehicleHandoverData[]> {
+  if (!vehicleId || !isValidUuid(vehicleId)) return [];
   try {
     const res = await authenticatedFetch(`/api/vehicles/${vehicleId}/active-handovers`);
     if (res.status === 404 || res.status === 204) {
@@ -293,5 +302,23 @@ export async function fetchHandoverHistory(
       return [];
     }
     return [];
+  }
+}
+
+export async function recoverVehicleApi(
+  handoverId: string,
+  note?: string
+): Promise<VehicleHandoverData> {
+  try {
+    const res = await authenticatedFetch(`/api/handovers/${handoverId}/recover`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    });
+    return await safeParseResponse<VehicleHandoverData>(res);
+  } catch (err) {
+    if (err instanceof TypeError || (err instanceof Error && err.message.includes('fetch'))) {
+      throw new Error('Không thể kết nối đến máy chủ xác nhận thu hồi xe.');
+    }
+    throw err;
   }
 }

@@ -1,0 +1,58 @@
+@startuml
+title QUY TRÌNH ĐẶT LỊCH VÀ KHỬ XUNG ĐỘT THỜI GIAN (ACT-02)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+|Chủ Đồng Sở Hữu (CO_OWNER)|
+start
+:Chọn xe trong không gian Virtual Garage 3D;
+:Mở bảng điều khiển CoOwnerBookingPanel;
+:Chọn thời gian bắt đầu và thời gian kết thúc;
+:Bấm nút "Xác Nhận Đặt Lịch";
+
+|Hệ Thống Backend (Spring Boot)|
+:Tiếp nhận POST /api/bookings/vehicle/{id};
+:Kiểm tra: startTime < endTime và không ở quá khứ;
+if (Dữ liệu thời gian hợp lệ?) then (Hợp lệ)
+    :Kiểm tra người dùng có thuộc nhóm xe hoạt động?;
+    if (Là thành viên hoạt động?) then (Đúng)
+        :Kiểm tra trạng thái xe có phải MAINTENANCE?;
+        if (Xe sẵn sàng?) then (Sẵn sàng)
+            :Truy vấn findConflictingBookings trong CSDL\n(existing.start < new.end AND existing.end > new.start);
+            if (Có lịch đặt xung đột?) then (Không có xung đột)
+                :Lưu bản ghi Booking (Status = CONFIRMED);
+                :Trả về HTTP 201 Created;
+                
+                |Giao Diện Web (React)|
+                :Cập nhật thanh tiến trình lịch trên 3D HUD;
+                :Hiển thị thông báo đặt xe thành công;
+                |Chủ Đồng Sở Hữu (CO_OWNER)|
+                :Hoàn tất đặt lịch xe;
+                stop
+            else (Phát hiện xung đột)
+                :Ném ngoại lệ IllegalArgumentException\n"Khung giờ này đã được đặt";
+                :Trả về HTTP 400 Bad Request;
+            endif
+        else (Xe bảo dưỡng)
+            :Báo lỗi: Xe đang bảo dưỡng;
+        endif
+    else (Không thuộc nhóm)
+        :Ném ngoại lệ AccessDeniedException (HTTP 403);
+    endif
+else (Không hợp lệ)
+    :Báo lỗi: Thời gian không hợp lệ;
+endif
+
+|Giao Diện Web (React)|
+:Hiển thị cảnh báo lỗi màu đỏ;
+|Chủ Đồng Sở Hữu (CO_OWNER)|
+:Chọn lại khung giờ khả dụng khác;
+stop
+@enduml

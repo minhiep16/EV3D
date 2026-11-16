@@ -133,6 +133,23 @@ export async function fetchStaffApprovedWork(vehicleId?: string): Promise<Approv
 }
 
 /**
+ * Section XIX: STAFF accepts authorized work proposal.
+ */
+export async function acceptApprovedWork(
+  proposalId: string,
+  assignedStaffId?: string
+): Promise<ApprovedWorkResponse> {
+  let url = `/api/staff/approved-work/${proposalId}/accept`;
+  if (assignedStaffId) {
+    url += `?assignedStaffId=${encodeURIComponent(assignedStaffId)}`;
+  }
+  const res = await authenticatedFetch(url, {
+    method: 'POST',
+  });
+  return safeParseResponse<ApprovedWorkResponse>(res);
+}
+
+/**
  * Section XIX: STAFF begins authorized work.
  */
 export async function startApprovedWork(

@@ -15,6 +15,7 @@ public class ChargingStationResponse {
     private String name;
     private ChargingStationStatus status;
     private BigDecimal maxPowerKw;
+    private BigDecimal pricePerKwh;
     private ChargingConnectorType connectorType;
     private String locationLabel;
     private BigDecimal posX;
@@ -33,6 +34,7 @@ public class ChargingStationResponse {
         response.setName(station.getName());
         response.setStatus(station.getStatus());
         response.setMaxPowerKw(station.getMaxPowerKw());
+        response.setPricePerKwh(station.getPricePerKwh());
         response.setConnectorType(station.getConnectorType());
         response.setLocationLabel(station.getLocationLabel());
         response.setPosX(station.getPosX());
@@ -81,6 +83,14 @@ public class ChargingStationResponse {
 
     public void setMaxPowerKw(BigDecimal maxPowerKw) {
         this.maxPowerKw = maxPowerKw;
+    }
+
+    public BigDecimal getPricePerKwh() {
+        return pricePerKwh;
+    }
+
+    public void setPricePerKwh(BigDecimal pricePerKwh) {
+        this.pricePerKwh = pricePerKwh;
     }
 
     public ChargingConnectorType getConnectorType() {

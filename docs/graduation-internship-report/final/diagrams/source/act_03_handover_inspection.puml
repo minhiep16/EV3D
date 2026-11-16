@@ -1,0 +1,41 @@
+@startuml
+title QUY TRÌNH BÀN GIAO XE VÀ KIỂM ĐỊNH KỸ THUẬT (ACT-03)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+|Nhân Viên Điều Hành (STAFF)|
+start
+:Mở danh sách xe tại trạm, chọn xe có lịch đặt sắp đến;
+:Mở StaffHandoverModal;
+:Kiểm tra thực tế xe: số ODO và % Pin (SOC);
+:Nhập số ODO xuất phát và % Pin xuất phát;
+:Bấm "Xác Nhận Bàn Giao Kỹ Thuật";
+
+|Hệ Thống Backend (Spring Boot)|
+:Lưu bản ghi VehicleHandover (status = COMPLETED);
+:Cập nhật trạng thái xe thành RESERVED;
+:Gửi thông báo thời gian thực đến Co-Owner;
+
+|Chủ Đồng Sở Hữu (CO_OWNER)|
+:Nhận thông báo mời kiểm tra xe tại bãi;
+:Đối chiếu hiện trạng thực tế phương tiện;
+:Mở bảng xác nhận trên giao diện 3D;
+:Bấm "Ký Xác Nhận Biên Bản Bàn Giao";
+
+|Hệ Thống Backend (Spring Boot)|
+:Ghi nhận ownerConditionAcknowledgedAt = now();
+:Mở khóa nút "Bắt Đầu Chuyến Đi";
+
+|Chủ Đồng Sở Hữu (CO_OWNER)|
+:Bấm "Bắt Đầu Chuyến Đi";
+:Hệ thống chuyển trạng thái xe sang IN_USE;
+:Bắt đầu hành trình di chuyển;
+stop
+@enduml

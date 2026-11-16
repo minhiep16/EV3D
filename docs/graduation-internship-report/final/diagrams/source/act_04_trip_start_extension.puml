@@ -1,0 +1,53 @@
+@startuml
+title QUY TRÌNH VẬN HÀNH CHUYẾN ĐI VÀ GIA HẠN THÊM GIỜ (ACT-04)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+|Chủ Đồng Sở Hữu (CO_OWNER)|
+start
+:Xe đang di chuyển thực tế trên đường (Trip ACTIVE);
+if (Có nhu cầu đi thêm giờ?) then (Có nhu cầu)
+    :Mở panel chuyến đi trên giao diện;
+    :Nhập số phút cần gia hạn thêm;
+    :Bấm "Yêu Cầu Gia Hạn";
+    
+    |Hệ Thống Backend (Spring Boot)|
+    :Truy vấn khung giờ liền kề của xe;
+    if (Khung giờ xin thêm có người khác đặt trước?) then (Không có ai đặt)
+        :Tự động gia hạn: endTime mới = endTime + thêm giờ;
+        :Cập nhật bản ghi Booking và Trip;
+        :Trả về kết quả gia hạn thành công;
+        
+        |Chủ Đồng Sở Hữu (CO_OWNER)|
+        :Nhận thông báo gia hạn thành công;
+        :Tiếp tục hành trình an tâm;
+    else (Có người khác đã đặt)
+        :Tạo yêu cầu đàm phán TripExtensionRequest\n(trạng thái PENDING_CONSENT);
+        :Gửi thông báo đến thành viên bị ảnh hưởng;
+        
+        |Thành Viên Bị Ảnh Hưởng|
+        :Xem xét đề nghị đàm phán đổi giờ;
+        if (Đồng ý nhường giờ?) then (Đồng ý)
+            :Bấm "Chấp Thuận Đổi Giờ";
+            |Hệ Thống Backend (Spring Boot)|
+            :Cập nhật lại lịch hai bên;
+        else (Từ chối)
+            :Bấm "Từ Chối";
+            |Hệ Thống Backend (Spring Boot)|
+            :Bác bỏ yêu cầu gia hạn;
+            |Chủ Đồng Sở Hữu (CO_OWNER)|
+            :Nhận thông báo: Phải trả xe đúng giờ;
+        endif
+    endif
+else (Không)
+    :Tiếp tục hành trình theo lịch;
+endif
+stop
+@enduml

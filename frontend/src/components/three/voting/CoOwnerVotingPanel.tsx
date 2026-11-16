@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { useQuery } from '@tanstack/react-query';
 import { VehicleResponse } from '../../../types/vehicle';
 
 export type VotingView = 'LIST' | 'DETAIL' | 'CREATE';
@@ -18,8 +19,12 @@ import {
   useCastVote,
   useFinalizeVoteProposal,
 } from '../../../hooks/useVoting';
+import { fetchVehicleDamages } from '../../../services/damageApi';
+import { DamageRecordResponse, DAMAGE_TYPE_LABELS, DAMAGE_SEVERITY_CONFIG } from '../../../types/damage';
+import { getPartById } from '../../../data/vehicleParts';
 import { useAuthStore } from '../../../store/authStore';
 import { useWorldStore } from '../../../store/worldStore';
+import { EVCarLoader } from '../../common/EVCarLoader';
 import {
   Vote,
   Plus,
@@ -28,6 +33,7 @@ import {
   Clock,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   ChevronRight,
   ChevronDown,
   ArrowLeft,
@@ -40,6 +46,7 @@ import {
   Info,
   DollarSign,
   Briefcase,
+  Wrench,
 } from 'lucide-react';
 
 interface CoOwnerVotingPanelProps {
@@ -52,6 +59,7 @@ export const CoOwnerVotingPanel: React.FC<CoOwnerVotingPanelProps> = ({ vehicle,
   const currentUserName = useAuthStore((state) => state.user?.fullName);
 
   const storeProposalId = useWorldStore((state) => state.selectedProposalId);
+  const openGaragePanel = useWorldStore((state) => state.openGaragePanel);
   const exitVehicleVotingMode = useWorldStore((state) => state.exitVehicleVotingMode);
   const closeVotingPanel = useWorldStore((state) => state.closeVotingPanel);
   const selectProposalRecord = useWorldStore((state) => state.selectProposalRecord);
@@ -172,12 +180,54 @@ export const CoOwnerVotingPanel: React.FC<CoOwnerVotingPanelProps> = ({ vehicle,
 
   // Form state
   const [formType, setFormType] = useState<VoteProposalType>('MAINTENANCE');
+  const [formPriority, setFormPriority] = useState<'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'>('MEDIUM');
+  const [formSelectedDamages, setFormSelectedDamages] = useState<string[]>([]);
   const [formTitle, setFormTitle] = useState('');
   const [formDescription, setFormDescription] = useState('');
   const [formAmount, setFormAmount] = useState('4000000');
   const [formDays, setFormDays] = useState('5');
   const [formError, setFormError] = useState<string | null>(null);
   const [isGovernanceExpanded, setIsGovernanceExpanded] = useState(false);
+
+  // Authoritative open damages query for linking to maintenance/repair proposals
+  const preselectedDamageId = useWorldStore(
+    (state) => state.maintenanceDraftPreselectedDamageId || state.selectedDamageId
+  );
+
+  const { data: damages = [] } = useQuery<DamageRecordResponse[]>({
+    queryKey: ['vehicleDamages', vehicle.id],
+    queryFn: () => fetchVehicleDamages(vehicle.id),
+    enabled: !!vehicle.id,
+    staleTime: 4000,
+  });
+
+  const openDamages = useMemo(() => {
+    return damages.filter((d) => d.status !== 'RESOLVED' && (d.status as string) !== 'REPAIRED');
+  }, [damages]);
+
+  // Context preservation: automatically preselect damage and open CREATE view
+  useEffect(() => {
+    if (preselectedDamageId && openDamages.length > 0) {
+      const matched = openDamages.find(
+        (d) => String(d.id).toLowerCase() === String(preselectedDamageId).toLowerCase()
+      );
+      if (matched) {
+        setVotingView('CREATE');
+        setFormType('REPAIR');
+        setFormSelectedDamages((prev) =>
+          prev.includes(matched.id) ? prev : [...prev, matched.id]
+        );
+        const part = getPartById(matched.vehiclePartCode);
+        const partName = part?.nameVi || matched.vehiclePartCode;
+        setFormTitle((prev) => (prev ? prev : `Sửa chữa hư hỏng: ${partName}`));
+        if (matched.severity === 'CRITICAL') {
+          setFormPriority('CRITICAL');
+        } else if (matched.severity === 'HIGH') {
+          setFormPriority('HIGH');
+        }
+      }
+    }
+  }, [preselectedDamageId, openDamages]);
 
   // Detail view state
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
@@ -227,12 +277,37 @@ export const CoOwnerVotingPanel: React.FC<CoOwnerVotingPanelProps> = ({ vehicle,
       return;
     }
 
+    const priorityLabel =
+      formPriority === 'CRITICAL'
+        ? 'Khẩn cấp'
+        : formPriority === 'HIGH'
+        ? 'Cao'
+        : formPriority === 'MEDIUM'
+        ? 'Trung bình'
+        : 'Thấp';
+
+    let finalDescription = formDescription.trim();
+    if (formType === 'MAINTENANCE' || formType === 'REPAIR') {
+      const selectedPartsText = formSelectedDamages
+        .map((dmgId) => {
+          const dmg = openDamages.find((d) => d.id === dmgId);
+          if (!dmg) return null;
+          const part = getPartById(dmg.vehiclePartCode);
+          return `${part?.nameVi || dmg.vehiclePartCode} (${(DAMAGE_TYPE_LABELS as any)[dmg.damageType] || dmg.damageType})`;
+        })
+        .filter(Boolean)
+        .join(', ');
+
+      const metadataPrefix = `[Mức ưu tiên: ${priorityLabel}]${selectedPartsText ? ` [Hư hỏng xử lý: ${selectedPartsText}]` : ''}`;
+      finalDescription = finalDescription ? `${metadataPrefix}\n${finalDescription}` : metadataPrefix;
+    }
+
     createProposalMutation.mutate(
       {
         vehicleId: vehicle.id,
         proposalType: formType,
         title: formTitle.trim(),
-        description: formDescription.trim() || undefined,
+        description: finalDescription || undefined,
         estimatedAmount: amountNum,
         votingDurationDays: parseInt(formDays, 10) || 5,
       },
@@ -241,6 +316,8 @@ export const CoOwnerVotingPanel: React.FC<CoOwnerVotingPanelProps> = ({ vehicle,
           setFormTitle('');
           setFormDescription('');
           setFormAmount('4000000');
+          setFormSelectedDamages([]);
+          setFormPriority('MEDIUM');
           setIsGovernanceExpanded(false);
           setSelectedProposalIdLocal(newProp.id);
           selectProposalRecord(newProp.id);
@@ -509,6 +586,106 @@ export const CoOwnerVotingPanel: React.FC<CoOwnerVotingPanelProps> = ({ vehicle,
               </select>
             </div>
 
+            {/* Phân loại & Mức độ ưu tiên (khi là MAINTENANCE hoặc REPAIR) */}
+            {(formType === 'MAINTENANCE' || formType === 'REPAIR') && (
+              <div>
+                <label style={formLabelStyle()}>Mức độ ưu tiên *</label>
+                <select
+                  value={formPriority}
+                  onChange={(e) => setFormPriority(e.target.value as any)}
+                  style={formInputStyle({ height: '38px' })}
+                >
+                  <option value="LOW">Thấp (Định kỳ bình thường)</option>
+                  <option value="MEDIUM">Trung bình (Khuyến nghị khắc phục)</option>
+                  <option value="HIGH">Cao (Cần khắc phục sớm)</option>
+                  <option value="CRITICAL">Khẩn cấp (Ảnh hưởng an toàn vận hành)</option>
+                </select>
+              </div>
+            )}
+
+            {/* Chọn hư hỏng liên quan (nếu có ghi nhận hư hỏng chưa giải quyết) */}
+            {(formType === 'MAINTENANCE' || formType === 'REPAIR') && openDamages.length > 0 && (
+              <div
+                style={{
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid rgba(245, 158, 11, 0.35)',
+                  borderRadius: '10px',
+                  padding: '10px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', fontWeight: 800, color: '#fbbf24' }}>
+                    <AlertTriangle size={14} color="#fbbf24" />
+                    <span>CHỌN HƯ HỎNG LIÊN QUAN ({openDamages.length})</span>
+                  </div>
+                  <span style={{ fontSize: '10px', color: '#94a3b8' }}>
+                    {formSelectedDamages.length} đã chọn
+                  </span>
+                </div>
+
+                <div style={{ maxHeight: '110px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {openDamages.map((dmg) => {
+                    const part = getPartById(dmg.vehiclePartCode);
+                    const partName = part?.nameVi || dmg.vehiclePartCode;
+                    const sevCfg = DAMAGE_SEVERITY_CONFIG[dmg.severity];
+                    const isChecked = formSelectedDamages.includes(dmg.id);
+
+                    return (
+                      <label
+                        key={dmg.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '6px',
+                          fontSize: '11px',
+                          color: '#e2e8f0',
+                          cursor: 'pointer',
+                          background: isChecked ? 'rgba(245, 158, 11, 0.12)' : 'rgba(0, 0, 0, 0.25)',
+                          padding: '5px 8px',
+                          borderRadius: '6px',
+                          border: isChecked ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid transparent',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <input
+                            type="checkbox"
+                            style={{ width: '14px', height: '14px', cursor: 'pointer' }}
+                            checked={isChecked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setFormSelectedDamages((prev) => [...prev, dmg.id]);
+                              } else {
+                                setFormSelectedDamages((prev) => prev.filter((id) => id !== dmg.id));
+                              }
+                            }}
+                          />
+                          <span style={{ fontWeight: isChecked ? 700 : 500 }}>
+                            {partName} ({(DAMAGE_TYPE_LABELS as any)[dmg.damageType] || dmg.damageType})
+                          </span>
+                        </div>
+                        <span
+                          style={{
+                            fontSize: '9px',
+                            fontWeight: 800,
+                            padding: '1px 5px',
+                            borderRadius: '4px',
+                            background: sevCfg?.bg || 'rgba(255, 255, 255, 0.1)',
+                            color: sevCfg?.color || '#fbbf24',
+                          }}
+                        >
+                          {sevCfg?.labelVi || dmg.severity}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div>
               <label style={formLabelStyle()}>Tiêu đề đề xuất *</label>
               <input
@@ -703,10 +880,7 @@ export const CoOwnerVotingPanel: React.FC<CoOwnerVotingPanelProps> = ({ vehicle,
               }}
             >
               {createProposalMutation.isPending ? (
-                <>
-                  <Clock size={14} />
-                  <span>ĐANG GỬI...</span>
-                </>
+                <EVCarLoader variant="button" message="ĐANG GỬI..." />
               ) : (
                 <>
                   <Check size={14} />
@@ -730,18 +904,19 @@ export const CoOwnerVotingPanel: React.FC<CoOwnerVotingPanelProps> = ({ vehicle,
       onPointerDown={(e) => e.stopPropagation()}
       style={{
         position: 'fixed',
-        top: '84px',
-        right: '24px',
-        width: selectedProposalId ? 'min(580px, calc(100vw - 32px))' : 'clamp(400px, 34vw, 500px)',
-        maxHeight: 'calc(100dvh - 120px)',
+        top: '76px',
+        right: '20px',
+        bottom: '20px',
+        width: 'clamp(440px, 28vw, 495px)',
+        maxWidth: 'min(495px, calc(100vw - 32px))',
+        maxHeight: 'calc(100vh - 96px)',
         zIndex: 40,
-        background:
-          'linear-gradient(180deg, rgba(7, 20, 38, 0.96) 0%, rgba(3, 10, 22, 0.98) 100%)',
+        background: 'rgba(7, 20, 38, 0.94)',
         backdropFilter: 'blur(24px)',
         WebkitBackdropFilter: 'blur(24px)',
-        border: '1.5px solid rgba(34, 230, 255, 0.35)',
-        borderRadius: '18px',
-        boxShadow: '0 20px 50px rgba(0, 0, 0, 0.75), 0 0 30px rgba(34, 230, 255, 0.16)',
+        border: '1.5px solid rgba(0, 242, 254, 0.3)',
+        borderRadius: '20px',
+        boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65), 0 0 30px rgba(0, 242, 254, 0.16)',
         display: 'flex',
         flexDirection: 'column',
         color: '#f8fafc',
@@ -974,6 +1149,53 @@ export const CoOwnerVotingPanel: React.FC<CoOwnerVotingPanelProps> = ({ vehicle,
                 </span>
               </div>
 
+              {/* Linked Maintenance Request Quick Navigation */}
+              {(selectedProposal.relatedMaintenanceRequestId || selectedProposal.proposalType === 'MAINTENANCE') && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '6px 10px',
+                    background: 'rgba(245, 158, 11, 0.08)',
+                    border: '1px solid rgba(245, 158, 11, 0.25)',
+                    borderRadius: '7px',
+                    fontSize: '11px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#fbbf24', fontWeight: 600 }}>
+                    <Wrench size={13} color="#fbbf24" />
+                    <span>Liên kết Quản lý Bảo dưỡng phương tiện</span>
+                  </div>
+                  <button
+                    type="button"
+                    id="btn-goto-maintenance-from-voting"
+                    onClick={() => {
+                      openGaragePanel('MAINTENANCE', {
+                        vehicleId: vehicle.id,
+                        maintenanceId: selectedProposal.relatedMaintenanceRequestId || undefined,
+                      });
+                    }}
+                    style={{
+                      background: 'rgba(245, 158, 11, 0.2)',
+                      border: '1px solid rgba(245, 158, 11, 0.45)',
+                      borderRadius: '5px',
+                      padding: '3px 8px',
+                      color: '#fbbf24',
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    <span>XEM BẢO DƯỠNG</span>
+                    <ChevronRight size={11} />
+                  </button>
+                </div>
+              )}
+
               {/* Description with max 3 visible lines & "Xem thêm" */}
               {selectedProposal.description && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -1098,22 +1320,39 @@ export const CoOwnerVotingPanel: React.FC<CoOwnerVotingPanelProps> = ({ vehicle,
                       borderTop: '1px dashed rgba(34, 230, 255, 0.15)',
                     }}
                   >
-                    Cơ chế: <b style={{ color: '#f1f5f9' }}>{selectedProposal.decisionRuleVietnamese || 'Đa số theo tỷ lệ sở hữu'}</b>. Yêu cầu tối thiểu {selectedProposal.requiredQuorumPercentage ?? 50}% tổng tỷ lệ sở hữu tham gia biểu quyết để đạt túc số (Quorum). Tỷ lệ đồng ý phải đạt tối thiểu {selectedProposal.requiredThresholdPercentage ?? 50}% trên tổng số phiếu hợp lệ để đề xuất được thông qua.
+                    Cơ chế: <b style={{ color: '#f1f5f9' }}>{selectedProposal.decisionRuleVietnamese || 'Biểu quyết tập thể kép'}</b>. Áp dụng cơ chế phê duyệt kép: (1) Túc số tham gia tối thiểu 75% số lượng thành viên nhóm đồng sở hữu và đạt tỷ lệ vốn tối thiểu {selectedProposal.requiredQuorumPercentage ?? 50}%. (2) Điều kiện thông qua yêu cầu quá bán (&gt;50%) số lượng thành viên đồng ý và tổng tỷ lệ vốn đồng ý đạt tối thiểu {selectedProposal.requiredThresholdPercentage ?? 50}%.
                   </div>
                 )}
               </div>
 
-              {/* Compact Participation Chart & Breakdown */}
+              {/* Dual Approval Participation & Validation Panel */}
               {(() => {
-                const totalEligible = selectedProposal.totalEligibleWeight || 100;
-                const participating = selectedProposal.participatingWeight || 0;
-                const requiredQuorum = selectedProposal.requiredQuorumPercentage || 50;
-                const requiredThreshold = selectedProposal.requiredThresholdPercentage || 50;
+                const totalEligibleWeight = selectedProposal.totalEligibleWeight || 100;
+                const participatingWeight = selectedProposal.participatingWeight || 0;
+                const requiredQuorumPct = selectedProposal.requiredQuorumPercentage || 50;
+                const requiredThresholdPct = selectedProposal.requiredThresholdPercentage || 50;
                 const approveWeight = selectedProposal.approveWeight || 0;
                 const rejectWeight = selectedProposal.rejectWeight || 0;
                 const abstainWeight = selectedProposal.abstainWeight || 0;
-                const notVotedWeight = Math.max(0, Math.round((totalEligible - participating) * 100) / 100);
-                const isQuorumMet = selectedProposal.quorumSatisfied;
+                const notVotedWeight = Math.max(0, Math.round((totalEligibleWeight - participatingWeight) * 100) / 100);
+
+                const totalEligibleMembers = selectedProposal.eligibleVoters?.length || selectedProposal.eligibleVoterCount || 1;
+                const participatingMembers = selectedProposal.participatingVoterCount || selectedProposal.votes?.length || 0;
+                const approveMembers = selectedProposal.approveCount || 0;
+
+                // Dynamic Dual Quorum:
+                const requiredParticipatingMembers = Math.ceil(totalEligibleMembers * 0.75);
+                const isMemberQuorumMet = participatingMembers >= requiredParticipatingMembers;
+                const isWeightQuorumMet = participatingWeight >= requiredQuorumPct;
+                const isQuorumMet = selectedProposal.quorumSatisfied ?? (isMemberQuorumMet && isWeightQuorumMet);
+
+                // Dynamic Dual Approval:
+                const requiredApprovingMembers = Math.floor(totalEligibleMembers / 2) + 1;
+                const isMemberApprovalMet = approveMembers >= requiredApprovingMembers;
+                const isWeightThresholdMet = approveWeight >= requiredThresholdPct;
+                const isThresholdMet = selectedProposal.thresholdSatisfied ?? (isMemberApprovalMet && isWeightThresholdMet);
+
+                const canPass = isQuorumMet && isThresholdMet;
 
                 return (
                   <div
@@ -1127,27 +1366,41 @@ export const CoOwnerVotingPanel: React.FC<CoOwnerVotingPanelProps> = ({ vehicle,
                       gap: '8px',
                     }}
                   >
-                    {/* Participation status header */}
+                    {/* Dual Condition Status Pill */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px' }}>
                       <span style={{ color: '#cbd5e1' }}>
-                        Đã tham gia: <b style={{ color: '#f1f5f9' }}>{participating}%</b> / Yêu cầu: <b style={{ color: '#38bdf8' }}>{requiredQuorum}%</b>
+                        Túc số: <b style={{ color: '#f1f5f9' }}>{participatingMembers}/{totalEligibleMembers} TV</b> ({participatingWeight}%)
                       </span>
                       <span
                         style={{
                           fontWeight: 700,
                           fontSize: '10px',
-                          padding: '2px 6px',
+                          padding: '2px 7px',
                           borderRadius: '4px',
-                          background: isQuorumMet ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-                          color: isQuorumMet ? '#10b981' : '#f59e0b',
-                          border: `1px solid ${isQuorumMet ? 'rgba(16, 185, 129, 0.35)' : 'rgba(245, 158, 11, 0.35)'}`,
+                          background: canPass
+                            ? 'rgba(16, 185, 129, 0.15)'
+                            : selectedProposal.status === 'OPEN'
+                              ? 'rgba(245, 158, 11, 0.15)'
+                              : 'rgba(239, 68, 68, 0.15)',
+                          color: canPass
+                            ? '#10b981'
+                            : selectedProposal.status === 'OPEN'
+                              ? '#f59e0b'
+                              : '#f87171',
+                          border: `1px solid ${
+                            canPass
+                              ? 'rgba(16, 185, 129, 0.35)'
+                              : selectedProposal.status === 'OPEN'
+                                ? 'rgba(245, 158, 11, 0.35)'
+                                : 'rgba(239, 68, 68, 0.35)'
+                          }`,
                         }}
                       >
-                        {isQuorumMet ? 'Đạt túc số' : 'Chưa đạt túc số'}
+                        {canPass ? 'ĐỦ ĐIỀU KIỆN THÔNG QUA' : 'CHƯA ĐỦ ĐIỀU KIỆN THÔNG QUA'}
                       </span>
                     </div>
 
-                    {/* Single progress bar */}
+                    {/* Progress bar */}
                     <div
                       style={{
                         position: 'relative',
@@ -1191,18 +1444,49 @@ export const CoOwnerVotingPanel: React.FC<CoOwnerVotingPanelProps> = ({ vehicle,
                       )}
                     </div>
 
+                    {/* Dual Quorum & Dual Threshold Status Grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '10px' }}>
+                      <div style={{ background: 'rgba(0, 0, 0, 0.25)', padding: '5px 8px', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                        <div style={{ color: '#94a3b8' }}>1. Túc số thành viên:</div>
+                        <div style={{ fontWeight: 700, color: isMemberQuorumMet ? '#10b981' : '#f59e0b', marginTop: '1px' }}>
+                          {participatingMembers}/{totalEligibleMembers} TV (Yêu cầu: ≥{requiredParticipatingMembers})
+                        </div>
+                      </div>
+
+                      <div style={{ background: 'rgba(0, 0, 0, 0.25)', padding: '5px 8px', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                        <div style={{ color: '#94a3b8' }}>2. Túc số vốn:</div>
+                        <div style={{ fontWeight: 700, color: isWeightQuorumMet ? '#10b981' : '#f59e0b', marginTop: '1px' }}>
+                          {participatingWeight}% (Yêu cầu: ≥{requiredQuorumPct}%)
+                        </div>
+                      </div>
+
+                      <div style={{ background: 'rgba(0, 0, 0, 0.25)', padding: '5px 8px', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                        <div style={{ color: '#94a3b8' }}>3. Thành viên đồng ý:</div>
+                        <div style={{ fontWeight: 700, color: isMemberApprovalMet ? '#10b981' : '#f59e0b', marginTop: '1px' }}>
+                          {approveMembers}/{totalEligibleMembers} TV (Quá bán: ≥{requiredApprovingMembers})
+                        </div>
+                      </div>
+
+                      <div style={{ background: 'rgba(0, 0, 0, 0.25)', padding: '5px 8px', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                        <div style={{ color: '#94a3b8' }}>4. Tỷ lệ vốn đồng ý:</div>
+                        <div style={{ fontWeight: 700, color: isWeightThresholdMet ? '#10b981' : '#f59e0b', marginTop: '1px' }}>
+                          {approveWeight}% (Yêu cầu: ≥{requiredThresholdPct}%)
+                        </div>
+                      </div>
+                    </div>
+
                     {/* Compact 4-way breakdown */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '10.5px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '10.5px', marginTop: '2px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                         <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#10b981', flexShrink: 0 }} />
                         <span style={{ color: '#cbd5e1' }}>
-                          Đồng ý: <b style={{ color: '#10b981' }}>{approveWeight}%</b>
+                          Đồng ý: <b style={{ color: '#10b981' }}>{approveWeight}%</b> ({approveMembers} phiếu)
                         </span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                         <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#ef4444', flexShrink: 0 }} />
                         <span style={{ color: '#cbd5e1' }}>
-                          Không đồng ý: <b style={{ color: '#ef4444' }}>{rejectWeight}%</b>
+                          Không đồng ý: <b style={{ color: '#ef4444' }}>{rejectWeight}%</b> ({selectedProposal.rejectCount || 0} phiếu)
                         </span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '5px', position: 'relative' }}>
@@ -1422,11 +1706,10 @@ export const CoOwnerVotingPanel: React.FC<CoOwnerVotingPanelProps> = ({ vehicle,
                       selectedProposal.status === 'APPROVED'
                         ? 'rgba(16, 185, 129, 0.08)'
                         : 'rgba(239, 68, 68, 0.08)',
-                    border: `1px solid ${
-                      selectedProposal.status === 'APPROVED'
+                    border: `1px solid ${selectedProposal.status === 'APPROVED'
                         ? 'rgba(16, 185, 129, 0.3)'
                         : 'rgba(239, 68, 68, 0.3)'
-                    }`,
+                      }`,
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '4px',
@@ -1475,10 +1758,10 @@ export const CoOwnerVotingPanel: React.FC<CoOwnerVotingPanelProps> = ({ vehicle,
                   tab === 'OPEN'
                     ? 'Đang biểu quyết'
                     : tab === 'APPROVED'
-                    ? 'Đã duyệt'
-                    : tab === 'REJECTED'
-                    ? 'Đã từ chối'
-                    : 'Tất cả';
+                      ? 'Đã duyệt'
+                      : tab === 'REJECTED'
+                        ? 'Đã từ chối'
+                        : 'Tất cả';
                 const isActive = activeTab === tab;
                 return (
                   <button
@@ -1505,9 +1788,7 @@ export const CoOwnerVotingPanel: React.FC<CoOwnerVotingPanelProps> = ({ vehicle,
 
             {/* List of Proposals */}
             {isLoading ? (
-              <div style={{ textAlign: 'center', padding: '30px', color: '#94a3b8', fontSize: '12px' }}>
-                Đang tải danh sách đề xuất...
-              </div>
+              <EVCarLoader variant="inline" message="Đang tải danh sách đề xuất..." minHeight="140px" />
             ) : filteredProposals.length === 0 ? (
               <div
                 style={{
@@ -1623,8 +1904,17 @@ export const CoOwnerVotingPanel: React.FC<CoOwnerVotingPanelProps> = ({ vehicle,
                         <div style={{ width: `${item.rejectWeight}%`, background: '#ef4444' }} />
                         <div style={{ width: `${item.abstainWeight}%`, background: '#94a3b8' }} />
                       </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#64748b' }}>
-                        <span>Đã tham gia: {item.participatingWeight}% — Yêu cầu: {item.requiredQuorumPercentage}%</span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10px', color: '#64748b' }}>
+                        <span>
+                          {item.participatingVoterCount != null
+                            ? `${item.participatingVoterCount}/${item.eligibleVoterCount} TV (${item.participatingWeight}%)`
+                            : `Đã tham gia: ${item.participatingWeight}%`}
+                        </span>
+                        {item.status === 'OPEN' && !(item.quorumSatisfied && item.thresholdSatisfied) && (
+                          <span style={{ color: '#f59e0b', fontWeight: 800, fontSize: '9.5px', background: 'rgba(245, 158, 11, 0.15)', padding: '1px 5px', borderRadius: '3px', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+                            Chưa đủ điều kiện
+                          </span>
+                        )}
                         {item.currentUserVote ? (
                           <span style={{ color: PROPOSAL_CHOICE_CONFIG[item.currentUserVote].color, fontWeight: 700 }}>
                             Bạn: {PROPOSAL_CHOICE_CONFIG[item.currentUserVote].labelVi}
@@ -1707,8 +1997,8 @@ export const CoOwnerVotingPanel: React.FC<CoOwnerVotingPanelProps> = ({ vehicle,
                         voteChoice === 'APPROVE'
                           ? 'rgba(16, 185, 129, 0.28)'
                           : selectedProposal.currentUserVote === 'APPROVE'
-                          ? 'rgba(16, 185, 129, 0.14)'
-                          : 'rgba(16, 185, 129, 0.08)',
+                            ? 'rgba(16, 185, 129, 0.14)'
+                            : 'rgba(16, 185, 129, 0.08)',
                       color: '#10b981',
                       fontSize: '10.5px',
                       fontWeight: 700,
@@ -1738,8 +2028,8 @@ export const CoOwnerVotingPanel: React.FC<CoOwnerVotingPanelProps> = ({ vehicle,
                         voteChoice === 'REJECT'
                           ? 'rgba(239, 68, 68, 0.28)'
                           : selectedProposal.currentUserVote === 'REJECT'
-                          ? 'rgba(239, 68, 68, 0.14)'
-                          : 'rgba(239, 68, 68, 0.08)',
+                            ? 'rgba(239, 68, 68, 0.14)'
+                            : 'rgba(239, 68, 68, 0.08)',
                       color: '#ef4444',
                       fontSize: '10.5px',
                       fontWeight: 700,
@@ -1769,8 +2059,8 @@ export const CoOwnerVotingPanel: React.FC<CoOwnerVotingPanelProps> = ({ vehicle,
                         voteChoice === 'ABSTAIN'
                           ? 'rgba(148, 163, 184, 0.28)'
                           : selectedProposal.currentUserVote === 'ABSTAIN'
-                          ? 'rgba(148, 163, 184, 0.14)'
-                          : 'rgba(148, 163, 184, 0.08)',
+                            ? 'rgba(148, 163, 184, 0.14)'
+                            : 'rgba(148, 163, 184, 0.08)',
                       color: '#cbd5e1',
                       fontSize: '10.5px',
                       fontWeight: 700,
@@ -1792,13 +2082,12 @@ export const CoOwnerVotingPanel: React.FC<CoOwnerVotingPanelProps> = ({ vehicle,
                   <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '2px' }}>
                     <input
                       type="text"
-                      placeholder={`Ý kiến đóng góp (${
-                        voteChoice === 'APPROVE'
+                      placeholder={`Ý kiến đóng góp (${voteChoice === 'APPROVE'
                           ? 'Đồng ý'
                           : voteChoice === 'REJECT'
-                          ? 'Không đồng ý'
-                          : 'Phiếu trắng'
-                      })...`}
+                            ? 'Không đồng ý'
+                            : 'Phiếu trắng'
+                        })...`}
                       value={voteComment}
                       onChange={(e) => setVoteComment(e.target.value)}
                       style={{

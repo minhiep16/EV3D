@@ -1,0 +1,63 @@
+@startuml
+title SƠ ĐỒ TUẦN TỰ: NỘP VÀ XÁC MINH THANH TOÁN DEMO (SEQ-13)
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam sequenceMessageAlign center
+skinparam participant {
+    BackgroundColor #F8F9FA
+    BorderColor #2C3E50
+    FontColor #2C3E50
+}
+skinparam actor {
+    BackgroundColor #E8F4F8
+    BorderColor #1A5276
+}
+skinparam database {
+    BackgroundColor #FEF9E7
+    BorderColor #B7950B
+}
+
+autonumber
+actor "Chủ Xe (CO_OWNER)" as CoOwner
+actor "Nhân Viên (STAFF)" as Staff
+participant "PersonalPaymentController" as Controller
+participant "PersonalPaymentService" as PaymentSvc
+participant "ExpenseShareRepository" as ShareRepo
+database "MySQL Database" as DB
+
+CoOwner -> Controller : POST /api/expenses/{id}/personal-payments {amount, referenceCode}
+activate Controller
+Controller -> PaymentSvc : submitPayment(expenseId, userId, request)
+activate PaymentSvc
+
+PaymentSvc -> DB : INSERT INTO personal_expense_payments (status = 'PAYMENT_SUBMITTED')
+PaymentSvc --> Controller : PersonalExpensePaymentResponse
+deactivate PaymentSvc
+Controller --> CoOwner : HTTP 201 Created (Đã gửi chứng từ thanh toán)
+deactivate Controller
+
+Staff -> Controller : POST /api/personal-payments/{id}/verify {verified: true}
+activate Controller
+Controller -> PaymentSvc : verifyPayment(paymentId, staffId, request)
+activate PaymentSvc
+
+PaymentSvc -> DB : UPDATE personal_expense_payments SET status = 'PAYMENT_VERIFIED', verified_by = staffId
+PaymentSvc -> ShareRepo : findById(expenseShareId)
+activate ShareRepo
+ShareRepo -> DB : SELECT * FROM expense_shares WHERE id = ?
+DB --> ShareRepo : ExpenseShare entity
+ShareRepo --> PaymentSvc : ExpenseShare
+deactivate ShareRepo
+
+PaymentSvc -> DB : UPDATE expense_shares SET status = 'SETTLED'
+PaymentSvc --> Controller : PersonalExpensePaymentResponse (VERIFIED)
+deactivate PaymentSvc
+Controller --> Staff : HTTP 200 OK (Khoản nợ đã được tất toán)
+deactivate Controller
+
+@enduml

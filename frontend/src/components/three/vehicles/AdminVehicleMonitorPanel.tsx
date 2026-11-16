@@ -8,6 +8,7 @@ import { fetchActiveVehicleHandovers } from '../../../services/handoverApi';
 import { fetchVehicleCoOwnership } from '../../../services/coOwnershipApi';
 import { fetchVehicles } from '../../../services/vehicleApi';
 import { fetchActiveTripForVehicle } from '../../../services/tripApi';
+import { isValidUuid } from '../../../utils/formatUtils';
 import { useAuthStore } from '../../../store/authStore';
 import { useWorldStore, VEHICLE_STATUS_LABELS } from '../../../store/worldStore';
 import {
@@ -112,27 +113,31 @@ export const AdminVehicleMonitorPanel: React.FC<AdminVehicleMonitorPanelProps> =
     refetchInterval: 10000,
   });
 
+  const isApplicationPreview = Boolean((vehicle as any)?.isApplicationPreview);
+  const isValidVehicleUuid = vehicle?.id ? isValidUuid(vehicle.id) : false;
+  const canQueryVehicleOperationalData = Boolean(authReady && isValidVehicleUuid && !isApplicationPreview);
+
   // TanStack Query: Fetch active handovers for audit
   const { data: activeHandovers = [] } = useQuery<VehicleHandoverData[]>({
     queryKey: ['activeVehicleHandovers', vehicle.id],
-    queryFn: () => fetchActiveVehicleHandovers(vehicle.id),
-    enabled: authReady && !!vehicle.id,
+    queryFn: () => (vehicle.id && isValidVehicleUuid ? fetchActiveVehicleHandovers(vehicle.id) : Promise.resolve([])),
+    enabled: Boolean(canQueryVehicleOperationalData && vehicle.id),
     refetchInterval: 5000,
   });
 
   // TanStack Query: Fetch co-ownership group for governance overview
   const { data: coOwnership } = useQuery<CoOwnershipGroupResponse>({
     queryKey: ['coOwnership', vehicle.id],
-    queryFn: () => fetchVehicleCoOwnership(vehicle.id),
-    enabled: authReady && !!vehicle.id,
+    queryFn: () => (vehicle.id && isValidVehicleUuid ? fetchVehicleCoOwnership(vehicle.id) : Promise.resolve(null as any)),
+    enabled: Boolean(canQueryVehicleOperationalData && vehicle.id),
     refetchInterval: 15000,
   });
 
   // TanStack Query: Fetch active trip for vehicle
   const { data: activeTrip } = useQuery<TripData | null>({
     queryKey: ['activeTrip', vehicle.id],
-    queryFn: () => fetchActiveTripForVehicle(vehicle.id),
-    enabled: authReady && !!vehicle.id,
+    queryFn: () => (vehicle.id && isValidVehicleUuid ? fetchActiveTripForVehicle(vehicle.id) : Promise.resolve(null)),
+    enabled: Boolean(canQueryVehicleOperationalData && vehicle.id),
     refetchInterval: 3000,
   });
 

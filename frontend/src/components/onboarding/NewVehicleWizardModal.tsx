@@ -1710,8 +1710,8 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontWeight: 800, marginBottom: '2px' }}>
                   {loadedDraftStatus === 'REJECTED'
-                    ? 'Phản hồi từ Nhân viên vận hành (Hồ sơ bị từ chối):'
-                    : 'Yêu cầu chỉnh sửa / bổ sung từ Nhân viên vận hành:'}
+                    ? 'Phản hồi từ Quản trị viên (Hồ sơ bị từ chối):'
+                    : 'Yêu cầu chỉnh sửa / bổ sung từ Quản trị viên (ADMIN):'}
                 </div>
                 <div>{staffReviewFeedback}</div>
               </div>
@@ -1825,17 +1825,17 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
                       marginBottom: '4px',
                     }}
                   >
-                    TRẠNG THÁI HỒ SƠ: {submittedApplication.status || 'SUBMITTED'} (ĐANG CHỜ NHÂN VIÊN XÉT DUYỆT)
+                    TRẠNG THÁI HỒ SƠ: {submittedApplication.status || 'SUBMITTED'} (ĐANG CHỜ QUẢN TRỊ VIÊN XÉT DUYỆT)
                   </div>
                   <h2 style={{ margin: 0, fontSize: '16.5px', fontWeight: 900, color: '#1e293b' }}>
-                    Đăng ký xe thành công. Hồ sơ của bạn đang chờ nhân viên xét duyệt.
+                    Đăng ký xe thành công. Hồ sơ của bạn đang chờ Quản trị viên (ADMIN) xét duyệt.
                   </h2>
                 </div>
               </div>
 
               <p style={{ margin: 0, fontSize: '12.5px', color: '#475569', lineHeight: 1.6 }}>
-                Hồ sơ đăng ký xe và thành lập nhóm đồng sở hữu của bạn đã được chuyển tới bộ phận{' '}
-                <strong>Nhân viên vận hành (STAFF)</strong> để thẩm định thông tin phương tiện, biển số, số VIN
+                Hồ sơ đăng ký xe và thành lập nhóm đồng sở hữu của bạn đã được chuyển tới{' '}
+                <strong>Quản trị viên (ADMIN)</strong> để thẩm định thông tin phương tiện, biển số, số VIN
                 và cơ cấu cổ phần. Phương tiện và lời mời thành viên sẽ được kích hoạt ngay sau khi hồ sơ được
                 phê duyệt.
               </p>
@@ -3079,7 +3079,7 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
                           {model || 'Chưa chọn dòng xe'}
                         </div>
                         <div style={{ fontSize: '12px', color: '#475569', marginTop: '4px', lineHeight: 1.5 }}>
-                           Văn kiện pháp lý điện tử gồm 6 điều khoản quy định quyền sở hữu, lịch đặt xe, quỹ vận hành và quy trình phê duyệt của Nhân viên vận hành.
+                           Văn kiện pháp lý điện tử gồm 6 điều khoản quy định quyền sở hữu, lịch đặt xe, quỹ vận hành và quy trình phê duyệt của Quản trị viên (ADMIN).
                         </div>
                       </div>
                     </div>
@@ -3190,7 +3190,7 @@ export const NewVehicleWizardModal: React.FC<NewVehicleWizardModalProps> = ({
                     style={{ width: '16px', height: '16px', accentColor: '#00c9d8', marginTop: '2px', flexShrink: 0 }}
                   />
                   <span>
-                    Tôi đã đọc, hiểu rõ và đồng ý với các điều khoản thỏa thuận đồng sở hữu EVShare 3D và gửi hồ sơ đăng ký xe chờ nhân viên xét duyệt.
+                    Tôi đã đọc, hiểu rõ và đồng ý với các điều khoản thỏa thuận đồng sở hữu EVShare 3D và gửi hồ sơ đăng ký xe chờ Quản trị viên (ADMIN) xét duyệt.
                   </span>
                 </label>
               </div>

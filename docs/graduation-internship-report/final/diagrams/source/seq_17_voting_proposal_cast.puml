@@ -1,0 +1,54 @@
+@startuml
+title SƠ ĐỒ TUẦN TỰ: TẠO ĐỀ XUẤT VÀ BỎ PHIẾU BIỂU QUYẾT (SEQ-17)
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam sequenceMessageAlign center
+skinparam participant {
+    BackgroundColor #F8F9FA
+    BorderColor #2C3E50
+    FontColor #2C3E50
+}
+skinparam actor {
+    BackgroundColor #E8F4F8
+    BorderColor #1A5276
+}
+skinparam database {
+    BackgroundColor #FEF9E7
+    BorderColor #B7950B
+}
+
+autonumber
+actor "Người Tạo (Member)" as Proposer
+actor "Thành Viên Nhóm" as Voter
+participant "VoteProposalController" as Controller
+participant "VoteProposalService" as Service
+database "MySQL Database" as DB
+
+Proposer -> Controller : POST /api/voting/proposals {title, description, deadline}
+activate Controller
+Controller -> Service : createProposal(userId, request)
+activate Service
+Service -> DB : INSERT INTO vote_proposals (status = 'OPEN')
+Service --> Controller : VoteProposalResponse
+deactivate Service
+Controller --> Proposer : HTTP 201 Created
+deactivate Controller
+
+Voter -> Controller : POST /api/voting/proposals/{id}/vote {voteType: 'FOR'}
+activate Controller
+Controller -> Service : castVote(proposalId, voterId, request)
+activate Service
+Service -> DB : Kiểm tra voterId đã bỏ phiếu cho proposalId chưa?
+Service -> DB : Lấy % cổ phần của voterId làm trọng số voteWeight
+Service -> DB : INSERT INTO proposal_votes (vote_type = 'FOR', weight = voteWeight)
+Service --> Controller : VoteCastResponse
+deactivate Service
+Controller --> Voter : HTTP 200 OK (Bỏ phiếu thành công)
+deactivate Controller
+
+@enduml

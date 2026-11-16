@@ -1,0 +1,147 @@
+@startuml
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Times New Roman"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+
+title Sơ Đồ Thực Thể Mối Quan Hệ Cơ Sở Dữ Liệu Tổng Quan (Entity-Relationship Diagram)
+
+entity "users" as users {
+    * id : CHAR(36) [PK]
+    --
+    email : VARCHAR(255) [UQ]
+    password_hash : VARCHAR(255)
+    full_name : VARCHAR(100)
+    phone_number : VARCHAR(20)
+    role : VARCHAR(20)
+    status : VARCHAR(20)
+    created_at : TIMESTAMP
+}
+
+entity "vehicles" as vehicles {
+    * id : CHAR(36) [PK]
+    --
+    vin : VARCHAR(50) [UQ]
+    license_plate : VARCHAR(20) [UQ]
+    model_name : VARCHAR(100)
+    exterior_color : VARCHAR(50)
+    battery_capacity_kwh : DECIMAL(8,2)
+    current_battery_level : INT
+    current_odometer_km : DECIMAL(10,2)
+    status : VARCHAR(30)
+}
+
+entity "co_ownership_groups" as groups {
+    * id : CHAR(36) [PK]
+    --
+    group_code : VARCHAR(50) [UQ]
+    group_name : VARCHAR(100)
+    max_members : INT
+    status : VARCHAR(20)
+}
+
+entity "group_members" as members {
+    * id : CHAR(36) [PK]
+    --
+    group_id : CHAR(36) [FK -> groups.id]
+    user_id : CHAR(36) [FK -> users.id]
+    role : VARCHAR(30)
+    status : VARCHAR(30)
+    joined_at : TIMESTAMP
+    removed_at : TIMESTAMP
+}
+
+entity "ownership_shares" as shares {
+    * id : CHAR(36) [PK]
+    --
+    member_id : CHAR(36) [FK -> members.id]
+    vehicle_id : CHAR(36) [FK -> vehicles.id]
+    percentage : DECIMAL(7,4)
+    capital_contribution : DECIMAL(15,2)
+}
+
+entity "bookings" as bookings {
+    * id : CHAR(36) [PK]
+    --
+    vehicle_id : CHAR(36) [FK -> vehicles.id]
+    user_id : CHAR(36) [FK -> users.id]
+    start_time : TIMESTAMP
+    end_time : TIMESTAMP
+    status : VARCHAR(30)
+    purpose : VARCHAR(255)
+}
+
+entity "trips" as trips {
+    * id : CHAR(36) [PK]
+    --
+    booking_id : CHAR(36) [UQ, FK -> bookings.id]
+    vehicle_id : CHAR(36) [FK -> vehicles.id]
+    user_id : CHAR(36) [FK -> users.id]
+    started_at : TIMESTAMP
+    ended_at : TIMESTAMP
+    start_odometer : DECIMAL(10,2)
+    end_odometer : DECIMAL(10,2)
+    energy_consumed_kwh : DECIMAL(8,3)
+    status : VARCHAR(30)
+}
+
+entity "vehicle_energy_inventories" as inventories {
+    * id : CHAR(36) [PK]
+    --
+    vehicle_id : CHAR(36) [UQ, FK -> vehicles.id]
+    available_energy_kwh : DECIMAL(12,3)
+    total_inventory_cost : DECIMAL(15,2)
+    weighted_avg_cost_per_kwh : DECIMAL(10,2)
+    is_reconciliation_required : BOOLEAN
+}
+
+entity "expenses" as expenses {
+    * id : CHAR(36) [PK]
+    --
+    vehicle_id : CHAR(36) [FK -> vehicles.id]
+    co_ownership_group_id : CHAR(36) [FK -> groups.id]
+    created_by_user_id : CHAR(36) [FK -> users.id]
+    responsible_user_id : CHAR(36) [FK -> users.id]
+    amount : DECIMAL(15,2)
+    category : VARCHAR(50)
+    allocation_policy : VARCHAR(50)
+    status : VARCHAR(30)
+}
+
+entity "expense_shares" as expense_shares {
+    * id : CHAR(36) [PK]
+    --
+    expense_id : CHAR(36) [FK -> expenses.id]
+    user_id : CHAR(36) [FK -> users.id]
+    ownership_percentage : DECIMAL(7,4)
+    share_amount : DECIMAL(15,2)
+    status : VARCHAR(30)
+}
+
+entity "personal_expense_payments" as payments {
+    * id : CHAR(36) [PK]
+    --
+    expense_id : CHAR(36) [FK -> expenses.id]
+    expense_share_id : CHAR(36) [FK -> expense_shares.id]
+    payer_user_id : CHAR(36) [FK -> users.id]
+    amount : DECIMAL(15,2)
+    status : VARCHAR(30)
+    payment_reference : VARCHAR(100)
+    financial_mode : VARCHAR(20)
+}
+
+groups ||--o{ members : "1:N"
+users ||--o{ members : "1:N"
+members ||--o{ shares : "1:N"
+vehicles ||--o{ shares : "1:N"
+vehicles ||--o{ bookings : "1:N"
+users ||--o{ bookings : "1:N"
+bookings ||--|| trips : "1:1"
+vehicles ||--|| inventories : "1:1"
+vehicles ||--o{ expenses : "1:N"
+groups ||--o{ expenses : "1:N"
+expenses ||--o{ expense_shares : "1:N"
+users ||--o{ expense_shares : "1:N"
+expense_shares ||--o{ payments : "1:N"
+
+@enduml

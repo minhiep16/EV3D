@@ -1,0 +1,78 @@
+@startuml
+title LƯỢC ĐỒ CƠ SỞ DỮ LIỆU TỔNG QUAN (CONCEPTUAL ERD)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+entity "users" as users {
+    * id : CHAR(36) [PK]
+    --
+    email : VARCHAR(255)
+    role : VARCHAR(20)
+}
+
+entity "vehicles" as vehicles {
+    * id : CHAR(36) [PK]
+    --
+    vin : VARCHAR(50)
+    license_plate : VARCHAR(20)
+    status : VARCHAR(30)
+}
+
+entity "co_ownership_groups" as groups {
+    * id : CHAR(36) [PK]
+    --
+    group_code : VARCHAR(50)
+}
+
+entity "ownership_shares" as shares {
+    * id : CHAR(36) [PK]
+    --
+    percentage : DECIMAL(7,4)
+}
+
+entity "bookings" as bookings {
+    * id : CHAR(36) [PK]
+    --
+    start_time : TIMESTAMP
+    end_time : TIMESTAMP
+    status : VARCHAR(30)
+}
+
+entity "trips" as trips {
+    * id : CHAR(36) [PK]
+    --
+    energy_consumed_kwh : DECIMAL(8,3)
+    status : VARCHAR(30)
+}
+
+entity "vehicle_energy_inventories" as energy {
+    * id : CHAR(36) [PK]
+    --
+    available_energy_kwh : DECIMAL(12,3)
+    weighted_avg_cost_per_kwh : DECIMAL(10,2)
+}
+
+entity "expenses" as expenses {
+    * id : CHAR(36) [PK]
+    --
+    amount : DECIMAL(15,2)
+    allocation_policy : VARCHAR(50)
+}
+
+users ||--o{ bookings
+vehicles ||--o{ bookings
+bookings ||--o| trips
+vehicles ||--|| energy
+vehicles ||--|| groups
+groups ||--|{ shares
+users ||--o{ shares
+vehicles ||--o{ expenses
+
+@enduml

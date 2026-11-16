@@ -1,0 +1,51 @@
+@startuml
+title LƯỢC ĐỒ CƠ SỞ DỮ LIỆU: NGƯỜI DÙNG VÀ BẢO MẬT (ERD-02)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+entity "users" as users {
+    * id : CHAR(36) [PK]
+    --
+    email : VARCHAR(255) [UNIQUE]
+    password_hash : VARCHAR(255)
+    full_name : VARCHAR(100)
+    phone_number : VARCHAR(20)
+    role : VARCHAR(20)
+    status : VARCHAR(20)
+    created_at : TIMESTAMP
+    updated_at : TIMESTAMP
+}
+
+entity "refresh_tokens" as refresh_tokens {
+    * id : CHAR(36) [PK]
+    --
+    * user_id : CHAR(36) [FK]
+    token : VARCHAR(500) [UNIQUE]
+    expiry_date : TIMESTAMP
+    revoked : BOOLEAN
+    created_at : TIMESTAMP
+}
+
+entity "audit_logs" as audit_logs {
+    * id : CHAR(36) [PK]
+    --
+    user_id : CHAR(36) [FK]
+    action : VARCHAR(100)
+    entity_name : VARCHAR(50)
+    entity_id : CHAR(36)
+    details : TEXT
+    ip_address : VARCHAR(50)
+    created_at : TIMESTAMP
+}
+
+users ||--o{ refresh_tokens : owns
+users ||--o{ audit_logs : triggers
+
+@enduml

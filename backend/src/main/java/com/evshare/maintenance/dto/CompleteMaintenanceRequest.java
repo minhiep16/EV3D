@@ -17,6 +17,7 @@ public class CompleteMaintenanceRequest {
     private Boolean useSharedFund;
     private BigDecimal sharedFundDisburseAmount;
     private java.util.List<java.util.UUID> resolvedDamageIds;
+    private java.util.List<java.util.UUID> resolvedInspectionItemIds;
 
     public CompleteMaintenanceRequest() {
     }
@@ -31,6 +32,14 @@ public class CompleteMaintenanceRequest {
 
     public void setResolvedDamageIds(java.util.List<java.util.UUID> resolvedDamageIds) {
         this.resolvedDamageIds = resolvedDamageIds;
+    }
+
+    public java.util.List<java.util.UUID> getResolvedInspectionItemIds() {
+        return resolvedInspectionItemIds;
+    }
+
+    public void setResolvedInspectionItemIds(java.util.List<java.util.UUID> resolvedInspectionItemIds) {
+        this.resolvedInspectionItemIds = resolvedInspectionItemIds;
     }
 
     public String getCompletionNote() {

@@ -33,6 +33,10 @@ public class UserPrincipal implements UserDetails {
         return user;
     }
 
+    public com.evshare.user.entity.Role getRole() {
+        return user != null ? user.getRole() : null;
+    }
+
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return authorities;
@@ -50,12 +54,12 @@ public class UserPrincipal implements UserDetails {
 
     @Override
     public boolean isAccountNonExpired() {
-        return true;
+        return user.getStatus() != com.evshare.user.entity.UserStatus.INACTIVE;
     }
 
     @Override
     public boolean isAccountNonLocked() {
-        return true;
+        return user.getStatus() != com.evshare.user.entity.UserStatus.SUSPENDED;
     }
 
     @Override

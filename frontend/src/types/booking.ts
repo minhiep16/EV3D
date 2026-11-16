@@ -8,6 +8,8 @@ export interface Booking {
   userEmail: string;
   startTime: string; // ISO 8601 string
   endTime: string;   // ISO 8601 string
+  originalStartTime?: string; // ISO 8601 string
+  originalEndTime?: string;   // ISO 8601 string
   status: BookingStatus;
   purpose?: string;
   createdAt: string;

@@ -1,10 +1,11 @@
 import React from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { VehicleResponse } from '../../../types/vehicle';
 import { Booking } from '../../../types/booking';
 import { TripData } from '../../../types/trip';
-import { fetchVehicleBookings } from '../../../services/bookingApi';
+import { fetchVehicleBookings, cancelBooking, extendBookingApi } from '../../../services/bookingApi';
 import { fetchActiveTripForVehicle, fetchBookingTrip } from '../../../services/tripApi';
+import { fetchIncidentsForVehicle } from '../../../services/disputeApi';
 import { useAuthStore } from '../../../store/authStore';
 import { useWorldStore } from '../../../store/worldStore';
 import {
@@ -20,6 +21,8 @@ import {
   Eye,
   ShieldCheck,
   Zap,
+  AlertTriangle,
+  Scale,
 } from 'lucide-react';
 
 function formatDate(isoString?: string): string {
@@ -37,7 +40,7 @@ function formatDate(isoString?: string): string {
 }
 
 function formatTimeRange(startIso?: string, endIso?: string): string {
-  if (!startIso || !endIso) return '--:-- - --:--';
+  if (!startIso || !endIso) return '--:-- – --:--';
   try {
     const dStart = new Date(startIso);
     const dEnd = new Date(endIso);
@@ -45,20 +48,33 @@ function formatTimeRange(startIso?: string, endIso?: string): string {
     const sm = String(dStart.getMinutes()).padStart(2, '0');
     const eh = String(dEnd.getHours()).padStart(2, '0');
     const em = String(dEnd.getMinutes()).padStart(2, '0');
-    return `${sh}:${sm} - ${eh}:${em}`;
+
+    const isDifferentDay =
+      dEnd.getDate() !== dStart.getDate() ||
+      dEnd.getMonth() !== dStart.getMonth() ||
+      dEnd.getFullYear() !== dStart.getFullYear();
+
+    if (isDifferentDay) {
+      return `${sh}:${sm} – ${eh}:${em} (+1 ngày)`;
+    }
+    return `${sh}:${sm} – ${eh}:${em}`;
   } catch {
-    return '--:-- - --:--';
+    return '--:-- – --:--';
   }
 }
 
-interface MyBookingsPanelProps {
+export interface MyBookingsPanelProps {
   vehicle: VehicleResponse;
-  onClose: () => void;
+  onClose?: () => void;
+  embedded?: boolean;
+  onSwitchToBookingTab?: () => void;
 }
 
 export const MyBookingsPanel: React.FC<MyBookingsPanelProps> = ({
   vehicle,
   onClose,
+  embedded = false,
+  onSwitchToBookingTab,
 }) => {
   const user = useAuthStore((state) => state.user);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
@@ -68,8 +84,14 @@ export const MyBookingsPanel: React.FC<MyBookingsPanelProps> = ({
   const returnToVehicleOverview = useWorldStore((state) => state.returnToVehicleOverview);
   const setVehicleFeatureMode = useWorldStore((state) => state.setVehicleFeatureMode);
   const enterVehicleTripVisualizationMode = useWorldStore((state) => state.enterVehicleTripVisualizationMode);
+  const openDisputePanelWithPrefill = useWorldStore((state) => state.openDisputePanelWithPrefill);
 
+  const queryClient = useQueryClient();
   const [selectedSummaryBookingId, setSelectedSummaryBookingId] = React.useState<string | null>(null);
+  const [confirmCancelId, setConfirmCancelId] = React.useState<string | null>(null);
+  const [extendingBookingId, setExtendingBookingId] = React.useState<string | null>(null);
+  const [actionError, setActionError] = React.useState<string | null>(null);
+  const [isActionLoading, setIsActionLoading] = React.useState(false);
 
   // TanStack Query: Fetch all bookings for EV01
   const { data: allBookings = [] } = useQuery<Booking[]>({
@@ -77,6 +99,14 @@ export const MyBookingsPanel: React.FC<MyBookingsPanelProps> = ({
     queryFn: () => fetchVehicleBookings(vehicle.id),
     enabled: authReady && !!vehicle.id,
     refetchInterval: 5000,
+  });
+
+  // TanStack Query: Fetch active booking incidents for this vehicle (Phase 5.6)
+  const { data: vehicleIncidents = [] } = useQuery({
+    queryKey: ['vehicleIncidents', vehicle.id],
+    queryFn: () => fetchIncidentsForVehicle(vehicle.id),
+    enabled: authReady && !!vehicle.id,
+    refetchInterval: 15000,
   });
 
   // TanStack Query: Fetch active trip for vehicle
@@ -114,6 +144,50 @@ export const MyBookingsPanel: React.FC<MyBookingsPanelProps> = ({
 
   const now = new Date();
 
+  const handleCancelBooking = async (bookingId: string) => {
+    try {
+      setIsActionLoading(true);
+      setActionError(null);
+      await cancelBooking(bookingId);
+      setConfirmCancelId(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['vehicleBookings'] }),
+        queryClient.invalidateQueries({ queryKey: ['vehicleBookings', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['activeHandovers'] }),
+        queryClient.invalidateQueries({ queryKey: ['activeHandovers', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['handoverEligibility'] }),
+        queryClient.invalidateQueries({ queryKey: ['handoverEligibility', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['vehicles'] }),
+        queryClient.invalidateQueries({ queryKey: ['activeTrip', vehicle.id] }),
+      ]);
+    } catch (err: any) {
+      setActionError(err.message || 'Không thể hủy lịch đặt xe lúc này.');
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleExtendBooking = async (bookingId: string, currentEndTime: string, extraMinutes: number) => {
+    try {
+      setIsActionLoading(true);
+      setActionError(null);
+      const newEndTime = new Date(new Date(currentEndTime).getTime() + extraMinutes * 60000).toISOString();
+      await extendBookingApi(bookingId, newEndTime, `Gia hạn thêm ${extraMinutes} phút`);
+      setExtendingBookingId(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['vehicleBookings'] }),
+        queryClient.invalidateQueries({ queryKey: ['vehicleBookings', vehicle.id] }),
+        queryClient.invalidateQueries({ queryKey: ['activeHandovers'] }),
+        queryClient.invalidateQueries({ queryKey: ['handoverEligibility'] }),
+        queryClient.invalidateQueries({ queryKey: ['vehicles'] }),
+      ]);
+    } catch (err: any) {
+      setActionError(err.message || 'Không thể gia hạn lịch đặt lúc này.');
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
   // Upcoming bookings: exclude the active trip booking, only show upcoming confirmed/pending
   const upcomingBookings = React.useMemo(() => {
     return userBookings.filter((b) => {
@@ -144,16 +218,25 @@ export const MyBookingsPanel: React.FC<MyBookingsPanelProps> = ({
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
-      style={{
+      style={embedded ? {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+        position: 'relative',
+        color: '#ffffff',
+        fontFamily: 'var(--font-family)',
+      } : {
         pointerEvents: 'auto',
-        width: '340px',
-        maxHeight: '86vh',
+        width: 'clamp(440px, 28vw, 495px)',
+        maxWidth: 'min(495px, calc(100vw - 32px))',
+        maxHeight: 'calc(100vh - 96px)',
         overflowY: 'auto',
-        background: 'rgba(8, 14, 24, 0.95)',
-        backdropFilter: 'blur(20px)',
-        border: '1px solid #10b981',
-        boxShadow: '0 20px 50px rgba(0, 0, 0, 0.85), 0 0 30px rgba(16, 185, 129, 0.22)',
-        borderRadius: '16px',
+        background: 'rgba(7, 20, 38, 0.94)',
+        backdropFilter: 'blur(24px)',
+        WebkitBackdropFilter: 'blur(24px)',
+        border: '1.5px solid rgba(0, 242, 254, 0.3)',
+        boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65), 0 0 30px rgba(0, 242, 254, 0.16)',
+        borderRadius: '20px',
         padding: '20px',
         color: '#ffffff',
         fontFamily: 'var(--font-family)',
@@ -161,72 +244,78 @@ export const MyBookingsPanel: React.FC<MyBookingsPanelProps> = ({
         zIndex: 40,
       }}
     >
-      {/* Close button */}
-      <button
-        type="button"
-        onClick={onClose}
-        title="Đóng lịch đặt xe"
-        style={{
-          position: 'absolute',
-          top: '14px',
-          right: '14px',
-          background: 'rgba(255, 255, 255, 0.08)',
-          border: 'none',
-          borderRadius: '50%',
-          width: '24px',
-          height: '24px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: '#94a3b8',
-          cursor: 'pointer',
-          zIndex: 30,
-          pointerEvents: 'auto',
-        }}
-      >
-        <X size={14} />
-      </button>
+      {!embedded && (
+        <>
+          {/* Close button */}
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              title="Đóng lịch đặt xe"
+              style={{
+                position: 'absolute',
+                top: '14px',
+                right: '14px',
+                background: 'rgba(255, 255, 255, 0.08)',
+                border: 'none',
+                borderRadius: '50%',
+                width: '24px',
+                height: '24px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#94a3b8',
+                cursor: 'pointer',
+                zIndex: 30,
+                pointerEvents: 'auto',
+              }}
+            >
+              <X size={14} />
+            </button>
+          )}
 
-      {/* Header Badge */}
-      <div
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '6px',
-          fontSize: '10px',
-          fontWeight: 700,
-          color: '#34d399',
-          letterSpacing: '0.08em',
-          textTransform: 'uppercase',
-          marginBottom: '6px',
-        }}
-      >
-        <Calendar size={13} />
-        LỊCH ĐẶT CÁ NHÂN
-      </div>
+          {/* Header Badge */}
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '10px',
+              fontWeight: 700,
+              color: '#34d399',
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              marginBottom: '6px',
+            }}
+          >
+            <Calendar size={13} />
+            LỊCH ĐẶT CÁ NHÂN
+          </div>
 
-      <h3
-        style={{
-          fontSize: '19px',
-          fontWeight: 800,
-          letterSpacing: '-0.01em',
-          margin: '0 0 2px 0',
-          color: '#ffffff',
-        }}
-      >
-        LỊCH SỬ DỤNG CỦA TÔI
-      </h3>
+          <h3
+            style={{
+              fontSize: '19px',
+              fontWeight: 800,
+              letterSpacing: '-0.01em',
+              margin: '0 0 2px 0',
+              color: '#ffffff',
+            }}
+          >
+            LỊCH SỬ DỤNG CỦA TÔI
+          </h3>
 
-      <div
-        style={{
-          fontSize: '12px',
-          color: '#34d399',
-          fontWeight: 600,
-          marginBottom: '16px',
-        }}
-      >
-        Xe Điện EV01 — {user?.fullName || 'Đồng sở hữu'}
-      </div>
+          <div
+            style={{
+              fontSize: '12px',
+              color: '#34d399',
+              fontWeight: 600,
+              marginBottom: '16px',
+            }}
+          >
+            Xe Điện EV01 — {user?.fullName || 'Đồng sở hữu'}
+          </div>
+        </>
+      )}
 
       {/* ======================================================== */}
       {/* SECTION 1: CHUYẾN ĐI HIỆN TẠI (ACTIVE TRIP)             */}
@@ -429,6 +518,227 @@ export const MyBookingsPanel: React.FC<MyBookingsPanelProps> = ({
                     <span style={{ color: '#cbd5e1' }}>{b.purpose}</span>
                   </div>
                 )}
+
+                {/* Booking Management Controls: Extend & Cancel */}
+                <div style={{ marginTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {actionError && (confirmCancelId === b.id || extendingBookingId === b.id) && (
+                    <div style={{ color: '#f87171', fontSize: '10.5px', background: 'rgba(239, 68, 68, 0.1)', padding: '4px 8px', borderRadius: '4px' }}>
+                      {actionError}
+                    </div>
+                  )}
+
+                  {confirmCancelId === b.id ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', background: 'rgba(239, 68, 68, 0.12)', padding: '8px', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                      <span style={{ fontSize: '10.5px', color: '#fca5a5', fontWeight: 600 }}>
+                        Bạn có chắc chắn muốn hủy lịch đặt xe này?
+                      </span>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button
+                          type="button"
+                          disabled={isActionLoading}
+                          onClick={() => handleCancelBooking(b.id)}
+                          style={{
+                            flex: 1,
+                            background: '#ef4444',
+                            border: 'none',
+                            borderRadius: '6px',
+                            padding: '5px',
+                            color: '#ffffff',
+                            fontSize: '10px',
+                            fontWeight: 800,
+                            cursor: isActionLoading ? 'not-allowed' : 'pointer',
+                          }}
+                        >
+                          {isActionLoading ? 'ĐANG HỦY...' : 'XÁC NHẬN HỦY'}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isActionLoading}
+                          onClick={() => { setConfirmCancelId(null); setActionError(null); }}
+                          style={{
+                            flex: 1,
+                            background: 'rgba(255, 255, 255, 0.1)',
+                            border: '1px solid rgba(255, 255, 255, 0.2)',
+                            borderRadius: '6px',
+                            padding: '5px',
+                            color: '#cbd5e1',
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          QUAY LẠI
+                        </button>
+                      </div>
+                    </div>
+                  ) : extendingBookingId === b.id ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', background: 'rgba(0, 242, 254, 0.08)', padding: '8px', borderRadius: '8px', border: '1px solid rgba(0, 242, 254, 0.25)' }}>
+                      <span style={{ fontSize: '10.5px', color: '#00f2fe', fontWeight: 600 }}>
+                        Chọn khoảng thời gian gia hạn thêm:
+                      </span>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button
+                          type="button"
+                          disabled={isActionLoading}
+                          onClick={() => handleExtendBooking(b.id, b.endTime, 30)}
+                          style={{
+                            flex: 1,
+                            background: 'rgba(0, 242, 254, 0.2)',
+                            border: '1px solid #00f2fe',
+                            borderRadius: '6px',
+                            padding: '5px',
+                            color: '#00f2fe',
+                            fontSize: '10px',
+                            fontWeight: 800,
+                            cursor: isActionLoading ? 'not-allowed' : 'pointer',
+                          }}
+                        >
+                          +30 PHÚT
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isActionLoading}
+                          onClick={() => handleExtendBooking(b.id, b.endTime, 60)}
+                          style={{
+                            flex: 1,
+                            background: 'rgba(0, 242, 254, 0.2)',
+                            border: '1px solid #00f2fe',
+                            borderRadius: '6px',
+                            padding: '5px',
+                            color: '#00f2fe',
+                            fontSize: '10px',
+                            fontWeight: 800,
+                            cursor: isActionLoading ? 'not-allowed' : 'pointer',
+                          }}
+                        >
+                          +60 PHÚT
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isActionLoading}
+                          onClick={() => { setExtendingBookingId(null); setActionError(null); }}
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.08)',
+                            border: '1px solid rgba(255, 255, 255, 0.15)',
+                            borderRadius: '6px',
+                            padding: '5px 8px',
+                            color: '#cbd5e1',
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          ĐÓNG
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setExtendingBookingId(b.id);
+                          setConfirmCancelId(null);
+                          setActionError(null);
+                        }}
+                        style={{
+                          flex: 1,
+                          background: 'rgba(0, 242, 254, 0.1)',
+                          border: '1px solid rgba(0, 242, 254, 0.3)',
+                          borderRadius: '6px',
+                          padding: '5px 8px',
+                          color: '#00f2fe',
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        GIA HẠN LỊCH
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setConfirmCancelId(b.id);
+                          setExtendingBookingId(null);
+                          setActionError(null);
+                        }}
+                        style={{
+                          flex: 1,
+                          background: 'rgba(239, 68, 68, 0.1)',
+                          border: '1px solid rgba(239, 68, 68, 0.3)',
+                          borderRadius: '6px',
+                          padding: '5px 8px',
+                          color: '#f87171',
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        HỦY LỊCH
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Phase 5.6 Auto-detected Incident Alert Banner */}
+                {(() => {
+                  const incident = vehicleIncidents.find(
+                    (inc) => inc.impactedBookingId === b.id && inc.state !== 'CLEARED'
+                  );
+                  if (!incident) return null;
+                  return (
+                    <div
+                      style={{
+                        marginTop: '8px',
+                        background: 'rgba(239, 68, 68, 0.15)',
+                        border: '1px solid rgba(239, 68, 68, 0.4)',
+                        borderRadius: '8px',
+                        padding: '8px 10px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <AlertTriangle size={13} color="#f87171" />
+                        <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#f87171' }}>
+                          NGUY CƠ CHẬM TRỄ BÀN GIAO XE
+                        </span>
+                      </div>
+                      <span style={{ fontSize: '10.5px', color: '#fed7aa', lineHeight: 1.4 }}>
+                        Lượt đặt xe của bạn có thể bị ảnh hưởng. Hệ thống đã ghi nhận dữ liệu để đối chiếu.
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          openDisputePanelWithPrefill(vehicle.id, incident.prefilledDispute);
+                        }}
+                        style={{
+                          marginTop: '2px',
+                          padding: '6px 10px',
+                          background: 'linear-gradient(135deg, #e11d48 0%, #be123c 100%)',
+                          border: 'none',
+                          borderRadius: '6px',
+                          color: '#ffffff',
+                          fontSize: '10.5px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '4px',
+                          boxShadow: '0 2px 8px rgba(225, 29, 72, 0.3)',
+                        }}
+                      >
+                        <Scale size={12} />
+                        YÊU CẦU GIẢI QUYẾT
+                      </button>
+                    </div>
+                  );
+                })()}
               </div>
             ))}
           </div>
@@ -448,7 +758,7 @@ export const MyBookingsPanel: React.FC<MyBookingsPanelProps> = ({
             </p>
             <button
               type="button"
-              onClick={() => setVehicleFeatureMode('BOOKING')}
+              onClick={() => (onSwitchToBookingTab ? onSwitchToBookingTab() : setVehicleFeatureMode('BOOKING'))}
               style={{
                 background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
                 border: 'none',
@@ -698,56 +1008,58 @@ export const MyBookingsPanel: React.FC<MyBookingsPanelProps> = ({
       )}
 
       {/* Action Buttons */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
-        <button
-          type="button"
-          onClick={() => setVehicleFeatureMode('BOOKING')}
-          style={{
-            pointerEvents: 'auto',
-            width: '100%',
-            background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
-            border: 'none',
-            borderRadius: '10px',
-            padding: '10px',
-            color: '#ffffff',
-            fontSize: '12px',
-            fontWeight: 800,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '7px',
-            boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
-          }}
-        >
-          <CalendarPlus size={14} />
-          ĐẶT THÊM LỊCH SỬ DỤNG
-        </button>
+      {!embedded && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
+          <button
+            type="button"
+            onClick={() => (onSwitchToBookingTab ? onSwitchToBookingTab() : setVehicleFeatureMode('BOOKING'))}
+            style={{
+              pointerEvents: 'auto',
+              width: '100%',
+              background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+              border: 'none',
+              borderRadius: '10px',
+              padding: '10px',
+              color: '#ffffff',
+              fontSize: '12px',
+              fontWeight: 800,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '7px',
+              boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
+            }}
+          >
+            <CalendarPlus size={14} />
+            ĐẶT THÊM LỊCH SỬ DỤNG
+          </button>
 
-        <button
-          type="button"
-          onClick={() => returnToVehicleOverview()}
-          style={{
-            pointerEvents: 'auto',
-            width: '100%',
-            background: 'rgba(255, 255, 255, 0.06)',
-            border: '1px solid rgba(255, 255, 255, 0.12)',
-            borderRadius: '10px',
-            padding: '9px',
-            color: '#cbd5e1',
-            fontSize: '11.5px',
-            fontWeight: 700,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '6px',
-          }}
-        >
-          <ArrowLeft size={13} />
-          QUAY LẠI TỔNG QUAN XE
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={() => returnToVehicleOverview()}
+            style={{
+              pointerEvents: 'auto',
+              width: '100%',
+              background: 'rgba(255, 255, 255, 0.06)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              borderRadius: '10px',
+              padding: '9px',
+              color: '#cbd5e1',
+              fontSize: '11.5px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+            }}
+          >
+            <ArrowLeft size={13} />
+            QUAY LẠI TỔNG QUAN XE
+          </button>
+        </div>
+      )}
     </div>
   );
 };

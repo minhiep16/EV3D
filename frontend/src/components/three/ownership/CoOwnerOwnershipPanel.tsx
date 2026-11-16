@@ -13,6 +13,7 @@ import {
   MemberSharePreview,
   OwnershipHistoryResponse,
   MembershipWithdrawalResponse,
+  CreateTransferPayload,
   AcceptTransferPayload,
 } from '../../../types/ownershipTransfer';
 import {
@@ -20,7 +21,15 @@ import {
   removeMemberFromGroup,
   searchAvailableUsers,
   addMemberToGroup,
+  fetchInvitationPermission,
+  fetchGroupInvitations,
+  submitContributorConsent,
+  cancelInvitation,
+  finalizeInvitation,
 } from '../../../services/coOwnershipApi';
+import { MembershipInvitationResponse } from '../../../types/coOwnership';
+import { EnhancedAddMemberModal } from './EnhancedAddMemberModal';
+import { CoOwnerContractAmendmentView } from './CoOwnerContractAmendmentView';
 import {
   fetchGroupTransfers,
   fetchIncomingTransfers,
@@ -30,6 +39,7 @@ import {
   rejectTransfer,
   cancelTransfer,
   completeTransfer,
+  recoverEligibleTransfers,
   fetchOwnershipHistory,
   createWithdrawalRequest,
   confirmTransferorConsent,
@@ -82,7 +92,7 @@ interface CoOwnerOwnershipPanelProps {
   onClose: () => void;
 }
 
-type PanelSubView = 'MEMBERS' | 'TRANSFER_FORM' | 'INCOMING_TRANSFERS' | 'WITHDRAWAL_FORM' | 'HISTORY';
+type PanelSubView = 'MEMBERS' | 'TRANSFER_FORM' | 'INCOMING_TRANSFERS' | 'WITHDRAWAL_FORM' | 'HISTORY' | 'AMENDMENT_SIGNING';
 
 interface ReviewedAppendixSnapshot {
   previewId: string;
@@ -145,12 +155,14 @@ const getTransferDisplayStatus = (req: OwnershipTransferResponse): { label: stri
   const isTransferorAccepted = Boolean(req.transferorAccepted ?? req.isTransferorAccepted);
   const isRecipientAccepted = Boolean(req.recipientAccepted ?? req.isRecipientAccepted);
   const canComplete = Boolean(req.canFinalize ?? req.canComplete);
+  const outstandingAmount = Number(req.outstandingObligationAmount ?? 0);
+  const hasActualDebt = Boolean(req.hasOutstandingFinancialObligations === true && outstandingAmount > 0);
 
-  if (canComplete || (isTransferorAccepted && isRecipientAccepted && (!req.finalizationBlockers || req.finalizationBlockers.length === 0))) {
+  if (canComplete || (isTransferorAccepted && isRecipientAccepted && !hasActualDebt)) {
     return { label: 'ĐỦ ĐIỀU KIỆN HOÀN TẤT', color: '#10b981' };
   }
   if (isTransferorAccepted && isRecipientAccepted) {
-    return { label: 'CHỜ HOÀN TẤT ĐIỀU KIỆN', color: '#38bdf8' };
+    return { label: hasActualDebt ? 'CHỜ THANH TOÁN NGHĨA VỤ' : 'ĐỦ ĐIỀU KIỆN HOÀN TẤT', color: hasActualDebt ? '#f59e0b' : '#10b981' };
   }
   if (isTransferorAccepted && !isRecipientAccepted) {
     return { label: 'CHỜ NGƯỜI NHẬN XÁC NHẬN', color: '#f59e0b' };
@@ -249,6 +261,13 @@ const TransferCardItem: React.FC<TransferCardItemProps> = ({
   const currentId = String(currentUser?.id || '').toLowerCase();
   const isRecipient = currentId === String(req.toUserId ?? req.recipientUserId ?? '').toLowerCase();
   const isTransferor = currentId === String(req.fromUserId ?? req.transferorUserId ?? '').toLowerCase();
+  const outstandingAmount = Number(req.outstandingObligationAmount ?? 0);
+  const hasActualDebt = Boolean(req.hasOutstandingFinancialObligations === true && outstandingAmount > 0);
+  const isResponsibleMember = Boolean(
+    currentUser && (
+      currentId === String(req.responsibleUserId || req.fromUserId || req.transferorUserId || '').toLowerCase()
+    )
+  );
   const isConsentEligible =
     (req.status === 'PENDING_ACCEPTANCE' ||
       req.status === 'PENDING_CONTRACT' ||
@@ -438,7 +457,7 @@ const TransferCardItem: React.FC<TransferCardItemProps> = ({
             {req.status === 'COMPLETED'
               ? 'CHUYỂN NHƯỢNG THÀNH CÔNG'
               : (isTransferorAccepted && isRecipientAccepted)
-              ? (req.canFinalize ?? req.canComplete ? 'ĐỦ ĐIỀU KIỆN HOÀN TẤT' : 'CHỜ HOÀN TẤT ĐIỀU KIỆN')
+              ? (!hasActualDebt || (req.canFinalize ?? req.canComplete) ? 'ĐỦ ĐIỀU KIỆN HOÀN TẤT' : 'CHỜ THANH TOÁN NGHĨA VỤ')
               : isTransferorAccepted
               ? 'CHỜ NGƯỜI NHẬN XÁC NHẬN'
               : isRecipientAccepted
@@ -487,8 +506,48 @@ const TransferCardItem: React.FC<TransferCardItemProps> = ({
           </div>
         )}
 
-        {/* Financial Obligation Blocker Banner with "XEM NGHĨA VỤ TÀI CHÍNH" */}
-        {(req.hasOutstandingFinancialObligations || (req.finalizationBlockers && req.finalizationBlockers.some((b) => b.includes('tài chính') || b.includes('nghĩa vụ')))) && req.status !== 'COMPLETED' && (
+        {/* Financial Obligation Status (Section 6) */}
+        {!hasActualDebt && req.status !== 'COMPLETED' ? (
+          /* Satisfied Condition: Authoritative outstanding amount is 0 */
+          <div
+            style={{
+              background: 'rgba(16, 185, 129, 0.08)',
+              border: '1px solid rgba(16, 185, 129, 0.35)',
+              borderRadius: '8px',
+              padding: '8px 12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '8px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <CheckCircle2 size={16} color="#10b981" style={{ flexShrink: 0 }} />
+              <div>
+                <div style={{ fontSize: '11px', fontWeight: 800, color: '#6ee7b7' }}>
+                  ĐÃ HOÀN TẤT ĐIỀU KIỆN TÀI CHÍNH
+                </div>
+                <div style={{ fontSize: '9.5px', color: '#cbd5e1', marginTop: '1px' }}>
+                  Số tiền còn phải thanh toán: <strong style={{ color: '#10b981', fontFamily: 'monospace' }}>0 đ</strong>
+                </div>
+              </div>
+            </div>
+            <span
+              style={{
+                fontSize: '9px',
+                fontWeight: 800,
+                padding: '2px 7px',
+                borderRadius: '4px',
+                background: 'rgba(16, 185, 129, 0.2)',
+                color: '#6ee7b7',
+                border: '1px solid rgba(16, 185, 129, 0.4)',
+              }}
+            >
+              HỢP LỆ
+            </span>
+          </div>
+        ) : hasActualDebt && req.status !== 'COMPLETED' ? (
+          /* Positive Outstanding Debt Exists */
           <div
             style={{
               background: 'rgba(245, 158, 11, 0.08)',
@@ -553,7 +612,7 @@ const TransferCardItem: React.FC<TransferCardItemProps> = ({
               <div>
                 <span style={{ color: '#94a3b8' }}>Số tiền chưa quyết toán: </span>
                 <span style={{ color: '#f87171', fontWeight: 800, fontFamily: 'monospace' }}>
-                  {req.outstandingObligationAmount != null ? `${Number(req.outstandingObligationAmount).toLocaleString('vi-VN')} ₫` : '0 ₫'}
+                  {Number(req.outstandingObligationAmount).toLocaleString('vi-VN')} ₫
                 </span>
               </div>
               <div>
@@ -619,7 +678,7 @@ const TransferCardItem: React.FC<TransferCardItemProps> = ({
                     QUY TRÌNH QUYẾT TOÁN NGHĨA VỤ TÀI CHÍNH (DEMO)
                   </div>
                   <div style={{ fontSize: '9.5px', color: '#94a3b8', marginTop: '2px' }}>
-                    Khoản chi: {req.financialObligationExpenseTitle || 'Chi phí sạc điện cá nhân'} • Mã GD: {req.id ? req.id.slice(0, 8) : 'N/A'}
+                    Khoản chi: {req.financialObligationExpenseTitle || 'Chi phí cá nhân'} • Mã GD: {req.id ? req.id.slice(0, 8) : 'N/A'}
                   </div>
                 </div>
 
@@ -642,11 +701,12 @@ const TransferCardItem: React.FC<TransferCardItemProps> = ({
                   </div>
                 )}
 
-                {/* Step 1: Submit DEMO Payment */}
+                {/* Step 1: Submit DEMO Payment (Section 5 & 6: Authorized responsible member only) */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <div style={{ fontSize: '10px', fontWeight: 700, color: '#e2e8f0' }}>
-                    1. Bên chuyển nhượng nộp thanh toán demo:
+                    1. Nộp thanh toán demo nghĩa vụ tài chính:
                   </div>
+
                   {isPaymentPending ? (
                     <div
                       style={{
@@ -674,6 +734,26 @@ const TransferCardItem: React.FC<TransferCardItemProps> = ({
                           <span>• Nộp lúc: {new Date(req.financialObligationPaymentSubmittedAt).toLocaleString('vi-VN')}</span>
                         )}
                       </div>
+                    </div>
+                  ) : !isResponsibleMember ? (
+                    /* Unauthorized viewer notice (e.g. Recipient) */
+                    <div
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.04)',
+                        border: '1px dashed rgba(255, 255, 255, 0.15)',
+                        borderRadius: '6px',
+                        padding: '8px 10px',
+                        color: '#94a3b8',
+                        fontSize: '10px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      <Info size={14} color="#38bdf8" style={{ flexShrink: 0 }} />
+                      <span>
+                        Chỉ bên chuyển nhượng (<strong style={{ color: '#ffffff' }}>{req.responsibleUserName || req.fromUserName}</strong>) mới có quyền nộp thanh toán cho nghĩa vụ cá nhân này.
+                      </span>
                     </div>
                   ) : isPaymentRejected ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -708,6 +788,13 @@ const TransferCardItem: React.FC<TransferCardItemProps> = ({
                           try {
                             const targetExpenseId = req.financialObligationExpenseId;
                             const targetAmount = req.outstandingObligationAmount != null ? Number(req.outstandingObligationAmount) : 0;
+                            if (targetAmount <= 0) {
+                              setFinancialPaymentFeedback({
+                                text: 'Nghĩa vụ tài chính không có số tiền cần thanh toán.',
+                                isError: false,
+                              });
+                              return;
+                            }
                             const refCode = `DEMO-PAY-XFER-${req.id ? req.id.slice(0, 6) : Date.now().toString().slice(-6)}`;
 
                             if (targetExpenseId) {
@@ -728,8 +815,14 @@ const TransferCardItem: React.FC<TransferCardItemProps> = ({
                             });
                             onSettlementSuccess?.();
                           } catch (err: any) {
+                            let msg = err?.response?.data?.message || err?.message || 'Lỗi khi gửi thanh toán demo. Vui lòng thử lại.';
+                            if (msg.includes('Validation error') || msg.includes('1000') || msg.includes('1.000')) {
+                              msg = 'Số tiền thanh toán tối thiểu là 1.000 đ. Vui lòng kiểm tra lại nghĩa vụ tài chính.';
+                            } else if (msg.includes('thành viên khác') || msg.includes('AccessDenied')) {
+                              msg = 'Bạn không thể nộp thanh toán cho nghĩa vụ của thành viên khác.';
+                            }
                             setFinancialPaymentFeedback({
-                              text: err?.response?.data?.message || err?.message || 'Lỗi khi gửi thanh toán demo. Vui lòng thử lại.',
+                              text: msg,
                               isError: true,
                             });
                           } finally {
@@ -752,7 +845,7 @@ const TransferCardItem: React.FC<TransferCardItemProps> = ({
                         }}
                       >
                         {isSubmittingFinancialDemo ? <Loader2 size={12} className="animate-spin" /> : <CreditCard size={12} />}
-                        <span>NỘP LẠI THANH TOÁN DEMO ({req.outstandingObligationAmount != null ? `${Number(req.outstandingObligationAmount).toLocaleString('vi-VN')} ₫` : '0 ₫'})</span>
+                        <span>NỘP LẠI THANH TOÁN DEMO ({Number(req.outstandingObligationAmount).toLocaleString('vi-VN')} ₫)</span>
                       </button>
                     </div>
                   ) : (
@@ -766,6 +859,13 @@ const TransferCardItem: React.FC<TransferCardItemProps> = ({
                         try {
                           const targetExpenseId = req.financialObligationExpenseId;
                           const targetAmount = req.outstandingObligationAmount != null ? Number(req.outstandingObligationAmount) : 0;
+                          if (targetAmount <= 0) {
+                            setFinancialPaymentFeedback({
+                              text: 'Nghĩa vụ tài chính không có số tiền cần thanh toán.',
+                              isError: false,
+                            });
+                            return;
+                          }
                           const refCode = `DEMO-PAY-XFER-${req.id ? req.id.slice(0, 6) : Date.now().toString().slice(-6)}`;
 
                           if (targetExpenseId) {
@@ -786,8 +886,14 @@ const TransferCardItem: React.FC<TransferCardItemProps> = ({
                           });
                           onSettlementSuccess?.();
                         } catch (err: any) {
+                          let msg = err?.response?.data?.message || err?.message || 'Lỗi khi gửi thanh toán demo. Vui lòng thử lại.';
+                          if (msg.includes('Validation error') || msg.includes('1000') || msg.includes('1.000')) {
+                            msg = 'Số tiền thanh toán tối thiểu là 1.000 đ. Vui lòng kiểm tra lại nghĩa vụ tài chính.';
+                          } else if (msg.includes('thành viên khác') || msg.includes('AccessDenied')) {
+                            msg = 'Bạn không thể nộp thanh toán cho nghĩa vụ của thành viên khác.';
+                          }
                           setFinancialPaymentFeedback({
-                            text: err?.response?.data?.message || err?.message || 'Lỗi khi gửi thanh toán demo. Vui lòng thử lại.',
+                            text: msg,
                             isError: true,
                           });
                         } finally {
@@ -810,7 +916,7 @@ const TransferCardItem: React.FC<TransferCardItemProps> = ({
                       }}
                     >
                       {isSubmittingFinancialDemo ? <Loader2 size={12} className="animate-spin" /> : <CreditCard size={12} />}
-                      <span>NỘP THANH TOÁN DEMO ({req.outstandingObligationAmount != null ? `${Number(req.outstandingObligationAmount).toLocaleString('vi-VN')} ₫` : '0 ₫'})</span>
+                      <span>NỘP THANH TOÁN DEMO ({Number(req.outstandingObligationAmount).toLocaleString('vi-VN')} ₫)</span>
                     </button>
                   )}
                 </div>
@@ -905,7 +1011,7 @@ const TransferCardItem: React.FC<TransferCardItemProps> = ({
               </div>
             )}
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* Appendix Viewer Action Button */}
@@ -1567,7 +1673,11 @@ const TransferCardItem: React.FC<TransferCardItemProps> = ({
       )}
 
       {/* Atomic Complete Button if eligible */}
-      {((req.canFinalize ?? req.canComplete) || (isTransferorAccepted && isRecipientAccepted && req.status !== 'COMPLETED' && (!req.finalizationBlockers || req.finalizationBlockers.length === 0))) && (
+      {req.status !== 'COMPLETED' && (
+        (req.canFinalize ?? req.canComplete) ||
+        (isTransferorAccepted && isRecipientAccepted && !hasActualDebt) ||
+        (isTransferorAccepted && isRecipientAccepted && (!req.finalizationBlockers || req.finalizationBlockers.length === 0))
+      ) && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           <button
             type="button"
@@ -1695,12 +1805,14 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
     isLoading,
     isError,
     error,
+    refetch: refetchCoOwnership,
   } = useQuery<CoOwnershipGroupResponse>({
     queryKey: ['coOwnership', vehicle.id],
     queryFn: () => fetchVehicleCoOwnership(vehicle.id),
     staleTime: 6000,
   });
 
+  const isAuthoritativeDataAvailable = Boolean(!isLoading && !isError && coOwnership && coOwnership.id);
   const groupId = coOwnership?.id;
 
   // 2. Incoming transfer requests for current user
@@ -1823,9 +1935,10 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
       const isRecipient = currentId === String(t.toUserId ?? t.recipientUserId ?? '').toLowerCase();
       const isTransferorAccepted = Boolean(t.transferorAccepted ?? t.isTransferorAccepted);
       const isRecipientAccepted = Boolean(t.recipientAccepted ?? t.isRecipientAccepted);
+      const tOutstanding = Number(t.outstandingObligationAmount ?? 0);
       const hasFinBlocker = Boolean(
-        t.hasOutstandingFinancialObligations ||
-        (t.finalizationBlockers && t.finalizationBlockers.some((b) => b.includes('tài chính') || b.includes('nghĩa vụ')))
+        (t.hasOutstandingFinancialObligations && tOutstanding > 0) ||
+        (t.finalizationBlockers && t.finalizationBlockers.some((b) => (b.includes('tài chính') || b.includes('nghĩa vụ')) && !b.includes('0 ₫') && !b.includes('0 đ')))
       );
       return (isTransferor && !isTransferorAccepted) || (isRecipient && !isRecipientAccepted) || (isTransferor && hasFinBlocker);
     });
@@ -1952,6 +2065,78 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
       return shareB - shareA;
     });
   }, [safeMembers]);
+
+  // 5. Membership Invitations Queries & Actions
+  const [signingInvitationId, setSigningInvitationId] = useState<string | null>(null);
+
+  const { data: invitationPermission } = useQuery({
+    queryKey: ['invitationPermission', coOwnership?.id, vehicle.id],
+    queryFn: () => (coOwnership?.id ? fetchInvitationPermission(coOwnership.id, vehicle.id) : null),
+    enabled: Boolean(coOwnership?.id),
+    staleTime: 5000,
+  });
+
+  const isLeader = Boolean(isAuthoritativeDataAvailable && invitationPermission?.canInvite);
+
+  const { data: rawGroupInvitations, refetch: refetchInvitations } = useQuery<MembershipInvitationResponse[]>({
+    queryKey: ['groupInvitations', coOwnership?.id],
+    queryFn: () => (coOwnership?.id ? fetchGroupInvitations(coOwnership.id) : Promise.resolve([])),
+    enabled: Boolean(coOwnership?.id),
+    refetchInterval: 5000,
+  });
+
+  const groupInvitations = useMemo<MembershipInvitationResponse[]>(() => {
+    if (!rawGroupInvitations) return [];
+    if (Array.isArray(rawGroupInvitations)) return rawGroupInvitations;
+    return [];
+  }, [rawGroupInvitations]);
+
+  const pendingInvitations = useMemo(() => {
+    return groupInvitations.filter(
+      (inv) =>
+        inv.status === 'PENDING_CONTRIBUTOR_CONSENT' ||
+        inv.status === 'PENDING_INVITEE_RESPONSE' ||
+        inv.status === 'ACCEPTED' ||
+        inv.status === 'PENDING_CONTRACT_SIGNATURE' ||
+        inv.status === 'READY_FOR_COMPLETION' ||
+        inv.status === 'INVITED'
+    );
+  }, [groupInvitations]);
+
+  const historyInvitations = useMemo(() => {
+    return groupInvitations.filter(
+      (inv) =>
+        inv.status === 'COMPLETED' ||
+        inv.status === 'REJECTED' ||
+        inv.status === 'CANCELLED' ||
+        inv.status === 'EXPIRED'
+    );
+  }, [groupInvitations]);
+
+  const consentMutation = useMutation({
+    mutationFn: ({ invId, approved }: { invId: string; approved: boolean }) =>
+      submitContributorConsent(invId, { approved }),
+    onSuccess: () => {
+      invalidateAllOwnershipData();
+      refetchInvitations();
+    },
+  });
+
+  const cancelInvMutation = useMutation({
+    mutationFn: (invId: string) => cancelInvitation(invId),
+    onSuccess: () => {
+      invalidateAllOwnershipData();
+      refetchInvitations();
+    },
+  });
+
+  const finalizeInvMutation = useMutation({
+    mutationFn: (invId: string) => finalizeInvitation(invId),
+    onSuccess: () => {
+      invalidateAllOwnershipData();
+      refetchInvitations();
+    },
+  });
 
   // Current user's membership and current percentage
   const currentMember = useMemo(() => {
@@ -2092,7 +2277,7 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
 
   // Check if current user is active REPRESENTATIVE
   const canManage = useMemo(() => {
-    if (!currentUser || !coOwnership) return false;
+    if (!currentUser || !coOwnership || !isAuthoritativeDataAvailable) return false;
     if (currentUser.role !== 'CO_OWNER') return false;
     const currentMembership = (Array.isArray(safeMembers) ? safeMembers : []).find((m) => m && m.userId === currentUser.id);
     return (
@@ -2152,6 +2337,8 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
     queryClient.invalidateQueries({ queryKey: ['expenseShares'] });
     queryClient.invalidateQueries({ queryKey: ['my-personal-payments'] });
     queryClient.invalidateQueries({ queryKey: ['pendingPersonalPayments'] });
+    queryClient.invalidateQueries({ queryKey: ['groupInvitations'] });
+    queryClient.invalidateQueries({ queryKey: ['invitationPermission'] });
   };
 
   // Add Member Mutation
@@ -2312,6 +2499,19 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
     },
   });
 
+  useEffect(() => {
+    // Proactively recover existing eligible zero-debt transfers in background
+    recoverEligibleTransfers()
+      .then((res) => {
+        if (res && res.length > 0) {
+          invalidateAllOwnershipData();
+          refetchIncoming();
+          refetchGroupTransfers();
+        }
+      })
+      .catch(() => {});
+  }, [groupId]);
+
   // Withdrawal Mutation
   const withdrawalMutation = useMutation({
     mutationFn: (payload: { reason: string }) => {
@@ -2332,11 +2532,22 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
     },
   });
 
-  const memberCount = activeMembers.length;
+  // Safely guard subviews: if authoritative data becomes unavailable, revert to root view
+  useEffect(() => {
+    if (!isAuthoritativeDataAvailable && currentView !== 'MEMBERS') {
+      setCurrentView('MEMBERS');
+    }
+  }, [isAuthoritativeDataAvailable, currentView]);
+
+  const memberCount = isAuthoritativeDataAvailable ? activeMembers.length : 0;
   const vehicleCount = coOwnership?.vehicles && coOwnership.vehicles.length > 0 ? coOwnership.vehicles.length : 1;
-  const totalPercentage = coOwnership?.totalOwnershipPercentage ?? activeMembers.reduce((sum, m) => sum + (m.share?.percentage ?? 0), 0);
+  const totalPercentage = isAuthoritativeDataAvailable
+    ? (coOwnership?.totalOwnershipPercentage ?? activeMembers.reduce((sum, m) => sum + (m.share?.percentage ?? 0), 0))
+    : 0;
   const isComplete = totalPercentage === 100;
-  const statusLabel = coOwnership?.statusLabel || (isComplete ? 'Hoàn chỉnh' : 'Chưa phân bổ đủ');
+  const statusLabel = isError
+    ? 'Lỗi kết nối'
+    : (coOwnership?.statusLabel || (isComplete ? 'Hoàn chỉnh' : 'Chưa phân bổ đủ'));
 
   const pendingIncomingCount = safeIncomingTransfers.filter(
     (t) => (t.status === 'PENDING_ACCEPTANCE' || t.status === 'PENDING_CONTRACT') &&
@@ -2346,22 +2557,22 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
   // Shared container styles
   const panelStyle: React.CSSProperties = {
     position: 'fixed',
-    top: '90px',
+    top: '76px',
     right: '20px',
     bottom: '20px',
-    width: 'min(480px, calc(100vw - 32px))',
-    height: 'calc(100vh - 110px)',
-    maxHeight: 'calc(100vh - 110px)',
+    width: 'clamp(440px, 28vw, 495px)',
+    maxWidth: 'min(495px, calc(100vw - 32px))',
+    maxHeight: 'calc(100vh - 96px)',
     zIndex: 1000,
     pointerEvents: 'auto',
     display: 'flex',
     flexDirection: 'column',
-    background: 'linear-gradient(180deg, rgba(8, 16, 30, 0.95) 0%, rgba(6, 12, 24, 0.97) 100%)',
+    background: 'rgba(7, 20, 38, 0.94)',
     backdropFilter: 'blur(24px)',
     WebkitBackdropFilter: 'blur(24px)',
-    border: '1.5px solid rgba(34, 230, 255, 0.35)',
-    borderRadius: '16px',
-    boxShadow: '0 20px 50px rgba(0, 0, 0, 0.75), 0 0 30px rgba(34, 230, 255, 0.14)',
+    border: '1.5px solid rgba(0, 242, 254, 0.3)',
+    borderRadius: '20px',
+    boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65), 0 0 30px rgba(0, 242, 254, 0.16)',
     color: '#ffffff',
     overflow: 'hidden',
     userSelect: 'none',
@@ -2779,6 +2990,39 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
             )}
           </div>
         </div>
+      </aside>
+    );
+  }
+
+  // =========================================================================
+  // VIEW MODE A.2: AMENDMENT SIGNING FOR EXISTING CO-OWNERS
+  // =========================================================================
+  if (currentView === 'AMENDMENT_SIGNING' && signingInvitationId) {
+    return renderPortal(
+      <aside
+        className="evshare-ownership-panel"
+        role="region"
+        aria-label="Xác nhận phụ lục hợp đồng"
+        data-ui-interactive="true"
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+        style={panelStyle}
+      >
+        <CoOwnerContractAmendmentView
+          invitationId={signingInvitationId}
+          vehicleName={vehicle.name}
+          vehicleCode={vehicleCode}
+          onBack={() => {
+            setCurrentView('MEMBERS');
+            setSigningInvitationId(null);
+          }}
+          onClose={onClose}
+          onSuccess={() => {
+            invalidateAllOwnershipData();
+            refetchInvitations();
+          }}
+        />
       </aside>
     );
   }
@@ -4222,9 +4466,13 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
               gap: '4px',
               padding: '2px 7px',
               borderRadius: '9999px',
-              background: isComplete ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-              border: isComplete ? '1px solid rgba(16, 185, 129, 0.45)' : '1px solid rgba(245, 158, 11, 0.45)',
-              color: isComplete ? '#10b981' : '#fbbf24',
+              background: isError
+                ? 'rgba(239, 68, 68, 0.15)'
+                : (isComplete ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)'),
+              border: isError
+                ? '1px solid rgba(239, 68, 68, 0.45)'
+                : (isComplete ? '1px solid rgba(16, 185, 129, 0.45)' : '1px solid rgba(245, 158, 11, 0.45)'),
+              color: isError ? '#ef4444' : (isComplete ? '#10b981' : '#fbbf24'),
               fontSize: '9.5px',
               fontWeight: 800,
               letterSpacing: '0.03em',
@@ -4235,8 +4483,8 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
                 width: '5px',
                 height: '5px',
                 borderRadius: '50%',
-                background: isComplete ? '#10b981' : '#f59e0b',
-                boxShadow: `0 0 6px ${isComplete ? '#10b981' : '#f59e0b'}`,
+                background: isError ? '#ef4444' : (isComplete ? '#10b981' : '#f59e0b'),
+                boxShadow: `0 0 6px ${isError ? '#ef4444' : (isComplete ? '#10b981' : '#f59e0b')}`,
               }}
             />
             {statusLabel}
@@ -4275,6 +4523,8 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
           background: 'rgba(8, 16, 30, 0.95)',
           borderBottom: '1px solid rgba(34, 230, 255, 0.15)',
           flexShrink: 0,
+          opacity: isAuthoritativeDataAvailable ? 1 : 0.4,
+          pointerEvents: isAuthoritativeDataAvailable ? 'auto' : 'none',
         }}
       >
         <button
@@ -4333,7 +4583,7 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
             letterSpacing: '0.02em',
           }}
         >
-          ĐANG CHỜ ({pendingTransfers.length})
+          ĐANG CHỜ ({pendingTransfers.length + pendingInvitations.length})
         </button>
         <button
           type="button"
@@ -4362,7 +4612,7 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
             letterSpacing: '0.02em',
           }}
         >
-          LỊCH SỬ ({historyTransfers.length})
+          LỊCH SỬ ({historyTransfers.length + historyInvitations.length})
         </button>
       </div>
 
@@ -4379,45 +4629,145 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
           minHeight: 0,
         }}
       >
-        {/* Loading / Error States */}
+        {/* State 1: Loading State */}
         {isLoading && (
           <div
             style={{
               display: 'flex',
+              flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              padding: '24px',
+              padding: '48px 24px',
               color: '#22e6ff',
-              gap: '8px',
-              fontSize: '12px',
+              gap: '12px',
+              fontSize: '13px',
+              margin: 'auto 0',
             }}
           >
-            <Loader2 size={16} className="animate-spin" />
-            <span>Đang tải dữ liệu đồng sở hữu...</span>
+            <Loader2 size={24} className="animate-spin" />
+            <span>Đang kết nối máy chủ dữ liệu đồng sở hữu...</span>
           </div>
         )}
 
-        {isError && (
+        {/* State 2 & 3: Connection Failure / Backend Unavailable View */}
+        {!isLoading && (isError || !coOwnership) && (
           <div
             style={{
-              background: 'rgba(239, 68, 68, 0.12)',
-              border: '1px solid rgba(239, 68, 68, 0.4)',
-              borderRadius: '10px',
-              padding: '10px 12px',
-              color: '#fca5a5',
-              fontSize: '11px',
               display: 'flex',
+              flexDirection: 'column',
               alignItems: 'center',
-              gap: '6px',
+              justifyContent: 'center',
+              padding: '36px 20px',
+              textAlign: 'center',
+              gap: '14px',
+              margin: 'auto 0',
+              background: 'rgba(239, 68, 68, 0.08)',
+              border: '1.5px solid rgba(239, 68, 68, 0.35)',
+              borderRadius: '16px',
+              boxShadow: '0 8px 24px rgba(239, 68, 68, 0.1)',
             }}
           >
-            <AlertCircle size={14} />
-            <span>{error instanceof Error ? error.message : 'Lỗi tải dữ liệu'}</span>
+            <div
+              style={{
+                width: '56px',
+                height: '56px',
+                borderRadius: '14px',
+                background: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#ef4444',
+                boxShadow: '0 0 16px rgba(239, 68, 68, 0.25)',
+              }}
+            >
+              <AlertTriangle size={28} />
+            </div>
+            <div>
+              <div
+                style={{
+                  fontSize: '14px',
+                  fontWeight: 800,
+                  color: '#ffffff',
+                  marginBottom: '6px',
+                  letterSpacing: '0.02em',
+                }}
+              >
+                Không thể kết nối máy chủ. Vui lòng thử lại.
+              </div>
+              <div
+                style={{
+                  fontSize: '12px',
+                  color: '#94a3b8',
+                  lineHeight: '1.5',
+                  maxWidth: '340px',
+                }}
+              >
+                {error instanceof Error && error.message && error.message !== 'Lỗi tải dữ liệu'
+                  ? error.message
+                  : 'Dữ liệu đồng sở hữu tạm thời không khả dụng. Vui lòng kiểm tra dịch vụ máy chủ backend.'}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              id="btn-retry-co-ownership-fetch"
+              onClick={() => {
+                refetchCoOwnership();
+                invalidateAllOwnershipData();
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                marginTop: '4px',
+                padding: '9px 20px',
+                borderRadius: '10px',
+                fontSize: '12px',
+                fontWeight: 700,
+                background: 'linear-gradient(135deg, rgba(34, 230, 255, 0.2), rgba(0, 114, 255, 0.25))',
+                border: '1.2px solid #22e6ff',
+                color: '#ffffff',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                boxShadow: '0 0 14px rgba(34, 230, 255, 0.25)',
+              }}
+            >
+              <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
+              <span>Thử lại</span>
+            </button>
           </div>
         )}
 
-        {/* TAB 1: TỔNG QUAN (PREMIUM COMPACT REDESIGN) */}
-        {managementTab === 'OVERVIEW' && (
+        {/* State 4: Successful Empty Result (coOwnership exists but activeMembers.length === 0) */}
+        {isAuthoritativeDataAvailable && activeMembers.length === 0 && (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '36px 20px',
+              textAlign: 'center',
+              gap: '12px',
+              margin: 'auto 0',
+              background: 'rgba(7, 20, 38, 0.6)',
+              border: '1px solid rgba(34, 230, 255, 0.2)',
+              borderRadius: '14px',
+            }}
+          >
+            <Users size={32} color="#64748b" />
+            <div style={{ fontSize: '13px', fontWeight: 700, color: '#f8fafc' }}>
+              Chưa có thành viên đồng sở hữu
+            </div>
+            <div style={{ fontSize: '11.5px', color: '#94a3b8', maxWidth: '320px' }}>
+              Xe này hiện chưa có thành viên đồng sở hữu nào được kích hoạt. Vui lòng liên hệ quản trị viên để hoàn tất phân bổ.
+            </div>
+          </div>
+        )}
+
+        {/* State 5: Populated Data Result */}
+        {isAuthoritativeDataAvailable && activeMembers.length > 0 && managementTab === 'OVERVIEW' && (
           <>
             {/* 1. Pending Action Alert Strip (Only rendered if pending actions exist, otherwise clean) */}
             {actionNeededTransfers.length > 0 && (
@@ -4579,11 +4929,13 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
                         background: isCurrentUser ? 'rgba(34, 230, 255, 0.08)' : 'rgba(255, 255, 255, 0.03)',
                         border: isCurrentUser ? '1px solid rgba(34, 230, 255, 0.4)' : '1px solid rgba(255, 255, 255, 0.06)',
                         borderRadius: '8px',
-                        padding: '7px 10px',
+                        padding: '8px 10px',
+                        minHeight: '46px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         cursor: 'pointer',
+                        boxSizing: 'border-box',
                         transition: 'all 0.15s ease',
                       }}
                       onMouseEnter={(e) => {
@@ -4597,7 +4949,7 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
                           : 'rgba(255, 255, 255, 0.03)';
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
                         <div
                           style={{
                             width: '8px',
@@ -4608,7 +4960,7 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
                             flexShrink: 0,
                           }}
                         />
-                        <div style={{ minWidth: 0 }}>
+                        <div style={{ minWidth: 0, flex: 1 }}>
                           <div
                             style={{
                               fontSize: '11.5px',
@@ -4616,31 +4968,59 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
                               color: '#ffffff',
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '5px',
+                              gap: '6px',
+                              lineHeight: '16px',
                             }}
                           >
                             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {m.fullName}
                             </span>
                             {isCurrentUser && (
-                              <span style={{ fontSize: '8.5px', padding: '1px 4px', borderRadius: '4px', background: '#22e6ff20', color: '#22e6ff', fontWeight: 800 }}>
+                              <span
+                                style={{
+                                  fontSize: '8.5px',
+                                  padding: '1px 5px',
+                                  borderRadius: '4px',
+                                  background: 'rgba(34, 230, 255, 0.16)',
+                                  border: '1px solid rgba(34, 230, 255, 0.40)',
+                                  color: '#22e6ff',
+                                  fontWeight: 800,
+                                  flexShrink: 0,
+                                  lineHeight: '12px',
+                                }}
+                              >
                                 Bạn
                               </span>
                             )}
                           </div>
-                          <div style={{ fontSize: '9px', color: '#94a3b8', marginTop: '1px' }}>
-                            {isRep ? 'Đại diện nhóm' : 'Đồng sở hữu'}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '2px' }}>
+                            <span
+                              style={{
+                                fontSize: '8.5px',
+                                fontWeight: 700,
+                                padding: '1px 5px',
+                                borderRadius: '4px',
+                                background: isRep ? 'rgba(16, 185, 129, 0.16)' : 'rgba(255, 255, 255, 0.05)',
+                                border: isRep ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid rgba(255, 255, 255, 0.10)',
+                                color: isRep ? '#34d399' : '#94a3b8',
+                                flexShrink: 0,
+                                lineHeight: '12px',
+                              }}
+                            >
+                              {isRep ? 'Đại diện nhóm' : 'Đồng sở hữu'}
+                            </span>
                           </div>
                         </div>
                       </div>
 
-                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      <div style={{ textAlign: 'right', flexShrink: 0, paddingLeft: '8px' }}>
                         <div
                           style={{
-                            fontSize: '12.5px',
+                            fontSize: '13px',
                             fontWeight: 800,
                             color: orbColor,
                             fontFamily: 'monospace',
+                            lineHeight: 1,
                           }}
                         >
                           {sharePct}%
@@ -4652,17 +5032,20 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
               </div>
             </div>
 
-            {/* 4. Action Controls: Primary Actions + Secondary Row */}
+            {/* 4. Action Controls: Stable Standardized 2-Row Grid Layout */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '2px' }}>
-              {/* Primary Actions Row */}
-              <div style={{ display: 'grid', gridTemplateColumns: canManage ? '1fr 1fr' : '1fr', gap: '6px' }}>
+              {/* Row 1: Primary Actions */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                 <button
                   type="button"
                   id="btn-primary-transfer-ownership"
                   onClick={() => setCurrentView('TRANSFER_FORM')}
                   disabled={currentUserShare <= 0}
+                  title={currentUserShare <= 0 ? 'Bạn không có cổ phần để chuyển nhượng' : 'Chuyển nhượng quyền sở hữu đồng sở hữu'}
                   style={{
-                    padding: '8px 12px',
+                    height: '36px',
+                    minHeight: '36px',
+                    padding: '8px 10px',
                     background:
                       currentUserShare > 0
                         ? 'linear-gradient(135deg, rgba(34, 230, 255, 0.20), rgba(14, 165, 233, 0.30))'
@@ -4678,202 +5061,88 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
                     justifyContent: 'center',
                     gap: '6px',
                     boxShadow: currentUserShare > 0 ? '0 2px 10px rgba(34, 230, 255, 0.2)' : 'none',
+                    boxSizing: 'border-box',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
                     transition: 'all 0.15s ease',
                   }}
                 >
-                  <Send size={12} />
-                  <span>CHUYỂN NHƯỢNG CỔ PHẦN</span>
+                  <Send size={12} style={{ flexShrink: 0 }} />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>CHUYỂN NHƯỢNG CỔ PHẦN</span>
                 </button>
 
-                {canManage && (
-                  <button
-                    type="button"
-                    id="btn-primary-add-member"
-                    onClick={() => setIsAddMemberOpen((prev) => !prev)}
-                    style={{
-                      padding: '8px 12px',
-                      background: isAddMemberOpen
-                        ? 'rgba(34, 230, 255, 0.15)'
-                        : 'linear-gradient(135deg, rgba(16, 185, 129, 0.20), rgba(5, 150, 105, 0.30))',
-                      border: isAddMemberOpen ? '1px solid #22e6ff' : '1.2px solid #10b981',
-                      borderRadius: '8px',
-                      color: isAddMemberOpen ? '#22e6ff' : '#6ee7b7',
-                      fontSize: '11px',
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px',
-                      boxShadow: '0 2px 10px rgba(16, 185, 129, 0.15)',
-                      transition: 'all 0.15s ease',
-                    }}
-                  >
-                    <UserPlus size={13} />
-                    <span>{isAddMemberOpen ? 'ĐÓNG FORM THÊM' : '+ THÊM THÀNH VIÊN'}</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Inline Add Member Panel when toggled by representative */}
-              {canManage && isAddMemberOpen && (
-                <div
+                <button
+                  type="button"
+                  id="btn-primary-add-member"
+                  disabled={!isLeader}
+                  title={!isLeader ? (invitationPermission?.message || 'Chỉ Nhóm trưởng mới có quyền mời thành viên mới') : 'Mời thành viên đồng sở hữu mới'}
+                  onClick={() => {
+                    if (isLeader) setIsAddMemberOpen(true);
+                  }}
                   style={{
-                    background: 'rgba(7, 20, 38, 0.95)',
-                    border: '1.2px solid rgba(34, 230, 255, 0.4)',
-                    borderRadius: '10px',
-                    padding: '10px 12px',
+                    height: '36px',
+                    minHeight: '36px',
+                    padding: '8px 10px',
+                    background: isLeader
+                      ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.20), rgba(5, 150, 105, 0.30))'
+                      : 'rgba(255, 255, 255, 0.04)',
+                    border: isLeader ? '1.2px solid #10b981' : '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '8px',
+                    color: isLeader ? '#6ee7b7' : '#64748b',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    cursor: isLeader ? 'pointer' : 'not-allowed',
                     display: 'flex',
-                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                     gap: '6px',
+                    boxShadow: isLeader ? '0 2px 10px rgba(16, 185, 129, 0.15)' : 'none',
+                    opacity: isLeader ? 1 : 0.6,
+                    boxSizing: 'border-box',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    transition: 'all 0.15s ease',
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#22e6ff' }}>
-                      MỜI THÀNH VIÊN VÀO NHÓM
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsAddMemberOpen(false);
-                        setSelectedUserToAdd(null);
-                        setAddError(null);
-                      }}
-                      style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '2px' }}
-                    >
-                      <X size={13} />
-                    </button>
-                  </div>
+                  <UserPlus size={13} style={{ flexShrink: 0 }} />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>+ THÊM THÀNH VIÊN</span>
+                </button>
+              </div>
 
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      background: 'rgba(255, 255, 255, 0.05)',
-                      border: '1px solid rgba(255, 255, 255, 0.15)',
-                      borderRadius: '6px',
-                      padding: '5px 8px',
-                    }}
-                  >
-                    <Search size={12} color="#94a3b8" />
-                    <input
-                      type="text"
-                      placeholder="Tìm theo tên hoặc email EVShare..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: '#ffffff',
-                        fontSize: '11px',
-                        outline: 'none',
-                        width: '100%',
-                      }}
-                    />
-                  </div>
-
-                  <div style={{ maxHeight: '90px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                    {isSearchingUsers ? (
-                      <div style={{ fontSize: '10px', color: '#94a3b8', textAlign: 'center', padding: '4px' }}>
-                        Đang tìm kiếm...
-                      </div>
-                    ) : !Array.isArray(availableUsers) || availableUsers.length === 0 ? (
-                      <div style={{ fontSize: '10px', color: '#64748b', textAlign: 'center', padding: '4px' }}>
-                        Không có người dùng khả dụng.
-                      </div>
-                    ) : (
-                      (Array.isArray(availableUsers) ? availableUsers : []).map((u) => {
-                        const isChosen = selectedUserToAdd?.id === u.id;
-                        return (
-                          <div
-                            key={u.id}
-                            onClick={() => setSelectedUserToAdd(u)}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              padding: '4px 6px',
-                              borderRadius: '4px',
-                              background: isChosen ? 'rgba(34, 230, 255, 0.15)' : 'rgba(255, 255, 255, 0.03)',
-                              border: isChosen ? '1px solid #22e6ff' : '1px solid transparent',
-                              cursor: 'pointer',
-                            }}
-                          >
-                            <div>
-                              <div style={{ fontSize: '10.5px', fontWeight: 600, color: '#f8fafc' }}>
-                                {u.displayName}
-                              </div>
-                              <div style={{ fontSize: '8.5px', color: '#94a3b8' }}>
-                                {u.email}
-                              </div>
-                            </div>
-                            {isChosen && <CheckCircle2 size={12} color="#22e6ff" />}
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-
-                  {addError && (
-                    <div style={{ color: '#f87171', fontSize: '9.5px' }}>
-                      {addError}
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    disabled={!selectedUserToAdd || addMutation.isPending}
-                    onClick={() => {
-                      if (selectedUserToAdd) addMutation.mutate(selectedUserToAdd.id);
-                    }}
-                    style={{
-                      padding: '6px 10px',
-                      background: selectedUserToAdd
-                        ? 'linear-gradient(135deg, #0284c7, #06b6d4)'
-                        : 'rgba(255, 255, 255, 0.08)',
-                      border: 'none',
-                      borderRadius: '6px',
-                      color: selectedUserToAdd ? '#ffffff' : '#64748b',
-                      fontSize: '10.5px',
-                      fontWeight: 700,
-                      cursor: selectedUserToAdd ? 'pointer' : 'not-allowed',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '5px',
-                    }}
-                  >
-                    {addMutation.isPending ? 'Đang gửi lời mời...' : 'Gửi lời mời tham gia nhóm'}
-                  </button>
-                </div>
-              )}
-
-              {/* Secondary Actions Row */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '6px' }}>
+              {/* Row 2: Secondary Actions */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                 {/* Contract Entry */}
                 <button
                   type="button"
                   id="btn-coowner-view-contract"
                   onClick={() => openGaragePanel('CONTRACT', { vehicleId: vehicle.id })}
+                  title="Xem hợp đồng đồng sở hữu và quy chế quản lý"
                   style={{
-                    padding: '7px 10px',
+                    height: '36px',
+                    minHeight: '36px',
+                    padding: '8px 10px',
                     background: 'rgba(0, 242, 254, 0.08)',
                     border: '1px solid rgba(0, 242, 254, 0.30)',
                     borderRadius: '8px',
                     color: '#00f2fe',
-                    fontSize: '10.5px',
+                    fontSize: '11px',
                     fontWeight: 700,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '5px',
                     cursor: 'pointer',
+                    boxSizing: 'border-box',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
                     transition: 'all 0.15s ease',
                   }}
                 >
-                  <FileText size={12} color="#00f2fe" />
-                  <span>HỢP ĐỒNG & QUY CHẾ</span>
+                  <FileText size={12} color="#00f2fe" style={{ flexShrink: 0 }} />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>HỢP ĐỒNG & QUY CHẾ</span>
                 </button>
 
                 {/* Secondary: Leave Group Request */}
@@ -4881,39 +5150,250 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
                   type="button"
                   id="btn-coowner-withdrawal"
                   onClick={() => setCurrentView('WITHDRAWAL_FORM')}
+                  title="Rút khỏi nhóm đồng sở hữu xe"
                   style={{
-                    padding: '7px 8px',
+                    height: '36px',
+                    minHeight: '36px',
+                    padding: '8px 10px',
                     background: 'rgba(239, 68, 68, 0.06)',
                     border: '1px solid rgba(239, 68, 68, 0.22)',
                     borderRadius: '8px',
                     color: '#f87171',
-                    fontSize: '10px',
-                    fontWeight: 600,
+                    fontSize: '11px',
+                    fontWeight: 700,
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '4px',
+                    boxSizing: 'border-box',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
                     transition: 'all 0.15s ease',
                   }}
                 >
-                  <LogOut size={11} />
-                  <span>RÚT KHỎI NHÓM</span>
+                  <LogOut size={11} style={{ flexShrink: 0 }} />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>RÚT KHỎI NHÓM</span>
                 </button>
               </div>
             </div>
           </>
         )}
 
-        {/* TAB 2: ĐANG CHỜ (Active non-terminal transfer requests) */}
-        {managementTab === 'PENDING' && (
+        {/* TAB 2: ĐANG CHỜ (Active non-terminal transfer requests & member invitations) */}
+        {isAuthoritativeDataAvailable && managementTab === 'PENDING' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {(isLoadingIncoming || isLoadingGroupTransfers) && pendingTransfers.length === 0 ? (
+            {/* 1. Pending Invitations Section */}
+            {pendingInvitations.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '4px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 800, color: '#22e6ff', display: 'flex', alignItems: 'center', gap: '6px', letterSpacing: '0.04em' }}>
+                  <UserPlus size={13} color="#22e6ff" />
+                  <span>LỜI MỜI THÀNH VIÊN ĐANG CHỜ ({pendingInvitations.length})</span>
+                </div>
+
+                {pendingInvitations.map((inv) => {
+                  const isInvitee = currentUser && (
+                    (inv.inviteeUserId && inv.inviteeUserId === currentUser.id) ||
+                    (inv.inviteeEmail && inv.inviteeEmail.toLowerCase() === currentUser.email?.toLowerCase())
+                  );
+
+                  return (
+                    <div
+                      key={`pending-inv-${inv.id}`}
+                      style={{
+                        background: 'rgba(7, 20, 38, 0.90)',
+                        border: '1.2px solid rgba(34, 230, 255, 0.35)',
+                        borderRadius: '12px',
+                        padding: '12px 14px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                        boxShadow: '0 4px 15px rgba(0, 0, 0, 0.4)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div>
+                          <div style={{ fontSize: '12px', fontWeight: 800, color: '#f8fafc' }}>
+                            {inv.inviteeUserName || inv.inviteeEmail}
+                          </div>
+                          <div style={{ fontSize: '10px', color: '#94a3b8' }}>
+                            Trưởng nhóm mời: <span style={{ color: '#22e6ff', fontWeight: 600 }}>{inv.invitedByUserName}</span>
+                          </div>
+                        </div>
+
+                        <div style={{ textAlign: 'right' }}>
+                          <span
+                            style={{
+                              padding: '3px 8px',
+                              borderRadius: '9999px',
+                              background: 'rgba(34, 230, 255, 0.15)',
+                              border: '1px solid #22e6ff',
+                              color: '#22e6ff',
+                              fontSize: '9.5px',
+                              fontWeight: 700,
+                            }}
+                          >
+                            {inv.statusVi || inv.status}
+                          </span>
+                          <div style={{ fontSize: '11px', fontWeight: 800, color: '#10b981', marginTop: '3px' }}>
+                            +{inv.totalOfferedPercentage?.toFixed(2)}%
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Progress summary */}
+                      <div style={{ fontSize: '10px', color: '#cbd5e1', background: 'rgba(255, 255, 255, 0.03)', padding: '6px 8px', borderRadius: '6px' }}>
+                        <div>
+                          Cổ phần từ Trưởng nhóm: <strong>{inv.leaderTransferPercentage?.toFixed(2)}%</strong>
+                          {inv.additionalContributions && inv.additionalContributions.length > 0 &&
+                            ` | Đóng góp thêm: ${(inv.totalOfferedPercentage - inv.leaderTransferPercentage).toFixed(2)}%`}
+                        </div>
+                        {inv.signatures && inv.signatures.length > 0 && (
+                          <div style={{ marginTop: '3px', color: '#38bdf8' }}>
+                            Đã ký số: {inv.signatures.map((s) => s.signerName).join(', ')}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Action buttons */}
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end', marginTop: '2px' }}>
+                        {/* Contributor consent actions */}
+                        {inv.canConsent && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => consentMutation.mutate({ invId: inv.id, approved: true })}
+                              disabled={consentMutation.isPending}
+                              style={{
+                                padding: '5px 10px',
+                                background: 'linear-gradient(135deg, #059669, #10b981)',
+                                border: 'none',
+                                borderRadius: '6px',
+                                color: '#ffffff',
+                                fontSize: '10.5px',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              ĐỒNG Ý ĐÓNG GÓP
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => consentMutation.mutate({ invId: inv.id, approved: false })}
+                              disabled={consentMutation.isPending}
+                              style={{
+                                padding: '5px 10px',
+                                background: 'rgba(239, 68, 68, 0.2)',
+                                border: '1px solid #ef4444',
+                                borderRadius: '6px',
+                                color: '#fca5a5',
+                                fontSize: '10.5px',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              TỪ CHỐI
+                            </button>
+                          </>
+                        )}
+
+                        {/* Invitee respond / contract sign */}
+                        {(inv.canAccept || inv.canSign || isInvitee) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSigningInvitationId(inv.id);
+                              setCurrentView('AMENDMENT_SIGNING');
+                            }}
+                            style={{
+                              padding: '5px 12px',
+                              background: 'linear-gradient(135deg, #0284c7, #06b6d4)',
+                              border: 'none',
+                              borderRadius: '6px',
+                              color: '#ffffff',
+                              fontSize: '10.5px',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {inv.canSign ? 'KÝ PHỤ LỤC HỢP ĐỒNG' : isInvitee ? 'XEM & PHẢN HỒI LỜI MỜI' : 'XEM PHỤ LỤC HỢP ĐỒNG'}
+                          </button>
+                        )}
+
+                        {/* Finalize button if ready */}
+                        {inv.canFinalize && (
+                          <button
+                            type="button"
+                            onClick={() => finalizeInvMutation.mutate(inv.id)}
+                            disabled={finalizeInvMutation.isPending}
+                            style={{
+                              padding: '5px 12px',
+                              background: 'linear-gradient(135deg, #10b981, #059669)',
+                              border: 'none',
+                              borderRadius: '6px',
+                              color: '#ffffff',
+                              fontSize: '10.5px',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            HOÀN TẤT KẾT NẠP
+                          </button>
+                        )}
+
+                        {/* General View Button */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSigningInvitationId(inv.id);
+                            setCurrentView('AMENDMENT_SIGNING');
+                          }}
+                          style={{
+                            padding: '5px 10px',
+                            background: 'rgba(255, 255, 255, 0.06)',
+                            border: '1px solid rgba(255, 255, 255, 0.15)',
+                            borderRadius: '6px',
+                            color: '#94a3b8',
+                            fontSize: '10px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          CHI TIẾT
+                        </button>
+
+                        {/* Leader Cancel */}
+                        {inv.canCancel && (
+                          <button
+                            type="button"
+                            onClick={() => cancelInvMutation.mutate(inv.id)}
+                            disabled={cancelInvMutation.isPending}
+                            style={{
+                              padding: '5px 8px',
+                              background: 'transparent',
+                              border: '1px solid rgba(239, 68, 68, 0.4)',
+                              borderRadius: '6px',
+                              color: '#f87171',
+                              fontSize: '10px',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            HỦY
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {(isLoadingIncoming || isLoadingGroupTransfers) && pendingTransfers.length === 0 && pendingInvitations.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '28px 16px', color: '#22e6ff', fontSize: '11.5px' }}>
                 <Loader2 size={20} className="animate-spin" style={{ display: 'inline', marginRight: '6px' }} />
                 Đang tải danh sách giao dịch đang chờ...
               </div>
-            ) : (isErrorIncoming || isErrorGroupTransfers) && pendingTransfers.length === 0 ? (
+            ) : (isErrorIncoming || isErrorGroupTransfers) && pendingTransfers.length === 0 && pendingInvitations.length === 0 ? (
               <div
                 style={{
                   background: 'rgba(239, 68, 68, 0.1)',
@@ -4936,6 +5416,7 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
                   onClick={() => {
                     refetchIncoming();
                     refetchGroupTransfers();
+                    refetchInvitations();
                   }}
                   style={{
                     padding: '6px 14px',
@@ -4955,7 +5436,7 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
                   THỬ LẠI
                 </button>
               </div>
-            ) : pendingTransfers.length === 0 ? (
+            ) : pendingTransfers.length === 0 && pendingInvitations.length === 0 ? (
               <div
                 style={{
                   background: 'rgba(7, 20, 38, 0.50)',
@@ -4976,7 +5457,7 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
                   KHÔNG CÓ GIAO DỊCH ĐANG CHỜ
                 </div>
                 <div style={{ color: '#94a3b8', maxWidth: '320px', lineHeight: 1.4 }}>
-                  Hiện tại không có giao dịch chuyển nhượng nào đang chờ xử lý trong nhóm.
+                  Hiện tại không có giao dịch chuyển nhượng hoặc lời mời thành viên nào đang chờ xử lý trong nhóm.
                 </div>
               </div>
             ) : (
@@ -4987,9 +5468,10 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
                 const isTransferorAccepted = Boolean(t.transferorAccepted ?? t.isTransferorAccepted);
                 const isRecipientAccepted = Boolean(t.recipientAccepted ?? t.isRecipientAccepted);
                 const acceptedCount = (isTransferorAccepted ? 1 : 0) + (isRecipientAccepted ? 1 : 0);
+                const tOutstanding = Number(t.outstandingObligationAmount ?? 0);
                 const hasFinBlocker = Boolean(
-                  t.hasOutstandingFinancialObligations ||
-                  (t.finalizationBlockers && t.finalizationBlockers.some((b) => b.includes('tài chính') || b.includes('nghĩa vụ')))
+                  (t.hasOutstandingFinancialObligations && tOutstanding > 0) ||
+                  (t.finalizationBlockers && t.finalizationBlockers.some((b) => (b.includes('tài chính') || b.includes('nghĩa vụ')) && !b.includes('0 ₫') && !b.includes('0 đ')))
                 );
 
                 const statusCfg = getTransferDisplayStatus(t);
@@ -5081,8 +5563,8 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
                       </div>
                     </div>
 
-                    {/* Row 3: Financial obligation concise warning if any */}
-                    {hasFinBlocker && (
+                    {/* Row 3: Financial obligation status */}
+                    {hasFinBlocker ? (
                       <div
                         style={{
                           background: 'rgba(239, 68, 68, 0.12)',
@@ -5098,11 +5580,27 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
                       >
                         <AlertTriangle size={12} color="#ef4444" style={{ flexShrink: 0 }} />
                         <span>
-                          CHỜ HOÀN TẤT NGHĨA VỤ TÀI CHÍNH
-                          {t.outstandingObligationAmount ? `: ${Number(t.outstandingObligationAmount).toLocaleString('vi-VN')} ₫` : ''}
+                          CHỜ HOÀN TẤT NGHĨA VỤ TÀI CHÍNH: {Number(t.outstandingObligationAmount || 0).toLocaleString('vi-VN')} ₫
                         </span>
                       </div>
-                    )}
+                    ) : (isTransferorAccepted && isRecipientAccepted) ? (
+                      <div
+                        style={{
+                          background: 'rgba(16, 185, 129, 0.08)',
+                          border: '1px solid rgba(16, 185, 129, 0.30)',
+                          borderRadius: '6px',
+                          padding: '5px 8px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          fontSize: '10px',
+                          color: '#6ee7b7',
+                        }}
+                      >
+                        <CheckCircle2 size={12} color="#10b981" style={{ flexShrink: 0 }} />
+                        <span>ĐÃ HOÀN TẤT ĐIỀU KIỆN TÀI CHÍNH (0 đ)</span>
+                      </div>
+                    ) : null}
 
                     {/* Row 4: Next responsible actor */}
                     <div style={{ fontSize: '10.5px', color: '#cbd5e1', lineHeight: 1.4 }}>
@@ -5110,8 +5608,42 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
                       <span>{nextActionText}</span>
                     </div>
 
-                    {/* Row 5: Action Button CHI TIẾT GIAO DỊCH */}
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '4px', borderTop: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                    {/* Row 5: Action Buttons */}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', paddingTop: '4px', borderTop: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                      {((t.canFinalize ?? t.canComplete) || (isTransferorAccepted && isRecipientAccepted && !hasFinBlocker)) && (
+                        <button
+                          type="button"
+                          id={`btn-complete-pending-${t.id}`}
+                          onClick={() => completeTransferMutation.mutate(t.id)}
+                          disabled={completeTransferMutation.isPending}
+                          style={{
+                            background: 'linear-gradient(135deg, #0284c7 0%, #06b6d4 100%)',
+                            border: '1px solid #22e6ff',
+                            borderRadius: '6px',
+                            padding: '5px 12px',
+                            color: '#ffffff',
+                            fontSize: '11px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            boxShadow: '0 0 12px rgba(34, 230, 255, 0.25)',
+                          }}
+                        >
+                          {completeTransferMutation.isPending ? (
+                            <>
+                              <Loader2 size={12} className="animate-spin" />
+                              <span>Đang hoàn tất...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles size={12} color="#22e6ff" />
+                              <span>HOÀN TẤT CHUYỂN NHƯỢNG</span>
+                            </>
+                          )}
+                        </button>
+                      )}
                       <button
                         type="button"
                         id={`btn-detail-pending-${t.id}`}
@@ -5143,7 +5675,7 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
         )}
 
         {/* TAB 3: LỊCH SỬ (Definitively ended transfer transactions) */}
-        {managementTab === 'HISTORY' && (
+        {isAuthoritativeDataAvailable && managementTab === 'HISTORY' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {selectedHistoryDetail ? (
               // READ-ONLY HISTORICAL DETAIL VIEW
@@ -5355,7 +5887,7 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
                   THỬ LẠI
                 </button>
               </div>
-            ) : historyTransfers.length === 0 ? (
+            ) : historyTransfers.length === 0 && historyInvitations.length === 0 ? (
               <div
                 style={{
                   background: 'rgba(7, 20, 38, 0.50)',
@@ -5373,15 +5905,98 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
               >
                 <History size={28} color="#10b981" />
                 <div style={{ fontWeight: 800, color: '#f8fafc', fontSize: '13px', letterSpacing: '0.04em' }}>
-                  CHƯA CÓ LỊCH SỬ CHUYỂN NHƯỢNG
+                  CHƯA CÓ LỊCH SỬ CHUYỂN NHƯỢNG HOẶC KẾT NẠP
                 </div>
                 <div style={{ color: '#94a3b8', maxWidth: '320px', lineHeight: 1.4 }}>
-                  Chưa có giao dịch chuyển nhượng nào kết thúc trong nhóm này.
+                  Chưa có giao dịch chuyển nhượng hoặc lời mời thành viên nào kết thúc trong nhóm này.
                 </div>
               </div>
             ) : (
-              historyTransfers.map((t) => {
-                const isCompleted = t.status === 'COMPLETED';
+              <>
+                {historyInvitations.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '8px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 800, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <UserPlus size={13} color="#38bdf8" />
+                      <span>LỊCH SỬ KẾT NẠP THÀNH VIÊN ({historyInvitations.length})</span>
+                    </div>
+
+                    {historyInvitations.map((inv) => {
+                      const isComp = inv.status === 'COMPLETED';
+                      const stColor = isComp ? '#10b981' : '#f87171';
+                      return (
+                        <div
+                          key={`hist-inv-${inv.id}`}
+                          style={{
+                            background: 'rgba(7, 20, 38, 0.75)',
+                            border: `1.2px solid ${stColor}40`,
+                            borderRadius: '12px',
+                            padding: '12px 14px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '6px',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div>
+                              <div style={{ fontSize: '12px', fontWeight: 800, color: '#f8fafc' }}>
+                                {inv.inviteeUserName || inv.inviteeEmail}
+                              </div>
+                              <div style={{ fontSize: '10px', color: '#94a3b8' }}>
+                                Trưởng nhóm mời: <span style={{ color: '#22e6ff' }}>{inv.invitedByUserName}</span>
+                              </div>
+                            </div>
+
+                            <div style={{ textAlign: 'right' }}>
+                              <span
+                                style={{
+                                  padding: '2px 8px',
+                                  borderRadius: '9999px',
+                                  background: `${stColor}20`,
+                                  border: `1px solid ${stColor}`,
+                                  color: stColor,
+                                  fontSize: '9.5px',
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {inv.statusVi || inv.status}
+                              </span>
+                              <div style={{ fontSize: '11px', fontWeight: 800, color: stColor, marginTop: '2px' }}>
+                                {isComp ? `+${inv.totalOfferedPercentage?.toFixed(2)}%` : '0%'}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}>
+                            <span style={{ fontSize: '9.5px', color: '#94a3b8' }}>
+                              {inv.completedAt ? new Date(inv.completedAt).toLocaleString('vi-VN') : (inv.createdAt ? new Date(inv.createdAt).toLocaleString('vi-VN') : '')}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSigningInvitationId(inv.id);
+                                setCurrentView('AMENDMENT_SIGNING');
+                              }}
+                              style={{
+                                padding: '4px 10px',
+                                background: 'rgba(34, 230, 255, 0.1)',
+                                border: '1px solid rgba(34, 230, 255, 0.3)',
+                                borderRadius: '6px',
+                                color: '#22e6ff',
+                                fontSize: '10px',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              XEM CHI TIẾT
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {historyTransfers.map((t) => {
+                  const isCompleted = t.status === 'COMPLETED';
                 const statusColor = isCompleted ? '#10b981' : '#f87171';
                 const statusLabel = isCompleted ? 'CHUYỂN NHƯỢNG THÀNH CÔNG' : t.status === 'REJECTED' ? 'BỊ TỪ CHỐI' : 'ĐÃ HỦY';
 
@@ -5470,10 +6085,11 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
                     </div>
                   </div>
                 );
-              })
-            )}
-          </div>
-        )}
+              })}
+            </>
+          )}
+        </div>
+      )}
       </div>
 
       {/* 5. FOOTER BAR */}
@@ -5498,6 +6114,20 @@ export const CoOwnerOwnershipPanel: React.FC<CoOwnerOwnershipPanelProps> = ({
           EVSHARE PRO
         </span>
       </div>
+
+      {/* 6. MODALS */}
+      {isAddMemberOpen && coOwnership && (
+        <EnhancedAddMemberModal
+          coOwnership={coOwnership}
+          vehicleId={vehicle.id}
+          onClose={() => setIsAddMemberOpen(false)}
+          onSuccess={() => {
+            invalidateAllOwnershipData();
+            refetchInvitations();
+            setManagementTab('PENDING');
+          }}
+        />
+      )}
     </aside>
   );
 };

@@ -1,0 +1,23 @@
+@startuml
+title MÁY TRẠNG THÁI: CHUYỂN NHƯỢNG CỔ PHẦN PHƯƠNG TIỆN (STATE-10)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+[*] --> REQUESTED : Bên chuyển gửi đề nghị
+
+REQUESTED --> PENDING_APPROVAL : Bên nhận chấp thuận nhận vốn góp
+PENDING_APPROVAL --> COMPLETED : Trưởng nhóm phê duyệt & Cập nhật CSDL
+REQUESTED --> CANCELLED : Bên nhận từ chối hoặc Bên chuyển hủy
+PENDING_APPROVAL --> CANCELLED : Trưởng nhóm bác bỏ giao dịch
+
+COMPLETED --> [*]
+CANCELLED --> [*]
+
+@enduml

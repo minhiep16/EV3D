@@ -1,0 +1,69 @@
+@startuml
+title SƠ ĐỒ TUẦN TỰ: HOÀN TẤT SẠC VÀ TÍNH GIÁ BÌNH QUÂN WAC (SEQ-10)
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam sequenceMessageAlign center
+skinparam participant {
+    BackgroundColor #F8F9FA
+    BorderColor #2C3E50
+    FontColor #2C3E50
+}
+skinparam actor {
+    BackgroundColor #E8F4F8
+    BorderColor #1A5276
+}
+skinparam database {
+    BackgroundColor #FEF9E7
+    BorderColor #B7950B
+}
+
+autonumber
+actor "Người Dùng / Staff" as User
+participant "ChargingSessionController" as Controller
+participant "ChargingSessionService" as ChargeSvc
+participant "VehicleEnergyInventoryService" as EnergySvc
+database "MySQL Database" as DB
+
+User -> Controller : POST /api/charging/sessions/{id}/complete
+activate Controller
+Controller -> ChargeSvc : completeSession(sessionId)
+activate ChargeSvc
+
+ChargeSvc -> DB : UPDATE charging_sessions SET status = 'COMPLETED', ended_at = now()
+ChargeSvc -> DB : UPDATE vehicles SET status = 'AVAILABLE'
+
+ChargeSvc -> EnergySvc : recordChargingSessionCompletion(session)
+activate EnergySvc
+
+EnergySvc -> DB : Kiểm tra Idempotency: tồn tại giao dịch CHARGING_INFLOW cho session này chưa?
+alt Chưa tồn tại giao dịch
+    EnergySvc -> EnergySvc : deliveredEnergy = session.getEnergyDeliveredKwh()
+    EnergySvc -> EnergySvc : storedEnergy = deliveredEnergy * 0.90 (Tổn hao 10%)
+    EnergySvc -> EnergySvc : addedValue = storedEnergy * tariff
+    
+    EnergySvc -> DB : SELECT * FROM vehicle_energy_inventories WHERE vehicle_id = ?
+    DB --> EnergySvc : prevEnergy, prevValue
+    
+    EnergySvc -> EnergySvc : newEnergy = prevEnergy + storedEnergy
+    EnergySvc -> EnergySvc : newValue = prevValue + addedValue
+    EnergySvc -> EnergySvc : newAvgCost = (newEnergy > 0) ? (newValue / newEnergy) : tariff
+    
+    EnergySvc -> DB : UPDATE vehicle_energy_inventories SET available_energy = newEnergy, total_cost = newValue, weighted_avg_cost = newAvgCost
+    EnergySvc -> DB : INSERT INTO vehicle_energy_transactions (CHARGING_INFLOW, storedEnergy, tariff)
+    EnergySvc --> ChargeSvc : Updated Inventory
+else Đã tồn tại giao dịch (Duplicate request)
+    EnergySvc --> ChargeSvc : Bỏ qua, trả về inventory hiện tại
+end
+deactivate EnergySvc
+
+ChargeSvc --> Controller : ChargingSessionResponse
+deactivate ChargeSvc
+Controller --> User : HTTP 200 OK (Nạp kho năng lượng thành công)
+deactivate Controller
+
+@enduml

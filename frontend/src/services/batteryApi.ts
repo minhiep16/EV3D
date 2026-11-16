@@ -1,12 +1,13 @@
 import { authenticatedFetch, safeParseResponse } from './api';
 import { BatteryHealthResponse } from '../types/battery';
+import { isValidUuid } from '../utils/formatUtils';
 
 /**
  * Fetch vehicle battery health technical state.
  * Returns null if no record exists yet (404/204).
  */
 export async function fetchVehicleBatteryHealth(vehicleId: string): Promise<BatteryHealthResponse | null> {
-  if (!vehicleId) return null;
+  if (!vehicleId || !isValidUuid(vehicleId)) return null;
 
   try {
     const res = await authenticatedFetch(`/api/vehicles/${vehicleId}/battery-health`);

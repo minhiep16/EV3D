@@ -38,6 +38,15 @@ public class VehicleService {
     private final GroupVehicleRepository groupVehicleRepository;
     private final com.evshare.charging.service.ChargingProgressService chargingProgressService;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.evshare.trip.repository.TripRepository tripRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.evshare.ownership.repository.OwnershipShareRepository shareRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.evshare.ownership.repository.CoOwnershipGroupRepository coOwnershipGroupRepository;
+
     public VehicleService(
             VehicleRepository vehicleRepository,
             GroupMemberRepository memberRepository,
@@ -50,20 +59,27 @@ public class VehicleService {
         this.chargingProgressService = chargingProgressService;
     }
 
+    private void autoHealVehicleTelemetry(Vehicle vehicle) {
+        if (vehicle == null || tripRepository == null) return;
+        if (vehicle.getOdometer() == null || vehicle.getOdometer().compareTo(BigDecimal.ZERO) == 0) {
+            tripRepository.findFirstByVehicleIdAndStatusOrderByEndedAtDesc(vehicle.getId(), com.evshare.trip.entity.TripStatus.COMPLETED)
+                    .ifPresent(latestTrip -> {
+                        if (latestTrip.getEndOdometer() != null && latestTrip.getEndOdometer().compareTo(BigDecimal.ZERO) > 0) {
+                            vehicle.setOdometer(latestTrip.getEndOdometer());
+                            if (latestTrip.getEndBatteryLevel() != null) {
+                                vehicle.setCurrentBatteryLevel(latestTrip.getEndBatteryLevel());
+                            }
+                            vehicleRepository.save(vehicle);
+                        }
+                    });
+        }
+    }
+
     @Transactional
     public List<VehicleResponse> getAllVehicles() {
-        List<Vehicle> vehicles = vehicleRepository.findAll();
-        boolean hasSynced = false;
-        for (Vehicle v : vehicles) {
-            if (v.getStatus() == VehicleStatus.CHARGING) {
-                chargingProgressService.syncActiveSessionForVehicle(v.getId());
-                hasSynced = true;
-            }
-        }
-        if (hasSynced) {
-            vehicles = vehicleRepository.findAll();
-        }
-        return vehicles.stream()
+        List<Vehicle> list = vehicleRepository.findAll();
+        list.forEach(this::autoHealVehicleTelemetry);
+        return list.stream()
                 .map(VehicleResponse::fromEntity)
                 .collect(Collectors.toList());
     }
@@ -101,6 +117,20 @@ public class VehicleService {
                     }
                 }
             }
+
+            // Fallback & self-heal via OwnershipShare:
+            if (shareRepository != null) {
+                List<com.evshare.ownership.entity.OwnershipShare> memberShares = shareRepository.findByMemberId(member.getId());
+                for (com.evshare.ownership.entity.OwnershipShare s : memberShares) {
+                    if (s.getVehicle() != null && s.getVehicle().getId() != null) {
+                        visibleVehicleIds.add(s.getVehicle().getId());
+                        if (group != null && group.getVehicleId() == null && coOwnershipGroupRepository != null) {
+                            group.setVehicleId(s.getVehicle().getId());
+                            coOwnershipGroupRepository.save(group);
+                        }
+                    }
+                }
+            }
         }
 
         if (visibleVehicleIds.isEmpty()) {
@@ -108,20 +138,10 @@ public class VehicleService {
         }
 
         List<Vehicle> vehicles = vehicleRepository.findAllById(visibleVehicleIds);
-        boolean hasSynced = false;
-        for (Vehicle v : vehicles) {
-            if (v.getStatus() == VehicleStatus.CHARGING) {
-                chargingProgressService.syncActiveSessionForVehicle(v.getId());
-                hasSynced = true;
-            }
-        }
-        if (hasSynced) {
-            vehicles = vehicleRepository.findAllById(visibleVehicleIds);
-        }
+        vehicles.forEach(this::autoHealVehicleTelemetry);
 
-        // Strict Single Active Contract: Return at most 1 vehicle for CO_OWNER
+        // Multi-vehicle co-ownership support: Return all authorized vehicles for the co-owner
         return vehicles.stream()
-                .limit(1)
                 .map(VehicleResponse::fromEntity)
                 .collect(Collectors.toList());
     }
@@ -163,12 +183,24 @@ public class VehicleService {
                         }
                         if (hasAccess) break;
                     }
+                    if (shareRepository != null) {
+                        List<com.evshare.ownership.entity.OwnershipShare> memberShares = shareRepository.findByMemberId(member.getId());
+                        for (com.evshare.ownership.entity.OwnershipShare s : memberShares) {
+                            if (s.getVehicle() != null && id.equals(s.getVehicle().getId())) {
+                                hasAccess = true;
+                                break;
+                            }
+                        }
+                        if (hasAccess) break;
+                    }
                 }
                 if (!hasAccess) {
                     throw new AccessDeniedException("Bạn không có quyền truy cập thông tin của xe này");
                 }
             }
         }
+
+        autoHealVehicleTelemetry(vehicle);
 
         return VehicleResponse.fromEntity(vehicle);
     }

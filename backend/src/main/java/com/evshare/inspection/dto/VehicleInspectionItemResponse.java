@@ -9,6 +9,7 @@ import java.util.UUID;
 public class VehicleInspectionItemResponse {
 
     private UUID id;
+    private UUID vehicleId;
     private UUID inspectionId;
     private String vehiclePartCode;
     private InspectionItemCondition conditionStatus;
@@ -23,6 +24,9 @@ public class VehicleInspectionItemResponse {
         resp.setId(entity.getId());
         if (entity.getInspection() != null) {
             resp.setInspectionId(entity.getInspection().getId());
+            if (entity.getInspection().getVehicle() != null) {
+                resp.setVehicleId(entity.getInspection().getVehicle().getId());
+            }
         }
         resp.setVehiclePartCode(entity.getVehiclePartCode());
         resp.setConditionStatus(entity.getConditionStatus());
@@ -37,6 +41,14 @@ public class VehicleInspectionItemResponse {
 
     public void setId(UUID id) {
         this.id = id;
+    }
+
+    public UUID getVehicleId() {
+        return vehicleId;
+    }
+
+    public void setVehicleId(UUID vehicleId) {
+        this.vehicleId = vehicleId;
     }
 
     public UUID getInspectionId() {

@@ -28,4 +28,8 @@ public record SharedFundSummaryResponse(
     public BigDecimal totalContributions() {
         return totalContributionsConfirmed;
     }
+
+    public BigDecimal getAvailableBalance() {
+        return availableBalance;
+    }
 }

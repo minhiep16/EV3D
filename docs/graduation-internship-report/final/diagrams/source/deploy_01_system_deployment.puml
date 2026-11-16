@@ -1,0 +1,46 @@
+@startuml
+title SƠ ĐỒ TRIỂN KHAI PHẦN CỨNG VÀ MÁY CHỦ (DEPLOYMENT DIAGRAM)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+node "Client Desktop / Laptop" as ClientNode #EBF5FB {
+    artifact "Web Browser (Chrome / Edge / Firefox)" as Browser {
+        component "React 18 SPA (JS/HTML/CSS)" as AppClient
+        component "WebGL 2.0 / GPU Renderer" as GPU
+        component "Local Assets Cache (.glb 3D Models)" as ModelCache
+    }
+}
+
+cloud "HTTPS Network (Port 443)" as Net
+
+node "Application Server (Linux / Windows Host)" as AppServer #E8F8F5 {
+    node "JVM Runtime (OpenJDK 21 LTS)" as JVM {
+        artifact "evshare-backend.jar" as BackendApp {
+            component "Embedded Tomcat Server (Port 8080)" as Tomcat
+            component "Spring Boot 3.3.4 Application" as SpringBoot
+            component "HikariCP JDBC Connection Pool" as Hikari
+        }
+    }
+}
+
+node "Database Server" as DbServer #FEF9E7 {
+    database "MySQL Community Server 8.0 (Port 3306)" as MySQL {
+        storage "Database: evshare3d" as DBStore
+    }
+}
+
+Browser --> Net : HTTPS REST / JSON
+Net --> Tomcat : Reverse Proxy / Direct HTTPS
+Tomcat --> SpringBoot
+SpringBoot --> Hikari
+Hikari --> MySQL : TCP/IP (Port 3306)
+MySQL --> DBStore : Read/Write InnoDB Tables
+
+@enduml

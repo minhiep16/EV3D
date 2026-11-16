@@ -336,10 +336,10 @@ export const EV02_SEMANTIC_HITBOXES: SemanticHitboxDef[] = [
  */
 export const SEMANTIC_PART_LABELS_VI: Record<string, string> = {
   BODY: 'Thân vỏ',
-  DOOR_FL: 'Cửa trước trái',
-  DOOR_FR: 'Cửa trước phải',
-  DOOR_RL: 'Cửa sau trái',
-  DOOR_RR: 'Cửa sau phải',
+  DOOR_FL: 'Cửa trước bên trái',
+  DOOR_FR: 'Cửa trước bên phải',
+  DOOR_RL: 'Cửa sau bên trái',
+  DOOR_RR: 'Cửa sau bên phải',
   HOOD: 'Nắp ca-pô',
   ROOF: 'Nóc xe',
   WINDSHIELD: 'Kính chắn gió',

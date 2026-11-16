@@ -1,0 +1,85 @@
+@startuml
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Times New Roman"
+skinparam defaultFontSize 12
+skinparam roundCorner 10
+left to right direction
+
+title Sơ Đồ Use Case Tổng Quát Hệ Thống EVShare 3D
+
+actor "Quản Trị Viên\n(ADMIN)" as Admin #LightBlue
+actor "Nhân Viên Vận Hành\n(STAFF)" as Staff #LightGreen
+actor "Chủ Đồng Sở Hữu\n(CO_OWNER)" as CoOwner #LightYellow
+
+rectangle "Hệ Thống EVShare 3D" {
+    package "Xác Thực & Quản Trị Hệ Thống" {
+        usecase "UC01: Đăng nhập & Xác thực JWT" as UC_Login
+        usecase "UC02: Quản lý người dùng & Phân vai trò" as UC_UserMgmt
+        usecase "UC03: Xem thống kê & Phân tích tổng thể" as UC_Analytics
+        usecase "UC04: Quản lý nhóm đồng sở hữu hệ thống" as UC_AdminGroups
+    }
+
+    package "Vận Hành Phương Tiện & Kỹ Thuật" {
+        usecase "UC05: Chọn xe & Kiểm tra đội xe (Fleet)" as UC_FleetSelect
+        usecase "UC06: Xác nhận bàn giao xe (Handover)" as UC_Handover
+        usecase "UC07: Kiểm tra kỹ thuật & Lập biên bản" as UC_Inspection
+        usecase "UC08: Ghi nhận & Bản đồ hóa hư hỏng 3D" as UC_Damage
+        usecase "UC09: Quản lý & Thực thi bảo dưỡng xe" as UC_Maintenance
+        usecase "UC10: Xác minh trả xe hoàn tất chuyến đi" as UC_ReturnVerify
+        usecase "UC11: Điều phối sạc pin vận hành" as UC_StaffCharge
+    }
+
+    package "Sử Dụng Phương Tiện & Trải Nghiệm 3D" {
+        usecase "UC12: Khám phá xe tương tác 3D & X-Ray Pin" as UC_3DExplore
+        usecase "UC13: Đặt lịch sử dụng xe (Booking)" as UC_Booking
+        usecase "UC14: Khởi hành chuyến đi (Trip Start)" as UC_TripStart
+        usecase "UC15: Yêu cầu gia hạn chuyến đi" as UC_TripExtend
+        usecase "UC16: Yêu cầu trả xe (Return Request)" as UC_TripReturn
+        usecase "UC17: Thực hiện phiên sạc xe cá nhân" as UC_OwnerCharge
+    }
+
+    package "Tài Chính, Quản Trị Nhóm & Pháp Lý" {
+        usecase "UC18: Xem tồn kho năng lượng & Phân bổ chi phí" as UC_EnergyFinance
+        usecase "UC19: Gửi xác nhận thanh toán (DEMO Payment)" as UC_SubmitPay
+        usecase "UC20: Xác minh thanh toán chi phí" as UC_VerifyPay
+        usecase "UC21: Chuyển nhượng tỷ lệ sở hữu" as UC_Transfer
+        usecase "UC22: Mời & Tiếp nhận thành viên mới" as UC_Invite
+        usecase "UC23: Ký hợp đồng điện tử (DEMO Signature)" as UC_SignContract
+        usecase "UC24: Tạo đề xuất & Biểu quyết tập thể" as UC_Vote
+        usecase "UC25: Khiếu nại, Tranh chấp & Hòa giải" as UC_Dispute
+    }
+}
+
+Admin --> UC_Login
+Admin --> UC_UserMgmt
+Admin --> UC_Analytics
+Admin --> UC_AdminGroups
+Admin --> UC_VerifyPay
+
+Staff --> UC_Login
+Staff --> UC_FleetSelect
+Staff --> UC_Handover
+Staff --> UC_Inspection
+Staff --> UC_Damage
+Staff --> UC_Maintenance
+Staff --> UC_ReturnVerify
+Staff --> UC_StaffCharge
+Staff --> UC_VerifyPay
+Staff --> UC_Dispute
+
+CoOwner --> UC_Login
+CoOwner --> UC_3DExplore
+CoOwner --> UC_Booking
+CoOwner --> UC_TripStart
+CoOwner --> UC_TripExtend
+CoOwner --> UC_TripReturn
+CoOwner --> UC_OwnerCharge
+CoOwner --> UC_EnergyFinance
+CoOwner --> UC_SubmitPay
+CoOwner --> UC_Transfer
+CoOwner --> UC_Invite
+CoOwner --> UC_SignContract
+CoOwner --> UC_Vote
+CoOwner --> UC_Dispute
+
+@enduml

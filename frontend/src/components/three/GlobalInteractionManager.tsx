@@ -1,9 +1,10 @@
 import React, { useEffect } from 'react';
-import { useThree } from '@react-three/fiber';
+import { useThree, useFrame } from '@react-three/fiber';
 import {
   globalInteractionState,
   DRAG_THRESHOLD_PX,
 } from './globalInteractionState';
+import { perfDiagnostics } from '../../utils/performanceDiagnostics';
 
 /**
  * GlobalInteractionManager component mounted within the R3F Canvas.
@@ -56,7 +57,8 @@ export const GlobalInteractionManager: React.FC = () => {
         globalInteractionState.lastDragEndTime = Date.now();
       }
 
-      // Reset pointer down tracking
+      // Reset pointer down tracking and dragging flag
+      globalInteractionState.isPointerDragging = false;
       globalInteractionState.pointerDownPosition = null;
       globalInteractionState.pointerDownButton = null;
     };
@@ -78,6 +80,10 @@ export const GlobalInteractionManager: React.FC = () => {
       canvas.removeEventListener('contextmenu', handleContextMenu);
     };
   }, [gl]);
+
+  useFrame((_, delta) => {
+    perfDiagnostics.recordFrame(delta);
+  });
 
   return null;
 };

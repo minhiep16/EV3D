@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -14,24 +15,31 @@ import java.util.UUID;
 @Repository
 public interface MaintenanceRequestRepository extends JpaRepository<MaintenanceRequest, UUID> {
 
-    @Query("SELECT m FROM MaintenanceRequest m " +
-           "LEFT JOIN FETCH m.damageRecords " +
-           "LEFT JOIN FETCH m.createdBy " +
-           "LEFT JOIN FETCH m.assignedStaff " +
-           "WHERE m.vehicle.id = :vehicleId " +
-           "ORDER BY m.createdAt DESC")
-    List<MaintenanceRequest> findByVehicleIdOrderByCreatedAtDesc(@Param("vehicleId") UUID vehicleId);
+       @Query("SELECT m FROM MaintenanceRequest m " +
+                     "LEFT JOIN FETCH m.damageRecords " +
+                     "LEFT JOIN FETCH m.createdBy " +
+                     "LEFT JOIN FETCH m.assignedStaff " +
+                     "WHERE m.vehicle.id = :vehicleId " +
+                     "ORDER BY m.createdAt DESC")
+       List<MaintenanceRequest> findByVehicleIdOrderByCreatedAtDesc(@Param("vehicleId") UUID vehicleId);
 
-    @Query("SELECT m FROM MaintenanceRequest m " +
-           "LEFT JOIN FETCH m.damageRecords " +
-           "LEFT JOIN FETCH m.createdBy " +
-           "LEFT JOIN FETCH m.assignedStaff " +
-           "WHERE m.id = :id")
-    Optional<MaintenanceRequest> findByIdWithDetails(@Param("id") UUID id);
+       @Query("SELECT m FROM MaintenanceRequest m " +
+                     "LEFT JOIN FETCH m.damageRecords " +
+                     "LEFT JOIN FETCH m.createdBy " +
+                     "LEFT JOIN FETCH m.assignedStaff " +
+                     "WHERE m.id = :id")
+       Optional<MaintenanceRequest> findByIdWithDetails(@Param("id") UUID id);
 
-    boolean existsByVehicleIdAndStatus(UUID vehicleId, MaintenanceStatus status);
+       boolean existsByVehicleIdAndStatus(UUID vehicleId, MaintenanceStatus status);
 
-    List<MaintenanceRequest> findByVehicleIdAndStatus(UUID vehicleId, MaintenanceStatus status);
+    boolean existsByVehicleIdAndStatusIn(UUID vehicleId, Collection<MaintenanceStatus> statuses);
 
-    Optional<MaintenanceRequest> findByRelatedProposalId(UUID relatedProposalId);
+    @Query("SELECT m FROM MaintenanceRequest m WHERE m.vehicle.id = :vehicleId")
+    List<MaintenanceRequest> findByVehicleId(@Param("vehicleId") UUID vehicleId);
+
+       List<MaintenanceRequest> findByVehicleIdAndStatus(UUID vehicleId, MaintenanceStatus status);
+
+       Optional<MaintenanceRequest> findByRelatedProposalId(UUID relatedProposalId);
+
+    long countByStatusIn(Collection<MaintenanceStatus> statuses);
 }

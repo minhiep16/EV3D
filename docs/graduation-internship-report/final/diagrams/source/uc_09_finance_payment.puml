@@ -1,0 +1,41 @@
+@startuml
+title USE CASE: QUẢN TRỊ TÀI CHÍNH VÀ THANH TOÁN (UC-09)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam actorStyle awesome
+
+
+left to right direction
+
+actor "Nhân Viên / Admin" as StaffAdmin
+actor "Chủ Xe (CO_OWNER)" as CoOwner
+
+package "Tài Chính & Phân Bổ Chi Phí" #F8F9FA {
+    usecase "Tạo Hóa Đơn Chi Phí Phương Tiện" as UC_CreateExp
+    usecase "Phân Bổ Theo Người Dùng (USER_RESPONSIBILITY)" as UC_AllocUser
+    usecase "Phân Bổ Theo Tỷ Lệ Sở Hữu (Hare-Niemeyer)" as UC_AllocOwnership
+    usecase "Xem Bảng Kê Nghĩa Vụ Chi Phí Cá Nhân" as UC_ViewShares
+    usecase "Gửi Thông Tin Chuyển Khoản DEMO" as UC_SubmitPay
+    usecase "Đối Soát & Xác Minh Thanh Toán Thực Tế" as UC_VerifyPay
+    usecase "Tất Toán Nghĩa Vụ Tài Chính (SETTLED)" as UC_Settle
+}
+
+StaffAdmin --> UC_CreateExp
+StaffAdmin --> UC_VerifyPay
+StaffAdmin --> UC_Settle
+
+CoOwner --> UC_ViewShares
+CoOwner --> UC_SubmitPay
+
+UC_CreateExp ..> UC_AllocUser : <<extend>>
+UC_CreateExp ..> UC_AllocOwnership : <<extend>>
+UC_SubmitPay ..> UC_VerifyPay : <<include>>
+UC_VerifyPay ..> UC_Settle : <<include>>
+
+@enduml

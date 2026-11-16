@@ -1,0 +1,56 @@
+@startuml
+title KIẾN TRÚC PHÂN CẤP THÀNH PHẦN FRONTEND REACT 18
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+
+package "Root & Layout" #EBF5FB {
+    [App.tsx] as App
+    [GarageScene.tsx] as GarageScene
+    App *-- GarageScene
+}
+
+package "Three.js 3D WebGL Canvas" #E8F8F5 {
+    [EVShareWorld.tsx] as World3D
+    [VehicleDigitalTwin.tsx] as VehicleTwin
+    [Pedestal.tsx] as Pedestal
+    [DamageHotspotMarker.tsx] as Hotspot
+    [BatteryHealthZone.tsx] as BatteryZone
+    
+    World3D *-- Pedestal
+    World3D *-- VehicleTwin
+    VehicleTwin *-- Hotspot
+    VehicleTwin *-- BatteryZone
+}
+
+package "Spatial UI Floating Panels" #FEF9E7 {
+    [CoOwnerBookingPanel.tsx] as BookingPanel
+    [FinanceZonePanel.tsx] as FinancePanel
+    [StaffHandoverModal.tsx] as HandoverModal
+    [StaffReturnInspectionModal.tsx] as ReturnModal
+    [AdminCommandCenterPanels.tsx] as AdminPanel
+}
+
+package "Common UI / HUD" #FADBD8 {
+    [VehicleStatusLabel.tsx] as HUDLabel
+    [NotificationBell.tsx] as NotiBell
+    [GarageErrorBoundary.tsx] as ErrorBoundary
+}
+
+GarageScene *-- World3D
+GarageScene *-- BookingPanel
+GarageScene *-- FinancePanel
+GarageScene *-- HandoverModal
+GarageScene *-- ReturnModal
+GarageScene *-- AdminPanel
+GarageScene *-- NotiBell
+World3D *-- HUDLabel
+GarageScene *-- ErrorBoundary
+
+@enduml

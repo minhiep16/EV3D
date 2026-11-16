@@ -1,0 +1,45 @@
+@startuml
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Times New Roman"
+skinparam defaultFontSize 12
+skinparam roundCorner 10
+
+title Sơ Đồ Triển Khai Hệ Thống EVShare 3D (Deployment Diagram)
+
+node "Thiết Bị Đầu Cuối Người Dùng (Client Machine)" {
+    artifact "Trình Duyệt Web Tiêu Chuẩn\n(Chrome, Edge, Firefox, Safari)" {
+        component "Ứng Dụng Web React 18 SPA\n(Bundle Vite: JS, CSS, WebGL Shaders)" as WebApp
+        component "Khối Render Đồ Họa 3D\n(Three.js Engine / WebGL 2.0)" as WebGLContext
+        WebApp --> WebGLContext : Thao tác GPU Rendering
+    }
+}
+
+node "Máy Chủ Dịch Vụ Ứng Dụng (Application Host Server)" {
+    node "Môi Trường Thực Thi Java (OpenJDK 21 LTS)" {
+        artifact "evshare-backend.jar\n(Spring Boot 3.3.4)" {
+            component "Embedded Tomcat Web Server\n(Port: 8080)" as Tomcat
+            component "Spring Security Filter & JWT" as SecModule
+            component "Spring REST Services & Domain Engines" as AppServices
+            component "Hibernate ORM & HikariCP Pool" as ORMPool
+            
+            Tomcat --> SecModule
+            SecModule --> AppServices
+            AppServices --> ORMPool
+        }
+    }
+    
+    node "Hệ Quản Trị Cơ Sở Dữ Liệu (Database Server)" {
+        database "MySQL 8.0+ RDBMS\n(Port: 3306)" {
+            storage "Database: evshare3d" as DBStorage {
+                [Bảng Dữ Liệu Thực Thể (46 Tables)]
+                [Chỉ Mục Indexes & Khóa Ngoại Constraints]
+                [Nhật Ký Giao Dịch InnoDB Redo/Undo Logs]
+            }
+        }
+    }
+}
+
+WebApp --> Tomcat : Giao thức HTTPS / REST API JSON\n(Port 8080 / Reverse Proxy Nginx)
+ORMPool --> DBStorage : Kết nối TCP/IP JDBC Pool\n(jdbc:mysql://localhost:3306/evshare3d)
+
+@enduml

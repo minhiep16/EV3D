@@ -44,13 +44,22 @@ export async function safeParseResponse<T = any>(response: Response): Promise<T>
       if (!response.ok) {
         throw new ApiError(response.status, `Lỗi máy chủ (${response.status})`);
       }
-      throw new ApiError(0, 'Không thể kết nối đến máy chủ.');
+      throw new ApiError(0, 'Không thể kết nối máy chủ. Vui lòng thử lại.');
     }
 
     if (!response.ok) {
       const errorMsg = String(data?.message || '');
       const errorLower = errorMsg.toLowerCase();
       const errorCode = String(data?.code || '');
+
+      if (
+        response.status === 503 ||
+        errorCode === 'BACKEND_UNAVAILABLE' ||
+        errorLower.includes('backend_unavailable') ||
+        errorLower.includes('econnrefused')
+      ) {
+        throw new ApiError(503, 'Không thể kết nối máy chủ. Vui lòng thử lại.', data);
+      }
 
       // Intercept any raw SQL / Hibernate constraint violation messages so they never leak to the UI
       if (
@@ -135,8 +144,11 @@ export async function safeParseResponse<T = any>(response: Response): Promise<T>
   const rawText = await response.text().catch(() => '');
 
   if (!response.ok) {
+    if (response.status === 503 || rawText.includes('ECONNREFUSED') || rawText.includes('BACKEND_UNAVAILABLE')) {
+      throw new ApiError(503, 'Không thể kết nối máy chủ. Vui lòng thử lại.');
+    }
     if (rawText.includes('Invalid CORS request') || rawText.includes('CORS')) {
-      throw new ApiError(0, 'Không thể kết nối đến máy chủ do lỗi cấu hình mạng.');
+      throw new ApiError(0, 'Không thể kết nối máy chủ. Vui lòng thử lại.');
     }
     if (response.status === 400) {
       throw new ApiError(400, rawText || 'Dữ liệu gửi lên không hợp lệ.');
@@ -203,7 +215,7 @@ export async function authenticatedFetch(
   try {
     response = await fetch(input, { ...init, headers });
   } catch {
-    throw new ApiError(0, 'Không thể kết nối đến máy chủ.');
+    throw new ApiError(0, 'Không thể kết nối máy chủ. Vui lòng thử lại.');
   }
 
   // Handle 401: Token expired or invalid -> automatic refresh & retry
@@ -252,7 +264,7 @@ export async function authenticatedFetch(
                 resolve(retried);
               }
             } catch {
-              reject(new ApiError(0, 'Không thể kết nối đến máy chủ.'));
+              reject(new ApiError(0, 'Không thể kết nối máy chủ. Vui lòng thử lại.'));
             }
           });
         });
@@ -269,7 +281,7 @@ export async function authenticatedFetch(
     if (!contentType.includes('application/json')) {
       const text = await response.clone().text().catch(() => '');
       if (text.includes('Invalid CORS request') || text.includes('CORS')) {
-        throw new ApiError(0, 'Không thể kết nối đến máy chủ do lỗi cấu hình mạng.');
+        throw new ApiError(0, 'Không thể kết nối máy chủ. Vui lòng thử lại.');
       }
       throw new ApiError(403, 'Bạn không có quyền truy cập dữ liệu.');
     }
@@ -277,6 +289,18 @@ export async function authenticatedFetch(
   }
 
   return response;
+}
+
+/**
+ * Convenience wrapper combining authenticatedFetch and safeParseResponse:
+ * executes an authenticated HTTP request and safely parses the JSON payload.
+ */
+export async function apiFetch<T = any>(
+  input: RequestInfo | URL,
+  init: RequestInit = {}
+): Promise<T> {
+  const response = await authenticatedFetch(input, init);
+  return await safeParseResponse<T>(response);
 }
 
 export async function fetchHealth(): Promise<HealthStatus> {

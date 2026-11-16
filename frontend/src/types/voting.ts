@@ -19,6 +19,8 @@ export type VoteDecisionRule = 'OWNERSHIP_WEIGHTED' | 'ONE_MEMBER_ONE_VOTE';
 
 export type ProposalExecutionStatus =
   | 'NOT_STARTED'
+  | 'PENDING_STAFF'
+  | 'ACCEPTED'
   | 'IN_PROGRESS'
   | 'COMPLETED'
   | 'CANCELLED';
@@ -145,6 +147,7 @@ export interface ApprovedWorkResponse {
   vehicleLicensePlate: string;
   groupId: string;
   groupName: string;
+  creatorName?: string;
   proposalType: VoteProposalType;
   proposalTypeVietnamese: string;
   title: string;
@@ -165,6 +168,7 @@ export interface ApprovedWorkResponse {
   executionBlockReason?: string | null;
   relatedMaintenanceRequestId?: string | null;
   relatedExpenseId?: string | null;
+  damageRecordsCount?: number;
 }
 
 export interface CreateVoteProposalRequest {

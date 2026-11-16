@@ -21,8 +21,8 @@ export const VEHICLE_INTERACTION_CONFIG = {
   /** Default initial vehicle yaw for CO_OWNER presentation angle */
   defaultCoOwnerYaw: -0.32,
 
-  /** Default initial vehicle yaw for OPERATIONS presentation angle */
-  defaultOperationsYaw: 0.0,
+  /** Default initial vehicle yaw for OPERATIONS presentation angle (reusing CO_OWNER three-quarter view) */
+  defaultOperationsYaw: -0.32,
 } as const;
 
 export type VehicleInteractionConfig = typeof VEHICLE_INTERACTION_CONFIG;

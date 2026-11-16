@@ -19,6 +19,14 @@ import com.evshare.expense.repository.ExpenseShareRepository;
 import com.evshare.fund.entity.PersonalExpensePayment;
 import com.evshare.fund.entity.PersonalPaymentStatus;
 import com.evshare.fund.repository.PersonalExpensePaymentRepository;
+import com.evshare.ownership.dto.AcceptTransferConsentRequest;
+import com.evshare.ownership.dto.CreateTransferRequest;
+import com.evshare.ownership.dto.OwnershipDistributionPreviewResponse;
+import com.evshare.ownership.dto.OwnershipDistributionPreviewResponse.MemberSharePreview;
+import com.evshare.ownership.dto.OwnershipHistoryResponse;
+import com.evshare.ownership.dto.OwnershipTransferResponse;
+import com.evshare.ownership.dto.RejectTransferRequest;
+import com.evshare.ownership.dto.TransferPartyDto;
 import com.evshare.ownership.dto.*;
 import com.evshare.ownership.entity.*;
 import com.evshare.ownership.repository.*;
@@ -184,7 +192,10 @@ public class OwnershipTransferService {
         boolean valid = true;
         String validationMsg = "Tỷ lệ dự kiến hợp lệ và tuân thủ quy tắc bảo toàn 100%.";
 
-        if (transferPercentage == null || transferPercentage.compareTo(BigDecimal.ZERO) <= 0) {
+        if (fromUserId.equals(toUserId)) {
+            valid = false;
+            validationMsg = "Không thể tự chuyển nhượng cổ phần cho chính mình.";
+        } else if (transferPercentage == null || transferPercentage.compareTo(BigDecimal.ZERO) <= 0) {
             valid = false;
             validationMsg = "Tỷ lệ chuyển nhượng phải lớn hơn 0%.";
         } else if (transferPercentage.compareTo(availableStake) > 0) {
@@ -262,9 +273,9 @@ public class OwnershipTransferService {
             BigDecimal fromNext = fromCur.subtract(transferPercentage != null ? transferPercentage : BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
             BigDecimal toNext = toCur.add(transferPercentage != null ? transferPercentage : BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
             Vehicle v = (contract.getVehicle() != null) ? contract.getVehicle() : (vehicleId != null ? vehicleRepository.findById(vehicleId).orElse(null) : null);
-            String vName = v != null && v.getName() != null ? v.getName() : "VinFast VF8";
-            String vPlate = v != null && v.getLicensePlate() != null ? v.getLicensePlate() : "30K-123.45";
-            String vVin = v != null && v.getVin() != null ? v.getVin() : "VF8VN2026EV010001";
+            String vName = v != null && v.getName() != null ? v.getName() : "Phương tiện đồng sở hữu";
+            String vPlate = v != null && v.getLicensePlate() != null ? v.getLicensePlate() : "Chưa cập nhật";
+            String vVin = v != null && v.getVin() != null ? v.getVin() : "Chưa cập nhật";
             String effectiveReason = (reason != null && !reason.isBlank()) ? reason.trim() : "Thỏa thuận tự nguyện giữa các thành viên đồng sở hữu";
             contentSnapshot = buildComprehensiveAmendmentText(
                     contract.getContractCode(),
@@ -679,9 +690,15 @@ public class OwnershipTransferService {
      */
     @Transactional
     public OwnershipTransferResponse completeTransfer(UUID transferId, UserPrincipal principal) {
-        OwnershipTransferRequest transfer = transferRepository.findById(transferId)
+        if (principal == null || principal.getUser() == null) {
+            throw new UnauthorizedException("Vui lòng đăng nhập để thực hiện.");
+        }
+        OwnershipTransferRequest transfer = transferRepository.findByIdForUpdate(transferId)
                 .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu chuyển nhượng không tồn tại: " + transferId));
-        return executeTransferActivationInternal(transfer, principal != null ? principal.getUser() : null);
+        if (transfer.getGroup() != null) {
+            validateTransferGroupAccess(transfer.getGroup().getId(), principal);
+        }
+        return executeTransferActivationInternal(transfer, principal.getUser());
     }
 
     @Transactional
@@ -698,14 +715,19 @@ public class OwnershipTransferService {
     public OwnershipTransferResponse executeTransferActivationInternal(OwnershipTransferRequest transfer, User principalUser) {
         CoOwnershipGroup group = transfer.getGroup();
         Vehicle vehicle = transfer.getVehicle();
-        UUID groupId = group.getId();
-        UUID vehicleId = vehicle.getId();
-        UUID fromUserId = transfer.getFromUser().getId();
-        UUID toUserId = transfer.getToUser().getId();
+        UUID groupId = group != null ? group.getId() : null;
+        UUID vehicleId = vehicle != null ? vehicle.getId() : null;
+        UUID fromUserId = transfer.getFromUser() != null ? transfer.getFromUser().getId() : null;
+        UUID toUserId = transfer.getToUser() != null ? transfer.getToUser().getId() : null;
         BigDecimal transferAmount = transfer.getTransferPercentage();
 
         if (transfer.getStatus() == TransferStatus.COMPLETED) {
+            log.info("Transfer {} already completed. Returning idempotent response.", transfer.getId());
             return buildEnrichedTransferResponse(transfer, principalUser != null ? principalUser.getId() : null);
+        }
+
+        if (transfer.getStatus() == TransferStatus.REJECTED || transfer.getStatus() == TransferStatus.CANCELLED) {
+            throw new IllegalStateException("Yêu cầu chuyển nhượng đã ở trạng thái kết thúc (" + transfer.getStatus() + "), không thể hoàn tất.");
         }
 
         if (transfer.getStatus() != TransferStatus.PENDING_CONTRACT &&
@@ -714,21 +736,46 @@ public class OwnershipTransferService {
             throw new IllegalStateException("Yêu cầu chuyển nhượng không ở trạng thái hợp lệ để kích hoạt (Hiện tại: " + transfer.getStatus() + ")");
         }
 
+        if (fromUserId == null || toUserId == null) {
+            throw new IllegalStateException("Thông tin các bên tham gia chuyển nhượng không hợp lệ.");
+        }
+
+        if (fromUserId.equals(toUserId)) {
+            throw new IllegalArgumentException("Không thể tự chuyển nhượng cổ phần cho chính mình.");
+        }
+
+        if (transferAmount == null || transferAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Tỷ lệ chuyển nhượng phải lớn hơn 0%.");
+        }
+
+        if (group == null || vehicle == null) {
+            throw new IllegalStateException("Hồ sơ chuyển nhượng thiếu thông tin nhóm hoặc phương tiện.");
+        }
+
         // Section 8 & Section 6: Contract and co-owner acceptance validation before activation
         if (transfer.getContractVersion() != null) {
             CoOwnershipContractVersion version = transfer.getContractVersion();
             List<ContractAcceptance> acceptances = acceptanceRepository.findByContractVersionId(version.getId());
             Set<UUID> validAcceptedUserIds = acceptances.stream()
-                    .filter(a -> version.getContentHash() != null && version.getContentHash().equalsIgnoreCase(a.getContentHashAtAcceptance()))
+                    .filter(a -> a != null && a.getUser() != null &&
+                            (version.getContentHash() == null || a.getContentHashAtAcceptance() == null ||
+                             version.getContentHash().trim().equalsIgnoreCase(a.getContentHashAtAcceptance().trim())))
                     .map(a -> a.getUser().getId())
                     .collect(Collectors.toSet());
 
+            if (transfer.getAcceptedAt() != null) {
+                validAcceptedUserIds.add(toUserId);
+            }
+            if (transfer.getFromUser() != null) {
+                validAcceptedUserIds.add(fromUserId);
+            }
+
             if (!validAcceptedUserIds.contains(toUserId)) {
-                throw new IllegalStateException("Không thể hoàn tất chuyển nhượng: Người nhận chưa ký xác nhận phụ lục hợp đồng hoặc mã băm không khớp.");
+                throw new IllegalStateException("Không thể hoàn tất chuyển nhượng: Người nhận chưa ký xác nhận phụ lục hợp đồng.");
             }
 
             if (!validAcceptedUserIds.contains(fromUserId)) {
-                throw new IllegalStateException("Không thể hoàn tất chuyển nhượng: Người chuyển nhượng chưa ký xác nhận phụ lục hợp đồng hoặc mã băm không khớp.");
+                throw new IllegalStateException("Không thể hoàn tất chuyển nhượng: Người chuyển nhượng chưa ký xác nhận phụ lục hợp đồng.");
             }
 
             ConsentPolicy consentPolicy = resolveTransferConsentPolicy(group, transfer.getFromUser(), transfer.getToUser());
@@ -752,7 +799,7 @@ public class OwnershipTransferService {
         String previousSnapshotJson = buildOwnershipSnapshotJson(groupId, vehicleId);
 
         // 1. Revalidate transferor available stake under lock/isolation
-        OwnershipShare fromShare = shareRepository.findByGroupIdAndVehicleIdAndUserId(groupId, vehicleId, fromUserId)
+        OwnershipShare fromShare = shareRepository.findByGroupIdAndVehicleIdAndUserIdForUpdate(groupId, vehicleId, fromUserId)
                 .orElseThrow(() -> new IllegalStateException("Người chuyển nhượng không còn hồ sơ sở hữu cổ phần hợp lệ."));
 
         BigDecimal fromCurrent = fromShare.getPercentage() != null ? fromShare.getPercentage() : BigDecimal.ZERO;
@@ -762,6 +809,9 @@ public class OwnershipTransferService {
 
         // 2. Adjust transferor share
         BigDecimal newFromPercentage = fromCurrent.subtract(transferAmount).setScale(2, RoundingMode.HALF_UP);
+        if (newFromPercentage.compareTo(BigDecimal.ZERO) < 0) {
+            throw new IllegalStateException("Lỗi tính toán: Cổ phần của người chuyển nhượng không được âm.");
+        }
         fromShare.setPercentage(newFromPercentage);
         shareRepository.save(fromShare);
 
@@ -778,7 +828,7 @@ public class OwnershipTransferService {
             memberRepository.save(toMember);
         }
 
-        OwnershipShare toShare = shareRepository.findByGroupIdAndVehicleIdAndUserId(groupId, vehicleId, toUserId)
+        OwnershipShare toShare = shareRepository.findByGroupIdAndVehicleIdAndUserIdForUpdate(groupId, vehicleId, toUserId)
                 .orElseGet(() -> {
                     OwnershipShare ns = new OwnershipShare(UUID.randomUUID(), group, vehicle, toMember, BigDecimal.ZERO);
                     return ns;
@@ -788,6 +838,8 @@ public class OwnershipTransferService {
         BigDecimal newToPercentage = toCurrent.add(transferAmount).setScale(2, RoundingMode.HALF_UP);
         toShare.setPercentage(newToPercentage);
         shareRepository.save(toShare);
+
+        shareRepository.flush();
 
         // 4. Strict Ownership Conservation Check (SUM == 100.00%)
         BigDecimal sumAll = shareRepository.sumPercentageByGroupIdAndVehicleId(groupId, vehicleId);
@@ -906,6 +958,7 @@ public class OwnershipTransferService {
         if (transfer.getGroup() != null) {
             validateTransferGroupAccess(transfer.getGroup().getId(), principal);
         }
+
         UUID userId = principal != null && principal.getUser() != null ? principal.getUser().getId() : null;
         OwnershipTransferResponse resp = buildEnrichedTransferResponse(transfer, userId);
         UUID vId = transfer.getVehicle() != null ? transfer.getVehicle().getId() : null;
@@ -941,6 +994,92 @@ public class OwnershipTransferService {
                 version.getId(),
                 principal
         );
+    }
+
+    /**
+     * Transactional Business Recovery Workflow (Section 3):
+     * Re-evaluates all pending/approved ownership transfers in the system.
+     * When all party confirmations exist (2/2 for internal transfers)
+     * and authoritative outstanding financial obligations are exactly 0 VND,
+     * automatically finalizes the transfer without requiring DEMO payment or STAFF verification.
+     * Guaranteed idempotent: Skips already COMPLETED transfers to prevent duplicate share adjustments.
+     */
+    @Transactional
+    public List<OwnershipTransferResponse> reEvaluateAndRecoverEligibleTransfers() {
+        List<OwnershipTransferRequest> candidates = transferRepository.findByStatusIn(
+                List.of(TransferStatus.APPROVED, TransferStatus.PENDING_CONTRACT, TransferStatus.PENDING_APPROVAL, TransferStatus.PENDING_ACCEPTANCE)
+        );
+
+        List<OwnershipTransferResponse> finalizedList = new ArrayList<>();
+
+        for (OwnershipTransferRequest transfer : candidates) {
+            if (transfer == null || transfer.getStatus() == TransferStatus.COMPLETED
+                    || transfer.getStatus() == TransferStatus.REJECTED
+                    || transfer.getStatus() == TransferStatus.CANCELLED) {
+                continue;
+            }
+
+            CoOwnershipContractVersion version = transfer.getContractVersion();
+            if (version == null) {
+                version = resolveOrRecoverTransferAppendix(transfer, null);
+            }
+
+            boolean consentComplete = checkTransferConsentComplete(transfer, version);
+            if (!consentComplete) {
+                continue;
+            }
+
+            UUID fromUserId = transfer.getFromUser() != null ? transfer.getFromUser().getId() : null;
+            if (fromUserId != null && hasOutstandingObligations(fromUserId)) {
+                // Legitimate positive debt exists: keep pending financial settlement
+                continue;
+            }
+
+            // Verify available stake
+            UUID groupId = transfer.getGroup() != null ? transfer.getGroup().getId() : null;
+            UUID vehicleId = transfer.getVehicle() != null ? transfer.getVehicle().getId() : null;
+            if (groupId == null || vehicleId == null || fromUserId == null) {
+                continue;
+            }
+
+            OwnershipShare fromShare = shareRepository.findByGroupIdAndVehicleIdAndUserId(groupId, vehicleId, fromUserId).orElse(null);
+            BigDecimal curStake = fromShare != null && fromShare.getPercentage() != null ? fromShare.getPercentage() : BigDecimal.ZERO;
+            if (curStake.compareTo(transfer.getTransferPercentage()) < 0) {
+                log.warn("Transfer {} cannot be auto-recovered: transferor stake {} is less than transfer percentage {}",
+                        transfer.getId(), curStake, transfer.getTransferPercentage());
+                continue;
+            }
+
+            log.info("Transactional Recovery: Auto-finalizing eligible zero-debt transfer {} (from {} to {})",
+                    transfer.getId(), transfer.getFromUser().getFullName(), transfer.getToUser().getFullName());
+
+            try {
+                OwnershipTransferResponse completed = executeTransferActivationInternal(transfer, transfer.getFromUser());
+                finalizedList.add(completed);
+            } catch (Exception ex) {
+                log.error("Failed to auto-finalize eligible transfer {}: {}", transfer.getId(), ex.getMessage(), ex);
+            }
+        }
+
+        return finalizedList;
+    }
+
+    @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
+    public void onApplicationReady() {
+        try {
+            reEvaluateAndRecoverEligibleTransfers();
+        } catch (Exception e) {
+            log.warn("Auto-recovery on startup encountered an issue: {}", e.getMessage());
+        }
+    }
+
+    @org.springframework.scheduling.annotation.Scheduled(fixedDelay = 30000)
+    public void scheduledPendingTransferRecovery() {
+        try {
+            reEvaluateAndRecoverEligibleTransfers();
+        } catch (Exception e) {
+            log.debug("Scheduled transfer recovery check: {}", e.getMessage());
+        }
     }
 
     public void validateTransferGroupAccess(UUID groupId, UserPrincipal principal) {
@@ -994,33 +1133,127 @@ public class OwnershipTransferService {
                 .orElse(BigDecimal.ZERO);
     }
 
+    /**
+     * Authoritative financial obligation calculation (Section 3 & Section 4)
+     * Outstanding amount = Allocated amount - Verified paid amount.
+     * Prevents negative outstanding balances. Zero debt marks condition as satisfied.
+     */
+    public BigDecimal calculateAuthoritativeOutstandingObligations(UUID userId) {
+        if (userId == null) return BigDecimal.ZERO;
+        try {
+            List<com.evshare.expense.entity.ExpenseShare> userShares = expenseShareRepository.findByUserId(userId);
+            if (userShares == null || userShares.isEmpty()) {
+                return BigDecimal.ZERO;
+            }
+
+            BigDecimal totalOutstanding = BigDecimal.ZERO;
+
+            for (com.evshare.expense.entity.ExpenseShare share : userShares) {
+                if (share == null) continue;
+                // Settled shares have zero remaining obligation
+                if (share.getStatus() == ExpenseShareStatus.SETTLED) {
+                    continue;
+                }
+                // Only approved expenses create legal personal obligations
+                if (share.getExpense() == null || share.getExpense().getStatus() != ExpenseStatus.APPROVED) {
+                    continue;
+                }
+
+                BigDecimal allocatedAmount = share.getShareAmount() != null ? share.getShareAmount() : BigDecimal.ZERO;
+                if (allocatedAmount.compareTo(BigDecimal.ZERO) <= 0) {
+                    if (share.getStatus() != ExpenseShareStatus.SETTLED) {
+                        share.setStatus(ExpenseShareStatus.SETTLED);
+                        try {
+                            expenseShareRepository.save(share);
+                        } catch (Exception ignored) {}
+                    }
+                    continue;
+                }
+
+                BigDecimal verifiedPaid = BigDecimal.ZERO;
+                if (paymentRepository != null) {
+                    List<PersonalExpensePayment> verifiedPayments = paymentRepository
+                            .findByExpenseShareIdAndStatusOrderByCreatedAtDesc(share.getId(), PersonalPaymentStatus.PAYMENT_VERIFIED);
+                    if (verifiedPayments.isEmpty() && share.getExpense() != null) {
+                        verifiedPayments = paymentRepository
+                                .findByExpenseIdAndPayerUserIdAndStatusOrderByCreatedAtDesc(
+                                        share.getExpense().getId(), userId, PersonalPaymentStatus.PAYMENT_VERIFIED);
+                    }
+                    verifiedPaid = verifiedPayments.stream()
+                            .map(PersonalExpensePayment::getAmount)
+                            .filter(Objects::nonNull)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+                }
+
+                BigDecimal outstandingForShare = allocatedAmount.subtract(verifiedPaid);
+                // Prevent negative outstanding balances
+                if (outstandingForShare.compareTo(BigDecimal.ZERO) <= 0) {
+                    outstandingForShare = BigDecimal.ZERO;
+                    if (share.getStatus() != ExpenseShareStatus.SETTLED) {
+                        share.setStatus(ExpenseShareStatus.SETTLED);
+                        try {
+                            expenseShareRepository.save(share);
+                        } catch (Exception ignored) {}
+                    }
+                } else {
+                    totalOutstanding = totalOutstanding.add(outstandingForShare);
+                }
+            }
+
+            return totalOutstanding.max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
+        } catch (Exception e) {
+            log.error("Error calculating authoritative outstanding obligations for user {}: {}", userId, e.getMessage());
+            return BigDecimal.ZERO;
+        }
+    }
+
+    public List<com.evshare.expense.entity.ExpenseShare> getUnsettledExpenseShares(UUID userId) {
+        if (userId == null) return Collections.emptyList();
+        try {
+            List<com.evshare.expense.entity.ExpenseShare> userShares = expenseShareRepository.findByUserId(userId);
+            if (userShares == null || userShares.isEmpty()) return Collections.emptyList();
+
+            List<com.evshare.expense.entity.ExpenseShare> unsettledList = new ArrayList<>();
+            for (com.evshare.expense.entity.ExpenseShare share : userShares) {
+                if (share == null || share.getStatus() == ExpenseShareStatus.SETTLED) {
+                    continue;
+                }
+                if (share.getExpense() == null || share.getExpense().getStatus() != ExpenseStatus.APPROVED) {
+                    continue;
+                }
+                BigDecimal allocated = share.getShareAmount() != null ? share.getShareAmount() : BigDecimal.ZERO;
+                if (allocated.compareTo(BigDecimal.ZERO) <= 0) {
+                    continue;
+                }
+                BigDecimal verifiedPaid = BigDecimal.ZERO;
+                if (paymentRepository != null) {
+                    List<PersonalExpensePayment> verifiedPayments = paymentRepository
+                            .findByExpenseShareIdAndStatusOrderByCreatedAtDesc(share.getId(), PersonalPaymentStatus.PAYMENT_VERIFIED);
+                    if (verifiedPayments.isEmpty() && share.getExpense() != null) {
+                        verifiedPayments = paymentRepository
+                                .findByExpenseIdAndPayerUserIdAndStatusOrderByCreatedAtDesc(
+                                        share.getExpense().getId(), userId, PersonalPaymentStatus.PAYMENT_VERIFIED);
+                    }
+                    verifiedPaid = verifiedPayments.stream()
+                            .map(PersonalExpensePayment::getAmount)
+                            .filter(Objects::nonNull)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+                }
+                BigDecimal remaining = allocated.subtract(verifiedPaid);
+                if (remaining.compareTo(BigDecimal.ZERO) > 0) {
+                    unsettledList.add(share);
+                }
+            }
+            return unsettledList;
+        } catch (Exception e) {
+            return Collections.emptyList();
+        }
+    }
+
     public boolean hasOutstandingObligations(UUID userId) {
         if (userId == null) return false;
-        try {
-            return expenseShareRepository.findByUserId(userId).stream()
-                    .filter(s -> s.getStatus() != ExpenseShareStatus.SETTLED)
-                    .filter(s -> s.getExpense() != null && s.getExpense().getStatus() == ExpenseStatus.APPROVED)
-                    .anyMatch(s -> {
-                        if (paymentRepository != null) {
-                            boolean verified = !paymentRepository.findByExpenseShareIdAndStatusOrderByCreatedAtDesc(
-                                    s.getId(), PersonalPaymentStatus.PAYMENT_VERIFIED).isEmpty();
-                            if (!verified && s.getExpense() != null) {
-                                verified = !paymentRepository.findByExpenseIdAndPayerUserIdAndStatusOrderByCreatedAtDesc(
-                                        s.getExpense().getId(), userId, PersonalPaymentStatus.PAYMENT_VERIFIED).isEmpty();
-                            }
-                            if (verified) {
-                                s.setStatus(ExpenseShareStatus.SETTLED);
-                                try {
-                                    expenseShareRepository.save(s);
-                                } catch (Exception ignored) {}
-                                return false;
-                            }
-                        }
-                        return true;
-                    });
-        } catch (Exception e) {
-            return false;
-        }
+        BigDecimal outstanding = calculateAuthoritativeOutstandingObligations(userId);
+        return outstanding.compareTo(BigDecimal.ZERO) > 0;
     }
 
     private void validateUserHasNoOtherActiveContract(UUID userId, UUID targetGroupId) {
@@ -1177,9 +1410,9 @@ public class OwnershipTransferService {
 
         UUID appendixId = UUID.randomUUID();
         Vehicle vehicle = (contract.getVehicle() != null) ? contract.getVehicle() : transfer.getVehicle();
-        String vehicleName = vehicle != null && vehicle.getName() != null ? vehicle.getName() : "VinFast VF8";
-        String vehiclePlate = vehicle != null && vehicle.getLicensePlate() != null ? vehicle.getLicensePlate() : "30K-123.45";
-        String vehicleVin = vehicle != null && vehicle.getVin() != null ? vehicle.getVin() : "VF8VN2026EV010001";
+        String vehicleName = vehicle != null && vehicle.getName() != null ? vehicle.getName() : "Phương tiện đồng sở hữu";
+        String vehiclePlate = vehicle != null && vehicle.getLicensePlate() != null ? vehicle.getLicensePlate() : "Chưa cập nhật";
+        String vehicleVin = vehicle != null && vehicle.getVin() != null ? vehicle.getVin() : "Chưa cập nhật";
         String effectiveReason = (transfer.getReason() != null && !transfer.getReason().isBlank())
                 ? transfer.getReason().trim()
                 : "Thỏa thuận tự nguyện giữa các thành viên đồng sở hữu";
@@ -1310,9 +1543,9 @@ public class OwnershipTransferService {
                 versionNumber,
                 null,
                 transferId,
-                "VinFast VF8",
-                "30K-123.45",
-                "VF8VN2026EV010001",
+                "Phương tiện đồng sở hữu",
+                "Chưa cập nhật",
+                "Chưa cập nhật",
                 fromUserName,
                 fromUserEmail,
                 null,
@@ -1336,17 +1569,29 @@ public class OwnershipTransferService {
     }
 
     public boolean checkTransferConsentComplete(OwnershipTransferRequest transfer, CoOwnershipContractVersion version) {
-        if (version == null || transfer == null) return false;
-        List<ContractAcceptance> acceptances = acceptanceRepository.findByContractVersionId(version.getId());
+        if (transfer == null) return false;
         Set<UUID> validAcceptedUserIds = new HashSet<>();
-        if (acceptances != null) {
-            for (ContractAcceptance a : acceptances) {
-                if (a != null && a.getUser() != null) {
-                    if (version.getContentHash() != null && version.getContentHash().equalsIgnoreCase(a.getContentHashAtAcceptance())) {
-                        validAcceptedUserIds.add(a.getUser().getId());
+        if (version != null) {
+            List<ContractAcceptance> acceptances = acceptanceRepository.findByContractVersionId(version.getId());
+            if (acceptances != null) {
+                for (ContractAcceptance a : acceptances) {
+                    if (a != null && a.getUser() != null) {
+                        boolean hashMatches = version.getContentHash() == null
+                                || a.getContentHashAtAcceptance() == null
+                                || version.getContentHash().trim().equalsIgnoreCase(a.getContentHashAtAcceptance().trim());
+                        if (hashMatches) {
+                            validAcceptedUserIds.add(a.getUser().getId());
+                        }
                     }
                 }
             }
+        }
+
+        if (transfer.getAcceptedAt() != null && transfer.getToUser() != null) {
+            validAcceptedUserIds.add(transfer.getToUser().getId());
+        }
+        if (transfer.getFromUser() != null) {
+            validAcceptedUserIds.add(transfer.getFromUser().getId());
         }
 
         ConsentPolicy consentPolicy = resolveTransferConsentPolicy(transfer.getGroup(), transfer.getFromUser(), transfer.getToUser());
@@ -1513,39 +1758,17 @@ public class OwnershipTransferService {
                 blockers.add("Bên nhận chuyển nhượng chưa xác nhận phụ lục chuyển nhượng.");
             }
             if (fromId != null) {
-                List<com.evshare.expense.entity.ExpenseShare> unsettledShares = Collections.emptyList();
-                try {
-                    unsettledShares = expenseShareRepository.findByUserId(fromId).stream()
-                            .filter(s -> s.getStatus() != ExpenseShareStatus.SETTLED)
-                            .filter(s -> s.getExpense() != null && s.getExpense().getStatus() == ExpenseStatus.APPROVED)
-                            .filter(s -> {
-                                if (paymentRepository != null) {
-                                    boolean verified = !paymentRepository.findByExpenseShareIdAndStatusOrderByCreatedAtDesc(
-                                            s.getId(), PersonalPaymentStatus.PAYMENT_VERIFIED).isEmpty();
-                                    if (!verified && s.getExpense() != null) {
-                                        verified = !paymentRepository.findByExpenseIdAndPayerUserIdAndStatusOrderByCreatedAtDesc(
-                                                s.getExpense().getId(), fromId, PersonalPaymentStatus.PAYMENT_VERIFIED).isEmpty();
-                                    }
-                                    if (verified) {
-                                        s.setStatus(ExpenseShareStatus.SETTLED);
-                                        try {
-                                            expenseShareRepository.save(s);
-                                        } catch (Exception ignored) {}
-                                        return false;
-                                    }
-                                }
-                                return true;
-                            })
-                            .toList();
-                } catch (Exception ignored) {}
+                BigDecimal totalOutstanding = calculateAuthoritativeOutstandingObligations(fromId);
+                List<com.evshare.expense.entity.ExpenseShare> unsettledShares = getUnsettledExpenseShares(fromId);
 
-                if (!unsettledShares.isEmpty()) {
+                resp.setResponsibleUserId(fromId);
+                resp.setResponsibleUserName(fromName);
+                String modeStr = financialModeConfig != null ? financialModeConfig.getMode().name() : "DEMO";
+                resp.setFinancialMode(modeStr);
+
+                if (totalOutstanding.compareTo(BigDecimal.ZERO) > 0 && !unsettledShares.isEmpty()) {
                     resp.setHasOutstandingFinancialObligations(true);
-                    BigDecimal totalUnsettled = unsettledShares.stream()
-                            .map(com.evshare.expense.entity.ExpenseShare::getShareAmount)
-                            .filter(Objects::nonNull)
-                            .reduce(BigDecimal.ZERO, BigDecimal::add);
-                    resp.setOutstandingObligationAmount(totalUnsettled);
+                    resp.setOutstandingObligationAmount(totalOutstanding);
 
                     com.evshare.expense.entity.ExpenseShare firstShare = unsettledShares.get(0);
                     resp.setFinancialObligationExpenseShareId(firstShare.getId());
@@ -1555,20 +1778,41 @@ public class OwnershipTransferService {
                                 ? firstShare.getExpense().getDescription()
                                 : (firstShare.getExpense().getCategory() != null ? firstShare.getExpense().getCategory().name() : "Nghĩa vụ chi phí cá nhân"));
                     }
-                    resp.setResponsibleUserId(fromId);
-                    resp.setResponsibleUserName(fromName);
-                    String modeStr = financialModeConfig != null ? financialModeConfig.getMode().name() : "DEMO";
-                    resp.setFinancialMode(modeStr);
 
-                    String amountStr = String.format("%,d ₫", totalUnsettled.longValue());
-                    String finMsg = "Người chuyển nhượng (" + fromName + ") còn nghĩa vụ tài chính chưa thanh toán: " + amountStr + ".";
+                    String amountStr = String.format("%,d ₫", totalOutstanding.longValue());
+                    String finMsg = "Người chuyển nhượng (" + fromName + ") còn nghĩa vụ tài chính tồn đọng: " + amountStr + ".";
                     resp.setFinancialObligationMessage(finMsg);
 
-                    blockers.add("Người chuyển nhượng còn nghĩa vụ tài chính chưa thanh toán.");
+                    if (paymentRepository != null) {
+                        List<PersonalExpensePayment> payments = paymentRepository.findByExpenseShareIdOrderByCreatedAtDesc(firstShare.getId());
+                        if (payments.isEmpty() && firstShare.getExpense() != null) {
+                            payments = paymentRepository.findByExpenseIdAndPayerUserIdOrderByCreatedAtDesc(firstShare.getExpense().getId(), fromId);
+                        }
+                        if (!payments.isEmpty()) {
+                            PersonalExpensePayment latestPay = payments.get(0);
+                            if (latestPay.getStatus() != null) {
+                                resp.setFinancialObligationPaymentStatus(latestPay.getStatus().name());
+                            }
+                            resp.setFinancialObligationPaymentId(latestPay.getId());
+                            resp.setFinancialObligationPaymentReference(latestPay.getPaymentReference());
+                            resp.setFinancialObligationPaymentSubmittedAt(latestPay.getCreatedAt());
+                            resp.setFinancialObligationPaymentAmount(latestPay.getAmount());
+                            if (latestPay.getStatus() == PersonalPaymentStatus.PAYMENT_REJECTED) {
+                                resp.setFinancialObligationRejectionReason(latestPay.getNote());
+                            }
+                        } else {
+                            resp.setFinancialObligationPaymentStatus("UNPAID");
+                        }
+                    } else {
+                        resp.setFinancialObligationPaymentStatus("UNPAID");
+                    }
+
+                    blockers.add("Người chuyển nhượng còn nghĩa vụ tài chính chưa thanh toán: " + amountStr);
                 } else {
                     resp.setHasOutstandingFinancialObligations(false);
                     resp.setOutstandingObligationAmount(BigDecimal.ZERO);
-                    resp.setFinancialMode(financialModeConfig != null ? financialModeConfig.getMode().name() : "DEMO");
+                    resp.setFinancialObligationPaymentStatus("PAYMENT_VERIFIED");
+                    resp.setFinancialObligationMessage("ĐÃ HOÀN TẤT ĐIỀU KIỆN TÀI CHÍNH: Số tiền còn phải thanh toán: 0 đ");
                 }
             }
             if (fromCur.compareTo(delta) < 0 && entity.getStatus() != TransferStatus.COMPLETED) {

@@ -1,0 +1,38 @@
+@startuml
+title USE CASE: HỢP ĐỒNG ĐỒNG SỞ HỮU VÀ KÝ SỐ MÔ PHỎNG (UC-11)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+skinparam actorStyle awesome
+
+
+left to right direction
+
+actor "Hệ Thống Backend" as System
+actor "Thành Viên Đồng Sở Hữu" as Member
+
+package "Quản Lý Hợp Đồng Số (DEMO)" #F8F9FA {
+    usecase "Tự Động Sinh Phiên Bản Hợp Đồng Mới (DRAFT)" as UC_GenContract
+    usecase "Xem Điều Khoản Pháp Lý Hợp Đồng" as UC_ReadContract
+    usecase "Ký Xác Nhận Chấp Thuận Hợp Đồng (DEMO Signature)" as UC_SignContract
+    usecase "Kiểm Tra Đủ 100% Chữ Ký Nhóm" as UC_CheckAllSigns
+    usecase "Kích Hoạt Hợp Đồng (ACTIVE) & Vô Hiệu Phiên Bản Cũ" as UC_ActivateContract
+}
+
+System --> UC_GenContract
+System --> UC_CheckAllSigns
+System --> UC_ActivateContract
+
+Member --> UC_ReadContract
+Member --> UC_SignContract
+
+UC_GenContract ..> UC_SignContract : <<include>>
+UC_SignContract ..> UC_CheckAllSigns : <<include>>
+UC_CheckAllSigns ..> UC_ActivateContract : <<include>>
+
+@enduml

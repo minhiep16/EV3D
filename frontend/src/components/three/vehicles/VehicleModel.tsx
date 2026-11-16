@@ -25,6 +25,7 @@ import { resolveVehicleColorHex } from '../../../config/vehicleColors';
 import { getVehicleAnchor } from '../../../config/vehicleCameraPresets';
 import { INTERACTION_CONFIG } from '../../../config/interactionConfig';
 import { globalInteractionState, isRecentDragInteraction } from '../globalInteractionState';
+import { VEHICLE_CATALOG } from '../../../data/vehicleCatalog';
 
 interface VehicleModelMeshProps {
   isSelected: boolean;
@@ -64,14 +65,67 @@ const VehicleModelMeshComponent: React.FC<VehicleModelMeshProps> = ({
 
   const isLegacyModel = modelUrl.includes('ev-car.glb');
   const transformConfig = useMemo(() => getModelTransformConfig(modelUrl), [modelUrl]);
+  const catalogEntry = useMemo(() => {
+    if (!modelUrl) return undefined;
+    return VEHICLE_CATALOG.find(
+      (v) => v.model3dUrl === modelUrl || (v.model3dUrl && modelUrl.endsWith(v.model3dUrl))
+    );
+  }, [modelUrl]);
 
   // Clone scene and configure automotive PBR materials ONCE per asset/color combination
   const { clonedScene, dynamicMaterials } = useMemo(() => {
     const scene = gltf.scene.clone(true);
-    // Apply calibrated model transforms
-    scene.scale.set(...transformConfig.scale);
-    scene.rotation.set(...transformConfig.rotation);
-    scene.position.set(...transformConfig.offset);
+
+    const isStandardEv = Boolean(
+      modelUrl.includes('ev01') ||
+      isLegacyModel ||
+      modelUrl.includes('ev02') ||
+      modelUrl.includes('stylized')
+    );
+
+    if (isStandardEv) {
+      // Apply calibrated model transforms for hand-crafted EV01 and EV02
+      scene.scale.set(...transformConfig.scale);
+      scene.rotation.set(...transformConfig.rotation);
+      scene.position.set(...transformConfig.offset);
+    } else {
+      // Universal Bounding Box Normalization for all catalog / registered models (Cybertruck, VF3, VF9, Hyundai, etc.)
+      scene.scale.set(1, 1, 1);
+      scene.rotation.set(0, 0, 0);
+      scene.position.set(0, 0, 0);
+
+      // 1. Measure raw bounds
+      const rawBox = new THREE.Box3().setFromObject(scene);
+      const rawSize = new THREE.Vector3();
+      rawBox.getSize(rawSize);
+
+      // 2. Determine and apply rotation (catalog preference or align longer axis along Z forward)
+      const rotationOffset: [number, number, number] =
+        catalogEntry?.normalization?.rotationOffset ||
+        (rawSize.x > rawSize.z ? [0, Math.PI / 2, 0] : [0, 0, 0]);
+      scene.rotation.set(rotationOffset[0], rotationOffset[1], rotationOffset[2]);
+      scene.updateMatrixWorld(true);
+
+      // 3. Measure rotated bounding box to calculate proportional scale factor
+      const rotatedBox = new THREE.Box3().setFromObject(scene);
+      const rotatedSize = new THREE.Vector3();
+      rotatedBox.getSize(rotatedSize);
+
+      const targetLength = catalogEntry?.normalization?.targetLength || 4.75;
+      const scaleMultiplier = catalogEntry?.normalization?.scaleMultiplier || 1.0;
+      const vehicleLength = Math.max(rotatedSize.x, rotatedSize.z);
+      const scaleFactor = (targetLength / (vehicleLength > 0.001 ? vehicleLength : 1)) * scaleMultiplier;
+      scene.scale.setScalar(scaleFactor);
+      scene.updateMatrixWorld(true);
+
+      // 4. Measure final scaled bounding box to center horizontally and place tires at y = 0
+      const finalBox = new THREE.Box3().setFromObject(scene);
+      const finalCenter = new THREE.Vector3();
+      finalBox.getCenter(finalCenter);
+
+      const groundOffset = catalogEntry?.normalization?.groundOffset || 0.0;
+      scene.position.set(-finalCenter.x, -finalBox.min.y + groundOffset, -finalCenter.z);
+    }
 
     const headlights: THREE.MeshStandardMaterial[] = [];
     const taillights: THREE.MeshStandardMaterial[] = [];
@@ -197,31 +251,64 @@ const VehicleModelMeshComponent: React.FC<VehicleModelMeshProps> = ({
           } else {
             const matName = mat.name || '';
             const meshName = mesh.name || '';
+            const matLower = matName.toLowerCase();
+            const meshLower = meshName.toLowerCase();
+
+            const isCatalogBody =
+              catalogEntry?.paintConfig?.bodyMaterialNames?.some(
+                (b) => matLower === b.toLowerCase() || matLower.includes(b.toLowerCase())
+              ) ||
+              catalogEntry?.paintConfig?.bodyMeshNames?.some((m) => meshName === m);
+
+            const isCatalogProtected =
+              catalogEntry?.paintConfig?.protectedMaterialNames?.some(
+                (p) => matName === p || matLower === p.toLowerCase()
+              );
+
             const isGenericBodyPaint =
-              matName.toLowerCase().includes('paint') ||
-              matName.toLowerCase().includes('body') ||
+              isCatalogBody ||
+              matName === 'Base' ||
+              matName === 'primary' ||
+              matName === 'primary.001' ||
+              matName === 'primary.002' ||
+              matName === 'Material.003' ||
+              matName === 'Material.002' ||
               matName === 'CarPaint' ||
-              matName.toLowerCase().includes('exterior') ||
-              meshName.toLowerCase().includes('car paint') ||
-              meshName.toLowerCase().includes('car_paint') ||
-              meshName.toLowerCase().includes('body');
+              matLower.includes('paint') ||
+              matLower.includes('body') ||
+              matLower.includes('exterior') ||
+              matLower.includes('car_main_paint') ||
+              matLower.includes('bodycolor') ||
+              meshLower.includes('car paint') ||
+              meshLower.includes('car_paint') ||
+              meshLower.includes('body') ||
+              (modelUrl.includes('cybertruck') && (matName === 'Base' || meshName === 'Object_0'));
 
             const isGenericProtected =
-              matName.toLowerCase().includes('glass') ||
-              matName.toLowerCase().includes('window') ||
-              matName.toLowerCase().includes('tire') ||
-              matName.toLowerCase().includes('wheel') ||
-              matName.toLowerCase().includes('light') ||
-              matName.toLowerCase().includes('rim') ||
-              matName.toLowerCase().includes('trim') ||
-              meshName.toLowerCase().includes('glass') ||
-              meshName.toLowerCase().includes('window') ||
-              meshName.toLowerCase().includes('tire') ||
-              meshName.toLowerCase().includes('wheel') ||
-              meshName.toLowerCase().includes('light');
+              isCatalogProtected ||
+              matName === 'TeslaBlack' ||
+              matName === 'TeslaFrontLight' ||
+              matName === 'TeslaRearLight' ||
+              matName === 'Material.004' ||
+              matName === 'Material.001' ||
+              matLower.includes('glass') ||
+              matLower.includes('window') ||
+              matLower.includes('tire') ||
+              matLower.includes('wheel') ||
+              matLower.includes('light') ||
+              matLower.includes('rim') ||
+              matLower.includes('trim') ||
+              meshLower.includes('glass') ||
+              meshLower.includes('window') ||
+              meshLower.includes('tire') ||
+              meshLower.includes('wheel') ||
+              meshLower.includes('light');
 
-            if (isGenericBodyPaint && !isGenericProtected && exteriorColor) {
-              const paintHex = resolveVehicleColorHex(exteriorColor);
+            const activeColor =
+              exteriorColor || catalogEntry?.defaultColorHex || catalogEntry?.defaultColorNameVi;
+
+            if (isGenericBodyPaint && !isGenericProtected && activeColor) {
+              const paintHex = resolveVehicleColorHex(activeColor);
               const bodyMat = new THREE.MeshPhysicalMaterial({
                 color: new THREE.Color(paintHex),
                 metalness: 0.42,
@@ -263,7 +350,7 @@ const VehicleModelMeshComponent: React.FC<VehicleModelMeshProps> = ({
         createdMaterials,
       },
     };
-  }, [gltf.scene, transformConfig, exteriorColor, castShadow, receiveShadow, disableRaycast, isLegacyModel]);
+  }, [gltf.scene, transformConfig, exteriorColor, castShadow, receiveShadow, disableRaycast, isLegacyModel, catalogEntry]);
 
   // Clean up created materials on unmount
   useEffect(() => {

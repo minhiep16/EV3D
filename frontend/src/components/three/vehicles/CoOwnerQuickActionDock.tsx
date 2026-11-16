@@ -7,6 +7,7 @@ import {
   Wrench,
   Zap,
   Vote,
+  Scale,
 } from 'lucide-react';
 
 interface CoOwnerQuickActionDockProps {
@@ -19,6 +20,7 @@ export const CoOwnerQuickActionDock: React.FC<CoOwnerQuickActionDockProps> = ({ 
   const enterVehicleMaintenanceMode = useWorldStore((state) => state.enterVehicleMaintenanceMode);
   const enterBatteryXrayMode = useWorldStore((state) => state.enterBatteryXrayMode);
   const enterVehicleVotingMode = useWorldStore((state) => state.enterVehicleVotingMode);
+  const openDisputePanel = useWorldStore((state) => state.openDisputePanel);
   const openGaragePanel = useWorldStore((state) => state.openGaragePanel);
   const selectedVehiclePartId = useWorldStore((state) => state.selectedVehiclePartId);
   const selectVehiclePart = useWorldStore((state) => state.selectVehiclePart);
@@ -31,6 +33,8 @@ export const CoOwnerQuickActionDock: React.FC<CoOwnerQuickActionDockProps> = ({ 
   return (
     <div
       data-ui-interactive="true"
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
       style={{
         position: 'fixed',
         bottom: '24px',
@@ -124,6 +128,19 @@ export const CoOwnerQuickActionDock: React.FC<CoOwnerQuickActionDockProps> = ({ 
           <Vote size={18} color="#38bdf8" />
         </div>
         <span style={dockLabelStyle(false)}>BIỂU QUYẾT</span>
+      </button>
+
+      {/* 6. TRANH CHẤP */}
+      <button
+        type="button"
+        onClick={() => openDisputePanel(vehicle.id)}
+        title="Quản lý khiếu nại, hồ sơ tranh chấp và hòa giải"
+        style={dockItemButtonStyle(false)}
+      >
+        <div style={dockIconCircleStyle(false, false, '#00f2fe')}>
+          <Scale size={18} color="#00f2fe" />
+        </div>
+        <span style={dockLabelStyle(false)}>TRANH CHẤP</span>
       </button>
     </div>
   );

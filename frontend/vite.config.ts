@@ -9,9 +9,27 @@ export default defineConfig({
     host: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
+        target: 'http://127.0.0.1:8080',
         changeOrigin: true,
         secure: false,
+        configure: (proxy) => {
+          proxy.on('error', (err, _req, res) => {
+            console.warn('[Vite Proxy] Backend connection failed:', err.message);
+            if (res && 'writeHead' in res && typeof res.writeHead === 'function' && !res.headersSent) {
+              res.writeHead(503, {
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-store',
+              });
+              res.end(
+                JSON.stringify({
+                  code: 'BACKEND_UNAVAILABLE',
+                  message: 'Không thể kết nối máy chủ. Vui lòng thử lại.',
+                  timestamp: new Date().toISOString(),
+                })
+              );
+            }
+          });
+        },
       },
     },
   },

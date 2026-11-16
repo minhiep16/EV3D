@@ -43,7 +43,7 @@ public class BookingController {
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
-    @PatchMapping("/bookings/{bookingId}/cancel")
+    @RequestMapping(value = "/bookings/{bookingId}/cancel", method = {RequestMethod.PATCH, RequestMethod.POST})
     @PreAuthorize("hasAnyRole('CO_OWNER', 'STAFF', 'ADMIN')")
     public ResponseEntity<BookingResponse> cancelBooking(
             @PathVariable UUID bookingId,
@@ -53,5 +53,18 @@ public class BookingController {
                 .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
         BookingResponse cancelled = bookingService.cancelBooking(bookingId, principal.getId(), isAdmin);
         return ResponseEntity.ok(cancelled);
+    }
+
+    @PostMapping("/bookings/{bookingId}/extend")
+    @PreAuthorize("hasAnyRole('CO_OWNER', 'ADMIN')")
+    public ResponseEntity<BookingResponse> extendBooking(
+            @PathVariable UUID bookingId,
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody com.evshare.booking.dto.ExtendBookingRequest request
+    ) {
+        boolean isAdmin = principal.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+        BookingResponse extended = bookingService.extendBooking(bookingId, principal.getId(), request, isAdmin);
+        return ResponseEntity.ok(extended);
     }
 }

@@ -38,6 +38,20 @@ public class StaffApprovedWorkController {
     }
 
     /**
+     * STAFF accepts authorized work proposal.
+     */
+    @PostMapping("/{proposalId}/accept")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    public ResponseEntity<ApprovedWorkResponse> acceptWork(
+            @PathVariable UUID proposalId,
+            @RequestParam(name = "assignedStaffId", required = false) UUID assignedStaffId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        ApprovedWorkResponse response = voteProposalService.acceptProposalWork(proposalId, assignedStaffId, principal);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
      * STAFF begins authorized work.
      */
     @PostMapping("/{proposalId}/start")

@@ -1,0 +1,82 @@
+@startuml
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Times New Roman"
+skinparam defaultFontSize 12
+skinparam roundCorner 10
+
+title Sơ Đồ Tuần Tự: Tạo Lịch Đặt Xe và Xử Lý Xung Đột (Sequence Diagram)
+
+actor "Chủ Đồng Sở Hữu\n(CO_OWNER)" as CoOwner
+participant "CoOwnerBookingPanel\n(Frontend)" as UI
+participant "BookingController\n(REST API)" as Controller
+participant "BookingService\n(Service)" as Service
+participant "CoOwnershipService\n(Service)" as CoOwnershipService
+participant "BookingRepository\n(JPA Repo)" as BookingRepo
+database "MySQL Database" as DB
+
+CoOwner -> UI : Chọn xe & khoảng thời gian (startTime, endTime)
+CoOwner -> UI : Nhấn nút "Xác Nhận Đặt Lịch"
+activate UI
+
+UI -> Controller : POST /api/bookings/vehicle/{vehicleId}\n(Payload: CreateBookingRequest)
+activate Controller
+
+Controller -> Service : createBooking(vehicleId, userId, request)
+activate Service
+
+Service -> Service : Kiểm tra startTime < endTime && startTime >= now - 120s
+
+alt Kiểm tra thời gian thất bại
+    Service --> Controller : throw IllegalArgumentException("Thời gian không hợp lệ")
+    Controller --> UI : HTTP 400 Bad Request
+    UI --> CoOwner : Báo lỗi thời gian không hợp lệ
+end
+
+Service -> CoOwnershipService : isUserActiveMemberForVehicle(userId, vehicleId)
+activate CoOwnershipService
+CoOwnershipService -> DB : SELECT COUNT(*) FROM group_members ...
+activate DB
+DB --> CoOwnershipService : Kết quả kiểm tra
+deactivate DB
+CoOwnershipService --> Service : true / false
+deactivate CoOwnershipService
+
+alt Không phải thành viên hoạt động
+    Service --> Controller : throw AccessDeniedException("Không có quyền đặt xe này")
+    Controller --> UI : HTTP 403 Forbidden
+    UI --> CoOwner : Cảnh báo không có quyền
+end
+
+Service -> BookingRepo : findConflictingBookings(vehicleId, startTime, endTime, [CONFIRMED, PENDING])
+activate BookingRepo
+BookingRepo -> DB : SELECT * FROM bookings WHERE vehicle_id = ? AND status IN (...) AND (start_time < ? AND end_time > ?)
+activate DB
+DB --> BookingRepo : Danh sách xung đột (conflicts)
+deactivate DB
+BookingRepo --> Service : List<Booking>
+deactivate BookingRepo
+
+alt Phát hiện xung đột (conflicts không rỗng)
+    Service --> Controller : throw IllegalArgumentException("Khung giờ này đã được đặt")
+    Controller --> UI : HTTP 400 Bad Request (Error: Booking conflict)
+    UI --> CoOwner : Hiển thị thông báo khung giờ bị trùng, gợi ý thời gian khác
+else Không có xung đột (conflicts rỗng)
+    Service -> BookingRepo : save(new Booking(..., BookingStatus.CONFIRMED))
+    activate BookingRepo
+    BookingRepo -> DB : INSERT INTO bookings (id, vehicle_id, user_id, start_time, end_time, status, ...)
+    activate DB
+    DB --> BookingRepo : Thành công
+    deactivate DB
+    BookingRepo --> Service : Saved Booking Entity
+    deactivate BookingRepo
+    
+    Service --> Controller : BookingResponse
+    deactivate Service
+    Controller --> UI : HTTP 201 Created (BookingResponse JSON)
+    deactivate Controller
+    UI --> CoOwner : Cập nhật lịch đặt trực quan trên thanh thời gian 3D
+end
+
+deactivate UI
+
+@enduml

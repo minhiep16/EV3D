@@ -1,0 +1,728 @@
+
+=== BẢNG: audit_logs (Mục đích: Nhật ký kiểm toán an ninh và truy vết thao tác của quản trị viên và người dùng) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - actor_id (VARCHAR(36), PK=NO, FK=YES (FK -> actors.id), Null=YES): Trường dữ liệu actor_id lưu trữ thuộc tính nghiệp vụ của audit_logs
+  - actor_name (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu actor_name lưu trữ thuộc tính nghiệp vụ của audit_logs
+  - actor_email (VARCHAR(255), PK=NO, FK=NO, Null=YES): Địa chỉ thư điện tử xác thực của người dùng
+  - actor_role (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu actor_role lưu trữ thuộc tính nghiệp vụ của audit_logs
+  - action (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu action lưu trữ thuộc tính nghiệp vụ của audit_logs
+  - resource_type (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu resource_type lưu trữ thuộc tính nghiệp vụ của audit_logs
+  - resource_id (VARCHAR(255), PK=NO, FK=YES (FK -> resources.id), Null=NO): Trường dữ liệu resource_id lưu trữ thuộc tính nghiệp vụ của audit_logs
+  - previous_state (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu previous_state lưu trữ thuộc tính nghiệp vụ của audit_logs
+  - new_state (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu new_state lưu trữ thuộc tính nghiệp vụ của audit_logs
+  - description (TEXT, PK=NO, FK=NO, Null=YES): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - ip_address (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu ip_address lưu trữ thuộc tính nghiệp vụ của audit_logs
+  - created_at (DATETIME, PK=NO, FK=NO, Null=NO): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+
+=== BẢNG: bookings (Mục đích: Quản lý lịch đặt xe của các thành viên, thời gian bắt đầu/kết thúc và mục đích) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - vehicle (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu vehicle lưu trữ thuộc tính nghiệp vụ của bookings
+  - user (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu user lưu trữ thuộc tính nghiệp vụ của bookings
+  - start_time (DATETIME, PK=NO, FK=NO, Null=NO): Trường dữ liệu start_time lưu trữ thuộc tính nghiệp vụ của bookings
+  - end_time (DATETIME, PK=NO, FK=NO, Null=NO): Trường dữ liệu end_time lưu trữ thuộc tính nghiệp vụ của bookings
+  - purpose (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu purpose lưu trữ thuộc tính nghiệp vụ của bookings
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: charging_sessions (Mục đích: Quản lý các phiên sạc pin thực tế: Điện nạp thô, điện lưu kho (92%), tổn hao (8%)) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - vehicle (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu vehicle lưu trữ thuộc tính nghiệp vụ của charging_sessions
+  - charging_station (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu charging_station lưu trữ thuộc tính nghiệp vụ của charging_sessions
+  - status (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trạng thái vòng đời của bản ghi trong quy trình nghiệp vụ charging_sessions
+  - started_by (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu started_by lưu trữ thuộc tính nghiệp vụ của charging_sessions
+  - started_at (DATETIME, PK=NO, FK=NO, Null=NO): Trường dữ liệu started_at lưu trữ thuộc tính nghiệp vụ của charging_sessions
+  - ended_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu ended_at lưu trữ thuộc tính nghiệp vụ của charging_sessions
+  - start_soc_percent (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Thông số trạng thái dung lượng pin xe điện (SOC % hoặc kWh)
+  - current_soc_percent (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Thông số trạng thái dung lượng pin xe điện (SOC % hoặc kWh)
+  - target_soc_percent (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Thông số trạng thái dung lượng pin xe điện (SOC % hoặc kWh)
+  - energy_delivered_kwh (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Trường dữ liệu energy_delivered_kwh lưu trữ thuộc tính nghiệp vụ của charging_sessions
+  - stored_energy_kwh (DECIMAL(12,2), PK=NO, FK=NO, Null=YES): Trường dữ liệu stored_energy_kwh lưu trữ thuộc tính nghiệp vụ của charging_sessions
+  - tariff_per_kwh (DECIMAL(12,2), PK=NO, FK=NO, Null=YES): Trường dữ liệu tariff_per_kwh lưu trữ thuộc tính nghiệp vụ của charging_sessions
+  - charging_cost (DECIMAL(12,2), PK=NO, FK=NO, Null=YES): Trường dữ liệu charging_cost lưu trữ thuộc tính nghiệp vụ của charging_sessions
+  - energy_loss_kwh (DECIMAL(12,2), PK=NO, FK=NO, Null=YES): Trường dữ liệu energy_loss_kwh lưu trữ thuộc tính nghiệp vụ của charging_sessions
+  - power_kw (DECIMAL(12,2), PK=NO, FK=NO, Null=YES): Trường dữ liệu power_kw lưu trữ thuộc tính nghiệp vụ của charging_sessions
+  - completion_reason (VARCHAR(255), PK=NO, FK=NO, Null=YES): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: charging_stations (Mục đích: Danh mục trụ sạc điện thông minh trong bãi đỗ: Loại cổng, công suất kW, đơn giá) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - code (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu code lưu trữ thuộc tính nghiệp vụ của charging_stations
+  - name (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu name lưu trữ thuộc tính nghiệp vụ của charging_stations
+  - status (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trạng thái vòng đời của bản ghi trong quy trình nghiệp vụ charging_stations
+  - max_power_kw (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Trường dữ liệu max_power_kw lưu trữ thuộc tính nghiệp vụ của charging_stations
+  - connector_type (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu connector_type lưu trữ thuộc tính nghiệp vụ của charging_stations
+  - location_label (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu location_label lưu trữ thuộc tính nghiệp vụ của charging_stations
+  - pos_x (DECIMAL(12,2), PK=NO, FK=NO, Null=YES): Trường dữ liệu pos_x lưu trữ thuộc tính nghiệp vụ của charging_stations
+  - pos_y (DECIMAL(12,2), PK=NO, FK=NO, Null=YES): Trường dữ liệu pos_y lưu trữ thuộc tính nghiệp vụ của charging_stations
+  - pos_z (DECIMAL(12,2), PK=NO, FK=NO, Null=YES): Trường dữ liệu pos_z lưu trữ thuộc tính nghiệp vụ của charging_stations
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: co_ownership_contract_versions (Mục đích: Các phiên bản hợp đồng pháp lý (DRAFT -> ACTIVE -> SUPERSEDED)) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - contract (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu contract lưu trữ thuộc tính nghiệp vụ của co_ownership_contract_versions
+  - version_number (INT, PK=NO, FK=NO, Null=NO): Trường dữ liệu version_number lưu trữ thuộc tính nghiệp vụ của co_ownership_contract_versions
+  - title (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu title lưu trữ thuộc tính nghiệp vụ của co_ownership_contract_versions
+  - content_snapshot (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu content_snapshot lưu trữ thuộc tính nghiệp vụ của co_ownership_contract_versions
+  - content_hash (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu content_hash lưu trữ thuộc tính nghiệp vụ của co_ownership_contract_versions
+  - ownership_snapshot (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu ownership_snapshot lưu trữ thuộc tính nghiệp vụ của co_ownership_contract_versions
+  - voting_rule_snapshot (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu voting_rule_snapshot lưu trữ thuộc tính nghiệp vụ của co_ownership_contract_versions
+  - financial_rule_snapshot (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu financial_rule_snapshot lưu trữ thuộc tính nghiệp vụ của co_ownership_contract_versions
+  - effective_from (DATETIME, PK=NO, FK=NO, Null=NO): Trường dữ liệu effective_from lưu trữ thuộc tính nghiệp vụ của co_ownership_contract_versions
+  - effective_until (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu effective_until lưu trữ thuộc tính nghiệp vụ của co_ownership_contract_versions
+  - created_by_user (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu created_by_user lưu trữ thuộc tính nghiệp vụ của co_ownership_contract_versions
+  - created_at (DATETIME, PK=NO, FK=NO, Null=NO): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - activated_at (DATETIME, PK=NO, FK=NO, Null=NO): Trường dữ liệu activated_at lưu trữ thuộc tính nghiệp vụ của co_ownership_contract_versions
+
+=== BẢNG: co_ownership_contracts (Mục đích: Hợp đồng khung đồng sở hữu phương tiện) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - group (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu group lưu trữ thuộc tính nghiệp vụ của co_ownership_contracts
+  - vehicle (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu vehicle lưu trữ thuộc tính nghiệp vụ của co_ownership_contracts
+  - contract_code (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu contract_code lưu trữ thuộc tính nghiệp vụ của co_ownership_contracts
+  - current_version (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu current_version lưu trữ thuộc tính nghiệp vụ của co_ownership_contracts
+  - created_by_user (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu created_by_user lưu trữ thuộc tính nghiệp vụ của co_ownership_contracts
+  - created_at (DATETIME, PK=NO, FK=NO, Null=NO): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: co_ownership_groups (Mục đích: Định danh nhóm đồng sở hữu phương tiện, quy chế vận hành và số thành viên) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - name (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu name lưu trữ thuộc tính nghiệp vụ của co_ownership_groups
+  - vehicle_id (VARCHAR(36), PK=NO, FK=YES (FK -> vehicles.id), Null=YES): Khóa ngoại liên kết tới phương tiện xe điện liên quan (FK -> vehicles.id)
+  - created_by (VARCHAR(36), PK=NO, FK=YES (FK -> users.id), Null=YES): Khóa ngoại liên kết người dùng tạo bản ghi (FK -> users.id)
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: contract_acceptances (Mục đích: Chữ ký điện tử mô phỏng (DEMO Signature) và thời điểm ký của từng chủ xe) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - contract_version (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu contract_version lưu trữ thuộc tính nghiệp vụ của contract_acceptances
+  - user (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu user lưu trữ thuộc tính nghiệp vụ của contract_acceptances
+  - accepted_at (DATETIME, PK=NO, FK=NO, Null=NO): Trường dữ liệu accepted_at lưu trữ thuộc tính nghiệp vụ của contract_acceptances
+  - content_hash_at_acceptance (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu content_hash_at_acceptance lưu trữ thuộc tính nghiệp vụ của contract_acceptances
+  - ip_address (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu ip_address lưu trữ thuộc tính nghiệp vụ của contract_acceptances
+  - user_agent (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu user_agent lưu trữ thuộc tính nghiệp vụ của contract_acceptances
+  - created_at (DATETIME, PK=NO, FK=NO, Null=NO): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+
+=== BẢNG: damage_records (Mục đích: Ghi nhận vết hư hại thân vỏ: Vị trí bộ phận, mức độ, ảnh chụp và tọa độ Hotspot 3D) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - vehicle (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu vehicle lưu trữ thuộc tính nghiệp vụ của damage_records
+  - trip (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu trip lưu trữ thuộc tính nghiệp vụ của damage_records
+  - booking (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu booking lưu trữ thuộc tính nghiệp vụ của damage_records
+  - handover (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu handover lưu trữ thuộc tính nghiệp vụ của damage_records
+  - vehicle_part_code (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu vehicle_part_code lưu trữ thuộc tính nghiệp vụ của damage_records
+  - damage_type (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu damage_type lưu trữ thuộc tính nghiệp vụ của damage_records
+  - severity (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu severity lưu trữ thuộc tính nghiệp vụ của damage_records
+  - note (VARCHAR(255), PK=NO, FK=NO, Null=NO): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - resolved_at (DATETIME, PK=NO, FK=NO, Null=NO): Trường dữ liệu resolved_at lưu trữ thuộc tính nghiệp vụ của damage_records
+  - resolved_by_maintenance_request_id (VARCHAR(36), PK=NO, FK=YES (FK -> resolved_by_maintenance_requests.id), Null=YES): Trường dữ liệu resolved_by_maintenance_request_id lưu trữ thuộc tính nghiệp vụ của damage_records
+  - local_position_x (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Trường dữ liệu local_position_x lưu trữ thuộc tính nghiệp vụ của damage_records
+  - local_position_y (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Trường dữ liệu local_position_y lưu trữ thuộc tính nghiệp vụ của damage_records
+  - local_position_z (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Trường dữ liệu local_position_z lưu trữ thuộc tính nghiệp vụ của damage_records
+  - created_by (VARCHAR(255), PK=NO, FK=YES (FK -> users.id), Null=NO): Khóa ngoại liên kết người dùng tạo bản ghi (FK -> users.id)
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: dispute_action_logs (Mục đích: Quản lý thực thể DisputeActionLog trong hệ thống) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - dispute (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu dispute lưu trữ thuộc tính nghiệp vụ của dispute_action_logs
+  - actor (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu actor lưu trữ thuộc tính nghiệp vụ của dispute_action_logs
+  - actor_name (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu actor_name lưu trữ thuộc tính nghiệp vụ của dispute_action_logs
+  - actor_role (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu actor_role lưu trữ thuộc tính nghiệp vụ của dispute_action_logs
+  - action_type (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu action_type lưu trữ thuộc tính nghiệp vụ của dispute_action_logs
+  - previous_status (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu previous_status lưu trữ thuộc tính nghiệp vụ của dispute_action_logs
+  - new_status (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu new_status lưu trữ thuộc tính nghiệp vụ của dispute_action_logs
+  - reason (VARCHAR(255), PK=NO, FK=NO, Null=YES): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - details (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu details lưu trữ thuộc tính nghiệp vụ của dispute_action_logs
+  - created_at (DATETIME, PK=NO, FK=NO, Null=NO): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+
+=== BẢNG: dispute_compensation_payments (Mục đích: Bản ghi thực thi chi trả bồi thường mô phỏng (DEMO Compensation)) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - compensation (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu compensation lưu trữ thuộc tính nghiệp vụ của dispute_compensation_payments
+  - amount (DECIMAL(14,2), PK=NO, FK=NO, Null=NO): Giá trị tài chính bằng đơn vị tiền tệ VND phát sinh trong giao dịch
+  - payment_reference (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu payment_reference lưu trữ thuộc tính nghiệp vụ của dispute_compensation_payments
+  - receipt_url (VARCHAR(255), PK=NO, FK=NO, Null=NO): Đường dẫn liên kết URI tới tệp lưu trữ media / ảnh chụp đính kèm
+  - payment_date (DATETIME, PK=NO, FK=NO, Null=NO): Trường dữ liệu payment_date lưu trữ thuộc tính nghiệp vụ của dispute_compensation_payments
+  - verified_by_user (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu verified_by_user lưu trữ thuộc tính nghiệp vụ của dispute_compensation_payments
+  - verified_by_name (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu verified_by_name lưu trữ thuộc tính nghiệp vụ của dispute_compensation_payments
+  - note (VARCHAR(255), PK=NO, FK=NO, Null=YES): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - created_at (DATETIME, PK=NO, FK=NO, Null=NO): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+
+=== BẢNG: dispute_compensations (Mục đích: Phương án và quyết định bồi thường hòa giải được phê duyệt) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - dispute (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu dispute lưu trữ thuộc tính nghiệp vụ của dispute_compensations
+  - payer_user (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu payer_user lưu trữ thuộc tính nghiệp vụ của dispute_compensations
+  - payer_name (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu payer_name lưu trữ thuộc tính nghiệp vụ của dispute_compensations
+  - recipient_user (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu recipient_user lưu trữ thuộc tính nghiệp vụ của dispute_compensations
+  - recipient_name (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu recipient_name lưu trữ thuộc tính nghiệp vụ của dispute_compensations
+  - approved_amount (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Trường dữ liệu approved_amount lưu trữ thuộc tính nghiệp vụ của dispute_compensations
+  - outstanding_amount (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Trường dữ liệu outstanding_amount lưu trữ thuộc tính nghiệp vụ của dispute_compensations
+  - authorized_by (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu authorized_by lưu trữ thuộc tính nghiệp vụ của dispute_compensations
+  - authorized_at (DATETIME, PK=NO, FK=NO, Null=NO): Trường dữ liệu authorized_at lưu trữ thuộc tính nghiệp vụ của dispute_compensations
+  - payment_reference (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu payment_reference lưu trữ thuộc tính nghiệp vụ của dispute_compensations
+  - decision_basis (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu decision_basis lưu trữ thuộc tính nghiệp vụ của dispute_compensations
+  - pending_payment_amount (DECIMAL(12,2), PK=NO, FK=NO, Null=YES): Trường dữ liệu pending_payment_amount lưu trữ thuộc tính nghiệp vụ của dispute_compensations
+  - pending_payment_reference (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu pending_payment_reference lưu trữ thuộc tính nghiệp vụ của dispute_compensations
+  - pending_receipt_url (VARCHAR(255), PK=NO, FK=NO, Null=YES): Đường dẫn liên kết URI tới tệp lưu trữ media / ảnh chụp đính kèm
+  - pending_payment_date (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu pending_payment_date lưu trữ thuộc tính nghiệp vụ của dispute_compensations
+  - pending_payment_note (VARCHAR(255), PK=NO, FK=NO, Null=YES): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - pending_submitted_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu pending_submitted_at lưu trữ thuộc tính nghiệp vụ của dispute_compensations
+  - rejection_reason (VARCHAR(255), PK=NO, FK=NO, Null=YES): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - created_at (DATETIME, PK=NO, FK=NO, Null=NO): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=NO): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: dispute_evidence (Mục đích: Bằng chứng hóa đơn, biên lai chuyển khoản và ảnh chụp đính kèm hồ sơ khiếu nại) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - dispute (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu dispute lưu trữ thuộc tính nghiệp vụ của dispute_evidence
+  - uploaded_by (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu uploaded_by lưu trữ thuộc tính nghiệp vụ của dispute_evidence
+  - title (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu title lưu trữ thuộc tính nghiệp vụ của dispute_evidence
+  - file_url (VARCHAR(255), PK=NO, FK=NO, Null=NO): Đường dẫn liên kết URI tới tệp lưu trữ media / ảnh chụp đính kèm
+  - file_type (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu file_type lưu trữ thuộc tính nghiệp vụ của dispute_evidence
+  - file_size_bytes (BIGINT, PK=NO, FK=NO, Null=YES): Trường dữ liệu file_size_bytes lưu trữ thuộc tính nghiệp vụ của dispute_evidence
+  - integrity_hash (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu integrity_hash lưu trữ thuộc tính nghiệp vụ của dispute_evidence
+  - created_at (DATETIME, PK=NO, FK=NO, Null=NO): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+
+=== BẢNG: dispute_messages (Mục đích: Lời thoại trao đổi hòa giải trực tuyến giữa chủ xe và nhân viên điều tra) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - dispute (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu dispute lưu trữ thuộc tính nghiệp vụ của dispute_messages
+  - sender (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu sender lưu trữ thuộc tính nghiệp vụ của dispute_messages
+  - content (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu content lưu trữ thuộc tính nghiệp vụ của dispute_messages
+  - created_at (DATETIME, PK=NO, FK=NO, Null=NO): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+
+=== BẢNG: dispute_participants (Mục đích: Danh sách các bên liên quan tham gia vào quá trình hòa giải khiếu nại) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - dispute (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu dispute lưu trữ thuộc tính nghiệp vụ của dispute_participants
+  - user (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu user lưu trữ thuộc tính nghiệp vụ của dispute_participants
+  - role (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu role lưu trữ thuộc tính nghiệp vụ của dispute_participants
+  - has_accepted_resolution (BOOLEAN, PK=NO, FK=NO, Null=NO): Trường dữ liệu has_accepted_resolution lưu trữ thuộc tính nghiệp vụ của dispute_participants
+  - responded_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu responded_at lưu trữ thuộc tính nghiệp vụ của dispute_participants
+  - created_at (DATETIME, PK=NO, FK=NO, Null=NO): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+
+=== BẢNG: disputes (Mục đích: Hồ sơ khiếu nại tranh chấp sự cố, phân bổ tiền điện hoặc hư hại thân vỏ) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - reference_code (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu reference_code lưu trữ thuộc tính nghiệp vụ của disputes
+  - vehicle (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu vehicle lưu trữ thuộc tính nghiệp vụ của disputes
+  - co_ownership_group (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu co_ownership_group lưu trữ thuộc tính nghiệp vụ của disputes
+  - created_by (VARCHAR(255), PK=NO, FK=YES (FK -> users.id), Null=NO): Khóa ngoại liên kết người dùng tạo bản ghi (FK -> users.id)
+  - assigned_staff (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu assigned_staff lưu trữ thuộc tính nghiệp vụ của disputes
+  - category (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu category lưu trữ thuộc tính nghiệp vụ của disputes
+  - title (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu title lưu trữ thuộc tính nghiệp vụ của disputes
+  - description (TEXT, PK=NO, FK=NO, Null=NO): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - booking_id (VARCHAR(36), PK=NO, FK=YES (FK -> bookings.id), Null=YES): Khóa ngoại liên kết phiên đặt xe tương ứng (FK -> bookings.id)
+  - trip_id (VARCHAR(36), PK=NO, FK=YES (FK -> trips.id), Null=YES): Khóa ngoại liên kết chuyến đi thực tế của người dùng (FK -> trips.id)
+  - handover_id (VARCHAR(36), PK=NO, FK=YES (FK -> handovers.id), Null=YES): Trường dữ liệu handover_id lưu trữ thuộc tính nghiệp vụ của disputes
+  - inspection_id (VARCHAR(36), PK=NO, FK=YES (FK -> inspections.id), Null=YES): Trường dữ liệu inspection_id lưu trữ thuộc tính nghiệp vụ của disputes
+  - damage_record_id (VARCHAR(36), PK=NO, FK=YES (FK -> damage_records.id), Null=YES): Trường dữ liệu damage_record_id lưu trữ thuộc tính nghiệp vụ của disputes
+  - expense_id (VARCHAR(36), PK=NO, FK=YES (FK -> expenses.id), Null=YES): Trường dữ liệu expense_id lưu trữ thuộc tính nghiệp vụ của disputes
+  - expense_share_id (VARCHAR(36), PK=NO, FK=YES (FK -> expense_shares.id), Null=YES): Trường dữ liệu expense_share_id lưu trữ thuộc tính nghiệp vụ của disputes
+  - personal_payment_id (VARCHAR(36), PK=NO, FK=YES (FK -> personal_payments.id), Null=YES): Trường dữ liệu personal_payment_id lưu trữ thuộc tính nghiệp vụ của disputes
+  - proposal_id (VARCHAR(36), PK=NO, FK=YES (FK -> proposals.id), Null=YES): Khóa ngoại liên kết tới đề xuất biểu quyết chung (FK -> vote_proposals.id)
+  - ownership_transfer_id (VARCHAR(36), PK=NO, FK=YES (FK -> ownership_transfers.id), Null=YES): Trường dữ liệu ownership_transfer_id lưu trữ thuộc tính nghiệp vụ của disputes
+  - disputed_amount (DECIMAL(12,2), PK=NO, FK=NO, Null=YES): Trường dữ liệu disputed_amount lưu trữ thuộc tính nghiệp vụ của disputes
+  - evidence_snapshot_json (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu evidence_snapshot_json lưu trữ thuộc tính nghiệp vụ của disputes
+  - investigation_conclusion (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu investigation_conclusion lưu trữ thuộc tính nghiệp vụ của disputes
+  - investigation_notes (VARCHAR(255), PK=NO, FK=NO, Null=YES): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - investigated_by (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu investigated_by lưu trữ thuộc tính nghiệp vụ của disputes
+  - investigated_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu investigated_at lưu trữ thuộc tính nghiệp vụ của disputes
+  - resolution_type (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu resolution_type lưu trữ thuộc tính nghiệp vụ của disputes
+  - proposed_amount (DECIMAL(12,2), PK=NO, FK=NO, Null=YES): Trường dữ liệu proposed_amount lưu trữ thuộc tính nghiệp vụ của disputes
+  - approved_amount (DECIMAL(12,2), PK=NO, FK=NO, Null=YES): Trường dữ liệu approved_amount lưu trữ thuộc tính nghiệp vụ của disputes
+  - outstanding_amount (DECIMAL(12,2), PK=NO, FK=NO, Null=YES): Trường dữ liệu outstanding_amount lưu trữ thuộc tính nghiệp vụ của disputes
+  - proposed_payer_type (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu proposed_payer_type lưu trữ thuộc tính nghiệp vụ của disputes
+  - proposed_payer_user (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu proposed_payer_user lưu trữ thuộc tính nghiệp vụ của disputes
+  - proposed_payer_name (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu proposed_payer_name lưu trữ thuộc tính nghiệp vụ của disputes
+  - proposed_recipient_user (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu proposed_recipient_user lưu trữ thuộc tính nghiệp vụ của disputes
+  - proposed_recipient_name (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu proposed_recipient_name lưu trữ thuộc tính nghiệp vụ của disputes
+  - decision_basis (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu decision_basis lưu trữ thuộc tính nghiệp vụ của disputes
+  - resolution_deadline (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu resolution_deadline lưu trữ thuộc tính nghiệp vụ của disputes
+  - proposed_resolution (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu proposed_resolution lưu trữ thuộc tính nghiệp vụ của disputes
+  - proposed_resolution_by (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu proposed_resolution_by lưu trữ thuộc tính nghiệp vụ của disputes
+  - proposed_resolution_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu proposed_resolution_at lưu trữ thuộc tính nghiệp vụ của disputes
+  - resolution_accepted_by_parties (BOOLEAN, PK=NO, FK=NO, Null=YES): Trường dữ liệu resolution_accepted_by_parties lưu trữ thuộc tính nghiệp vụ của disputes
+  - corrective_action_summary (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu corrective_action_summary lưu trữ thuộc tính nghiệp vụ của disputes
+  - corrective_action_executed_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu corrective_action_executed_at lưu trữ thuộc tính nghiệp vụ của disputes
+  - resolution_summary (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu resolution_summary lưu trữ thuộc tính nghiệp vụ của disputes
+  - resolved_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu resolved_at lưu trữ thuộc tính nghiệp vụ của disputes
+  - closed_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu closed_at lưu trữ thuộc tính nghiệp vụ của disputes
+  - reopen_reason (VARCHAR(255), PK=NO, FK=NO, Null=NO): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - version (BIGINT, PK=NO, FK=NO, Null=YES): Phiên bản dữ liệu phục vụ khóa lạc quan (Optimistic Locking)
+  - created_at (DATETIME, PK=NO, FK=NO, Null=NO): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=NO): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: expense_approvals (Mục đích: Nhật ký lịch sử phê duyệt khoản chi phí của ban quản trị hoặc nhóm) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - expense (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu expense lưu trữ thuộc tính nghiệp vụ của expense_approvals
+  - user (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu user lưu trữ thuộc tính nghiệp vụ của expense_approvals
+  - decision (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu decision lưu trữ thuộc tính nghiệp vụ của expense_approvals
+  - ownership_percentage_snapshot (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Trường dữ liệu ownership_percentage_snapshot lưu trữ thuộc tính nghiệp vụ của expense_approvals
+  - comment (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu comment lưu trữ thuộc tính nghiệp vụ của expense_approvals
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: expense_shares (Mục đích: Nghĩa vụ chi phí chi tiết phân bổ cho từng cá nhân (Hare-Niemeyer rounding)) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - expense (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu expense lưu trữ thuộc tính nghiệp vụ của expense_shares
+  - user (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu user lưu trữ thuộc tính nghiệp vụ của expense_shares
+  - ownership_percentage (DECIMAL(5,2), PK=NO, FK=NO, Null=NO): Tỷ lệ phần trăm cổ phần sở hữu xe điện (định dạng phần trăm từ 0.00% đến 100.00%)
+  - allocation_percentage (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Trường dữ liệu allocation_percentage lưu trữ thuộc tính nghiệp vụ của expense_shares
+  - share_amount (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Trường dữ liệu share_amount lưu trữ thuộc tính nghiệp vụ của expense_shares
+  - allocation_policy (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu allocation_policy lưu trữ thuộc tính nghiệp vụ của expense_shares
+  - member_km_snapshot (DECIMAL(12,2), PK=NO, FK=NO, Null=YES): Số đo quãng đường lăn bánh của xe điện (Kilomet)
+  - total_km_snapshot (DECIMAL(12,2), PK=NO, FK=NO, Null=YES): Số đo quãng đường lăn bánh của xe điện (Kilomet)
+  - raw_calculated_amount (DECIMAL(12,2), PK=NO, FK=NO, Null=YES): Trường dữ liệu raw_calculated_amount lưu trữ thuộc tính nghiệp vụ của expense_shares
+  - redistribution_adjustment (DECIMAL(12,2), PK=NO, FK=NO, Null=YES): Trường dữ liệu redistribution_adjustment lưu trữ thuộc tính nghiệp vụ của expense_shares
+  - allocation_period_start (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu allocation_period_start lưu trữ thuộc tính nghiệp vụ của expense_shares
+  - allocation_period_end (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu allocation_period_end lưu trữ thuộc tính nghiệp vụ của expense_shares
+  - calculation_version (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu calculation_version lưu trữ thuộc tính nghiệp vụ của expense_shares
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: expenses (Mục đích: Quản lý các khoản chi phí phát sinh: Số tiền, danh mục, chính sách phân bổ) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - vehicle (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu vehicle lưu trữ thuộc tính nghiệp vụ của expenses
+  - co_ownership_group (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu co_ownership_group lưu trữ thuộc tính nghiệp vụ của expenses
+  - category (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu category lưu trữ thuộc tính nghiệp vụ của expenses
+  - amount (DECIMAL(14,2), PK=NO, FK=NO, Null=NO): Giá trị tài chính bằng đơn vị tiền tệ VND phát sinh trong giao dịch
+  - description (TEXT, PK=NO, FK=NO, Null=NO): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - occurred_at (DATETIME, PK=NO, FK=NO, Null=NO): Trường dữ liệu occurred_at lưu trữ thuộc tính nghiệp vụ của expenses
+  - paid_by (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu paid_by lưu trữ thuộc tính nghiệp vụ của expenses
+  - created_by (VARCHAR(255), PK=NO, FK=YES (FK -> users.id), Null=NO): Khóa ngoại liên kết người dùng tạo bản ghi (FK -> users.id)
+  - responsible_user (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu responsible_user lưu trữ thuộc tính nghiệp vụ của expenses
+  - related_trip_id (VARCHAR(36), PK=NO, FK=YES (FK -> related_trips.id), Null=YES): Trường dữ liệu related_trip_id lưu trữ thuộc tính nghiệp vụ của expenses
+  - related_booking_id (VARCHAR(36), PK=NO, FK=YES (FK -> related_bookings.id), Null=YES): Trường dữ liệu related_booking_id lưu trữ thuộc tính nghiệp vụ của expenses
+  - related_proposal_id (VARCHAR(36), PK=NO, FK=YES (FK -> related_proposals.id), Null=YES): Trường dữ liệu related_proposal_id lưu trữ thuộc tính nghiệp vụ của expenses
+  - source_reference_id (VARCHAR(255), PK=NO, FK=YES (FK -> source_references.id), Null=YES): Trường dữ liệu source_reference_id lưu trữ thuộc tính nghiệp vụ của expenses
+  - evidence_url (VARCHAR(255), PK=NO, FK=NO, Null=NO): Đường dẫn liên kết URI tới tệp lưu trữ media / ảnh chụp đính kèm
+  - evidence_note (VARCHAR(255), PK=NO, FK=NO, Null=YES): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - approved_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu approved_at lưu trữ thuộc tính nghiệp vụ của expenses
+  - rejected_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu rejected_at lưu trữ thuộc tính nghiệp vụ của expenses
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: fund_contributions (Mục đích: Bản ghi đóng góp quỹ chung của các thành viên (Dữ liệu lịch sử)) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - fund (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu fund lưu trữ thuộc tính nghiệp vụ của fund_contributions
+  - contributor_user (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu contributor_user lưu trữ thuộc tính nghiệp vụ của fund_contributions
+  - amount (DECIMAL(14,2), PK=NO, FK=NO, Null=NO): Giá trị tài chính bằng đơn vị tiền tệ VND phát sinh trong giao dịch
+  - payment_reference (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu payment_reference lưu trữ thuộc tính nghiệp vụ của fund_contributions
+  - evidence_url (VARCHAR(255), PK=NO, FK=NO, Null=YES): Đường dẫn liên kết URI tới tệp lưu trữ media / ảnh chụp đính kèm
+  - note (VARCHAR(255), PK=NO, FK=NO, Null=YES): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - verified_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu verified_at lưu trữ thuộc tính nghiệp vụ của fund_contributions
+  - verified_by_user (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu verified_by_user lưu trữ thuộc tính nghiệp vụ của fund_contributions
+
+=== BẢNG: fund_transactions (Mục đích: Bản ghi biến động số dư quỹ chung (Dữ liệu lịch sử)) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - fund (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu fund lưu trữ thuộc tính nghiệp vụ của fund_transactions
+  - transaction_type (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu transaction_type lưu trữ thuộc tính nghiệp vụ của fund_transactions
+  - amount (DECIMAL(14,2), PK=NO, FK=NO, Null=NO): Giá trị tài chính bằng đơn vị tiền tệ VND phát sinh trong giao dịch
+  - direction (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu direction lưu trữ thuộc tính nghiệp vụ của fund_transactions
+  - reference_type (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu reference_type lưu trữ thuộc tính nghiệp vụ của fund_transactions
+  - reference_id (VARCHAR(255), PK=NO, FK=YES (FK -> references.id), Null=NO): Trường dữ liệu reference_id lưu trữ thuộc tính nghiệp vụ của fund_transactions
+  - balance_after (DECIMAL(12,2), PK=NO, FK=NO, Null=YES): Trường dữ liệu balance_after lưu trữ thuộc tính nghiệp vụ của fund_transactions
+  - description (TEXT, PK=NO, FK=NO, Null=NO): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - confirmed_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu confirmed_at lưu trữ thuộc tính nghiệp vụ của fund_transactions
+  - confirmed_by_user (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu confirmed_by_user lưu trữ thuộc tính nghiệp vụ của fund_transactions
+
+=== BẢNG: group_discovery_settings (Mục đích: Cấu hình cho phép nhóm hiển thị công khai trên danh bạ để tìm thêm cổ đông) ===
+  - group_id (VARCHAR(36), PK=YES, FK=YES (FK -> co_ownership_groups.id), Null=NO): Khóa ngoại liên kết nhóm đồng sở hữu phương tiện (FK -> co_ownership_groups.id)
+  - target_model (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu target_model lưu trữ thuộc tính nghiệp vụ của group_discovery_settings
+  - public_terms (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu public_terms lưu trữ thuộc tính nghiệp vụ của group_discovery_settings
+  - join_conditions (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu join_conditions lưu trữ thuộc tính nghiệp vụ của group_discovery_settings
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: group_invitations (Mục đích: Quản lý lời mời tham gia nhóm đồng sở hữu xe ban đầu) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - group_id (VARCHAR(36), PK=NO, FK=YES (FK -> co_ownership_groups.id), Null=NO): Khóa ngoại liên kết nhóm đồng sở hữu phương tiện (FK -> co_ownership_groups.id)
+  - inviter_id (VARCHAR(36), PK=NO, FK=YES (FK -> inviters.id), Null=NO): Trường dữ liệu inviter_id lưu trữ thuộc tính nghiệp vụ của group_invitations
+  - invitee_email (VARCHAR(255), PK=NO, FK=NO, Null=NO): Địa chỉ thư điện tử xác thực của người dùng
+  - invitee_user_id (VARCHAR(36), PK=NO, FK=YES (FK -> invitee_users.id), Null=YES): Trường dữ liệu invitee_user_id lưu trữ thuộc tính nghiệp vụ của group_invitations
+  - proposed_percentage (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Trường dữ liệu proposed_percentage lưu trữ thuộc tính nghiệp vụ của group_invitations
+  - invite_code (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu invite_code lưu trữ thuộc tính nghiệp vụ của group_invitations
+  - expires_at (DATETIME, PK=NO, FK=NO, Null=NO): Trường dữ liệu expires_at lưu trữ thuộc tính nghiệp vụ của group_invitations
+  - contract_version_id (VARCHAR(36), PK=NO, FK=YES (FK -> contract_versions.id), Null=YES): Khóa ngoại liên kết phiên bản hợp đồng có hiệu lực (FK -> co_ownership_contract_versions.id)
+  - consent_content_hash (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu consent_content_hash lưu trữ thuộc tính nghiệp vụ của group_invitations
+  - consented_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu consented_at lưu trữ thuộc tính nghiệp vụ của group_invitations
+  - signer_full_name (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu signer_full_name lưu trữ thuộc tính nghiệp vụ của group_invitations
+  - consent_ip_address (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu consent_ip_address lưu trữ thuộc tính nghiệp vụ của group_invitations
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: group_join_requests (Mục đích: Quản lý đơn xin gia nhập nhóm từ người dùng tự do) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - group_id (VARCHAR(36), PK=NO, FK=YES (FK -> co_ownership_groups.id), Null=NO): Khóa ngoại liên kết nhóm đồng sở hữu phương tiện (FK -> co_ownership_groups.id)
+  - user_id (VARCHAR(36), PK=NO, FK=YES (FK -> users.id), Null=NO): Khóa ngoại liên kết tới tài khoản người dùng thực hiện (FK -> users.id)
+  - requested_percentage (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Trường dữ liệu requested_percentage lưu trữ thuộc tính nghiệp vụ của group_join_requests
+  - message (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu message lưu trữ thuộc tính nghiệp vụ của group_join_requests
+  - review_notes (VARCHAR(255), PK=NO, FK=NO, Null=NO): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - reviewed_by (VARCHAR(36), PK=NO, FK=NO, Null=YES): Trường dữ liệu reviewed_by lưu trữ thuộc tính nghiệp vụ của group_join_requests
+  - reviewed_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu reviewed_at lưu trữ thuộc tính nghiệp vụ của group_join_requests
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: group_members (Mục đích: Bảng liên kết thành viên trong nhóm đồng sở hữu, vai trò (LEADER/MEMBER) và trạng thái) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - group (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu group lưu trữ thuộc tính nghiệp vụ của group_members
+  - user (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu user lưu trữ thuộc tính nghiệp vụ của group_members
+  - joined_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu joined_at lưu trữ thuộc tính nghiệp vụ của group_members
+  - removed_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu removed_at lưu trữ thuộc tính nghiệp vụ của group_members
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: group_vehicles (Mục đích: Liên kết phương tiện với nhóm đồng sở hữu (quy tắc 1 nhóm sở hữu 1 phương tiện)) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - group (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu group lưu trữ thuộc tính nghiệp vụ của group_vehicles
+  - vehicle (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu vehicle lưu trữ thuộc tính nghiệp vụ của group_vehicles
+  - added_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu added_at lưu trữ thuộc tính nghiệp vụ của group_vehicles
+
+=== BẢNG: maintenance_approval_votes (Mục đích: Biểu quyết tập thể thông qua dự toán và kế hoạch bảo dưỡng xe) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - maintenance_request (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu maintenance_request lưu trữ thuộc tính nghiệp vụ của maintenance_approval_votes
+  - group (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu group lưu trữ thuộc tính nghiệp vụ của maintenance_approval_votes
+  - member (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu member lưu trữ thuộc tính nghiệp vụ của maintenance_approval_votes
+  - user (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu user lưu trữ thuộc tính nghiệp vụ của maintenance_approval_votes
+  - decision (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu decision lưu trữ thuộc tính nghiệp vụ của maintenance_approval_votes
+  - voting_weight (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Trường dữ liệu voting_weight lưu trữ thuộc tính nghiệp vụ của maintenance_approval_votes
+  - comment (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu comment lưu trữ thuộc tính nghiệp vụ của maintenance_approval_votes
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: maintenance_requests (Mục đích: Lệnh bảo dưỡng sửa chữa: Định kỳ mốc ODO, đột xuất, thay thế phụ tùng) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - vehicle (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu vehicle lưu trữ thuộc tính nghiệp vụ của maintenance_requests
+  - title (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu title lưu trữ thuộc tính nghiệp vụ của maintenance_requests
+  - description (TEXT, PK=NO, FK=NO, Null=NO): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - scheduled_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu scheduled_at lưu trữ thuộc tính nghiệp vụ của maintenance_requests
+  - started_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu started_at lưu trữ thuộc tính nghiệp vụ của maintenance_requests
+  - completed_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu completed_at lưu trữ thuộc tính nghiệp vụ của maintenance_requests
+  - approved_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu approved_at lưu trữ thuộc tính nghiệp vụ của maintenance_requests
+  - related_proposal_id (VARCHAR(36), PK=NO, FK=YES (FK -> related_proposals.id), Null=YES): Trường dữ liệu related_proposal_id lưu trữ thuộc tính nghiệp vụ của maintenance_requests
+  - created_by (VARCHAR(255), PK=NO, FK=YES (FK -> users.id), Null=NO): Khóa ngoại liên kết người dùng tạo bản ghi (FK -> users.id)
+  - assigned_staff (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu assigned_staff lưu trữ thuộc tính nghiệp vụ của maintenance_requests
+  - completion_note (VARCHAR(255), PK=NO, FK=NO, Null=YES): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: membership_invitations (Mục đích: Thư mời gia nhập nhóm kèm điều khoản trích vốn cổ đông hiện hữu) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - group (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu group lưu trữ thuộc tính nghiệp vụ của membership_invitations
+  - vehicle (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu vehicle lưu trữ thuộc tính nghiệp vụ của membership_invitations
+  - invited_by_user (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu invited_by_user lưu trữ thuộc tính nghiệp vụ của membership_invitations
+  - invitee_email (VARCHAR(255), PK=NO, FK=NO, Null=NO): Địa chỉ thư điện tử xác thực của người dùng
+  - invitee_user (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu invitee_user lưu trữ thuộc tính nghiệp vụ của membership_invitations
+  - additional_contributions_json (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu additional_contributions_json lưu trữ thuộc tính nghiệp vụ của membership_invitations
+  - contract_version_id (VARCHAR(36), PK=NO, FK=YES (FK -> contract_versions.id), Null=YES): Khóa ngoại liên kết phiên bản hợp đồng có hiệu lực (FK -> co_ownership_contract_versions.id)
+  - contract_id (VARCHAR(36), PK=NO, FK=YES (FK -> contracts.id), Null=YES): Khóa ngoại liên kết hợp đồng đồng sở hữu mẫu (FK -> co_ownership_contracts.id)
+  - rejection_reason (VARCHAR(255), PK=NO, FK=NO, Null=YES): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - signatures_json (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu signatures_json lưu trữ thuộc tính nghiệp vụ của membership_invitations
+  - invitation_note (VARCHAR(255), PK=NO, FK=NO, Null=NO): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - accepted_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu accepted_at lưu trữ thuộc tính nghiệp vụ của membership_invitations
+  - completed_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu completed_at lưu trữ thuộc tính nghiệp vụ của membership_invitations
+  - rejected_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu rejected_at lưu trữ thuộc tính nghiệp vụ của membership_invitations
+  - cancelled_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu cancelled_at lưu trữ thuộc tính nghiệp vụ của membership_invitations
+  - expires_at (DATETIME, PK=NO, FK=NO, Null=NO): Trường dữ liệu expires_at lưu trữ thuộc tính nghiệp vụ của membership_invitations
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: membership_withdrawal_requests (Mục đích: Đơn xin rút lui khỏi nhóm đồng sở hữu xe và phương án giải quyết vốn) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - group (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu group lưu trữ thuộc tính nghiệp vụ của membership_withdrawal_requests
+  - member (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu member lưu trữ thuộc tính nghiệp vụ của membership_withdrawal_requests
+  - user (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu user lưu trữ thuộc tính nghiệp vụ của membership_withdrawal_requests
+  - reason (VARCHAR(255), PK=NO, FK=NO, Null=NO): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - rejection_reason (VARCHAR(255), PK=NO, FK=NO, Null=NO): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - reviewed_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu reviewed_at lưu trữ thuộc tính nghiệp vụ của membership_withdrawal_requests
+  - reviewed_by_user (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu reviewed_by_user lưu trữ thuộc tính nghiệp vụ của membership_withdrawal_requests
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: notifications (Mục đích: Hệ thống thông báo đẩy gửi đến người dùng theo sự kiện vận hành) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - recipient (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu recipient lưu trữ thuộc tính nghiệp vụ của notifications
+  - vehicle_id (VARCHAR(36), PK=NO, FK=YES (FK -> vehicles.id), Null=YES): Khóa ngoại liên kết tới phương tiện xe điện liên quan (FK -> vehicles.id)
+  - group_id (VARCHAR(36), PK=NO, FK=YES (FK -> co_ownership_groups.id), Null=YES): Khóa ngoại liên kết nhóm đồng sở hữu phương tiện (FK -> co_ownership_groups.id)
+  - entity_type (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu entity_type lưu trữ thuộc tính nghiệp vụ của notifications
+  - entity_id (VARCHAR(36), PK=NO, FK=YES (FK -> entitys.id), Null=YES): Trường dữ liệu entity_id lưu trữ thuộc tính nghiệp vụ của notifications
+  - event_type (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu event_type lưu trữ thuộc tính nghiệp vụ của notifications
+  - title (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu title lưu trữ thuộc tính nghiệp vụ của notifications
+  - message (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu message lưu trữ thuộc tính nghiệp vụ của notifications
+  - read_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu read_at lưu trữ thuộc tính nghiệp vụ của notifications
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+
+=== BẢNG: ownership_change_history (Mục đích: Nhật ký biến động lịch sử tái phân bổ và chuyển nhượng tỷ lệ sở hữu) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - group (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu group lưu trữ thuộc tính nghiệp vụ của ownership_change_history
+  - vehicle (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu vehicle lưu trữ thuộc tính nghiệp vụ của ownership_change_history
+  - transfer_request (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu transfer_request lưu trữ thuộc tính nghiệp vụ của ownership_change_history
+  - from_user (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu from_user lưu trữ thuộc tính nghiệp vụ của ownership_change_history
+  - to_user (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu to_user lưu trữ thuộc tính nghiệp vụ của ownership_change_history
+  - transferred_percentage (DECIMAL(5,2), PK=NO, FK=NO, Null=NO): Tỷ lệ phần trăm cổ phần sở hữu xe điện (định dạng phần trăm từ 0.00% đến 100.00%)
+  - previous_ownership_snapshot (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu previous_ownership_snapshot lưu trữ thuộc tính nghiệp vụ của ownership_change_history
+  - new_ownership_snapshot (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu new_ownership_snapshot lưu trữ thuộc tính nghiệp vụ của ownership_change_history
+  - reason (VARCHAR(255), PK=NO, FK=NO, Null=NO): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - effective_at (DATETIME, PK=NO, FK=NO, Null=NO): Trường dữ liệu effective_at lưu trữ thuộc tính nghiệp vụ của ownership_change_history
+  - recorded_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu recorded_at lưu trữ thuộc tính nghiệp vụ của ownership_change_history
+  - recorded_by_user (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu recorded_by_user lưu trữ thuộc tính nghiệp vụ của ownership_change_history
+
+=== BẢNG: ownership_shares (Mục đích: Lưu tỷ lệ sở hữu vốn (%) của từng thành viên (bất biến tổng bằng đúng 100%)) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - group (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu group lưu trữ thuộc tính nghiệp vụ của ownership_shares
+  - vehicle (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu vehicle lưu trữ thuộc tính nghiệp vụ của ownership_shares
+  - member (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu member lưu trữ thuộc tính nghiệp vụ của ownership_shares
+  - percentage (DECIMAL(5,2), PK=NO, FK=NO, Null=NO): Tỷ lệ phần trăm cổ phần sở hữu xe điện (định dạng phần trăm từ 0.00% đến 100.00%)
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: ownership_transfer_requests (Mục đích: Yêu cầu chuyển nhượng cổ phần giữa các thành viên kèm tiến trình đồng thuận) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - group (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu group lưu trữ thuộc tính nghiệp vụ của ownership_transfer_requests
+  - vehicle (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu vehicle lưu trữ thuộc tính nghiệp vụ của ownership_transfer_requests
+  - from_user (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu from_user lưu trữ thuộc tính nghiệp vụ của ownership_transfer_requests
+  - to_user (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu to_user lưu trữ thuộc tính nghiệp vụ của ownership_transfer_requests
+  - transfer_percentage (DECIMAL(5,2), PK=NO, FK=NO, Null=NO): Tỷ lệ phần trăm cổ phần sở hữu xe điện (định dạng phần trăm từ 0.00% đến 100.00%)
+  - reason (VARCHAR(255), PK=NO, FK=NO, Null=NO): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - rejection_reason (VARCHAR(255), PK=NO, FK=NO, Null=YES): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - contract_version (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu contract_version lưu trữ thuộc tính nghiệp vụ của ownership_transfer_requests
+  - related_proposal_id (VARCHAR(36), PK=NO, FK=YES (FK -> related_proposals.id), Null=YES): Trường dữ liệu related_proposal_id lưu trữ thuộc tính nghiệp vụ của ownership_transfer_requests
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - accepted_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu accepted_at lưu trữ thuộc tính nghiệp vụ của ownership_transfer_requests
+  - approved_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu approved_at lưu trữ thuộc tính nghiệp vụ của ownership_transfer_requests
+  - completed_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu completed_at lưu trữ thuộc tính nghiệp vụ của ownership_transfer_requests
+  - rejected_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu rejected_at lưu trữ thuộc tính nghiệp vụ của ownership_transfer_requests
+  - cancelled_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu cancelled_at lưu trữ thuộc tính nghiệp vụ của ownership_transfer_requests
+  - effective_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu effective_at lưu trữ thuộc tính nghiệp vụ của ownership_transfer_requests
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: personal_expense_payments (Mục đích: Chứng từ nộp thanh toán cá nhân DEMO và nhân viên xác minh tất toán nợ) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - expense (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu expense lưu trữ thuộc tính nghiệp vụ của personal_expense_payments
+  - expense_share (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu expense_share lưu trữ thuộc tính nghiệp vụ của personal_expense_payments
+  - payer_user (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu payer_user lưu trữ thuộc tính nghiệp vụ của personal_expense_payments
+  - amount (DECIMAL(14,2), PK=NO, FK=NO, Null=NO): Giá trị tài chính bằng đơn vị tiền tệ VND phát sinh trong giao dịch
+  - payment_reference (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu payment_reference lưu trữ thuộc tính nghiệp vụ của personal_expense_payments
+  - evidence_url (VARCHAR(255), PK=NO, FK=NO, Null=YES): Đường dẫn liên kết URI tới tệp lưu trữ media / ảnh chụp đính kèm
+  - note (VARCHAR(255), PK=NO, FK=NO, Null=YES): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - verified_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu verified_at lưu trữ thuộc tính nghiệp vụ của personal_expense_payments
+  - verified_by_user (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu verified_by_user lưu trữ thuộc tính nghiệp vụ của personal_expense_payments
+
+=== BẢNG: proposal_vote_eligibility (Mục đích: Danh sách cử tri hợp lệ và tỷ lệ quyền biểu quyết đối với từng đề xuất) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - proposal (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu proposal lưu trữ thuộc tính nghiệp vụ của proposal_vote_eligibility
+  - user (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu user lưu trữ thuộc tính nghiệp vụ của proposal_vote_eligibility
+  - member (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu member lưu trữ thuộc tính nghiệp vụ của proposal_vote_eligibility
+  - voting_weight (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Trường dữ liệu voting_weight lưu trữ thuộc tính nghiệp vụ của proposal_vote_eligibility
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+
+=== BẢNG: proposal_votes (Mục đích: Lá phiếu biểu quyết của thành viên (FOR/AGAINST) với trọng số bằng % sở hữu) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - proposal (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu proposal lưu trữ thuộc tính nghiệp vụ của proposal_votes
+  - voter_user (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu voter_user lưu trữ thuộc tính nghiệp vụ của proposal_votes
+  - member (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu member lưu trữ thuộc tính nghiệp vụ của proposal_votes
+  - choice (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu choice lưu trữ thuộc tính nghiệp vụ của proposal_votes
+  - voting_weight_snapshot (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Trường dữ liệu voting_weight_snapshot lưu trữ thuộc tính nghiệp vụ của proposal_votes
+  - comment (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu comment lưu trữ thuộc tính nghiệp vụ của proposal_votes
+  - cast_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu cast_at lưu trữ thuộc tính nghiệp vụ của proposal_votes
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: refresh_tokens (Mục đích: Quản lý mã làm mới phiên đăng nhập JWT (Refresh Token) và thời gian sống) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - user (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu user lưu trữ thuộc tính nghiệp vụ của refresh_tokens
+  - token (VARCHAR(512), PK=NO, FK=NO, Null=NO): Chuỗi mã token bảo mật phân cấp dùng trong phiên xác thực JWT hoặc mời tham gia
+  - expiry_date (DATETIME, PK=NO, FK=NO, Null=NO): Trường dữ liệu expiry_date lưu trữ thuộc tính nghiệp vụ của refresh_tokens
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: shared_funds (Mục đích: Quỹ chung phương tiện (Bảo lưu cấu trúc dữ liệu di sản / chế độ dự phòng)) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - group (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu group lưu trữ thuộc tính nghiệp vụ của shared_funds
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: trip_extension_requests (Mục đích: Yêu cầu xin gia hạn thêm giờ của chuyến đi và tiến trình đàm phán người kế tiếp) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - trip (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu trip lưu trữ thuộc tính nghiệp vụ của trip_extension_requests
+  - vehicle (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu vehicle lưu trữ thuộc tính nghiệp vụ của trip_extension_requests
+  - requester (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu requester lưu trữ thuộc tính nghiệp vụ của trip_extension_requests
+  - current_booking (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu current_booking lưu trữ thuộc tính nghiệp vụ của trip_extension_requests
+  - original_end_time (DATETIME, PK=NO, FK=NO, Null=NO): Trường dữ liệu original_end_time lưu trữ thuộc tính nghiệp vụ của trip_extension_requests
+  - proposed_end_time (DATETIME, PK=NO, FK=NO, Null=NO): Trường dữ liệu proposed_end_time lưu trữ thuộc tính nghiệp vụ của trip_extension_requests
+  - additional_minutes (INT, PK=NO, FK=NO, Null=NO): Trường dữ liệu additional_minutes lưu trữ thuộc tính nghiệp vụ của trip_extension_requests
+  - affected_booking (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu affected_booking lưu trữ thuộc tính nghiệp vụ của trip_extension_requests
+  - affected_owner (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu affected_owner lưu trữ thuộc tính nghiệp vụ của trip_extension_requests
+  - proposed_affected_start_time (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu proposed_affected_start_time lưu trữ thuộc tính nghiệp vụ của trip_extension_requests
+  - reason (VARCHAR(255), PK=NO, FK=NO, Null=YES): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - response_deadline (DATETIME, PK=NO, FK=NO, Null=NO): Trường dữ liệu response_deadline lưu trữ thuộc tính nghiệp vụ của trip_extension_requests
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: trips (Mục đích: Quản lý chu trình hành trình di chuyển thực tế, ODO/Pin lúc đi và về, điện năng tiêu thụ) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - booking (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu booking lưu trữ thuộc tính nghiệp vụ của trips
+  - vehicle (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu vehicle lưu trữ thuộc tính nghiệp vụ của trips
+  - user (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu user lưu trữ thuộc tính nghiệp vụ của trips
+  - started_at (DATETIME, PK=NO, FK=NO, Null=NO): Trường dữ liệu started_at lưu trữ thuộc tính nghiệp vụ của trips
+  - ended_at (DATETIME, PK=NO, FK=NO, Null=NO): Trường dữ liệu ended_at lưu trữ thuộc tính nghiệp vụ của trips
+  - start_odometer (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Số đo quãng đường lăn bánh của xe điện (Kilomet)
+  - end_odometer (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Số đo quãng đường lăn bánh của xe điện (Kilomet)
+  - start_battery_level (INT, PK=NO, FK=NO, Null=NO): Thông số trạng thái dung lượng pin xe điện (SOC % hoặc kWh)
+  - end_battery_level (INT, PK=NO, FK=NO, Null=NO): Thông số trạng thái dung lượng pin xe điện (SOC % hoặc kWh)
+  - end_soc_percent (DECIMAL(12,2), PK=NO, FK=NO, Null=YES): Thông số trạng thái dung lượng pin xe điện (SOC % hoặc kWh)
+  - energy_consumed_kwh (DECIMAL(12,2), PK=NO, FK=NO, Null=YES): Trường dữ liệu energy_consumed_kwh lưu trữ thuộc tính nghiệp vụ của trips
+  - soc_consumed_percent (DECIMAL(12,2), PK=NO, FK=NO, Null=YES): Thông số trạng thái dung lượng pin xe điện (SOC % hoặc kWh)
+  - return_verified_by (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu return_verified_by lưu trữ thuộc tính nghiệp vụ của trips
+  - return_verified_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu return_verified_at lưu trữ thuộc tính nghiệp vụ của trips
+  - return_note (VARCHAR(255), PK=NO, FK=NO, Null=YES): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - return_requested_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu return_requested_at lưu trữ thuộc tính nghiệp vụ của trips
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: users (Mục đích: Lưu trữ tài khoản người dùng, email, mật khẩu băm BCrypt, họ tên và vai trò) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - email (VARCHAR(255), PK=NO, FK=NO, Null=NO): Địa chỉ thư điện tử xác thực của người dùng
+  - password_hash (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu password_hash lưu trữ thuộc tính nghiệp vụ của users
+  - full_name (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu full_name lưu trữ thuộc tính nghiệp vụ của users
+  - role (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu role lưu trữ thuộc tính nghiệp vụ của users
+  - status (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trạng thái vòng đời của bản ghi trong quy trình nghiệp vụ users
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: vehicle_battery_health (Mục đích: Theo dõi sức khỏe cụm pin: Tỷ lệ SOH, dung lượng khả dụng kWh, số chu kỳ sạc) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - vehicle (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu vehicle lưu trữ thuộc tính nghiệp vụ của vehicle_battery_health
+  - state_of_health_percent (DECIMAL(5,2), PK=NO, FK=NO, Null=NO): Chỉ số sức khỏe pin thực tế (SOH %) đo lường theo tiêu chuẩn BMS
+  - estimated_range_km (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Số đo quãng đường lăn bánh của xe điện (Kilomet)
+  - capacity_kwh (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Trường dữ liệu capacity_kwh lưu trữ thuộc tính nghiệp vụ của vehicle_battery_health
+  - usable_capacity_kwh (DECIMAL(12,2), PK=NO, FK=NO, Null=YES): Trường dữ liệu usable_capacity_kwh lưu trữ thuộc tính nghiệp vụ của vehicle_battery_health
+  - voltage (DECIMAL(12,2), PK=NO, FK=NO, Null=YES): Trường dữ liệu voltage lưu trữ thuộc tính nghiệp vụ của vehicle_battery_health
+  - temperature_celsius (DECIMAL(12,2), PK=NO, FK=NO, Null=YES): Trường dữ liệu temperature_celsius lưu trữ thuộc tính nghiệp vụ của vehicle_battery_health
+  - cycle_count (INT, PK=NO, FK=NO, Null=YES): Trường dữ liệu cycle_count lưu trữ thuộc tính nghiệp vụ của vehicle_battery_health
+  - battery_status (VARCHAR(255), PK=NO, FK=NO, Null=NO): Thông số trạng thái dung lượng pin xe điện (SOC % hoặc kWh)
+  - last_inspected_at (DATETIME, PK=NO, FK=NO, Null=NO): Trường dữ liệu last_inspected_at lưu trữ thuộc tính nghiệp vụ của vehicle_battery_health
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: vehicle_energy_inventories (Mục đích: Kho năng lượng số của xe: Số kWh khả dụng, tổng giá trị vốn, đơn giá bình quân WAC) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - vehicle (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu vehicle lưu trữ thuộc tính nghiệp vụ của vehicle_energy_inventories
+  - last_charging_session_id (VARCHAR(36), PK=NO, FK=YES (FK -> last_charging_sessions.id), Null=YES): Trường dữ liệu last_charging_session_id lưu trữ thuộc tính nghiệp vụ của vehicle_energy_inventories
+  - last_trip_id (VARCHAR(36), PK=NO, FK=YES (FK -> last_trips.id), Null=YES): Trường dữ liệu last_trip_id lưu trữ thuộc tính nghiệp vụ của vehicle_energy_inventories
+  - reconciliation_note (VARCHAR(255), PK=NO, FK=NO, Null=NO): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: vehicle_energy_transactions (Mục đích: Nhật ký giao dịch xuất nhập kho năng lượng: Nạp sạc (INFLOW), chuyến đi (TRIP)) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - inventory (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu inventory lưu trữ thuộc tính nghiệp vụ của vehicle_energy_transactions
+  - vehicle (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu vehicle lưu trữ thuộc tính nghiệp vụ của vehicle_energy_transactions
+  - transaction_type (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu transaction_type lưu trữ thuộc tính nghiệp vụ của vehicle_energy_transactions
+  - delta_energy_kwh (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Trường dữ liệu delta_energy_kwh lưu trữ thuộc tính nghiệp vụ của vehicle_energy_transactions
+  - delta_cost (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Trường dữ liệu delta_cost lưu trữ thuộc tính nghiệp vụ của vehicle_energy_transactions
+  - unit_cost (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Trường dữ liệu unit_cost lưu trữ thuộc tính nghiệp vụ của vehicle_energy_transactions
+  - balance_energy_kwh_after (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Trường dữ liệu balance_energy_kwh_after lưu trữ thuộc tính nghiệp vụ của vehicle_energy_transactions
+  - balance_cost_after (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Trường dữ liệu balance_cost_after lưu trữ thuộc tính nghiệp vụ của vehicle_energy_transactions
+  - weighted_avg_cost_after (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Trường dữ liệu weighted_avg_cost_after lưu trữ thuộc tính nghiệp vụ của vehicle_energy_transactions
+  - operator_or_driver_user_id (VARCHAR(36), PK=NO, FK=YES (FK -> operator_or_driver_users.id), Null=YES): Trường dữ liệu operator_or_driver_user_id lưu trữ thuộc tính nghiệp vụ của vehicle_energy_transactions
+  - operator_or_driver_name (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu operator_or_driver_name lưu trữ thuộc tính nghiệp vụ của vehicle_energy_transactions
+  - source_reference_id (VARCHAR(36), PK=NO, FK=YES (FK -> source_references.id), Null=YES): Trường dữ liệu source_reference_id lưu trữ thuộc tính nghiệp vụ của vehicle_energy_transactions
+  - note (VARCHAR(255), PK=NO, FK=NO, Null=YES): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - recorded_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu recorded_at lưu trữ thuộc tính nghiệp vụ của vehicle_energy_transactions
+
+=== BẢNG: vehicle_handovers (Mục đích: Biên bản bàn giao xe kỹ thuật: ODO xuất phát, pin, chữ ký nhân viên và chủ xe) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - booking (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu booking lưu trữ thuộc tính nghiệp vụ của vehicle_handovers
+  - vehicle (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu vehicle lưu trữ thuộc tính nghiệp vụ của vehicle_handovers
+  - staff (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu staff lưu trữ thuộc tính nghiệp vụ của vehicle_handovers
+  - co_owner (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu co_owner lưu trữ thuộc tính nghiệp vụ của vehicle_handovers
+  - staff_prepared_at (DATETIME, PK=NO, FK=NO, Null=NO): Trường dữ liệu staff_prepared_at lưu trữ thuộc tính nghiệp vụ của vehicle_handovers
+  - staff_handed_over_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu staff_handed_over_at lưu trữ thuộc tính nghiệp vụ của vehicle_handovers
+  - owner_received_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu owner_received_at lưu trữ thuộc tính nghiệp vụ của vehicle_handovers
+  - owner_condition_acknowledged_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu owner_condition_acknowledged_at lưu trữ thuộc tính nghiệp vụ của vehicle_handovers
+  - inspection (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu inspection lưu trữ thuộc tính nghiệp vụ của vehicle_handovers
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: vehicle_inspection_items (Mục đích: Chi tiết đánh giá từng hạng mục kiểm tra kỹ thuật (lốp, phanh, đèn, kính)) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - inspection (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu inspection lưu trữ thuộc tính nghiệp vụ của vehicle_inspection_items
+  - vehicle_part_code (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu vehicle_part_code lưu trữ thuộc tính nghiệp vụ của vehicle_inspection_items
+  - note (VARCHAR(255), PK=NO, FK=NO, Null=NO): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+
+=== BẢNG: vehicle_inspections (Mục đích: Biên bản kiểm định kỹ thuật tổng thể phương tiện (PASSED / FAILED)) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - vehicle (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu vehicle lưu trữ thuộc tính nghiệp vụ của vehicle_inspections
+  - inspected_by (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu inspected_by lưu trữ thuộc tính nghiệp vụ của vehicle_inspections
+  - overall_result (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu overall_result lưu trữ thuộc tính nghiệp vụ của vehicle_inspections
+  - summary_note (VARCHAR(255), PK=NO, FK=NO, Null=YES): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - started_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu started_at lưu trữ thuộc tính nghiệp vụ của vehicle_inspections
+  - completed_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu completed_at lưu trữ thuộc tính nghiệp vụ của vehicle_inspections
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: vehicle_registration_drafts (Mục đích: Dự thảo hồ sơ đăng ký thông số kỹ thuật xe trước khi đưa vào vận hành) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - user_id (VARCHAR(36), PK=NO, FK=YES (FK -> users.id), Null=NO): Khóa ngoại liên kết tới tài khoản người dùng thực hiện (FK -> users.id)
+  - vehicle_name (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu vehicle_name lưu trữ thuộc tính nghiệp vụ của vehicle_registration_drafts
+  - manufacturer (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu manufacturer lưu trữ thuộc tính nghiệp vụ của vehicle_registration_drafts
+  - model (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu model lưu trữ thuộc tính nghiệp vụ của vehicle_registration_drafts
+  - model_year (INT, PK=NO, FK=NO, Null=YES): Trường dữ liệu model_year lưu trữ thuộc tính nghiệp vụ của vehicle_registration_drafts
+  - license_plate (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu license_plate lưu trữ thuộc tính nghiệp vụ của vehicle_registration_drafts
+  - vin (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu vin lưu trữ thuộc tính nghiệp vụ của vehicle_registration_drafts
+  - battery_capacity (DECIMAL(12,2), PK=NO, FK=NO, Null=YES): Thông số trạng thái dung lượng pin xe điện (SOC % hoặc kWh)
+  - battery_type (VARCHAR(255), PK=NO, FK=NO, Null=YES): Thông số trạng thái dung lượng pin xe điện (SOC % hoặc kWh)
+  - group_name (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu group_name lưu trữ thuộc tính nghiệp vụ của vehicle_registration_drafts
+  - proposed_co_owners (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu proposed_co_owners lưu trữ thuộc tính nghiệp vụ của vehicle_registration_drafts
+  - model3d_url (VARCHAR(255), PK=NO, FK=NO, Null=YES): Đường dẫn liên kết URI tới tệp lưu trữ media / ảnh chụp đính kèm
+  - submitted_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu submitted_at lưu trữ thuộc tính nghiệp vụ của vehicle_registration_drafts
+  - reviewed_by (VARCHAR(36), PK=NO, FK=NO, Null=YES): Trường dữ liệu reviewed_by lưu trữ thuộc tính nghiệp vụ của vehicle_registration_drafts
+  - reviewed_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu reviewed_at lưu trữ thuộc tính nghiệp vụ của vehicle_registration_drafts
+  - review_decision (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu review_decision lưu trữ thuộc tính nghiệp vụ của vehicle_registration_drafts
+  - review_reason (VARCHAR(255), PK=NO, FK=NO, Null=YES): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - created_vehicle_id (VARCHAR(36), PK=NO, FK=YES (FK -> created_vehicles.id), Null=YES): Trường dữ liệu created_vehicle_id lưu trữ thuộc tính nghiệp vụ của vehicle_registration_drafts
+  - created_group_id (VARCHAR(36), PK=NO, FK=YES (FK -> created_groups.id), Null=YES): Trường dữ liệu created_group_id lưu trữ thuộc tính nghiệp vụ của vehicle_registration_drafts
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: vehicles (Mục đích: Quản lý danh mục phương tiện xe điện: Biển số, số khung VIN, ODO và trạng thái xe) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - name (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu name lưu trữ thuộc tính nghiệp vụ của vehicles
+  - brand (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu brand lưu trữ thuộc tính nghiệp vụ của vehicles
+  - model (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu model lưu trữ thuộc tính nghiệp vụ của vehicles
+  - year (INT, PK=NO, FK=NO, Null=NO): Trường dữ liệu year lưu trữ thuộc tính nghiệp vụ của vehicles
+  - license_plate (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu license_plate lưu trữ thuộc tính nghiệp vụ của vehicles
+  - vin (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu vin lưu trữ thuộc tính nghiệp vụ của vehicles
+  - battery_capacity (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Thông số trạng thái dung lượng pin xe điện (SOC % hoặc kWh)
+  - gross_battery_capacity_kwh (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Thông số trạng thái dung lượng pin xe điện (SOC % hoặc kWh)
+  - usable_battery_capacity_kwh (DECIMAL(12,2), PK=NO, FK=NO, Null=YES): Thông số trạng thái dung lượng pin xe điện (SOC % hoặc kWh)
+  - energy_consumption_kwh_per100_km (DECIMAL(12,2), PK=NO, FK=NO, Null=YES): Số đo quãng đường lăn bánh của xe điện (Kilomet)
+  - current_battery_level (INT, PK=NO, FK=NO, Null=NO): Thông số trạng thái dung lượng pin xe điện (SOC % hoặc kWh)
+  - odometer (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Số đo quãng đường lăn bánh của xe điện (Kilomet)
+  - status (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trạng thái vòng đời của bản ghi trong quy trình nghiệp vụ vehicles
+  - model3d_url (VARCHAR(255), PK=NO, FK=NO, Null=NO): Đường dẫn liên kết URI tới tệp lưu trữ media / ảnh chụp đính kèm
+  - exterior_color (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu exterior_color lưu trữ thuộc tính nghiệp vụ của vehicles
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)
+
+=== BẢNG: vote_proposals (Mục đích: Đề xuất biểu quyết dân chủ trong nhóm xe: Nội dung, thời hạn, quy tắc MAJORITY) ===
+  - id (VARCHAR(36), PK=YES, FK=NO, Null=NO): Khóa chính định danh duy nhất của bản ghi (UUID v4 / Long Auto-increment)
+  - group (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu group lưu trữ thuộc tính nghiệp vụ của vote_proposals
+  - vehicle (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu vehicle lưu trữ thuộc tính nghiệp vụ của vote_proposals
+  - created_by_user (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu created_by_user lưu trữ thuộc tính nghiệp vụ của vote_proposals
+  - proposal_type (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu proposal_type lưu trữ thuộc tính nghiệp vụ của vote_proposals
+  - title (VARCHAR(255), PK=NO, FK=NO, Null=NO): Trường dữ liệu title lưu trữ thuộc tính nghiệp vụ của vote_proposals
+  - description (TEXT, PK=NO, FK=NO, Null=NO): Nội dung văn bản ghi chú chi tiết hoặc giải trình nguyên nhân
+  - estimated_amount (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Trường dữ liệu estimated_amount lưu trữ thuộc tính nghiệp vụ của vote_proposals
+  - approved_budget (DECIMAL(12,2), PK=NO, FK=NO, Null=NO): Trường dữ liệu approved_budget lưu trữ thuộc tính nghiệp vụ của vote_proposals
+  - voting_starts_at (DATETIME, PK=NO, FK=NO, Null=NO): Trường dữ liệu voting_starts_at lưu trữ thuộc tính nghiệp vụ của vote_proposals
+  - voting_ends_at (DATETIME, PK=NO, FK=NO, Null=NO): Trường dữ liệu voting_ends_at lưu trữ thuộc tính nghiệp vụ của vote_proposals
+  - finalized_at (DATETIME, PK=NO, FK=NO, Null=NO): Trường dữ liệu finalized_at lưu trữ thuộc tính nghiệp vụ của vote_proposals
+  - execution_started_at (DATETIME, PK=NO, FK=NO, Null=NO): Trường dữ liệu execution_started_at lưu trữ thuộc tính nghiệp vụ của vote_proposals
+  - execution_completed_at (DATETIME, PK=NO, FK=NO, Null=YES): Trường dữ liệu execution_completed_at lưu trữ thuộc tính nghiệp vụ của vote_proposals
+  - executed_by_staff (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu executed_by_staff lưu trữ thuộc tính nghiệp vụ của vote_proposals
+  - actual_cost (DECIMAL(14,2), PK=NO, FK=NO, Null=YES): Tổng chi phí phát sinh thực tế bằng tiền đồng (VND) sau khi thanh quyết toán
+  - related_maintenance_request (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu related_maintenance_request lưu trữ thuộc tính nghiệp vụ của vote_proposals
+  - related_expense (VARCHAR(255), PK=NO, FK=NO, Null=YES): Trường dữ liệu related_expense lưu trữ thuộc tính nghiệp vụ của vote_proposals
+  - created_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm tạo bản ghi lần đầu trong hệ thống (UTC ISO 8601 Timestamp)
+  - updated_at (DATETIME, PK=NO, FK=NO, Null=YES): Thời điểm cập nhật bản ghi gần nhất trong hệ thống (UTC Timestamp)

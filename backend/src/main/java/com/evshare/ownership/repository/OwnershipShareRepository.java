@@ -1,7 +1,9 @@
 package com.evshare.ownership.repository;
 
 import com.evshare.ownership.entity.OwnershipShare;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -21,6 +23,10 @@ public interface OwnershipShareRepository extends JpaRepository<OwnershipShare, 
 
     @Query("SELECT s FROM OwnershipShare s WHERE s.group.id = :groupId AND s.vehicle.id = :vehicleId AND s.member.user.id = :userId")
     Optional<OwnershipShare> findByGroupIdAndVehicleIdAndUserId(@Param("groupId") UUID groupId, @Param("vehicleId") UUID vehicleId, @Param("userId") UUID userId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT s FROM OwnershipShare s WHERE s.group.id = :groupId AND s.vehicle.id = :vehicleId AND s.member.user.id = :userId")
+    Optional<OwnershipShare> findByGroupIdAndVehicleIdAndUserIdForUpdate(@Param("groupId") UUID groupId, @Param("vehicleId") UUID vehicleId, @Param("userId") UUID userId);
 
     @Query("SELECT COALESCE(SUM(s.percentage), 0) FROM OwnershipShare s WHERE s.group.id = :groupId AND s.vehicle.id = :vehicleId")
     BigDecimal sumPercentageByGroupIdAndVehicleId(@Param("groupId") UUID groupId, @Param("vehicleId") UUID vehicleId);

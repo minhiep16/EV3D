@@ -1,6 +1,7 @@
 export type MaintenanceStatus =
   | 'PENDING_APPROVAL'
   | 'APPROVED'
+  | 'ACCEPTED'
   | 'REJECTED'
   | 'PENDING'
   | 'SCHEDULED'
@@ -101,6 +102,7 @@ export interface CreateMaintenancePayload {
   scheduledAt?: string | null;
   assignedStaffId?: string | null;
   damageRecordIds?: string[];
+  inspectionItemIds?: string[];
   estimatedCost?: number;
 }
 
@@ -119,6 +121,8 @@ export interface CompleteMaintenancePayload {
   inspectionResult?: 'PASSED' | 'FAILED' | 'REQUIRES_REWORK';
   useSharedFund?: boolean;
   sharedFundDisburseAmount?: number;
+  resolvedDamageIds?: string[];
+  resolvedInspectionItemIds?: string[];
 }
 
 export const MAINTENANCE_APPROVAL_THRESHOLD = 50.0;
@@ -138,6 +142,12 @@ export const MAINTENANCE_STATUS_CONFIG: Record<
     color: '#10b981',
     bg: 'rgba(16, 185, 129, 0.15)',
     border: 'rgba(16, 185, 129, 0.45)',
+  },
+  ACCEPTED: {
+    labelVi: 'Đã tiếp nhận',
+    color: '#38bdf8',
+    bg: 'rgba(56, 189, 248, 0.15)',
+    border: 'rgba(56, 189, 248, 0.45)',
   },
   REJECTED: {
     labelVi: 'Đã từ chối',

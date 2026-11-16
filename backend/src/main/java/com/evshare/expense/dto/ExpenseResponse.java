@@ -43,13 +43,60 @@ public record ExpenseResponse(
         Integer endBatteryLevel,
         BigDecimal energyConsumedKwh,
         Boolean isEstimatedEnergy,
-        String verifiedByStaffName
+        String verifiedByStaffName,
+        Boolean isFullySettled,
+        String settlementStatus,
+        String settlementStatusLabel,
+        String currentUserPaymentStatus,
+        String currentUserPaymentStatusLabel,
+        BigDecimal currentUserAllocatedAmount,
+        BigDecimal currentUserPaidAmount,
+        BigDecimal currentUserPendingAmount,
+        BigDecimal currentUserRemainingAmount
 ) {
     public static ExpenseResponse fromEntity(Expense expense) {
-        return fromEntity(expense, null);
+        return fromEntity(expense, null, null, null, null);
     }
 
     public static ExpenseResponse fromEntity(Expense expense, com.evshare.trip.entity.Trip trip) {
+        return fromEntity(expense, trip, null, null, null);
+    }
+
+    public static ExpenseResponse fromEntity(
+            Expense expense,
+            com.evshare.trip.entity.Trip trip,
+            Boolean isFullySettled,
+            String settlementStatus,
+            String settlementStatusLabel
+    ) {
+        return fromEntity(
+                expense,
+                trip,
+                isFullySettled,
+                settlementStatus,
+                settlementStatusLabel,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
+    public static ExpenseResponse fromEntity(
+            Expense expense,
+            com.evshare.trip.entity.Trip trip,
+            Boolean isFullySettled,
+            String settlementStatus,
+            String settlementStatusLabel,
+            String currentUserPaymentStatus,
+            String currentUserPaymentStatusLabel,
+            BigDecimal currentUserAllocatedAmount,
+            BigDecimal currentUserPaidAmount,
+            BigDecimal currentUserPendingAmount,
+            BigDecimal currentUserRemainingAmount
+    ) {
         ExpenseStatus status = expense.getStatus() != null ? expense.getStatus() : ExpenseStatus.PENDING_VERIFICATION;
         ExpenseAllocationPolicy policy = expense.getAllocationPolicy() != null ? expense.getAllocationPolicy() : ExpenseAllocationPolicy.OWNERSHIP_RATIO;
 
@@ -111,7 +158,16 @@ public record ExpenseResponse(
                 endSoc,
                 energyKwh,
                 isEst,
-                staffName
+                staffName,
+                isFullySettled,
+                settlementStatus,
+                settlementStatusLabel,
+                currentUserPaymentStatus,
+                currentUserPaymentStatusLabel,
+                currentUserAllocatedAmount,
+                currentUserPaidAmount,
+                currentUserPendingAmount,
+                currentUserRemainingAmount
         );
     }
 }

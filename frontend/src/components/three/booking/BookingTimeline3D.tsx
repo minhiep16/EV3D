@@ -5,8 +5,9 @@ import { Html } from '@react-three/drei';
 import { Booking } from '../../../types/booking';
 import { INTERACTION_CONFIG } from '../../../config/interactionConfig';
 import { useWorldStore } from '../../../store/worldStore';
+import { useAuthStore } from '../../../store/authStore';
 
-export type SlotState = 'AVAILABLE' | 'SELECTED' | 'BOOKED' | 'PAST';
+export type SlotState = 'AVAILABLE' | 'SELECTED' | 'BOOKED' | 'PAST' | 'RESTRICTED';
 
 export interface BookingTimelineSlot {
   id: string;               // Stable unique ID: e.g. "2026-09-24T15:00"
@@ -16,6 +17,7 @@ export interface BookingTimelineSlot {
   endTimeIso: string;
   state: SlotState;
   bookedBy?: string;
+  isMyBooking?: boolean;
   booking?: Booking;
   rowIndex: number;         // 0 for Row 1, 1 for Row 2
   colIndex: number;
@@ -24,12 +26,11 @@ export interface BookingTimelineSlot {
 }
 
 // Authoritative right booking panel dimensions and safe area in screen space
-export const BOOKING_PANEL_WIDTH_PX = 350;
+export const BOOKING_PANEL_WIDTH_PX = 495;
 export const BOOKING_PANEL_RIGHT_GAP_PX = 20;
-export const BOOKING_PANEL_SAFE_GAP_PX = 24;
+export const BOOKING_PANEL_SAFE_GAP_PX = 0;
 
-export const RESERVED_RIGHT_PANEL_WIDTH_PX =
-  BOOKING_PANEL_WIDTH_PX + BOOKING_PANEL_RIGHT_GAP_PX + BOOKING_PANEL_SAFE_GAP_PX; // 394px
+export const RESERVED_RIGHT_PANEL_WIDTH_PX = 515; // 495px panel + 20px right margin
 
 export const BOOKING_LEFT_MARGIN_PX = 24; // px left boundary margin
 export const BOOKING_PANEL_CLEARANCE_PX = 28; // px visual clearance from panel boundary
@@ -113,13 +114,14 @@ interface BookingTimeline3DProps {
   safeCenterX?: number;
   usableSafeWidth?: number;
   rightSafeX?: number;
+  vehicleStatus?: string;
 }
 
-const BASE_SLOT_WIDTH = 0.48;
-const BASE_SLOT_HEIGHT = 0.46;
+const BASE_SLOT_WIDTH = 0.44;
+const BASE_SLOT_HEIGHT = 0.38;
 const SLOT_DEPTH = 0.08;
-const BASE_GAP_X = 0.06;
-const ROW_GAP_Y = 0.68;
+const BASE_GAP_X = 0.08;
+const ROW_GAP_Y = 0.44;
 
 export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
   selectedDate,
@@ -131,19 +133,23 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
   safeCenterX: propSafeCenterX,
   usableSafeWidth: propUsableSafeWidth,
   rightSafeX: propRightSafeX,
+  vehicleStatus,
 }) => {
   const { size, camera } = useThree();
+  const user = useAuthStore((s) => s.user);
   const inspectedBooking = useWorldStore((s) => s.bookingInspectedBooking);
   const setBookingInspectedBooking = useWorldStore((s) => s.setBookingInspectedBooking);
 
   // Stable slot ID tracked on hover (matches exact clicked slot ID)
   const [hoveredSlotId, setHoveredSlotId] = useState<string | null>(null);
 
-  // Operational hours: 07:00 to 21:00 (15 hours)
-  const HOURS = useMemo(() => Array.from({ length: 15 }, (_, i) => i + 7), []);
-  const row1Hours = useMemo(() => HOURS.slice(0, 7), [HOURS]); // 07:00 - 13:00 (7 slots)
-  const row2Hours = useMemo(() => HOURS.slice(7), [HOURS]);    // 14:00 - 21:00 (8 slots)
-  const maxSlotsInRow = Math.max(row1Hours.length, row2Hours.length); // 8 slots
+  // Full-day 24/7 operating hours: 00:00 to 23:00 (24 slots organized in 4 compact rows of 6)
+  const HOURS = useMemo(() => Array.from({ length: 24 }, (_, i) => i), []);
+  const row0Hours = useMemo(() => HOURS.slice(0, 6), [HOURS]);   // 00:00 - 05:00 (6 slots)
+  const row1Hours = useMemo(() => HOURS.slice(6, 12), [HOURS]);  // 06:00 - 11:00 (6 slots)
+  const row2Hours = useMemo(() => HOURS.slice(12, 18), [HOURS]); // 12:00 - 17:00 (6 slots)
+  const row3Hours = useMemo(() => HOURS.slice(18, 24), [HOURS]); // 18:00 - 23:00 (6 slots)
+  const maxSlotsInRow = 6;
 
   // Calculate 3D viewport safe boundaries at timeline plane depth (world Z = 2.4)
   const layoutMetrics = useMemo(() => {
@@ -160,14 +166,12 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
     slotWidth,
     slotHeight,
     gapX,
-    row1TotalWidth,
-    row2TotalWidth,
-    row1StartX,
-    row2StartX,
+    rowTotalWidth,
+    rowStartX,
     effectiveCenterX,
   } = useMemo(() => {
     const maxTimelineWidth = Math.min(layoutMetrics.usableSafeWidth - layoutMetrics.clearance3D * 2, 4.60);
-    const baseTotal = maxSlotsInRow * BASE_SLOT_WIDTH + (maxSlotsInRow - 1) * BASE_GAP_X; // ~4.26
+    const baseTotal = maxSlotsInRow * BASE_SLOT_WIDTH + (maxSlotsInRow - 1) * BASE_GAP_X; // ~3.04
 
     let w = BASE_SLOT_WIDTH;
     let g = BASE_GAP_X;
@@ -184,19 +188,15 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
 
     const h = (w / BASE_SLOT_WIDTH) * BASE_SLOT_HEIGHT;
 
-    const r1Width = row1Hours.length * w + (row1Hours.length - 1) * g;
-    const r2Width = row2Hours.length * w + (row2Hours.length - 1) * g;
-    const maxRowWidth = Math.max(r1Width, r2Width);
-
-    const r1StartX = -r1Width / 2 + w / 2;
-    const r2StartX = -r2Width / 2 + w / 2;
+    const rWidth = maxSlotsInRow * w + (maxSlotsInRow - 1) * g;
+    const rStartX = -rWidth / 2 + w / 2;
 
     // Panel-safe center: centers the timeline within the usable screen area
     const rawSafeCenter = layoutMetrics.safeCenterX;
 
-    // Strictly enforce that timeline right edge (effectiveCenterX + maxRowWidth / 2) does NOT cross (rightSafeX - clearance3D)
-    const maxAllowedCenter = layoutMetrics.rightSafeX - maxRowWidth / 2 - layoutMetrics.clearance3D;
-    const minAllowedCenter = layoutMetrics.leftSafeX + maxRowWidth / 2 + layoutMetrics.clearance3D;
+    // Strictly enforce that timeline right edge does NOT cross (rightSafeX - clearance3D)
+    const maxAllowedCenter = layoutMetrics.rightSafeX - rWidth / 2 - layoutMetrics.clearance3D;
+    const minAllowedCenter = layoutMetrics.leftSafeX + rWidth / 2 + layoutMetrics.clearance3D;
 
     const clampedCenter = Math.max(minAllowedCenter, Math.min(rawSafeCenter, maxAllowedCenter));
 
@@ -204,13 +204,11 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
       slotWidth: w,
       slotHeight: h,
       gapX: g,
-      row1TotalWidth: r1Width,
-      row2TotalWidth: r2Width,
-      row1StartX: r1StartX,
-      row2StartX: r2StartX,
+      rowTotalWidth: rWidth,
+      rowStartX: rStartX,
       effectiveCenterX: clampedCenter,
     };
-  }, [layoutMetrics, row1Hours.length, row2Hours.length, maxSlotsInRow]);
+  }, [layoutMetrics, maxSlotsInRow]);
 
   // Memoized box & edges geometries: shared across all slot meshes for performance & zero memory leaks
   const slotBoxGeometry = useMemo(
@@ -244,6 +242,12 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
       d.getMonth() === now.getMonth() &&
       d.getFullYear() === now.getFullYear();
 
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const selDayStart = new Date(d);
+    selDayStart.setHours(0, 0, 0, 0);
+    const isPastDay = selDayStart.getTime() < todayStart.getTime();
+
     const evaluateSlot = (
       hour: number,
       rowIndex: number,
@@ -263,12 +267,20 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
       let state: SlotState = 'AVAILABLE';
       let bookedBy: string | undefined = undefined;
       let matchedBooking: Booking | undefined = undefined;
+      let isMyBooking = false;
 
-      if (isToday && hour <= now.getHours()) {
+      if (isPastDay || (isToday && hour <= now.getHours())) {
         state = 'PAST';
       } else {
         const conflicting = bookings.find((b) => {
-          if (b.status === 'CANCELLED') return false;
+          if (b.status === 'CANCELLED' || b.status === 'EXPIRED') return false;
+          if (b.status === 'COMPLETED') {
+            // Early return release: completed bookings only occupy actual completed duration
+            const bStart = new Date(b.startTime);
+            const bEnd = new Date(b.endTime);
+            const effectiveEnd = Math.min(bEnd.getTime(), Date.now());
+            return bStart.getTime() < slotEnd.getTime() && effectiveEnd > slotStart.getTime();
+          }
           const bStart = new Date(b.startTime);
           const bEnd = new Date(b.endTime);
           return bStart < slotEnd && bEnd > slotStart;
@@ -277,11 +289,17 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
         if (conflicting) {
           state = 'BOOKED';
           matchedBooking = conflicting;
-          bookedBy = conflicting.userName || 'Đồng sở hữu';
+          isMyBooking = Boolean(
+            (user?.id && conflicting.userId && conflicting.userId === user.id) ||
+            (user?.email && conflicting.userEmail && conflicting.userEmail === user.email)
+          );
+          bookedBy = conflicting.userName || (isMyBooking ? (user?.fullName || 'Bạn') : 'Đồng sở hữu');
         } else if (startHour !== null && endHour !== null) {
           if (hour >= startHour && hour < endHour) {
             state = 'SELECTED';
           }
+        } else if (vehicleStatus === 'MAINTENANCE' && isToday) {
+          state = 'RESTRICTED';
         }
       }
 
@@ -295,6 +313,7 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
         endTimeIso: slotEnd.toISOString(),
         state,
         bookedBy,
+        isMyBooking,
         booking: matchedBooking,
         rowIndex,
         colIndex,
@@ -304,19 +323,22 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
     };
 
     const result: BookingTimelineSlot[] = [];
+    const ROWS = [
+      { rowIndex: 0, hours: row0Hours },
+      { rowIndex: 1, hours: row1Hours },
+      { rowIndex: 2, hours: row2Hours },
+      { rowIndex: 3, hours: row3Hours },
+    ];
 
-    // Row 1: 07:00 - 13:00 (y = +ROW_GAP_Y / 2)
-    row1Hours.forEach((hour, colIndex) => {
-      result.push(evaluateSlot(hour, 0, colIndex, row1StartX, ROW_GAP_Y / 2));
-    });
-
-    // Row 2: 14:00 - 21:00 (y = -ROW_GAP_Y / 2)
-    row2Hours.forEach((hour, colIndex) => {
-      result.push(evaluateSlot(hour, 1, colIndex, row2StartX, -ROW_GAP_Y / 2));
+    ROWS.forEach(({ rowIndex, hours }) => {
+      const yOffset = (1.5 - rowIndex) * ROW_GAP_Y;
+      hours.forEach((hour, colIndex) => {
+        result.push(evaluateSlot(hour, rowIndex, colIndex, rowStartX, yOffset));
+      });
     });
 
     return result;
-  }, [dateKey, selectedDate, bookings, startHour, endHour, row1Hours, row2Hours, row1StartX, row2StartX, slotWidth, gapX]);
+  }, [dateKey, selectedDate, bookings, startHour, endHour, row0Hours, row1Hours, row2Hours, row3Hours, rowStartX, slotWidth, gapX, user?.id, user?.email, user?.fullName, vehicleStatus]);
 
   const handleSlotClick = (slot: BookingTimelineSlot) => {
     if (slot.state === 'PAST') {
@@ -358,9 +380,9 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
   };
 
   const timelineGroupPosition: [number, number, number] = [
-    effectiveCenterX,
+    position[0] !== undefined ? position[0] : effectiveCenterX,
     position[1] ?? 2.45,
-    position[2] ?? 2.4,
+    position[2] ?? 0.6,
   ];
 
   return (
@@ -380,35 +402,47 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
         let emissiveIntensity = 0.35;
         let badgeText = 'Có thể đặt';
         let badgeColor = '#34d399';
-        let badgeBg = 'rgba(168, 85, 247, 0.2)';
+        let badgeBg = 'rgba(16, 185, 129, 0.2)';
         let zOffset = 0;
 
         if (slot.state === 'SELECTED') {
-          baseColor = '#581c87';
-          emissiveColor = '#c084fc';
+          baseColor = '#0284c7';
+          emissiveColor = '#38bdf8';
           emissiveIntensity = 0.95;
           badgeText = 'Đang chọn';
-          badgeColor = '#e9d5ff';
-          badgeBg = 'rgba(168, 85, 247, 0.4)';
+          badgeColor = '#e0f2fe';
+          badgeBg = 'rgba(56, 189, 248, 0.4)';
           zOffset = 0.06;
         } else if (slot.state === 'BOOKED') {
-          if (isInspected) {
-            baseColor = '#991b1b';
-            emissiveColor = '#f87171';
-            emissiveIntensity = 1.0;
-            badgeText = 'Đang xem';
-            badgeColor = '#fecaca';
-            badgeBg = 'rgba(239, 68, 68, 0.5)';
-            zOffset = 0.08;
+          if (slot.isMyBooking) {
+            // Purple: Current user's booking
+            baseColor = isInspected ? '#4c1d95' : '#581c87';
+            emissiveColor = isInspected ? '#d8b4fe' : '#c084fc';
+            emissiveIntensity = isInspected ? 1.0 : 0.65;
+            badgeText = slot.bookedBy ? (slot.bookedBy.length > 9 ? slot.bookedBy.slice(0, 8) + '…' : slot.bookedBy) : 'Của tôi';
+            badgeColor = '#f3e8ff';
+            badgeBg = 'rgba(168, 85, 247, 0.45)';
+            zOffset = isInspected ? 0.08 : 0.04;
           } else {
-            baseColor = '#7f1d1d';
-            emissiveColor = '#ef4444';
-            emissiveIntensity = 0.45;
-            badgeText = 'Đã có lịch';
+            // Muted red: Another member's booking
+            baseColor = isInspected ? '#7f1d1d' : '#5c1d1d';
+            emissiveColor = isInspected ? '#f87171' : '#ef4444';
+            emissiveIntensity = isInspected ? 0.95 : 0.45;
+            badgeText = slot.bookedBy ? (slot.bookedBy.length > 9 ? slot.bookedBy.slice(0, 8) + '…' : slot.bookedBy) : 'Đồng sở hữu';
             badgeColor = '#fca5a5';
             badgeBg = 'rgba(239, 68, 68, 0.25)';
+            zOffset = isInspected ? 0.08 : 0.02;
           }
+        } else if (slot.state === 'RESTRICTED') {
+          // Amber: Temporarily unavailable or restricted
+          baseColor = '#78350f';
+          emissiveColor = '#f59e0b';
+          emissiveIntensity = 0.45;
+          badgeText = 'Bảo dưỡng';
+          badgeColor = '#fde68a';
+          badgeBg = 'rgba(245, 158, 11, 0.25)';
         } else if (slot.state === 'PAST') {
+          // Gray: Past time slot
           baseColor = '#0f172a';
           emissiveColor = '#334155';
           emissiveIntensity = 0.15;
@@ -515,10 +549,62 @@ export const BookingTimeline3D: React.FC<BookingTimeline3DProps> = ({
                     pointerEvents: 'none',
                   }}
                 >
-                  {slot.state === 'BOOKED' && slot.bookedBy ? slot.bookedBy : badgeText}
+                  {badgeText}
                 </div>
               </div>
             </Html>
+
+            {/* 4. Accessible Tooltip on Hover (supports long Vietnamese names) */}
+            {isHovered && (
+              <Html
+                position={[0, slotHeight / 2 + 0.36, 0.14]}
+                center
+                distanceFactor={7.5}
+                style={{ pointerEvents: 'none', userSelect: 'none' }}
+              >
+                <div
+                  style={{
+                    background: 'rgba(7, 20, 38, 0.97)',
+                    backdropFilter: 'blur(16px)',
+                    border: `1.5px solid ${emissiveColor}`,
+                    borderRadius: '8px',
+                    padding: '6px 10px',
+                    color: '#ffffff',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    whiteSpace: 'nowrap',
+                    boxShadow: `0 4px 18px rgba(0, 0, 0, 0.8), 0 0 12px ${emissiveColor}45`,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '2px',
+                    textAlign: 'center',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  <div style={{ fontWeight: 800, color: '#ffffff' }}>
+                    {slot.timeLabel} – {String((slot.hour + 1) % 24).padStart(2, '0')}:00{slot.hour === 23 ? ' (+1 ngày)' : ''}
+                  </div>
+                  {slot.state === 'BOOKED' ? (
+                    <>
+                      <div style={{ color: slot.isMyBooking ? '#c084fc' : '#fca5a5', fontWeight: 800, fontSize: '10.5px' }}>
+                        {slot.isMyBooking ? '👤 Lịch của bạn' : '👥 Lịch thành viên khác'}
+                      </div>
+                      <div style={{ color: '#cbd5e1', fontSize: '10px' }}>
+                        Người đặt: <strong style={{ color: '#ffffff' }}>{slot.bookedBy || 'Đồng sở hữu'}</strong>
+                      </div>
+                    </>
+                  ) : slot.state === 'PAST' ? (
+                    <div style={{ color: '#94a3b8', fontSize: '10px' }}>Khung giờ đã qua</div>
+                  ) : slot.state === 'RESTRICTED' ? (
+                    <div style={{ color: '#fbbf24', fontSize: '10px' }}>Xe đang bảo dưỡng kỹ thuật</div>
+                  ) : slot.state === 'SELECTED' ? (
+                    <div style={{ color: '#38bdf8', fontSize: '10px' }}>Khung giờ đang chọn</div>
+                  ) : (
+                    <div style={{ color: '#34d399', fontSize: '10px' }}>Khung giờ có thể đặt (Nhấp để chọn)</div>
+                  )}
+                </div>
+              </Html>
+            )}
           </group>
         );
       })}

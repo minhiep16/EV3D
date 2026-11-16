@@ -4,9 +4,11 @@ import com.evshare.handover.entity.HandoverStatus;
 import com.evshare.handover.entity.InspectionCondition;
 import com.evshare.handover.entity.VehicleHandover;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -38,7 +40,10 @@ public class VehicleHandoverResponse {
     private Instant updatedAt;
 
     private int totalInspectedCount;
+    private int uniqueInspectedCount;
     private int requiredCheckpointsCount = 8;
+    private int assessedRequiredCheckpointsCount;
+    private boolean handoverAllowed;
     private boolean allCheckpointsInspected;
     private boolean hasWarningsOrDamage;
     private List<VehicleInspectionResponse> inspections = new ArrayList<>();
@@ -48,12 +53,21 @@ public class VehicleHandoverResponse {
     private UUID tripId;
     private String tripStatus;
     private String inspectionStatus;
+    private Instant inspectionCompletedAt;
+    private BigDecimal startOdometer;
+    private Integer startBatteryLevel;
     private UUID confirmedByStaffId;
     private Instant confirmedAt;
     private Instant returnVerifiedAt;
     private String returnVerifiedByStaffName;
     private String returnInspectionResult;
     private Instant tripEndedAt;
+
+    private boolean previousCustodyUnresolved;
+    private String currentCustodianName;
+    private UUID currentCustodianBookingId;
+    private Instant currentCustodianExpectedReturnTime;
+    private Boolean currentCustodianOverdue;
 
     public VehicleHandoverResponse() {
     }
@@ -80,8 +94,10 @@ public class VehicleHandoverResponse {
         if (entity.getVehicle() != null) {
             resp.setVehicleId(entity.getVehicle().getId());
             resp.setVehicleName(entity.getVehicle().getName());
-            resp.setVehicleCode("EV01");
+            resp.setVehicleCode(entity.getVehicle().getName() != null ? entity.getVehicle().getName() : entity.getVehicle().getLicensePlate());
             resp.setLicensePlate(entity.getVehicle().getLicensePlate());
+            resp.setStartOdometer(entity.getVehicle().getOdometer());
+            resp.setStartBatteryLevel(entity.getVehicle().getCurrentBatteryLevel());
         }
         if (entity.getStaff() != null) {
             resp.setStaffId(entity.getStaff().getId());
@@ -111,6 +127,7 @@ public class VehicleHandoverResponse {
         if (entity.getInspection() != null) {
             resp.setInspectionId(entity.getInspection().getId());
             resp.setInspectionStatus(entity.getInspection().getStatus() != null ? entity.getInspection().getStatus().name() : "PENDING");
+            resp.setInspectionCompletedAt(entity.getInspection().getCompletedAt());
             if (entity.getInspection().getItems() != null) {
                 Instant inspTime = entity.getInspection().getCompletedAt() != null
                         ? entity.getInspection().getCompletedAt()
@@ -125,7 +142,22 @@ public class VehicleHandoverResponse {
                         .collect(Collectors.toList());
                 resp.setInspections(inspectionResponses);
                 resp.setTotalInspectedCount(inspectionResponses.size());
-                resp.setAllCheckpointsInspected(inspectionResponses.size() >= resp.getRequiredCheckpointsCount());
+                long uniqueCount = inspectionResponses.stream()
+                        .map(VehicleInspectionResponse::getVehiclePartCode)
+                        .filter(Objects::nonNull)
+                        .distinct()
+                        .count();
+                resp.setUniqueInspectedCount((int) uniqueCount);
+                resp.setRequiredCheckpointsCount(com.evshare.inspection.dto.VehicleInspectionResponse.REQUIRED_CHECKPOINTS.size());
+                long reqCount = inspectionResponses.stream()
+                        .map(VehicleInspectionResponse::getVehiclePartCode)
+                        .filter(Objects::nonNull)
+                        .map(com.evshare.inspection.service.VehicleInspectionService::normalizeCanonicalPartCode)
+                        .filter(com.evshare.inspection.dto.VehicleInspectionResponse.REQUIRED_CHECKPOINTS::contains)
+                        .distinct()
+                        .count();
+                resp.setAssessedRequiredCheckpointsCount((int) reqCount);
+                resp.setAllCheckpointsInspected(reqCount >= resp.getRequiredCheckpointsCount());
                 resp.setHasWarningsOrDamage(inspectionResponses.stream()
                         .anyMatch(i -> i.getConditionStatus() == InspectionCondition.WARNING || i.getConditionStatus() == InspectionCondition.DAMAGED));
             }
@@ -284,6 +316,22 @@ public class VehicleHandoverResponse {
 
     public void setRequiredCheckpointsCount(int requiredCheckpointsCount) {
         this.requiredCheckpointsCount = requiredCheckpointsCount;
+    }
+
+    public int getAssessedRequiredCheckpointsCount() {
+        return assessedRequiredCheckpointsCount;
+    }
+
+    public void setAssessedRequiredCheckpointsCount(int assessedRequiredCheckpointsCount) {
+        this.assessedRequiredCheckpointsCount = assessedRequiredCheckpointsCount;
+    }
+
+    public boolean isHandoverAllowed() {
+        return handoverAllowed;
+    }
+
+    public void setHandoverAllowed(boolean handoverAllowed) {
+        this.handoverAllowed = handoverAllowed;
     }
 
     public boolean isAllCheckpointsInspected() {
@@ -475,6 +523,78 @@ public class VehicleHandoverResponse {
 
     public void setTripEndedAt(Instant tripEndedAt) {
         this.tripEndedAt = tripEndedAt;
+    }
+
+    public BigDecimal getStartOdometer() {
+        return startOdometer;
+    }
+
+    public void setStartOdometer(BigDecimal startOdometer) {
+        this.startOdometer = startOdometer;
+    }
+
+    public Integer getStartBatteryLevel() {
+        return startBatteryLevel;
+    }
+
+    public void setStartBatteryLevel(Integer startBatteryLevel) {
+        this.startBatteryLevel = startBatteryLevel;
+    }
+
+    public Instant getInspectionCompletedAt() {
+        return inspectionCompletedAt;
+    }
+
+    public void setInspectionCompletedAt(Instant inspectionCompletedAt) {
+        this.inspectionCompletedAt = inspectionCompletedAt;
+    }
+
+    public int getUniqueInspectedCount() {
+        return uniqueInspectedCount;
+    }
+
+    public void setUniqueInspectedCount(int uniqueInspectedCount) {
+        this.uniqueInspectedCount = uniqueInspectedCount;
+    }
+
+    public boolean isPreviousCustodyUnresolved() {
+        return previousCustodyUnresolved;
+    }
+
+    public void setPreviousCustodyUnresolved(boolean previousCustodyUnresolved) {
+        this.previousCustodyUnresolved = previousCustodyUnresolved;
+    }
+
+    public String getCurrentCustodianName() {
+        return currentCustodianName;
+    }
+
+    public void setCurrentCustodianName(String currentCustodianName) {
+        this.currentCustodianName = currentCustodianName;
+    }
+
+    public UUID getCurrentCustodianBookingId() {
+        return currentCustodianBookingId;
+    }
+
+    public void setCurrentCustodianBookingId(UUID currentCustodianBookingId) {
+        this.currentCustodianBookingId = currentCustodianBookingId;
+    }
+
+    public Instant getCurrentCustodianExpectedReturnTime() {
+        return currentCustodianExpectedReturnTime;
+    }
+
+    public void setCurrentCustodianExpectedReturnTime(Instant currentCustodianExpectedReturnTime) {
+        this.currentCustodianExpectedReturnTime = currentCustodianExpectedReturnTime;
+    }
+
+    public Boolean getCurrentCustodianOverdue() {
+        return currentCustodianOverdue;
+    }
+
+    public void setCurrentCustodianOverdue(Boolean currentCustodianOverdue) {
+        this.currentCustodianOverdue = currentCustodianOverdue;
     }
 }
 

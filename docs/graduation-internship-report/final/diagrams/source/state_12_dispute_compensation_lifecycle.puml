@@ -1,0 +1,24 @@
+@startuml
+title VÒNG ĐỜI TRẠNG THÁI BỒI THƯỜNG KHIẾU NẠI TRANH CHẤP (STATE-12)
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam ArrowColor #2C3E50
+skinparam ArrowThickness 1.2
+
+[*] --> INITIATED : Nhân viên xác lập mức bồi thường thỏa thuận
+
+INITIATED --> AWAITING_APPROVAL : Trị giá bồi thường > 1.000.000 đ\n(Cần Admin duyệt)
+INITIATED --> APPROVED : Trị giá bồi thường <= 1.000.000 đ\n(Staff có quyền duyệt)
+
+AWAITING_APPROVAL --> APPROVED : Admin phê duyệt giải ngân
+AWAITING_APPROVAL --> REJECTED : Admin bác bỏ phương án bồi thường
+
+APPROVED --> EXECUTED : Thực thi trừ nợ ExpenseShare hoặc giải ngân DEMO
+EXECUTED --> ACKNOWLEDGED : Chủ xe xác nhận đã nhận bồi hoàn
+ACKNOWLEDGED --> [*]
+
+REJECTED --> [*]
+@enduml

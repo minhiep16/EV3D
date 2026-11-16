@@ -57,6 +57,9 @@ public class ChargingProgressService {
     private final MaintenanceRequestRepository maintenanceRequestRepository;
     private final TripRepository tripRepository;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.evshare.energy.service.VehicleEnergyInventoryService energyInventoryService;
+
     public ChargingProgressService(
             ChargingSessionRepository chargingSessionRepository,
             ChargingStationRepository chargingStationRepository,
@@ -239,6 +242,14 @@ public class ChargingProgressService {
                 vehicle.setCurrentBatteryLevel(session.getTargetSocPercent().intValue());
                 recalculateVehicleStatus(vehicle);
                 updateBatteryHealthEstimate(vehicle, session.getTargetSocPercent());
+            }
+
+            if (energyInventoryService != null) {
+                try {
+                    energyInventoryService.recordChargingSessionCompletion(session);
+                } catch (Exception ex) {
+                    log.warn("Failed to update energy inventory on auto charging completion: {}", ex.getMessage());
+                }
             }
 
             return chargingSessionRepository.save(session);
