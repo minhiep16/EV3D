@@ -12,6 +12,8 @@ import {
   Crown,
   CheckCircle2,
   ChevronRight,
+  Calendar,
+  ExternalLink,
 } from 'lucide-react';
 import { VehicleResponse } from '../../types/vehicle';
 import { fetchVehicleCoOwnership } from '../../services/coOwnershipApi';

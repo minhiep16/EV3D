@@ -2170,6 +2170,8 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
     return Math.max(0, Math.ceil((expiryMs - Date.now()) / 60000));
   }, [candidateBooking?.startTime]);
 
+  const [isOpeningDispute, setIsOpeningDispute] = useState(false);
+
   const existingDisputeForBooking = useMemo(() => {
     if (!candidateBooking?.id) return null;
     return vehicleDisputes.find((d) => d.bookingId === candidateBooking.id) || null;
@@ -2178,54 +2180,75 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
   const hasSubmittedDispute = Boolean(bookingIncident?.hasFormalDispute || existingDisputeForBooking);
   const formalDisputeId = existingDisputeForBooking?.id || bookingIncident?.formalDisputeId;
 
+  const isOverdueOrIncident = useMemo(() => {
+    const isEndTimeOverdue = activeTrip?.bookingEndTime
+      ? new Date(activeTrip.bookingEndTime).getTime() < Date.now()
+      : false;
+    const isStartTimePassed = candidateBooking?.startTime
+      ? new Date(candidateBooking.startTime).getTime() <= Date.now()
+      : false;
+    const hasConflictIncident = Boolean(bookingIncident && bookingIncident.state !== 'CLEARED');
+    return isOverdue || isEndTimeOverdue || isStartTimePassed || hasConflictIncident || hasSubmittedDispute;
+  }, [activeTrip?.bookingEndTime, candidateBooking?.startTime, bookingIncident, isOverdue, hasSubmittedDispute]);
+
   const handleOpenDisputeForIncident = async () => {
     if (!candidateBooking) return;
-    let prefill: PrefilledDisputeData | null = bookingIncident?.prefilledDispute || null;
+    setIsOpeningDispute(true);
+    try {
+      let prefill: PrefilledDisputeData | null = bookingIncident?.prefilledDispute || null;
 
-    if (!prefill) {
-      try {
-        prefill = await fetchPrefilledDispute(candidateBooking.id);
-      } catch {
-        // Fallback: build authoritative prefill using current authoritative states
+      if (!prefill) {
+        try {
+          prefill = await fetchPrefilledDispute(candidateBooking.id);
+        } catch (err) {
+          console.warn('Lỗi tải thông tin prefill từ API sự cố:', err);
+        }
       }
+
+      if (!prefill) {
+        const startStr = formatDateTime(candidateBooking.startTime);
+        const endStr = formatDateTime(candidateBooking.endTime);
+        const prevEndStr = activeTrip?.bookingEndTime ? formatDateTime(activeTrip.bookingEndTime) : 'Chưa xác định';
+        const nowStr = formatDateTime(new Date().toISOString());
+
+        const delayMinutes = activeTrip?.bookingEndTime
+          ? Math.max(0, Math.floor((Date.now() - new Date(activeTrip.bookingEndTime).getTime()) / 60000))
+          : (bookingIncident?.delayMinutes || 0);
+
+        const timelineText =
+          `--- DỮ LIỆU ĐỐI CHIẾU HỆ THỐNG (TỰ ĐỘNG GHI NHẬN) ---\n` +
+          `- [${prevEndStr}] Lịch trước kết thúc theo kế hoạch (BOOKING)\n` +
+          (delayMinutes > 0 ? `- Thời gian trễ hạn thực tế: ${delayMinutes} phút (QUÁ HẠN)\n` : '') +
+          `- [${startStr}] Lịch của bạn bắt đầu (BOOKING)\n` +
+          `- [${nowStr}] Trạng thái tài xế trước: ${activeTrip?.returnRequestedAt ? `Đã yêu cầu trả lúc ${formatDateTime(activeTrip.returnRequestedAt)}` : 'Đang sử dụng (chưa gửi yêu cầu trả xe)'} (TRIP)\n` +
+          `- [${nowStr}] Trạng thái nhân viên: Chưa tiếp nhận xe vào garage (STAFF)\n` +
+          `- [${nowStr}] Thời điểm phát hiện sự cố: ${nowStr} (SYSTEM_POLICY)`;
+
+        prefill = {
+          vehicleId: vehicle.id,
+          vehicleName: displayName,
+          vehiclePlate: licensePlateLabel,
+          category: 'BOOKING',
+          priority: 'HIGH',
+          suggestedTitle: `Sự cố chậm trễ nhận xe ${licensePlateLabel} - Ngày ${formatDate(candidateBooking.startTime)}`,
+          suggestedDescription:
+            `${timelineText}\n\n--- Ý KIẾN & MÔ TẢ CỦA THÀNH VIÊN BỊ ẢNH HƯỞNG ---\n` +
+            `Tôi có lịch đặt xe ${displayName} (${licensePlateLabel}) từ ${startStr} đến ${endStr}, tuy nhiên đến giờ nhận xe phương tiện vẫn đang được thành viên trước sử dụng và chưa được bàn giao (chậm trễ ${delayMinutes} phút). Kính đề nghị Ban Quản trị và Nhân viên điều phối hỗ trợ giải quyết để đảm bảo quyền lợi sử dụng.`,
+          systemEvidenceSummary: `Hệ thống phát hiện chậm trễ bàn giao phương tiện ${displayName} (${licensePlateLabel}). Lịch trước kết thúc lúc ${prevEndStr} (quá hạn ${delayMinutes} phút), ảnh hưởng trực tiếp đến lịch đặt #${candidateBooking.id.substring(0, 8)} bắt đầu lúc ${startStr}.`,
+          bookingId: candidateBooking.id,
+          tripId: activeTrip?.id || null,
+          handoverId: bookingHandover?.id || null,
+          respondentUserIds: activeTrip?.userId ? [activeTrip.userId] : [],
+          incidentReference: `INC-BKG-${candidateBooking.id.substring(0, 8).toUpperCase()}`,
+          detectedAt: new Date().toISOString(),
+          objectiveTimelineText: timelineText,
+        };
+      }
+
+      openDisputePanelWithPrefill(vehicle.id, prefill);
+    } finally {
+      setIsOpeningDispute(false);
     }
-
-    if (!prefill) {
-      const startStr = formatDateTime(candidateBooking.startTime);
-      const endStr = formatDateTime(candidateBooking.endTime);
-      const prevEndStr = activeTrip?.bookingEndTime ? formatDateTime(activeTrip.bookingEndTime) : 'Chưa xác định';
-      const nowStr = formatDateTime(new Date().toISOString());
-
-      const timelineText =
-        `--- DỮ LIỆU ĐỐI CHIẾU HỆ THỐNG (TỰ ĐỘNG GHI NHẬN) ---\n` +
-        `- [${prevEndStr}] Lịch trước kết thúc theo kế hoạch (BOOKING)\n` +
-        `- [${startStr}] Lịch của bạn bắt đầu (BOOKING)\n` +
-        `- [${nowStr}] Trạng thái tài xế trước: ${activeTrip?.returnRequestedAt ? `Đã yêu cầu trả lúc ${formatDateTime(activeTrip.returnRequestedAt)}` : 'Đang sử dụng (chưa gửi yêu cầu trả xe)'} (TRIP)\n` +
-        `- [${nowStr}] Trạng thái nhân viên: Chưa tiếp nhận xe vào garage (STAFF)\n` +
-        `- [${nowStr}] Thời điểm phát hiện sự cố: ${nowStr} (SYSTEM_POLICY)`;
-
-      prefill = {
-        vehicleId: vehicle.id,
-        vehicleName: displayName,
-        vehiclePlate: licensePlateLabel,
-        category: 'BOOKING',
-        priority: 'HIGH',
-        suggestedTitle: 'Lượt đặt xe bị ảnh hưởng do chuyến đi trước chưa hoàn tất',
-        suggestedDescription:
-          `${timelineText}\n\n--- Ý KIẾN & MÔ TẢ CỦA THÀNH VIÊN BỊ ẢNH HƯỞNG ---\n` +
-          `Tôi có lịch đặt xe ${displayName} từ ${startStr} đến ${endStr}, tuy nhiên đến giờ nhận xe phương tiện vẫn đang được thành viên trước sử dụng và chưa được bàn giao. Kính đề nghị Ban Quản trị và Nhân viên điều phối hỗ trợ giải quyết để đảm bảo quyền lợi sử dụng.`,
-        systemEvidenceSummary: `Hệ thống phát hiện chậm trễ bàn giao phương tiện ${displayName} (${licensePlateLabel}). Lịch trước kết thúc lúc ${prevEndStr}, ảnh hưởng trực tiếp đến lịch đặt #${candidateBooking.id.substring(0, 8)} bắt đầu lúc ${startStr}.`,
-        bookingId: candidateBooking.id,
-        tripId: activeTrip?.id || null,
-        handoverId: bookingHandover?.id || null,
-        respondentUserIds: activeTrip?.userId ? [activeTrip.userId] : [],
-        incidentReference: `INC-BKG-${candidateBooking.id.substring(0, 8).toUpperCase()}`,
-        detectedAt: new Date().toISOString(),
-        objectiveTimelineText: timelineText,
-      };
-    }
-
-    openDisputePanelWithPrefill(vehicle.id, prefill);
   };
 
   return (
@@ -3342,6 +3365,185 @@ export const CoOwnerVehiclePanel: React.FC<CoOwnerVehiclePanelProps> = ({
                     </div>
                   )}
                 </div>
+
+                {/* CONTEXTUAL OVERDUE RETURN DISPUTE INTEGRATION */}
+                {isOverdueOrIncident && (
+                  <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {hasSubmittedDispute ? (
+                      existingDisputeForBooking?.status === 'RESOLVED' || existingDisputeForBooking?.status === 'CLOSED' ? (
+                        <div
+                          style={{
+                            background: 'rgba(34, 197, 94, 0.1)',
+                            border: '1px solid rgba(34, 197, 94, 0.35)',
+                            borderRadius: '10px',
+                            padding: '8px 10px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '4px',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#4ade80' }}>
+                              KẾT QUẢ GIẢI QUYẾT TRANH CHẤP
+                            </span>
+                            <span
+                              style={{
+                                fontSize: '9px',
+                                fontWeight: 800,
+                                background: 'rgba(34, 197, 94, 0.25)',
+                                color: '#4ade80',
+                                padding: '1px 6px',
+                                borderRadius: '4px',
+                              }}
+                            >
+                              {existingDisputeForBooking?.statusVietnamese || 'ĐÃ HÒA GIẢI'}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '10px', color: '#94a3b8' }}>
+                            Mã hồ sơ: <strong style={{ color: '#f1f5f9' }}>{existingDisputeForBooking?.referenceCode || 'DSP-RESOLVED'}</strong>
+                          </div>
+                          {existingDisputeForBooking?.resolutionSummary && (
+                            <div style={{ fontSize: '10px', color: '#cbd5e1', fontStyle: 'italic', marginTop: '2px' }}>
+                              Kết quả: {existingDisputeForBooking.resolutionSummary}
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openDisputePanel(vehicle.id);
+                            }}
+                            style={{
+                              marginTop: '4px',
+                              width: '100%',
+                              padding: '7px 12px',
+                              background: 'rgba(34, 197, 94, 0.2)',
+                              border: '1px solid rgba(34, 197, 94, 0.4)',
+                              borderRadius: '6px',
+                              color: '#4ade80',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '6px',
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
+                            <Scale size={13} />
+                            <span>XEM TIẾN TRÌNH TRANH CHẤP</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div
+                          style={{
+                            background: 'rgba(234, 179, 8, 0.1)',
+                            border: '1px solid rgba(234, 179, 8, 0.35)',
+                            borderRadius: '10px',
+                            padding: '8px 10px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '4px',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#fbbf24' }}>
+                              HỒ SƠ TRANH CHẤP ĐANG XỬ LÝ
+                            </span>
+                            <span
+                              style={{
+                                fontSize: '9px',
+                                fontWeight: 800,
+                                background: 'rgba(234, 179, 8, 0.25)',
+                                color: '#fbbf24',
+                                padding: '1px 6px',
+                                borderRadius: '4px',
+                              }}
+                            >
+                              {existingDisputeForBooking?.statusVietnamese || 'ĐANG HÒA GIẢI'}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '10px', color: '#94a3b8' }}>
+                            Mã hồ sơ: <strong style={{ color: '#f1f5f9' }}>{existingDisputeForBooking?.referenceCode || bookingIncident?.formalDisputeReference || 'DSP-IN-PROGRESS'}</strong>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openDisputePanel(vehicle.id);
+                            }}
+                            style={{
+                              marginTop: '4px',
+                              width: '100%',
+                              padding: '7px 12px',
+                              background: 'linear-gradient(135deg, rgba(2, 132, 199, 0.8) 0%, rgba(14, 165, 233, 0.8) 100%)',
+                              border: '1px solid rgba(56, 189, 248, 0.4)',
+                              borderRadius: '6px',
+                              color: '#ffffff',
+                              fontSize: '11px',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '6px',
+                              boxShadow: '0 2px 10px rgba(2, 132, 199, 0.3)',
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
+                            <Scale size={13} />
+                            <span>XEM TIẾN TRÌNH TRANH CHẤP</span>
+                          </button>
+                        </div>
+                      )
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={isOpeningDispute}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenDisputeForIncident();
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '9px 12px',
+                          background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.95) 0%, rgba(220, 38, 38, 0.95) 100%)',
+                          border: '1px solid rgba(254, 202, 202, 0.5)',
+                          borderRadius: '8px',
+                          color: '#ffffff',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          cursor: isOpeningDispute ? 'not-allowed' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          boxShadow: '0 2px 12px rgba(239, 68, 68, 0.35)',
+                          transition: 'all 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!isOpeningDispute) e.currentTarget.style.filter = 'brightness(1.15)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.filter = 'brightness(1)';
+                        }}
+                      >
+                        {isOpeningDispute ? (
+                          <>
+                            <Loader2 size={13} className="animate-spin" />
+                            <span>ĐANG TẢI DỮ LIỆU ĐỐI SOÁT...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Scale size={13} />
+                            <span>GỬI YÊU CẦU GIẢI QUYẾT TRANH CHẤP</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             ) : (
               /* STATE B: BOOKING CONFIRMED, WAITING FOR STAFF HANDOVER */
